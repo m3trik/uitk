@@ -4,7 +4,7 @@ Public signatures for the core UITK classes. For prose explanations, see the [Us
 
 **Nav**: [← README](README.md) · [User Guide](USER_GUIDE.md) · [Slots](SLOTS.md) · [Widgets](WIDGETS.md) · [Marking Menu](MARKING_MENU.md) · [Architecture](ARCHITECTURE.md) · [Cookbook](COOKBOOK.md)
 
-Line references link to the current source.
+Signatures below are verified against the generated registry ([API_INDEX.md](../API_INDEX.md) / `API_REGISTRY.md`); source links go to the owning module.
 
 ---
 
@@ -39,12 +39,22 @@ Switchboard(
 | `registered_icons` | `NamespaceHandler` | Icon paths discovered via `icon_source` |
 | `slot_instances` | `NamespaceHandler` | Instantiated slot class instances |
 | `registry` | `RegistryManager` | Typed registries: `ui_registry`, `slot_registry`, `widget_registry`, `icon_registry` |
-| `handlers` | `SimpleNamespace` | `sb.handlers.ui`, `sb.handlers.marking_menu`, custom handlers |
+| `handlers` | namespace object | `sb.handlers.ui`, `sb.handlers.marking_menu`, custom handlers |
 | `settings` | `SettingsManager` | QSettings wrapper with `namespace="switchboard"` |
 | `configurable` | `SettingsManager` | Branch of `settings` for handler DEFAULTS + app config |
 | `convert` | `ConvertMixin` | Type conversion helpers |
 | `default_signals` | `dict[type, str]` | Qt widget class → default signal name |
-| `app` | `QApplication` | Existing instance or new one created on import |
+| `app` | `QApplication` | Lazy class property — existing instance, or one created on first access |
+
+### Signals
+
+| Signal | Payload | Fires when |
+|:---|:---|:---|
+| `on_ui_registered` | `str` | A new UI enters `ui_registry` via `register()` |
+| `on_ui_loaded` | `str` | A UI actually materialises in `loaded_ui` (once per UI, any load path) |
+| `on_ui_tags_changed` | `str` | `save_ui_tags()` persisted tags for an existing UI |
+| `on_handler_entries_changed` | `str` (handler attr) | A launchable handler's entry set may have changed |
+| `on_handler_entry_changed` | `str, str` (handler, entry) | One entry's live state (visibility/status) changed |
 
 ### Class attributes (naming convention)
 
@@ -62,45 +72,49 @@ INIT_SUFFIX = "_init"
 | `load_ui(file: str) -> QMainWindow` | Load a `.ui` file via the configured loader delegate (runtime QUiLoader or compiled `_ui.py`) |
 | `load_all_ui() -> list` | Load every UI in the registry |
 | `add_ui(name, widget=None, parent=None, tags=None, path=None, overwrite=False, **kwargs) -> MainWindow` | Wrap a loaded widget in `MainWindow` and register it |
-| `get_ui(ui=None) -> QWidget \| list \| None` | Resolve by name, return current if `None`, pass-through if already a widget |
+| `get_ui(ui=None) -> QWidget` | Resolve by name, return current if `None`, pass-through if already a widget |
 | `get_ui_relatives(ui, upstream=False, exact=False, downstream=False, reverse=False) -> list` | Tag-depth-based relatives via shared base name |
 | `find_ui_filename(legal_name, unique_match=False) -> str \| list \| None` | Legal-name-to-original-filename resolver |
-| `ui_history(index=None, allow_duplicates=False, inc=[], exc=[])` | Ordered history of current-UI transitions |
+| `save_ui_tags(path, tags)` | Persist tags into a `.ui` file as a Designer-safe dynamic property |
+| `ui_history(index=None, allow_duplicates=False, inc=None, exc=None)` | Ordered history of current-UI transitions |
+| `show_prev_ui() -> QWidget \| None` | Re-show the most-recent non-transient UI not already on screen |
 
 ### Methods — widgets & slots
 
 | Method | Purpose |
 |:---|:---|
 | `get_widget(name, ui=None) -> QWidget \| None` | Find a registered widget by name, optionally in a specific UI |
-| `register_widget(widget_class_info)` | Manually register a widget class (rare — usually automatic) |
+| `register_widget(widget)` | Manually register a custom widget class (rare — usually automatic) |
 | `get_slots_instance(ui) -> object \| None` | Return the slot class instance for a UI, creating on first access |
-| `init_slot(widget)` | Run `<objectName>_init` for a widget |
+| `init_slot(widget, block_signals=True)` | Run `<objectName>_init` for a widget |
 | `connect_slot(widget, slot=None)` | Wire widget signals to slot method |
 | `call_slot(widget, *args, **kwargs)` | Invoke the slot manually |
-| `slot_history(index=None, add=None, allow_duplicates=False)` | Ordered history of slot calls |
+| `slot_history(index=None, allow_duplicates=False, inc=None, exc=None, add=None, remove=None, length=200)` | Ordered history of slot calls |
 | `prev_slot` *(property)* | Last executed slot method, or None |
+| `repeat_last()` | Re-invoke the last slot with the exact args it last ran with |
 | `get_default_signals(widget) -> set` | Default Qt signals available on a widget |
-| `get_available_signals(widget, derived=True, exc=[]) -> set` | All Qt signals on a type, optionally including inherited |
+| `get_available_signals(widget, derived=True, exc=None) -> set` | All Qt signals on a type, optionally including inherited |
 
 ### Methods — dialogs & widget helpers
 
 | Method | Purpose |
 |:---|:---|
-| `message_box(text, *buttons) -> str \| None` | Themed QMessageBox replacement |
-| `file_dialog(file_types="All Files (*)", caption=None, dir=None) -> str` | Themed file picker |
-| `dir_dialog(caption=None, dir=None) -> str` | Themed directory picker |
+| `message_box(string, *buttons, location="topMiddle", timeout=3, background=0.75)` | Themed QMessageBox replacement |
+| `file_dialog(file_types=["*.*"], title="Select files to open", start_dir="/home", filter_description="All Files", allow_multiple=True) -> str \| list` | Static — themed file picker |
+| `dir_dialog(title="Select a directory", start_dir="/home") -> str` | Static — themed directory picker |
+| `save_file_dialog(file_types=["*.*"], title="Save file", start_dir="/home", filter_description="All Files") -> str \| None` | Static — save-destination picker |
 | `center_widget(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative=None)` | Reposition + optionally resize |
 | `get_cursor_offset_from_center(widget) -> QPoint` | Static — `QCursor.pos() - widget.rect().center()` |
-| `toggle_multi(ui, **kwargs)` | Batch-set properties on named widgets |
+| `toggle_multi(ui, trigger=None, signal=None, **kwargs)` | Batch-set boolean properties on named widgets |
 | `connect_multi(ui, widgets, signals, slots)` | Batch signal-slot connection |
-| `create_button_groups(ui, name_range)` | Radio groups from a range like `"chk_001-3"` |
-| `unpack_names(name_string) -> list[str]` | Static — expand `"chk021-23,25,tb001"` into individual names |
+| `create_button_groups(ui, *args, allow_deselect=False, allow_multiple=False) -> list[QButtonGroup]` | Radio groups from ranges like `"chk_001-3"` |
+| `unpack_names(name_string) -> list[str]` | Class method — expand `"chk021-23,25,tb001"` into individual names |
 
 ### Methods — registration
 
 | Method | Purpose |
 |:---|:---|
-| `register(ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive=False, validate=0, tags=None)` | Add new sources after construction |
+| `register(ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive=False, validate=1, tags=None)` | Add new sources after construction |
 | `register_handler(name, instance, defaults=None)` | Attach `instance` at `sb.handlers.<name>`, merge `defaults` into `sb.configurable.<name>` |
 | `register_command(name, callback, ...)` / `set_command_shortcut(name, sequence)` | Register a UI-less command and bind a shortcut to it (for slot shortcuts, decorate the slot with `@Shortcut("Ctrl+S")`) |
 
@@ -108,7 +122,8 @@ INIT_SUFFIX = "_init"
 
 | Property | Type | Meaning |
 |:---|:---|:---|
-| `current_ui` | `QWidget` | Most recently shown / focused UI, auto-set from singletons |
+| `active_ui` | `QWidget \| None` | Currently set UI — no auto-load, no warning |
+| `current_ui` | `QWidget` | Most recently shown / focused UI (loads on first access) |
 | `prev_ui` | `QWidget` | Previous UI from history |
 | `visible_windows` | `set[MainWindow]` | All currently visible loaded UIs |
 
@@ -128,8 +143,9 @@ MainWindow(
     path: str = None,
     log_level: str = "WARNING",
     restore_window_size: bool = True,
-    add_footer: bool = True,
+    add_footer: bool = False,
     ensure_on_screen: bool = True,
+    fit_to_content_on_show: bool = True,
     default_slot_timeout: float = None,
     settings: SettingsManager = None,
     **kwargs,  # forwarded to set_attributes
@@ -157,11 +173,12 @@ MainWindow(
 | `widgets` | `set[QWidget]` | All registered child widgets |
 | `tags` | `set[str]` | Tags parsed from the filename |
 | `path` | `str` | Path to the source `.ui` file |
-| `settings` | `SettingsManager` | Branch keyed by window name |
+| `settings` | `SettingsManager` | Own store keyed by window name (or the injected `settings`) |
 | `state` | `StateManager` | Widget state persistence |
 | `style` | `StyleSheet` | Theme manager with `.set(theme=..., style_class=...)` and `.theme_changed` signal |
-| `footer` | `Footer \| None` | Auto-created unless `add_footer=False` |
+| `footer` | `Footer \| None` | `Footer` found in the `.ui`, else auto-created only when `add_footer=True` |
 | `header` | `Header \| None` | If one is present in the `.ui` |
+| `fit_to_content_on_show` | `bool` | Snap height to layout content on show (default `True`) |
 | `is_initialized` | `bool` | `True` after first show |
 | `is_current_ui` | `bool` | `True` if `self is sb.current_ui` |
 | `is_pinned` | `bool` | Alias for `pinned` |
@@ -222,11 +239,11 @@ Signal names are attached to the wrapped function as `func.signals`.
 def update_widget(self): ...
 ```
 
-Wraps the call in `self.blockSignals(True)` … `self.blockSignals(False)`. Use on slot methods that mutate widgets and would otherwise re-trigger themselves.
+Blocks `self`'s signals for the duration of the call, restoring the *prior* block state on exit (not an unconditional unblock). Use on slot methods that mutate widgets and would otherwise re-trigger themselves.
 
 ---
 
-## `uitk.handlers.UiHandler`
+## `uitk.UiHandler`
 
 Source: [handlers/ui_handler.py](../uitk/handlers/ui_handler.py)
 
@@ -239,6 +256,7 @@ UiHandler(
     recursive: bool = True,
     log_level: str = "WARNING",
     source_tags: set = None,
+    **kwargs,
 )
 ```
 
@@ -272,9 +290,10 @@ UI_REGISTRY: dict = {}   # subclass override for manual ui-name → path maps
 
 | Method | Purpose |
 |:---|:---|
-| `get(name, reload=False, **kw) -> QWidget \| None` | Resolve UI + apply styles |
+| `get(name, **kwargs) -> QWidget \| None` | Resolve UI + apply styles (extra kwargs accepted and ignored for call-site compatibility) |
+| `can_resolve(name) -> bool` | Whether `get` would resolve `name` — without building it |
 | `show(ui, pos=None, force=False, **kw) -> QWidget` | Show and position a UI |
-| `apply_styles(ui, style=None)` | Apply `DEFAULT_STYLE` (or override) with tag-based adjustments |
+| `apply_styles(ui, style=None, theme=None)` | Apply `DEFAULT_STYLE` (or override) with tag-based adjustments; `theme` overrides for this call |
 | `setup_lifecycle(ui, hide_signal=None)` | Connect a signal to `ui.request_hide()` |
 
 ### Window persistence
@@ -300,9 +319,30 @@ Subclass for DCC integration — override `show`, `default_persistence`, or prov
 
 ---
 
+## `uitk.BaseHandler`, `uitk.HandlerEntry`, `uitk.ExternalAppHandler`
+
+Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handlers/handler_entry.py](../uitk/handlers/handler_entry.py) · [handlers/external_app_handler.py](../uitk/handlers/external_app_handler.py). Handler-ecosystem prose (registration, `DEFAULTS`, `sb.handlers.*`): [Architecture](ARCHITECTURE.md).
+
+**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`.
+
+**`HandlerEntry`** — the launchable-entry data class every handler yields from `entries()`; `all_tags` and `editable_tags` properties.
+
+**`ExternalAppHandler`** — registers, installs on demand, and launches external Python apps as subprocesses (or in-process widgets):
+
+| Method | Purpose |
+|:---|:---|
+| `register(name, *, module, entry=None, install_spec=None, python=None, show_kwargs=None, mode="subprocess", tags=None, hidden_in=None)` | Pre-register an app so it can be launched by name |
+| `discover(groups=None) -> int` | Auto-register every app advertised under a uitk entry-point group |
+| `add_provider(install_spec, *, probe_module=None, group=None, python=None)` | Register a provider package that ships discoverable apps |
+| `is_registered(name)` / `unregister(name)` | Query / remove |
+| `launch(name=None, *, module=None, entry=None, install_spec=None, python=None, show_kwargs=None, mode=None, show=True)` | Launch a registered app, or an ad-hoc app from kwargs |
+| `entries()` / `close(name)` / `is_visible(name)` / `save_tags(name, tags)` | Launchable contract + tag persistence |
+
+---
+
 ## `uitk.MarkingMenu`
 
-Source: [widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py)
+Source: [widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py). Full subsystem doc: [Marking Menu](MARKING_MENU.md).
 
 ```python
 MarkingMenu(
@@ -314,6 +354,10 @@ MarkingMenu(
     handlers: dict = None,
     switchboard: Switchboard = None,
     log_level: str = "DEBUG",
+    suppress_default_on_reentry: bool = False,
+    precompile: bool = False,
+    preload: bool = False,
+    context_tags=None,
     **kwargs,
 )
 ```
@@ -361,26 +405,29 @@ Source: [events.py](../uitk/events.py)
 EventFactoryFilter(
     parent: QObject = None,
     forward_events_to: object = None,      # typically `self`
-    event_name_prefix: str = "",           # e.g. "child_" → "child_mousePressEvent"
+    event_name_prefix: str = "",           # e.g. "child_" → "child_mouseButtonPressEvent"
     event_types: set[str | int] = None,    # {"MouseButtonPress", "KeyPress", ...}
     propagate_to_children: bool = False,
 )
 ```
 
-Install on widgets: `filter.install(widgets)` — accepts single widget or iterable.
+Install on widgets: `filter.install(widgets)` — accepts single widget or iterable; `uninstall(widgets)` / `is_installed(widget)` complete the set.
 
-Handler lookup is lazy: when an event fires, the filter looks for `forward_events_to.<prefix><EventName>(event, widget)` and calls it if present. Handlers are cached per (widget_id, event_type) for efficiency.
+Handler lookup is lazy: when an event fires, the filter looks for `forward_events_to.<prefix><EventName>(widget, event)` — the event-type enum name with a lowered first letter plus `Event` (`MouseButtonPress` → `mouseButtonPressEvent`) — and calls it if present. Handlers are cached per (forward-target, event_type).
 
 ### `MouseTracking`
 
 ```python
 MouseTracking(
     parent: QWidget,
+    track_on_drag_only: bool = True,
+    log_level: str = "WARNING",
     auto_update: bool = True,
+    buttons_provider=None,
 )
 ```
 
-Emits `enter(widget)` and `leave(widget)` signals for child widgets. `update_child_widgets()` rebuilds the tracked set.
+Tracks the widget under the cursor and delivers synthetic enter/leave (and release) **Qt events** to the child widgets themselves — it defines no Qt signals; observe `enterEvent`/`leaveEvent` on the widgets. `update_child_widgets()` rebuilds the tracked set.
 
 ---
 
@@ -388,7 +435,7 @@ Emits `enter(widget)` and `leave(widget)` signals for child widgets. `update_chi
 
 Source: [managers/registry_manager.py](../uitk/managers/registry_manager.py)
 
-`RegistryManager` owns the four registries on `Switchboard`. Its `create(name, objects, **cfg)` instantiates a `FileRegistry` per registry with filter patterns (`inc_files`, `exc_files`).
+`RegistryManager` owns the four registries on `Switchboard`. Its `create(descriptor, objects=None, **metadata)` instantiates a `FileRegistry` per registry with filter patterns (`inc_files`, `exc_files`).
 
 ```python
 sb.registry.ui_registry.get("filename")           # list of filenames
@@ -419,7 +466,7 @@ SettingsManager(
 
 ### Access pattern
 
-Attribute access yields a `SettingItem` proxy:
+Attribute access yields a `SettingsManager.SettingItem` proxy:
 
 ```python
 item = sb.settings.my_key
@@ -428,10 +475,9 @@ item.set(100)
 item.changed.connect(callback)
 ```
 
-Legacy attribute-style access works via `__setattr__` intercept:
-```python
-sb.settings.my_key = 100      # equivalent to sb.settings.my_key.set(100)
-```
+Direct attribute **assignment is rejected** — `sb.settings.my_key = 100` raises
+`AttributeError` (deliberate, to avoid ambiguity between assigning a proxy and a
+value). Always go through `.set(value)`.
 
 ### Methods
 
@@ -441,8 +487,10 @@ sb.settings.my_key = 100      # equivalent to sb.settings.my_key.set(100)
 | `setValue(key, value)` | Set raw value |
 | `branch(name) -> SettingsManager` | Nested namespace |
 | `set_defaults(defaults: dict)` | Register default values for keys that don't exist |
-| `on_change(key, callback)` | Legacy signal subscription (prefer `.changed.connect`) |
-| `clear(key)` | Remove a key |
+| `on_change(key, callback)` | Callback subscription (`.changed.connect` is the proxy form of the same) |
+| `keys() -> list` | All keys in the current namespace |
+| `remove(key)` | Remove a single key |
+| `clear(key=None)` | Clear a specific key, or all keys in the namespace |
 | `sync()` | Flush to disk |
 | `setByteArray(key, qba)` / `getByteArray(key)` | For raw `QByteArray` (used for window geometry) |
 
@@ -453,19 +501,21 @@ sb.settings.my_key = 100      # equivalent to sb.settings.my_key.set(100)
 Source: [managers/state_manager.py](../uitk/managers/state_manager.py)
 
 ```python
-StateManager(qsettings: QSettings, log_level="WARNING")
+StateManager(qsettings: QSettings | SettingsManager, log_level="WARNING")
 ```
 
 ### Methods
 
 | Method | Purpose |
 |:---|:---|
-| `save(widget, value)` | Persist value under `<objectName>/<signal_name>` |
-| `load(widget) -> Any` | Read persisted value and apply it via `apply()` |
+| `save(widget, value=None)` | Persist value under `<objectName>/<signal_name>` (current value when `None`) |
+| `load(widget)` | Read persisted value and apply it via `apply()` |
 | `apply(widget, value)` | Set widget value (routes by signal type via `ValueManager`) |
 | `capture_default(widget)` | Snapshot current value as the reset-to default |
-| `has_default(widget) -> bool` / `capture_default(widget)` | Query / capture a widget's default state |
-| `reset(widget)` | Apply captured default |
+| `has_default(widget) -> bool` / `set_default(widget, value)` | Query / explicitly set a widget's default |
+| `reset(widget)` / `reset_all(block_signals=False)` | Apply captured default(s) |
+| `clear(widget)` | Remove the stored state |
+| `save_custom(key, value)` / `load_custom(key, default=None)` / `clear_custom(key)` | Arbitrary key/value persistence through the same store |
 
 ### Widget-level flags
 
@@ -514,24 +564,29 @@ PresetManager(
     preset_dir: str | Path = None,
     widgets: list[QWidget] = None,
     log_level: str = "WARNING",
+    builtin_dir: str | Path = None,        # read-only second tier of presets
+    value_provider=None,                   # custom capture callable
+    value_applier=None,                    # custom apply callable
+    modified_value_provider=None,
 )
 
 # Alternative constructor for standalone mode (no StateManager required):
-PresetManager.from_widgets(preset_dir, widgets)
+PresetManager.from_widgets(preset_dir, widgets, builtin_dir=None)
 ```
 
 ### Methods
 
 | Method | Purpose |
 |:---|:---|
-| `save(name: str)` | Write current widget values to `<preset_dir>/<name>.json` |
-| `load(name: str)` | Apply a preset |
-| `delete(name: str)` | Remove preset file |
-| `list() -> list[str]` | Names of available presets |
-| `wire_combo(combo, on_loaded=None)` | Wire a `ComboBox` as a preset selector (option-box toolbar: Refresh/Save/⋯-menu, inline naming). Returns the option-box container. |
-| `make_preset_combo(parent=None, name=None, tooltip=None, on_loaded=None)` | Build + wire a preset `ComboBox`; returns its option-box container (`container.preset_combo` reaches the combo). |
+| `save(name, scope=None) -> Path` | Write current widget values to `<preset_dir>/<name>.json` |
+| `load(name, scope=None, block_signals=True) -> int` | Apply a preset; returns the number of widgets set |
+| `delete(name) -> bool` | Remove a *user* preset (built-ins are read-only) |
+| `rename(old_name, new_name) -> bool` / `exists(name)` / `read(name)` | Rename / probe / read-without-applying |
+| `list() -> list[str]` | Names of available presets across both tiers (user + builtin) |
+| `wire_combo(combo, on_loaded=None, placeholder=None)` | Wire a `ComboBox` as a preset selector (option-box toolbar: Refresh/Save/⋯-menu, inline naming). Returns the option-box container. |
+| `make_preset_combo(parent=None, name=None, tooltip=None, on_loaded=None, placeholder=None)` | Build + wire a preset `ComboBox`; returns its option-box container (`container.preset_combo` reaches the combo). |
 
-`preset_dir` accepts absolute paths, `~` expansion, `$ENV` variables, or short names resolved under `QStandardPaths.AppConfigLocation`.
+`preset_dir` accepts absolute paths, `~` expansion, `$ENV` variables, or short names (`"mayatk/reference_manager"`) resolved under `PresetManager.get_presets_root()` — `<QStandardPaths.GenericConfigLocation>/uitk` by default, redirectable wholesale via `$UITK_PRESETS_ROOT`.
 
 ---
 
@@ -546,7 +601,8 @@ When a widget registers on a `MainWindow`, it gains these attributes:
 | `widget.legal_name()` | `str` | Name with illegal chars replaced by `_` |
 | `widget.type` | `type` | `type(widget)` |
 | `widget.derived_type` | `type` | Nearest `QtWidgets` base |
-| `widget.default_signals()` | `str` | Default signal name for this type |
+| `widget.default_signals()` | `str \| None` | Default signal name for this type |
+| `widget.tooltip` | `TooltipProxy` | Rich-tooltip formatting proxy ([mixins/tooltip_mixin.py](../uitk/widgets/mixins/tooltip_mixin.py)) |
 | `widget.get_slot()` | `callable \| None` | Connected slot method |
 | `widget.init_slot(*a)` | — | Manually run `<objectName>_init` |
 | `widget.call_slot(*a, **kw)` | — | Manually invoke the handler |
@@ -568,6 +624,16 @@ Mixin-provided properties:
 | `widget.option_box` | `OptionBoxMixin` | `OptionBoxManager` |
 | `widget.set_attributes(**kw)` | `AttributesMixin` | — |
 | `widget.set_flags(**kw)` | `AttributesMixin` | — |
+
+---
+
+## Text mixins — `RichTextFormatter`, `TextTruncation`, `RichText`, `TextOverlay`
+
+Source: [widgets/mixins/text.py](../uitk/widgets/mixins/text.py)
+
+- **`RichTextFormatter`** — stateless HTML pipeline shared by the rich-text widgets. `RichTextFormatter.format(string, *, align="left", font_color="white", font_size=None)` applies the standard pipeline; `apply_prefix_styles(string)` colors level-prefix tokens (`Error:`, `Warning:`, …), `apply_inline_styles(string)` upgrades bare HTML tags, `wrap_font_color(string, color)` / `wrap_font_size(string, size)` / `resolve_background(background)` are the primitives.
+- **`TextTruncation`** — reusable elision: `calculate_text_truncation` (pixel-based via font metrics), `calculate_character_truncation`, `calculate_word_truncation`, `calculate_path_truncation`, plus `apply_text_truncation` / `create_truncated_button` / `create_truncated_label` / `update_widget_text_truncation`.
+- **`RichText`** / **`TextOverlay`** — the widget-inheritance mixins (HTML text via an internal label; overlay text). Which widgets carry them: [Widgets](WIDGETS.md).
 
 ---
 
@@ -605,6 +671,34 @@ From `default_signals` in [switchboard/slots.py](../uitk/switchboard/slots.py):
 | QTreeWidget | `itemClicked` |
 
 Custom UITK widgets add their own signals — see [WIDGETS.md](WIDGETS.md) for each widget's full signal list.
+
+---
+
+## Everything else on the `uitk` namespace
+
+The remaining public top-level symbols (`uitk/__init__.py` → `DEFAULT_INCLUDE`) and where each is documented:
+
+| Symbols | Home |
+|:---|:---|
+| Widget classes — `CheckBox`, `CollapsableGroup`, `ColorSwatch`, `ComboBox`, `DoubleSpinBox`, `SpinBox`, `ExpandableList`, `Header`, `Footer` / `FooterStatusController`, `Label`, `LineEdit`, `Menu`, `MenuButton`, `MessageBox`, `ProgressBar`, `PushButton`, `Region`, `Separator`, `Slider`, `TableWidget`, `TextEdit`, `ToolBox`, `TreeWidget`, `WidgetComboBox`, `WindowPanel`, `TextViewBox`, `AttributeWindow`, `ScriptOutput` / `ScriptHighlighter` / `ScriptHighlightRule`, `TextEditLogHandler`, `SequencerWidget` / `ClipData` / `TrackData` | [Widgets](WIDGETS.md) — the per-widget catalog |
+| Option-box system — `OptionBox`, `OptionBoxContainer`, `OptionBoxManager`, `BaseOption` / `ButtonOption` and the option classes (`ActionOption`, `MenuOption`, `BrowseOption`, `ClearOption` / `ClearButton`, `ResetOption`, `PinValuesOption`, `ToggleOption`, `DisableOption`, `ValueOption`, `AffixOption`, `OptionMenuOption`, `ContextMenuOption`) | [Widgets § Option Box system](WIDGETS.md) |
+| Item-view delegates — `RowSelectionBorderDelegate`, `CenteredIconActionDelegate` (+ `ICON_OPACITY_ROLE`), `ShortcutCaptureDelegate`, `ChoiceCaptureDelegate`, and their `Bordered*` variants | [Widgets § Delegates](WIDGETS.md) |
+| Editors — `EditorPanel`, `ColorMappingEditor` / `ColorMappingDialog` (and the `ShortcutEditor` / browser views reached via `sb.editors`) | [Widgets § Editors](WIDGETS.md) |
+| Widget mixins — `AttributesMixin`, `ConvertMixin`, `MenuMixin`, `OptionBoxMixin` | [Widgets](WIDGETS.md); the properties they provide are tabled above |
+| `Shortcut` (slot decorator) | [Widgets § Shortcut & command registry](WIDGETS.md), with `register_command` above |
+| `ShortcutManager`, `GlobalShortcut` | [Widgets § Shortcut & command registry](WIDGETS.md) |
+| `SlotWrapper` | [Architecture](ARCHITECTURE.md) § SlotWrapper |
+| `Cancelable` | [Slots](SLOTS.md) § `@Cancelable`; host strategy `CancelManager` / `CancelProvider` ([managers/cancel_manager.py](../uitk/managers/cancel_manager.py)) is covered there too |
+| `RuntimeLoader`, `CompiledLoader`, `UiCompiler`, `PrecompileJob` | [Architecture](ARCHITECTURE.md) § UI loading & compilation |
+| `DesignerPlugin`, `DesignerWidget` | [Widgets § Using the widgets in Qt Designer](WIDGETS.md) |
+| `AttributeSpec`, `KindHandler`, `KindFactory` | [Bridge](BRIDGE.md) — the kind-handler registry |
+| `Bootstrap` | [_bootstrap.py](../uitk/_bootstrap.py) — pre-`QApplication` setup for standalone processes; `Bootstrap.configure_high_dpi() -> bool` is the whole surface |
+| `EmbeddedMenuWidget`, `PersistentMenu` | [widgets/embeddedMenu.py](../uitk/widgets/embeddedMenu.py) — host a live `QMenu` as ordinary widget content, sized exactly to it (`content_size`, `fit_to_window`; `PersistentMenu` ignores hide attempts) |
+| `IconManager` | Theme-aware SVG icon loader — `get(name, size, color)`, `set_icon`, `register_icon_dir`, `set_default_color`; usage notes in [Widgets](WIDGETS.md) |
+| `ValueManager` | Static get/set for most Qt widget values, routed by type or signal name ([managers/value_manager.py](../uitk/managers/value_manager.py)); `StateManager.apply` builds on it |
+| `OptionalPackageManager` | Probe for / offer to install an optional package importable in this session — `available(spec)`, `ensure(spec, feature=...)` ([managers/optional_package_manager.py](../uitk/managers/optional_package_manager.py)); bridge panels expose it via `ensure_optional_package` ([Bridge](BRIDGE.md)) |
+| `RecentValuesStore` | Widget-free most-recent-first value history — `record`, `values`, `subscribe`, `prune_invalid` ([managers/recent_values_store.py](../uitk/managers/recent_values_store.py)); backs the `RecentValuesOption` in [Widgets](WIDGETS.md) |
+| `FileManager`, `FileContainer` | Deprecated aliases — see the `FileRegistry` / `RegistryManager` section above |
 
 ---
 

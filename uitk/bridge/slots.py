@@ -26,8 +26,8 @@ Per-bridge slot subclasses contribute only DCC-specific bits:
 * The :meth:`b000` action that wires DCC selection + bridge handoff.
 
 Custom widget kinds (e.g. an HSV picker) plug in via the shared
-:func:`uitk.bridge.spec.register_kind`; new bridges inherit every kind
-the registry knows about.
+:meth:`uitk.bridge.spec.KindFactory.register_kind`; new bridges inherit
+every kind the registry knows about.
 """
 
 from __future__ import annotations
@@ -718,7 +718,7 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         """Inject a 'Parameters' group between the Output Dir row and Send.
 
         Builds one row widget per registered :class:`AttributeSpec` via
-        :func:`uitk.bridge.spec.make_widget` -- the shared registry powers
+        :meth:`uitk.bridge.spec.KindFactory.make_widget` -- the shared registry powers
         every kind including custom ones the bridge registered. A spec with
         ``inline`` set is appended to the PREVIOUS row instead of claiming one
         of its own (see :meth:`_build_inline_cell`).

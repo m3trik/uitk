@@ -28,9 +28,10 @@ Example:
 
     Using MouseTracking for hover effects::
 
+        # MouseTracking has no Qt signals — it delivers synthetic
+        # Enter/Leave/Move events to the child widgets under the cursor,
+        # so the widgets' own event handlers (enterEvent/leaveEvent) fire.
         tracker = MouseTracking(parent_widget)
-        tracker.enter.connect(lambda w: w.setStyleSheet("background: blue"))
-        tracker.leave.connect(lambda w: w.setStyleSheet(""))
 """
 # PEP 604 unions (``str | int``) appear in this module's signature
 # annotations. Without this import they are evaluated at def-time and raise

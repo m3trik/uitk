@@ -11,7 +11,7 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
 1. **Convention over configuration.** Names carry meaning. UI filenames map to slot classes; `objectName`s map to methods; `#`-tags map to UI hierarchy. Every convention is overridable.
 2. **Composition over inheritance.** Widgets gain capabilities through narrow mixins (`MenuMixin`, `OptionBoxMixin`, `AttributesMixin`, `RichText`), not deep class trees. The Switchboard itself is split into private partials co-located in [uitk/switchboard/](../uitk/switchboard/) and glued together by `Switchboard` in `_core.py`.
 3. **Lazy everything.** Widgets register on first access. UIs load on first attribute access (`sb.loaded_ui.editor`). Menus and option boxes create themselves only when touched. Slot signatures are introspected once, then cached.
-4. **Dependency injection, not global state.** Slot classes receive the `Switchboard` via constructor kwargs. Handlers are registered with the Switchboard. No singletons in the hot paths (`MarkingMenu` uses `SingletonMixin` only because there's one radial menu per host at a time).
+4. **Dependency injection, not global state.** Slot classes receive the `Switchboard` via constructor kwargs. Handlers are registered with the Switchboard. No singletons in the hot paths (`SingletonMixin` appears only where one-per-host *is* the semantics: `MarkingMenu`, and `BaseHandler` for handler instances).
 5. **Extend via registries and handlers.** New widgets, slots, icons, and UIs get added to typed registries. New behaviors (window positioning, styling, DCC integration) get added as handlers on `sb.handlers.*`.
 
 ---
@@ -21,7 +21,7 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
 ```
                      ┌─────────────────────────────────────┐
                      │           Switchboard                │
-                     │ (loader delegate + 7 partials +      │
+                     │ (loader delegate + 8 partials +      │
                      │  RegistryManager)                    │
                      └─────────────────────────────────────┘
                                        │
@@ -34,7 +34,7 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
     widget_registry             icons                               .<custom>
     icon_registry
           │
-          │ MainWindow(QMainWindow + AttributesMixin + LoggingMixin)
+          │ MainWindow(QMainWindow + AttributesMixin + TooltipMixin + LoggingMixin)
           ▼
     ┌──────────────────────────────────────────────────────┐
     │ tags · state · settings · style · widgets set · slots │
@@ -68,12 +68,13 @@ class Switchboard(
     SwitchboardNameMixin,          # tag/base name parsing, legal-name conversion
     SwitchboardEditorsMixin,       # sb.editors registry (style/hotkey/browser)
     SwitchboardStyleMixin,         # sb.style — lazy StyleSheet accessor
+    SwitchboardNamespaceMixin,     # last: __getattr__ fallback to uitk symbols
 ): ...
 ```
 
 Each partial lives in `uitk/switchboard/<name>.py` (e.g. `slots.py`,
 `shortcuts.py`, `widgets.py`, `utils.py`, `names.py`, `editors.py`,
-`style.py`). These are implementation pieces, not standalone mixins —
+`style.py`, `namespace.py`). These are implementation pieces, not standalone mixins —
 the `switchboard` subpackage is the encapsulation boundary, not the
 individual partials.
 
@@ -136,11 +137,12 @@ Handler class attribute `DEFAULTS = {...}` is merged into `sb.configurable.<hand
 
 ## 4. Package bootstrap — lazy symbol exposure
 
-`uitk/__init__.py` uses `pythontk.bootstrap_package` to expose ~50 public symbols via a module-level `__getattr__`. The `DEFAULT_INCLUDE` dict maps symbol names to `module.path : ClassName`:
+`uitk/__init__.py` uses `pythontk.bootstrap_package` to expose ~110 public symbols via a module-level `__getattr__`. The `DEFAULT_INCLUDE` dict maps `module.path` to symbol name(s):
 
 ```python
 DEFAULT_INCLUDE = {
-    "switchboard": ["Switchboard", "Signals", "SlotWrapper", "Shortcut"],
+    "switchboard._core": "Switchboard",
+    "switchboard.slots": ["Signals", "SlotWrapper", "Cancelable"],
     "widgets.pushButton": "PushButton",
     ...
 }
@@ -158,14 +160,14 @@ This matters because UITK is used inside DCCs (Maya, Blender) where import-time 
 
 ### Responsibilities
 
-- Store **tags**, **path**, **settings branch** (`SettingsManager(org="uitk", app=<name>)`).
+- Store **tags**, **path**, **settings branch** — `Switchboard.add_ui` passes `sb.settings.branch("<name><host-suffix>")`, host-namespaced (`mirror` → `mirror_maya`) so DCC hosts sharing the QSettings backend don't collide; a directly-constructed `MainWindow` defaults to its own `SettingsManager(app=<name>)`.
 - Hold the **StateManager** for widget persistence.
 - Hold the **StyleSheet** manager for theming.
 - Track registered widgets in `self.widgets` (set).
 - Emit **lifecycle signals**: `on_show`, `on_first_show`, `on_hide`, `on_close`, `on_focus_in/out`, `on_child_registered(widget)`, `on_child_changed(widget, value)`, `on_pinned_changed(bool)`.
-- Auto-create a **footer** with size grip (unless `add_footer=False` or one exists in the `.ui`).
+- Adopt a **footer**: an embedded child named `"footer"` is always adopted; otherwise one with a size grip is constructed only when `add_footer=True` (default `False`).
 - Debounced **geometry save** (500ms timer) on resize/move.
-- **Pin state** via `_pinned` + `request_hide()` — pinned windows refuse `request_hide`.
+- **Pin state** via `_pinned` + `request_hide()` — pinned windows, and windows whose header has no pin button, refuse `request_hide`.
 
 ### Child widget registration
 
@@ -192,12 +194,14 @@ def eventFilter(self, watched, event):
 | `widget.derived_type` | Nearest `QtWidgets` base class |
 | `widget.default_signals()` | Default signal name for this type |
 | `widget.get_slot()` | Connected slot method or None |
-| `widget.init_slot(*a, **kw)` | Manually invoke `*_init` |
+| `widget.init_slot()` | Manually invoke `*_init` (args ignored) |
 | `widget.call_slot(*a, **kw)` | Manually invoke the handler |
 | `widget.connect_slot(s=None)` | Connect widget signal → slot |
 | `widget.is_initialized` | Flag for first-show setup |
 | `widget.refresh_on_show` | Re-run `*_init` on each show |
 | `widget.restore_state` | Opt out of state persistence |
+
+(plus `perform_restore_state()`, `register_children()`, and a `tooltip` rich-text proxy).
 
 The widget is then added to `self.widgets`, `on_child_registered` is emitted, and `widget.init_slot()` is called (which runs the slot class's `<name>_init` method if one exists).
 
@@ -208,7 +212,10 @@ The widget is then added to `self.widgets`, `on_child_registered` is emitted, an
 2. CollapsableGroup._enforce_state(suppress_resize=True)  # settle groups
 3. restore_window_geometry()                              # restore size/pos
 4. register_children()                                    # catch widgets not caught by ChildPolished
-5. fit_height_to_content()                                # trim vertical dead space; keeps restored width+pos (skipped if fit_to_content_on_show=False)
+5. fit_height_to_content()                                # trim vertical dead space — ONLY when step 3 restored
+                                                          # nothing and fit_to_content_on_show=True; a restored
+                                                          # geometry instead gets a min/max re-sync so stale dead
+                                                          # space snaps off while a hand-expanded height survives
 6. _ensure_on_screen()                                    # clamp to monitor (after fit, so it sees the final height)
 7. trigger_deferred()                                     # run deferred setup
 8. on_first_show signal                                   # slot classes can hook here
@@ -216,11 +223,11 @@ The widget is then added to `self.widgets`, `on_child_registered` is emitted, an
 10. is_initialized = True
 ```
 
-Subsequent shows skip steps 2-6.
+Subsequent shows skip steps 2-6 and 8.
 
 ### Cross-UI state sync
 
-When a widget's default signal fires, `MainWindow._add_child_changed_signal` forwards the value to `on_child_changed(widget, value)`, which calls `sync_widget_values` → iterates `get_ui_relatives(widget.ui, upstream=True, downstream=True)`, saves + applies the value to same-named widgets in related UIs.
+When a widget's default signal fires, `MainWindow._add_child_changed_signal` forwards the value to `on_child_changed(widget, value)`, which calls `sync_widget_values` → iterates `get_ui_relatives(upstream=True, downstream=True)` and writes the value into **every** related surface's settings store — loaded or not (unloaded siblings get a cached `StateManager` on the same host-namespaced branch a load would use). Same-named widgets in live relatives are also updated visually with their own saves suppressed, so the mirror can't ping-pong; finally the current widget's own state is saved.
 
 ---
 
@@ -231,21 +238,21 @@ Implementation: [switchboard/slots.py](../uitk/switchboard/slots.py).
 ### Resolution
 
 1. Widget registers on `MainWindow`.
-2. `init_slot(widget)` runs → looks up `slots.<objectName>_init` → calls it if found.
+2. `init_slot(widget)` runs → looks up `slots.<objectName>_init` → calls it if found. (If the slots instance doesn't exist yet, the widget is parked on a placeholder and both phases below run in a deferred batch once it does.)
 3. `connect_slot(widget)` runs:
    - Find `slots.<objectName>` method.
    - Determine signals: from `@Signals` decorator (wrapper attribute), or `widget.default_signals()`.
-   - Wrap the slot in `SlotWrapper(slot, widget, sb)`.
-   - Connect each signal to the wrapper.
+   - Connect each signal to its own `SlotWrapper(slot, widget, sb)`.
+4. State init: capture the widget's default value, then restore its persisted state (§7). The immediate path runs steps 2–4 with the widget's signals blocked; the deferred batch instead suppresses state saves across both phases — either way an init-time value change can't overwrite the stored state.
 
 ### SlotWrapper
 
 The wrapper handles four concerns:
 
-1. **Parameter injection.** Caches `inspect.signature(slot)` per slot function, checks if `widget` is in the param names. If yes and caller didn't pass it, injects `widget=self.widget`.
+1. **Parameter injection.** Caches `inspect.signature(slot)` per slot function, checks if `widget` is in the param names. If yes and caller didn't pass it, injects `widget=self.widget`; kwargs not in the signature are dropped.
 2. **Debounce.** If `widget.debounce > 0`, stores args in `_debounce_args`, starts/restarts a single-shot `QTimer`, defers `_invoke` until the timer fires.
 3. **Cancellation (opt-in).** When the slot is decorated `@Cancelable(timeout=N)`, or the widget/UI set `slot_timeout` / `default_slot_timeout`, `_invoke_cancelable` runs the call inside an *activated* `ptk.CancelScope` (so `sb.progress` and `ptk.CancelScope.check()` reach it without being passed anything), brackets it in the host's transaction via the registered `CancelProvider`, and wraps it in `ptk.ExecutionMonitor.execution_monitor(..., cancel_scope=scope)` for the warning dialog and spinner. Cancel requests — dialog button, host Esc peek, key-hold probe — only *flag the scope*; the slot stops at its next checkpoint. Nothing injects an exception into the main thread (that lands at an arbitrary bytecode boundary and can't be revoked); the async-interrupt path survives only behind the dialog's explicit *Force Stop*. Undecorated slots skip all of this — no per-call thread spawn.
-   Plus, regardless of the above: every slot dispatch sets `Qt.WaitCursor` as the application override cursor for the slot's duration, restored in `finally`. The cursor is OS-driven so it animates even when DCC commands hold the Qt event loop.
+   Plus, regardless of the above: every slot dispatch sets `Qt.WaitCursor` as the application override cursor for the slot's duration, restored in `finally` (opt-out via `no_busy_indicator` on the widget or UI; auto-suspended while a native modal dialog blocks the app). The cursor is OS-driven so it animates even when DCC commands hold the Qt event loop.
 4. **History.** Pushes slot onto `sb.slot_history` before execution.
 
 ### `@Signals` — the decorator
@@ -264,7 +271,7 @@ class Signals:
 
 The wrapper annotation (`wrapper.signals`) is the override signal. `Signals()` with no args still attaches an empty tuple — used to mean "don't auto-connect".
 
-`@Signals.blockSignals` is a separate classmethod decorator that wraps in `self.blockSignals(True)` / `False` during execution.
+`@Signals.blockSignals` is a separate classmethod decorator that calls `self.blockSignals(True)` around execution and restores the *prior* block state on exit (not an unconditional unblock).
 
 ---
 
@@ -281,7 +288,7 @@ Layered — each layer speaks to one concern.
          ▼
     StateManager                 save / load / apply / capture_default
          │ (per-widget state key: "<objectName>/<signal_name>")
-         │ (protections: no None to text widgets, only primitives serialized)
+         │ (protections: no None to text widgets, primitives + JSON containers only)
          ▼
     SettingsManager              QSettings-backed key/value store
          │ (SettingItem proxies: .get(), .set(), .changed.connect())
@@ -290,12 +297,12 @@ Layered — each layer speaks to one concern.
     QSettings                    Platform-native persistent storage
 ```
 
-`MainWindow.state = StateManager(self.settings)`. `ui.settings = sb.settings.branch(name)` — each UI gets its own namespace, keyed by `objectName`.
+`MainWindow.state = StateManager(self.settings)`. `ui.settings = sb.settings.branch("<name><host-suffix>")` — each UI gets its own host-namespaced settings branch (see §5), keyed by `objectName`.
 
 Protections in `StateManager`:
 - Skips applying `None` to text widgets (would clear valid text).
-- Serializes only `int`, `float`, `str`, `bool` — objects are ignored.
-- Handles non-stateful signals (e.g. `clicked`) by not writing state.
+- Serializes primitives (`int`, `float`, `str`, `bool`) directly and containers (`list`/`dict`/`tuple`) as JSON; Qt enums are coerced to their int value; anything else is dropped.
+- Handles non-stateful signals (e.g. `clicked`) by not writing state, and skips the transient `-1` "no selection" index a repopulating combo box reports.
 
 ---
 
@@ -361,11 +368,13 @@ themes = {
 }
 ```
 
+Three themes ship built in: `dark`, `light`, and `high-contrast` (opaque, WCAG-minded).
+
 `ui.style.set(theme=..., style_class=...)` substitutes `{TOKEN}` placeholders in the theme's QSS template (`themes/style.qss`) and applies it to the window. Emits `theme_changed(widget, name, vars)` for downstream consumers (icon recoloring, custom overlays).
 
-Action colors on `LineEdit`, `TableWidget`, `TreeWidget` read directly from the palette — `ACTION_VALID_FG/BG`, `ACTION_INVALID_FG/BG`, `ACTION_WARNING_FG/BG`, `ACTION_INFO_FG/BG`, `ACTION_INACTIVE_FG`.
+Validation feedback on `LineEdit` is palette-driven: the widget stamps an `actionState` dynamic property, and `style.qss` property selectors map each state to the `ACTION_VALID_FG/BG`, `ACTION_INVALID_FG/BG`, `ACTION_WARNING_FG/BG`, `ACTION_INFO_FG/BG`, `ACTION_INACTIVE_FG` tokens.
 
-Monochrome SVG icons are auto-colored by the `IconManager` mixin, reading `ICON_COLOR` from the active palette.
+Monochrome SVG icons are auto-colored by the `IconManager` service — `StyleSheet.set` pushes the resolved `ICON_COLOR` into it on every apply.
 
 ---
 
@@ -515,7 +524,9 @@ uitk/
 │   ├── icon_manager.py        # theme-aware icon coloring
 │   ├── preset_manager.py      # named preset save/load
 │   ├── shortcut_manager.py    # GlobalShortcut, ShortcutManager, ShortcutMixin
-│   └── recent_values_store.py # per-widget recent-value history
+│   ├── recent_values_store.py # per-widget recent-value history
+│   ├── cancel_manager.py      # CancelManager, CancelProvider (slot cancellation)
+│   └── optional_package_manager.py # in-session provisioning of optional packages
 │
 ├── themes/
 │   ├── style_sheet.py         # StyleSheet engine (themes + QSS template)
@@ -530,7 +541,9 @@ uitk/
 │   ├── names.py               # tag/base name parsing, legal-name conversion
 │   ├── shortcuts.py           # keyboard shortcut registration
 │   ├── editors.py             # sb.editors registry
-│   └── style.py               # sb.style — lazy StyleSheet accessor
+│   ├── style.py               # sb.style — lazy StyleSheet accessor
+│   ├── namespace.py           # __getattr__ fallback: sb.<AnyPublicUitkSymbol>
+│   └── history.py             # History — capped weak/strong UI + slot history
 │
 ├── loaders/                   # RuntimeLoader (default, QUiLoader), CompiledLoader (compiled _ui.py)
 │

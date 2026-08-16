@@ -233,7 +233,7 @@ class UiHandler(BaseHandler):
 
         # Resolve position: explicit arg > config default > None (let Qt decide)
         if pos is None:
-            pos = self.config.get("default_position", None)
+            pos = self.config.value("default_position", None)
 
         if force or not ui.isVisible():
             ui.show()

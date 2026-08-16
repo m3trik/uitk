@@ -1,5 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
+from __future__ import annotations
+
 from typing import Any, Callable, Mapping, Optional
 
 from qtpy import QtWidgets, QtCore, QtGui

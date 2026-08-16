@@ -55,8 +55,8 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
 
         target_checked = self.isChecked()
 
-        if self.restore_state and self.objectName():
-            key = f"CollapsableGroup/{self.objectName()}/checked"
+        key = self._settings_key() if self.restore_state else None
+        if key:
             val = self.settings.value(key)
             if val is not None:
                 target_checked = val
@@ -94,11 +94,33 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         """Return the height to use when collapsed (title bar only)."""
         return self.fontMetrics().height()
 
+    def _settings_key(self):
+        """Return the persistence key for the collapsed state, or None.
+
+        Scoped by the hosting window's objectName: group names repeat across
+        forms by convention (every bridge panel has an ``output_grp``), and an
+        unscoped key would share one collapse state across all of them. A
+        nameless or absent host falls back to the unscoped legacy key.
+        """
+        if not self.objectName():
+            return None
+        window = self.window()
+        scope = window.objectName() if window is not None and window is not self else ""
+        if scope:
+            return f"CollapsableGroup/{scope}/{self.objectName()}/checked"
+        return f"CollapsableGroup/{self.objectName()}/checked"
+
     def toggle_expand(self, checked):
         """Toggle the expanded/collapsed state"""
-        # Save state
-        if self.restore_state and self.objectName():
-            key = f"CollapsableGroup/{self.objectName()}/checked"
+        # Save state. Only once `_enforce_state` has run: the key is scoped by
+        # the hosting window, and a toggle that arrives BEFORE the group is
+        # parented into it (a `.ui` authoring `checked=false`, or app code
+        # calling setChecked during construction) would resolve a different
+        # scope than the restore later reads -- writing a value nothing ever
+        # reads back. Pre-enforcement toggles are load-time state, not a user
+        # choice, and enforcement re-applies the stored value anyway.
+        key = self._settings_key() if self.restore_state else None
+        if key and self._state_enforced:
             self.settings.setValue(key, checked)
 
         # Capture the actual heights BEFORE making changes

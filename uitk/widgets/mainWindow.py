@@ -694,9 +694,12 @@ class MainWindow(
             return
 
         name = widget.objectName()
-        signal = widget.default_signals()
-        # No default signal → no state key to write (save() would no-op too).
-        if not signal:
+        # Same gate + key construction as the widget's own save:
+        # restore_state=False or no default signal → no state key → no
+        # writes here either (sibling stores, live mirrors) — an opted-out
+        # widget doesn't participate in the persistence/sync machinery.
+        key = self.state._get_state_key(widget)
+        if not key:
             return
 
         # A stable-identity combo's change signal delivers an INDEX, but its
@@ -709,7 +712,6 @@ class MainWindow(
             if value is None or value == "":
                 return  # no current selection → don't clobber the stored identity
 
-        key = f"{name}/{signal}"
         # get_ui_relatives already excludes self.
         for relative_name in self.sb.get_ui_relatives(
             self.objectName(), upstream=True, downstream=True

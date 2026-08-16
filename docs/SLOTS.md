@@ -11,9 +11,10 @@ The contract between a Qt Designer `.ui` file and a Python class. Most of UITK r
 Given `editor.ui`, the Switchboard looks for a slot class in this order:
 
 1. Class name match: `EditorSlots`, then `Editor` (CamelCase-from-snake_case + `Slots` suffix).
-2. Filename match: `editor_slots.py`, `editorSlots.py`, `editor.py`, `_editor.py` — first class found in the file is used.
+2. Filename match: `editorSlots.py`, `editor_slots.py`, `editor.py`, `_editor.py` — first class found in the file is used.
+3. Sole-class fallback: when neither matches and exactly one slot class is registered (e.g. an explicit `slot_source=SomeSlots`), that class is bound regardless of name.
 
-Convention implemented in [switchboard/names.py](../uitk/switchboard/names.py) (`get_slot_class_names`, `get_slot_file_names`).
+Name candidates come from [switchboard/names.py](../uitk/switchboard/names.py) (`get_slot_class_names`, `get_slot_file_names`); the lookup order is `_find_slots_class` in [switchboard/slots.py](../uitk/switchboard/slots.py).
 
 ```python
 # editor.ui  →  EditorSlots class
@@ -33,7 +34,7 @@ Widget `objectName` in Designer maps to two methods in the slot class:
 
 | Method | When called | Signature |
 |:---|:---|:---|
-| `btn_save_init(self, widget)` | Once, when the widget registers on first `show()` | `widget` positional |
+| `btn_save_init(self, widget)` | Once, when the widget registers (first `show()`, or first `self.ui.<name>` access) | `widget` positional |
 | `btn_save(self, ...)` | Every time the widget's default signal fires | Varies — see §4 |
 
 Init methods run before the widget's state is restored. Use them to build menus, set defaults, add children.
@@ -47,7 +48,7 @@ def btn_save_init(self, widget):
 
 ### Widget objectName with illegal characters
 
-`menu#file.ui` has `objectName` `menu#file` (the `#` is an illegal attribute character). UITK stores it under a legal alias — `menu_file` — via `convert_to_legal_name` in [switchboard/names.py](../uitk/switchboard/names.py). The raw name is preserved on `widget.base_name()`.
+`menu#file.ui` has `objectName` `menu#file` (the `#` is an illegal attribute character). UITK resolves it through a legal alias — `sb.loaded_ui.menu_file` — matched back to the raw filename by `find_ui_filename`, the inverse of `convert_to_legal_name` (both in [switchboard/names.py](../uitk/switchboard/names.py)). The raw name stays on `objectName()`; `legal_name()` returns the alias, and `base_name()` returns the pre-tag base (`menu`).
 
 ---
 
@@ -140,7 +141,7 @@ def update_spinbox(self):
     self.ui.spn_value.setValue(20)   # Also won't fire
 ```
 
-Wraps the call in `self.blockSignals(True)` / `self.blockSignals(False)`.
+Blocks with `self.blockSignals(True)` for the call, then restores the *prior* block state on exit — so a decorated method called from a caller that already blocked signals doesn't silently re-enable them.
 
 ---
 
@@ -182,7 +183,7 @@ class MyTool(SlotsBase):
         widget.slot_timeout = 60.0
 ```
 
-Fallback: `ui.default_slot_timeout` applies to slots without either of the above. Not auto-set by the marking menu anymore — opt-in only.
+Fallback: `ui.default_slot_timeout` applies to slots without either of the above — only honoured when a UI explicitly sets it (the marking menu does not).
 
 **Cancellation is cooperative — the slot must have checkpoints.** Requesting a cancel sets a flag; the slot stops when it next reaches a checkpoint. Two ways to have one, both feeding the same scope:
 
@@ -283,8 +284,8 @@ history = self.sb.slot_history()  # full list, most recent last
 
 ## 9. What UITK does *not* do for slots
 
-- **No validation.** If your slot raises, UITK logs and moves on; the widget stays connected. Add your own `try/except` + user feedback (`sb.message_box`) for risky operations.
-- **No automatic thread offload.** Long-running slots block the UI thread unless you wrap them yourself. Combine `widget.slot_timeout` with `QThread` / `QtConcurrent.run` for background work, and surface progress via `sb.progress(...)` (routes to the active UI's `Footer.progress`).
+- **No validation.** The dispatcher puts no `try/except` around your slot: an exception propagates through Qt's signal dispatch (traceback on the console; the app keeps running) and the widget stays connected. Add your own `try/except` + user feedback (`sb.message_box`) for risky operations. (`*_init` methods are the exception — errors there are caught and logged so one widget can't abort the panel open.)
+- **No automatic thread offload.** Long-running slots block the UI thread unless you wrap them yourself (`QThread` / `QtConcurrent.run`); `@Cancelable` adds cancellation and a warning dialog, not offload. Surface progress via `sb.progress(...)` (routes to the active UI's `Footer.progress`).
 - **No input-argument coercion.** Signal args are passed through as Qt delivers them. A `QSpinBox.valueChanged(int)` slot gets an `int`; a `QTreeWidget.itemClicked(item, column)` slot gets both.
 
 ---

@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-13_
+_Generated: 2026-08-15_
 
 ## Index
 
@@ -278,12 +278,12 @@ Publish uitk widgets to Qt Designer's widget box.
 
 Event handling utilities for Qt applications.
 
-- **[`class EventFactoryFilter(QtCore.QObject)`](uitk/uitk/events.py#L47)** — Efficient dynamic event filter with lazy handler resolution and scoped widget control.
+- **[`class EventFactoryFilter(QtCore.QObject)`](uitk/uitk/events.py#L48)** — Efficient dynamic event filter with lazy handler resolution and scoped widget control.
   - `EventFactoryFilter.install(self, widgets: QtCore.QObject | Iterable[QtCore.QObject])` — Install this event filter on one or more widgets.
   - `EventFactoryFilter.uninstall(self, widgets: QtCore.QObject | Iterable[QtCore.QObject])` — Uninstall this event filter from one or more widgets.
   - `EventFactoryFilter.is_installed(self, widget: QtCore.QObject) -> bool` — Return whether a widget is being tracked (only valid if propagate_to_children=False).
   - `EventFactoryFilter.eventFilter(self, widget: QtCore.QObject, event: QtCore.QEvent) -> bool` — Event filter method that processes events and calls the appropriate handler.
-- **[`class MouseTracking(QtCore.QObject, ptk.LoggingMixin)`](uitk/uitk/events.py#L166)** — MouseTracking is a QObject subclass that provides mouse enter and leave events for QWidget child wi…
+- **[`class MouseTracking(QtCore.QObject, ptk.LoggingMixin)`](uitk/uitk/events.py#L167)** — MouseTracking is a QObject subclass that provides mouse enter and leave events for QWidget child wi…
   - `MouseTracking.should_capture_mouse(self, widget)` — Checks if a widget should capture the mouse.
   - `MouseTracking.register_external_widgets(self, widgets)` — Register widgets that should receive synthesized Enter/Leave events
   - `MouseTracking.update_child_widgets(self)` — Updates the set of child widgets of the parent.
@@ -296,7 +296,7 @@ Event handling utilities for Qt applications.
 
 UITK Example — a polished tour of the framework.
 
-- **[`class ExampleSlots(ptk.LoggingMixin)`](uitk/uitk/examples/example.py#L49)** — Slots for the UITK Example — method names match widget objectNames.
+- **[`class ExampleSlots(ptk.LoggingMixin)`](uitk/uitk/examples/example.py#L51)** — Slots for the UITK Example — method names match widget objectNames.
   - `ExampleSlots.header_init(self, widget)`
   - `ExampleSlots.txt_input_init(self, widget)` — Wire the full option_box plugin stack onto the path field.
   - `ExampleSlots.txt_input(self, text=None)` — Default signal = textChanged (debounced 300 ms via ``widget.debounce``).
@@ -1118,7 +1118,7 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
 <a id="widgets--footer"></a>
 ### `widgets/footer.py`
 
-- **[`class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin)`](uitk/uitk/widgets/footer.py#L17)** — Footer is a widget that acts as a status bar with an integrated
+- **[`class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin)`](uitk/uitk/widgets/footer.py#L19)** — Footer is a widget that acts as a status bar with an integrated
   - `Footer.container_layout(self) -> QtWidgets.QHBoxLayout` *(property)* — Backward compatibility: return main_layout as container_layout.
   - `Footer.alignment(self) -> QtCore.Qt.Alignment` — Get alignment of the status label (backward compatibility).
   - `Footer.update_font_size(self)` — Public method for updating font size (backward compatibility).
@@ -1147,8 +1147,8 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `Footer.showEvent(self, event)` — Ensure text is properly sized and elided on first show.
   - `Footer.status_controller(self, resolver: Optional[Callable[[], str]] = None, default_text: str | None = '', truncate_kwargs: Optional[Mapping[str, Any]] = None) -> 'FooterStatusController'` — Bind a :class:`FooterStatusController` to this footer and return it.
   - `Footer.attach_to(self, widget: QtWidgets.QWidget) -> None` — Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget.
-- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L751)** — Context manager for footer progress tracking.
-- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L772)** — Helper that keeps a footer in sync with a resolver function.
+- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L753)** — Context manager for footer progress tracking.
+- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L774)** — Helper that keeps a footer in sync with a resolver function.
   - `FooterStatusController.set_resolver(self, resolver: Callable[[], str]) -> None`
   - `FooterStatusController.set_truncation(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None` — Configure truncation behavior for footer updates via StrUtils.truncate kwargs.
   - `FooterStatusController.update(self) -> None`

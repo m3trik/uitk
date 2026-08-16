@@ -1344,6 +1344,9 @@ class SwitchboardUtilsMixin:
         Example:
             files = file_dialog(file_types=["*.png", "*.jpg"], title="Select images", filter_description="Images")
         """
+        if isinstance(file_types, str):
+            file_types = [file_types]
+
         options = QtWidgets.QFileDialog.Options()
         file_types_string = f"{filter_description} ({' '.join(file_types)})"
 

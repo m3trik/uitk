@@ -12,6 +12,8 @@ Patterns extracted from real UITK consumers — primarily [mayatk](https://githu
 
 **Solution**: optional `sb` parameter on the launch function. If present, use the caller's Switchboard via the marking menu handler. If absent, build a private one.
 
+*Maya-only as written* (the slot class imports `maya.cmds`) — the pattern itself is host-agnostic. Verified against the live mayatk source below.
+
 ```python
 # mayatk/node_utils/attributes/channels/__init__.py
 
@@ -107,7 +109,7 @@ class ShotsController:
                 w.setKeyboardTracking(False)     # no mid-edit valueChanged
 ```
 
-`setKeyboardTracking(False)` makes the spinbox only emit `valueChanged` on commit (Enter / focus loss / arrow click), not on every keystroke. Without it, clearing "100" to retype "200" emits `valueChanged(0)` mid-edit. See [mayatk shots_slots.py:63-73](https://github.com/m3trik/mayatk/blob/main/mayatk/anim_utils/shots/shots_slots.py#L63-L73) for the real scenario this guards against.
+`setKeyboardTracking(False)` makes the spinbox only emit `valueChanged` on commit (Enter / focus loss / arrow click), not on every keystroke. Without it, clearing "100" to retype "200" emits `valueChanged(0)` mid-edit. See the `ShotsSlots.__init__` keyboard-tracking block in [mayatk shots_slots.py](https://github.com/m3trik/mayatk/blob/main/mayatk/anim_utils/shots/shots_slots.py) for the real scenario this guards against.
 
 ---
 
@@ -129,6 +131,8 @@ The only requirements:
 **Problem**: a workspace browser list should reflect the current working folder, not a snapshot from app launch.
 
 **Solution**: `widget.refresh_on_show = True` in `*_init` — re-runs the init on every show.
+
+*Maya-flavored example* — swap `mtk.get_env_info(...)` for any environment probe; the `refresh_on_show` mechanism itself is host-agnostic.
 
 ```python
 def list000_init(self, widget):
@@ -207,10 +211,11 @@ Implementation in [SlotWrapper._invoke_cancelable](../uitk/switchboard/slots.py)
 
 ```python
 def btn_options_init(self, widget):
-    widget.menu.add_presets = True                   # default dir (auto)
-    # or:
-    widget.menu.add_presets = "~/.myapp/presets"     # custom dir
+    widget.menu.add_presets = True                        # default dir (auto)
+    widget.menu.presets.preset_dir = "~/.myapp/presets"   # optional custom dir
 ```
+
+`add_presets` is a bool; the directory is set separately via the menu's `PresetManager` (`widget.menu.presets`). The combo itself is created lazily on the menu's first show.
 
 ### Programmatic
 
@@ -231,7 +236,7 @@ mgr.load("my_preset")
 ```python
 ui.presets.save("default")
 ui.presets.load("default")
-ui.presets.list_presets()
+ui.presets.list()
 ```
 
 Files are flat JSON — human-editable.
@@ -245,7 +250,7 @@ Files are flat JSON — human-editable.
 **Solution**: subclass `UiHandler`, register it at construction.
 
 ```python
-from uitk.handlers.ui_handler import UiHandler
+from uitk import UiHandler
 
 class MayaUiHandler(UiHandler):
     DEFAULT_STYLE = {
@@ -269,7 +274,7 @@ sb = Switchboard(
 )
 ```
 
-Access from slots: `self.sb.handlers.ui.show(...)`. Persistent config lives at `sb.configurable.ui.*`.
+Access from slots: `self.sb.handlers.ui.show(...)`. Persistent config lives on the handler's `config` property (`sb.handlers.ui.config`, a `sb.configurable.branch("ui")` namespace).
 
 ---
 
@@ -340,15 +345,18 @@ def tree_nodes_init(self, widget):
     widget.menu.btn_rename.clicked.connect(self._rename_selected)
     widget.menu.btn_delete.clicked.connect(self._delete_selected)
 
-    # Show/hide items based on selection before opening:
-    widget.menu.on_item_added.connect(self._sync_menu_state)
+    # Keep item state in step with the selection, so the menu is
+    # already correct whenever it opens:
+    widget.itemSelectionChanged.connect(self._sync_menu_state)
 
-def _sync_menu_state(self, _):
+def _sync_menu_state(self):
     item = self.ui.tree_nodes.currentItem()
     self.ui.tree_nodes.menu.btn_delete.setEnabled(
         item is not None and item.parent() is not None   # can't delete root
     )
 ```
+
+(`menu.on_item_added` exists, but it fires when an item is *added* to the menu — it is not a before-open hook.)
 
 ---
 
@@ -383,7 +391,7 @@ The handler writes HTML with palette colors matching the active theme.
 
 **Problem**: a setting that multiple UIs read, and all UIs should update when it changes.
 
-**Solution**: `sb.configurable` namespaces with `.changed.connect()`.
+**Solution**: `sb.configurable` key proxies with `.changed.connect()`.
 
 ```python
 class EditorSlots:
@@ -391,21 +399,25 @@ class EditorSlots:
         self.sb = kwargs["switchboard"]
         self.ui = self.sb.loaded_ui.editor
 
-        # React to theme changes globally
-        self.sb.configurable.app.theme.changed.connect(self._on_theme_changed)
+        # React to theme changes
+        self.sb.configurable.theme.changed.connect(self._on_theme_changed)
 
     def _on_theme_changed(self, theme):
         self.ui.style.set(theme=theme)
 
     def btn_dark_mode(self):
-        self.sb.configurable.app.theme.set("dark")   # fires .changed in every listener
+        self.sb.configurable.theme.set("dark")   # fires .changed in every listener
 ```
 
 Values are persisted to QSettings automatically. No explicit save / load calls.
 
+Attribute access is a *single-level* key proxy — `configurable.theme`, not `configurable.app.theme` (a proxy has no sub-attributes). Namespacing goes through `sb.configurable.branch("app")`, but change callbacks live on the manager instance that registered them: connect and set through the **same** object (`sb.configurable` itself, or one stored branch), not two separate `branch(...)` calls.
+
 ---
 
 ## Marking menu recipes
+
+*DCC-only*: these run inside a host with a main window to hook (the examples use Maya via `mayatk`). Verified against [\_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py) and the tentacle/mayatk consumers.
 
 ### Starting a bare marking menu (Maya)
 
@@ -419,16 +431,15 @@ mm = MarkingMenu(
     slot_source="./slots",
     bindings={"Key_F12": "main#startmenu"},
 )
-mm.show()   # installs the global shortcut and waits
 ```
+
+Passing `parent` installs the activation shortcut at construction — the first `Key_*` in `bindings` becomes the activation key. `mm.show()` would open the default menu immediately; normally you just wait for the key.
 
 ### Adding a standalone launcher button
 
-In the startmenu UI, promote a `QPushButton` with:
-- `objectName`: `i`
-- `accessibleName`: `texture_editor`  (the standalone UI name)
+In the startmenu UI, add a `MenuButton` ([menuButton.py](../uitk/widgets/menuButton.py)) with its `target` property set to the UI name to open (e.g. `texture_editor` for a standalone window, `polygons#submenu` for a radial child). Optional `filterTags` reveals only matching groupboxes of a shared submenu.
 
-Hover → shows submenu if one exists. Click → launches the standalone window and dismisses the marking menu.
+Hover → navigates to a `#submenu` target. Click on a standalone target → launches the window and dismisses the marking menu. (The old convention — `QPushButton` named `i…` with the target smuggled into `accessibleName` — is retired.)
 
 ### Launching a standalone UI from a regular slot
 
@@ -443,12 +454,13 @@ Dismisses the radial overlay, shows the standalone window with `UiHandler` styli
 ### Customizing bindings at runtime
 
 ```python
-# Persisted in sb.configurable.marking_menu_bindings
+# Persisted to a host-namespaced sb.configurable key
+# ("marking_menu_bindings" + host suffix — see MARKING_MENU.md)
 mm.bindings = {
     "Key_F11":                "mytools#startmenu",
     "Key_F11|LeftButton":     "render#startmenu",
 }
-# MarkingMenu.bindings.setter triggers _build_bindings via the changed signal
+# MarkingMenu.bindings.setter persists + triggers _build_bindings via the changed signal
 ```
 
 ---

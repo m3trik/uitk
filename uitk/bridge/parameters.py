@@ -51,9 +51,10 @@ class Parameters(_ParametersInternal):
         Only the *resolution* is DCC-specific -- each package's bridge-slots
         base turns the chosen value into real objects (``cmds.ls`` vs ``bpy``).
 
-        Returns a FRESH spec per call: ``AttributeSpec`` is a mutable
-        dataclass, and a single shared instance handed to a dozen registries
-        would let one bridge's tweak leak into all the others.
+        Returns a FRESH spec per call: the dataclass is frozen, but its
+        ``choices`` list is not — a single shared instance handed to a dozen
+        registries would let one bridge's in-place choice refill leak into
+        all the others.
         """
         return AttributeSpec(
             key="SCOPE",
@@ -101,9 +102,10 @@ class Parameters(_ParametersInternal):
         which is what lets a material round-trip back out with its maps intact
         instead of being re-guessed from filenames.
 
-        Returns a FRESH spec per call: ``AttributeSpec`` is a mutable dataclass,
-        and a single shared instance handed to several registries would let one
-        bridge's tweak leak into the others.
+        Returns a FRESH spec per call: the dataclass is frozen, but its
+        ``choices`` list is not — a single shared instance handed to several
+        registries would let one bridge's in-place choice refill leak into
+        the others.
         """
         return AttributeSpec(
             key="SHADER_TYPE",
