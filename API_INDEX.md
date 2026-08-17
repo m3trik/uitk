@@ -18,7 +18,7 @@ _Generated: 2026-08-17_
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
 - `class BridgeSlotsBase(_BridgeSlotsInternal)`
-  - methods: params_module, template_dir, make_bridge, optional_packages, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, set_param_enabled, param_supersessions, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, header_init, reveal_folder, open_templates_folder, clear_log
+  - methods: params_module, template_dir, make_bridge, optional_packages, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, set_param_enabled, param_supersessions, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, docs_url, header_init, reveal_folder, open_templates_folder, clear_log
 
 ### `bridge/spec.py` — Attribute spec + kind-handler registry for parameterised forms.
 - `class AttributeSpec`
@@ -609,7 +609,7 @@ _Generated: 2026-08-17_
 
 ### `widgets/textEditLogHandler.py`
 - `class TextEditLogHandler(logging.Handler)`
-  - methods: emit, get_color, available_columns
+  - methods: route_links, open_web_link, emit, get_color, available_columns
 
 ### `widgets/textViewBox.py` — Scrollable rich-text viewer window.
 - `class TextViewBox(WindowPanel)`

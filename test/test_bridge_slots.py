@@ -186,6 +186,81 @@ class TestBridgeLogLinkOpen(BaseTestCase):
         )
 
 
+class TestBridgeDocsLink(BaseTestCase):
+    """``DOCS_URL`` -> one clickable ``"<DOCS_LABEL>: <url>"`` log line at open.
+
+    The header help is a tooltip (no clickable links), so the docs link goes to
+    the log pane -- the same closing line the extapps compositor's intro
+    carries. Opt-in and data-driven like ``HELP_SPEC``: the default is empty
+    and logs nothing; :meth:`docs_url` is the computed-override hook. Routed
+    through ``panel_log`` so a panel whose optional engine is missing (no
+    bridge, no logger redirect) still shows it.
+    """
+
+    def _slots(self, docs_url=None, engine=True):
+        import logging
+        from types import SimpleNamespace
+
+        class _Logger:
+            def __init__(self):
+                self.infos = []
+
+            def info(self, m):
+                self.infos.append(m)
+
+        class _Bridge:
+            logger = _Logger()
+
+        slots = object.__new__(BridgeSlotsBase)
+        slots.LOG_TAG = "docs_test"
+        if docs_url is not None:
+            slots.DOCS_URL = docs_url
+        slots._bridge = _Bridge() if engine else None
+        slots.make_bridge = lambda: None  # only consulted when engine=False
+        slots.ui = SimpleNamespace(txt000=QtWidgets.QTextBrowser())
+        slots.sb = SimpleNamespace(logger=logging.getLogger("uitk_test_docs"))
+        return slots
+
+    def test_default_is_no_link(self):
+        slots = self._slots()
+        slots._show_docs_link()
+        self.assertEqual(slots._bridge.logger.infos, [])
+        self.assertEqual(slots.ui.txt000.toPlainText(), "")
+
+    def test_declared_url_logs_label_and_anchor(self):
+        url = "https://github.com/m3trik/extapps/blob/main/docs/x.md"
+        slots = self._slots(docs_url=url)
+        slots.DOCS_LABEL = "Tuning guide"
+        slots._show_docs_link()
+        self.assertEqual(len(slots._bridge.logger.infos), 1)
+        line = slots._bridge.logger.infos[0]
+        self.assertTrue(line.startswith("Tuning guide: "), line)
+        self.assertIn(f'<a href="{url}">{url}</a>', line)
+
+    def test_docs_url_hook_overrides_the_attr(self):
+        class _Computed(BridgeSlotsBase):
+            DOCS_URL = "https://static.invalid/"
+
+            def docs_url(self):
+                return "https://computed.invalid/page"
+
+        slots = self._slots()
+        slots.__class__ = _Computed
+        slots._show_docs_link()
+        self.assertIn("computed.invalid/page", slots._bridge.logger.infos[0])
+        self.assertNotIn("static.invalid", slots._bridge.logger.infos[0])
+
+    def test_missing_engine_still_shows_the_link(self):
+        """No bridge -> ``panel_log`` appends straight to the pane; the docs
+        are needed most exactly when the engine isn't installed."""
+        url = "https://github.com/m3trik/extapps#readme"
+        slots = self._slots(docs_url=url, engine=False)
+        slots._show_docs_link()
+        app.processEvents()
+        self.assertIn(url, slots.ui.txt000.toPlainText())
+        self.assertIn(f'href="{url}"', slots.ui.txt000.toHtml())
+
+
 class TestRequireOutputDir(BaseTestCase):
     """``require_output_dir`` resolution order, incl. the ``TEMP_OUTPUT_FALLBACK``
     tier that lets an unsaved scene hand off without the user picking a path

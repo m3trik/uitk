@@ -9,6 +9,7 @@ import time
 import logging
 import threading
 import unittest
+from unittest import mock
 from unittest.mock import MagicMock
 
 from conftest import QtBaseTestCase, setup_qt_application
@@ -195,6 +196,65 @@ class TestCrossThreadEmit(QtBaseTestCase):
             self.assertIn("from worker thread", edit.toPlainText())
         finally:
             logger.handlers = []
+
+
+class TestTextEditLogHandlerWebLinks(QtBaseTestCase):
+    """Web anchors in a log pane open in the browser; ``action://`` ones don't.
+
+    ``setOpenExternalLinks(False)`` -- needed so ``action://`` links reach the
+    panel's own ``anchorClicked`` dispatcher instead of the OS -- also silenced
+    ordinary ``http(s)`` anchors, so a docs link logged at startup was dead
+    unless each panel re-opened it by hand (only the extapps compositor did).
+    ``route_links`` now routes just those schemes to ``QDesktopServices``, once
+    per widget, and leaves every other scheme to the panel.
+    """
+
+    def _browser(self):
+        from uitk.widgets.textEditLogHandler import TextEditLogHandler
+
+        browser = self.track_widget(QtWidgets.QTextBrowser())
+        TextEditLogHandler(browser)
+        return browser
+
+    def test_http_anchor_opens_in_the_default_browser(self):
+        from qtpy import QtGui
+
+        browser = self._browser()
+        url = QtCore.QUrl("https://github.com/m3trik/extapps#readme")
+        with mock.patch.object(QtGui.QDesktopServices, "openUrl") as opener:
+            browser.anchorClicked.emit(url)
+        opener.assert_called_once_with(url)
+
+    def test_action_anchor_is_left_to_the_panel_dispatcher(self):
+        from qtpy import QtGui
+
+        browser = self._browser()
+        with mock.patch.object(QtGui.QDesktopServices, "openUrl") as opener:
+            browser.anchorClicked.emit(QtCore.QUrl("action://open?path=C:/x"))
+        opener.assert_not_called()
+
+    def test_rewiring_the_same_widget_opens_the_link_once(self):
+        """A rebuilt handler / an explicit route_links() must not stack a
+        second connection -- that would open two browser tabs per click."""
+        from qtpy import QtGui
+        from uitk.widgets.textEditLogHandler import TextEditLogHandler
+
+        browser = self._browser()
+        TextEditLogHandler(browser)  # a second handler on the same pane
+        TextEditLogHandler.route_links(browser)  # and a direct call
+        with mock.patch.object(QtGui.QDesktopServices, "openUrl") as opener:
+            browser.anchorClicked.emit(QtCore.QUrl("https://example.invalid/d"))
+        self.assertEqual(opener.call_count, 1)
+
+    def test_route_links_disables_navigation_without_a_handler(self):
+        """The direct entry point is enough on its own (a panel whose optional
+        engine is missing appends links by hand, with no handler built)."""
+        from uitk.widgets.textEditLogHandler import TextEditLogHandler
+
+        browser = self.track_widget(QtWidgets.QTextBrowser())
+        TextEditLogHandler.route_links(browser)
+        self.assertFalse(browser.openLinks())
+        self.assertFalse(browser.openExternalLinks())
 
 
 if __name__ == "__main__":

@@ -44,15 +44,10 @@ class TextEditLogHandler(logging.Handler):
         except Exception:  # pragma: no cover - defensive
             pass
 
-        # Ensure custom action:// links fire anchorClicked instead of
-        # being opened in an external browser (QTextBrowser only).
-        # setOpenLinks(False) prevents QTextBrowser from navigating
-        # internally (which would clear the document).
-        # setOpenExternalLinks(False) prevents delegation to QDesktopServices.
-        if hasattr(widget, "setOpenLinks"):
-            widget.setOpenLinks(False)
-        if hasattr(widget, "setOpenExternalLinks"):
-            widget.setOpenExternalLinks(False)
+        # action:// links must fire anchorClicked (for the panel's own
+        # dispatcher) and web links must still reach the browser -- see
+        # route_links() for the three settings that make that so.
+        self.route_links(widget)
 
         # Set palette link colours so <a> tags are readable against the
         # dark background.  Uses the theme's LINK_COLOR when available,
@@ -62,6 +57,62 @@ class TextEditLogHandler(logging.Handler):
         if monospace:
             font = self._get_monospace_font()
             self.widget.setFont(font)
+
+    #: Dynamic-property flag stamped on a widget once :meth:`route_links` has
+    #: wired it, so a handler rebuilt on the same live widget (a re-created
+    #: panel, a second logger redirected to one pane) doesn't stack a second
+    #: ``anchorClicked`` connection -- which would open two browser tabs per
+    #: click.
+    _LINKS_ROUTED_PROP = "uitk_links_routed"
+
+    @classmethod
+    def route_links(cls, widget) -> None:
+        """Make *widget*'s anchors behave like a log pane's (idempotent).
+
+        Three settings, applied once per widget (QTextBrowser only -- a plain
+        QTextEdit has none of them and is left alone):
+
+        * ``setOpenLinks(False)`` -- QTextBrowser must never navigate to a
+          clicked URL: an unresolvable ``action://`` target replaces the
+          document with nothing, wiping the log.
+        * ``setOpenExternalLinks(False)`` -- Qt's own delegation would hand
+          ``action://`` links to the OS (no protocol handler) instead of the
+          panel's ``anchorClicked`` dispatcher.
+        * ``anchorClicked`` -> :meth:`open_web_link` -- the one thing the
+          previous setting also silenced: ordinary ``http(s)`` anchors (a
+          docs link logged at startup, a release page in a warning). Web
+          links open in the default browser; every other scheme is ignored
+          here and left to the panel's own handler, so nothing double-fires.
+
+        Called from the constructor; also safe to call directly for a pane
+        that receives links without a handler attached (a panel whose
+        optional engine is missing appends to its log widget by hand).
+        """
+        if hasattr(widget, "setOpenLinks"):
+            widget.setOpenLinks(False)
+        if hasattr(widget, "setOpenExternalLinks"):
+            widget.setOpenExternalLinks(False)
+        signal = getattr(widget, "anchorClicked", None)
+        if signal is None or widget.property(cls._LINKS_ROUTED_PROP):
+            return
+        signal.connect(cls.open_web_link)
+        widget.setProperty(cls._LINKS_ROUTED_PROP, True)
+
+    @staticmethod
+    def open_web_link(url) -> bool:
+        """Open an ``http``/``https`` :class:`QUrl` in the default browser.
+
+        Returns True when the link was a web link (and was handed to
+        ``QDesktopServices``), False for any other scheme -- ``action://``
+        and friends belong to the panel's own ``anchorClicked`` handler.
+        """
+        try:
+            if url.scheme() in ("http", "https"):
+                QtGui.QDesktopServices.openUrl(url)
+                return True
+        except Exception:  # pragma: no cover - defensive; a click must not raise
+            pass
+        return False
 
     @staticmethod
     def _apply_link_palette(widget):

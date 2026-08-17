@@ -171,7 +171,7 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L101)** — Base class for DCC-bridge slot panels.
+- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L104)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
@@ -202,6 +202,7 @@ Generic DCC-bridge slot base class.
   - `BridgeSlotsBase.refresh_templates(self) -> None` — Re-scan disk and rebuild the template combo + parameter UI.
   - `BridgeSlotsBase.header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]` — Hook: the header-menu items.
   - `BridgeSlotsBase.help_spec(self) -> Optional[Dict[str, Any]]` — Hook: the ``fmt()`` keyword dict for the header help, or ``None``.
+  - `BridgeSlotsBase.docs_url(self) -> str` — Hook: the panel's documentation URL, or ``""`` for no docs link.
   - `BridgeSlotsBase.header_init(self, widget) -> None` — Default header menu: a "Utilities" separator, the declared
   - `BridgeSlotsBase.reveal_folder(self, path) -> bool` — Open *path* in the OS file manager (logs + returns False if missing).
   - `BridgeSlotsBase.open_templates_folder(self) -> None` — Reveal :attr:`template_dir` in the OS file manager.
@@ -2379,6 +2380,8 @@ Reusable action-column management for :class:`TableWidget`.
 ### `widgets/textEditLogHandler.py`
 
 - **[`class TextEditLogHandler(logging.Handler)`](uitk/uitk/widgets/textEditLogHandler.py#L30)** — Custom logging handler for Qt QTextEdit widgets.
+  - `TextEditLogHandler.route_links(cls, widget) -> None` *(class)* — Make *widget*'s anchors behave like a log pane's (idempotent).
+  - `TextEditLogHandler.open_web_link(url) -> bool` *(static)* — Open an ``http``/``https`` :class:`QUrl` in the default browser.
   - `TextEditLogHandler.emit(self, record: logging.LogRecord) -> None`
   - `TextEditLogHandler.get_color(self, level: str) -> str`
   - `TextEditLogHandler.available_columns(self) -> int` — Return the number of monospace columns that fit in the viewport.

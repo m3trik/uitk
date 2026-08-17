@@ -12,6 +12,8 @@ rizom (and any future) DCC bridges:
 * Log-panel redirect with clickable ``action://`` URIs.
 * Optional required "Output Dir" row with browse button + fallback hook.
 * Bridge-level ``STARTUP_INFO`` displayed once on load (opt-in).
+* Panel-level docs link (:attr:`DOCS_URL`) logged once on load as a clickable
+  anchor (opt-in).
 * Per-template description displayed whenever the template combo changes.
 * Header menu (``header_init``): a "Utilities" separator + declared menu items
   + the rich-text help button, driven by the :attr:`HEADER_MENU_ITEMS` /
@@ -45,6 +47,7 @@ from qtpy import QtCore, QtWidgets
 
 from uitk.widgets.pushButton import PushButton
 from uitk.widgets.comboBox import ComboBox
+from uitk.widgets.textEditLogHandler import TextEditLogHandler
 from uitk.widgets.separator import Separator
 from uitk.managers.preset_manager import PresetManager
 
@@ -199,6 +202,14 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     # ``notes``) for the header help button, or ``None`` for no help.
     # Subclasses set this (or override :meth:`help_spec` to compute it).
     HELP_SPEC: Optional[Dict[str, Any]] = None
+
+    # Where the panel's detailed documentation lives (a web URL). When set,
+    # :meth:`_show_docs_link` logs ``"<DOCS_LABEL>: <url>"`` into the log pane
+    # once at startup as a clickable anchor -- the header help is a tooltip,
+    # so it can't carry a clickable link; the log pane can. Empty = no line.
+    # Subclasses set these (or override :meth:`docs_url` to compute the URL).
+    DOCS_URL: str = ""
+    DOCS_LABEL: str = "Detailed docs"
 
     # ------------------ Supersessions ---------------------------------
     # ``(trigger key, governed keys, reason)`` triples: while *trigger* reads
@@ -448,12 +459,19 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
 
         try:
             self._redirect_log_to_panel()
+            # The handler the redirect installs already routes the pane's
+            # links (no internal navigation, web anchors to the browser); do
+            # it explicitly too so a panel whose optional engine is missing
+            # -- no bridge, so no redirect -- still has a link-safe pane for
+            # what ``panel_log`` appends by hand (the docs link, above all).
+            TextEditLogHandler.route_links(self.ui.txt000)
             if hasattr(self.ui.txt000, "anchorClicked"):
                 self.ui.txt000.anchorClicked.connect(self._on_log_link_clicked)
         except Exception as e:  # noqa: BLE001
             print(f"[{self.LOG_TAG}] log panel wiring failed (ignored): {e}")
 
         self._show_startup_info()
+        self._show_docs_link()
 
     @property
     def bridge(self):
@@ -1293,7 +1311,9 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         app (no Maya), which is the common case for the photogrammetry bridges.
         Node-based actions (``select`` / ``reveal``) are delegated to whatever
         handler the active DCC registered (see :func:`register_log_link_handler`),
-        so uitk never imports a DCC package.
+        so uitk never imports a DCC package. Plain ``http(s)`` anchors (the
+        docs link) never reach here -- :meth:`TextEditLogHandler.route_links`
+        opens them in the browser off the same ``anchorClicked`` signal.
         """
         try:
             if url.scheme() == "action" and url.host() == "open":
@@ -1341,6 +1361,21 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             except Exception:  # noqa: BLE001
                 pass
 
+    def _show_docs_link(self) -> None:
+        """Log the panel's documentation link once at startup (opt-in).
+
+        ``"<DOCS_LABEL>: <a href=url>url</a>"`` -- the same closing line the
+        compositor's intro panel carries -- rendered as a clickable anchor
+        that :meth:`TextEditLogHandler.route_links` opens in the browser.
+        Goes through :meth:`panel_log` so it shows even when the optional
+        engine is missing, which is when a user most needs the docs. No-op
+        when :meth:`docs_url` is empty (the default).
+        """
+        url = self.docs_url()
+        if not url:
+            return
+        self.panel_log(f'{self.DOCS_LABEL}: <a href="{url}">{url}</a>')
+
     # ------------------ Header menu utilities -------------------------
 
     def header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]:
@@ -1353,6 +1388,13 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         Default = :attr:`HELP_SPEC` (static). Override to compute it (e.g. a
         panel whose help depends on runtime state)."""
         return self.HELP_SPEC
+
+    def docs_url(self) -> str:
+        """Hook: the panel's documentation URL, or ``""`` for no docs link.
+
+        Default = :attr:`DOCS_URL` (static). Override to compute it (e.g. a
+        panel that points at a per-engine page)."""
+        return self.DOCS_URL
 
     def header_init(self, widget) -> None:
         """Default header menu: a "Utilities" separator, the declared
