@@ -1,7 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from typing import Optional
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 
 # From this package:
 from uitk.widgets.mixins.attributes import AttributesMixin
@@ -41,6 +41,14 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
     # Horizontal margin around the title label (left + right). Used by both
     # ``resizeEvent`` (positioning) and ``sizeHint`` (advertised width).
     _TITLE_MARGIN_X = 4
+    #: Fixed height of a titled separator. Taller than the untitled 9px so a
+    #: section caption carries breathing room ABOVE it: the label sits at the
+    #: bottom of the box, and the surplus reads as the gap between groups.
+    _TITLED_HEIGHT = 18
+    #: Gap between the caption's right edge and the start of the section rule.
+    _RULE_GAP_X = 6
+    #: Alpha (0-255) of the section rule, drawn in the caption's text colour.
+    _RULE_ALPHA = 70
 
     def getTitle(self) -> str:
         """Get the separator title."""
@@ -56,8 +64,11 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
             self._title_label.setText(value)
             self._title_label.show()
             # Adjust height to accommodate title
-            self.setFixedHeight(12)
-            # Change to NoFrame when showing title
+            self.setFixedHeight(self._TITLED_HEIGHT)
+            # Change to NoFrame when showing title: the section rule is
+            # painted by ``paintEvent`` (from the caption's edge to the right
+            # margin) instead of QFrame's full-width HLine, so it never runs
+            # behind the text.
             self.setFrameShape(QtWidgets.QFrame.NoFrame)
             # Size + position the label immediately. Don't rely on
             # resizeEvent firing while the host is still hidden — at that
@@ -79,10 +90,22 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
     title = QtCore.Property(str, fget=getTitle, fset=setTitle)
 
     def _create_title_label(self) -> None:
-        """Create the title label widget."""
+        """Create the title label widget.
+
+        The caption is a *section header*, not another row: rendered
+        small-caps (``QFont.AllUppercase`` — the theme's ``Separator > QLabel``
+        rule sets colour / size / weight and leaves capitalization alone) so
+        it reads as a group label even when it sits among rows of the same
+        font, e.g. inside a ``WidgetComboBox`` popup or a ``Menu`` column.
+        Capitalization is a font property so :meth:`getTitle` still returns
+        the text as authored.
+        """
         self._title_label = QtWidgets.QLabel(self)
         self._title_label.setProperty("class", "separator-title")
         self._title_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        font = self._title_label.font()
+        font.setCapitalization(QtGui.QFont.AllUppercase)
+        self._title_label.setFont(font)
 
     def _titled_width_hint(self) -> int:
         """Width needed to render the title without cropping (0 if untitled).
@@ -118,7 +141,7 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
         return hint
 
     def _position_title_label(self) -> None:
-        """Size the label to its natural width and center it vertically.
+        """Size the label to its natural width and bottom-align it.
 
         Used by both the title setter (so positioning happens immediately,
         even before the widget tree is shown) and ``resizeEvent`` (so the
@@ -130,13 +153,41 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
         if self._title_label is None or self._title_label.isHidden():
             return
         self._title_label.adjustSize()
-        y = (self.height() - self._title_label.height()) // 2
+        # Bottom-aligned: the surplus height of a titled separator is the
+        # breathing room above the caption (see ``_TITLED_HEIGHT``).
+        y = max(0, self.height() - self._title_label.height())
         self._title_label.move(self._TITLE_MARGIN_X, y)
 
     def resizeEvent(self, event) -> None:
         """Position the title label on resize."""
         super().resizeEvent(event)
         self._position_title_label()
+
+    def paintEvent(self, event) -> None:
+        """Untitled: QFrame's HLine. Titled: a rule from the caption to the edge.
+
+        The rule is drawn in the caption's own text colour at reduced alpha,
+        so it follows whatever the theme gives ``Separator > QLabel`` (light or
+        dark) without a second token, and it starts AFTER the label so no
+        text ever sits on the line — which is why the label needs no opaque
+        background (it used to carry ``PANEL_BACKGROUND``, which mismatched
+        hosts painted in ``WIDGET_BACKGROUND`` such as a combo popup).
+        """
+        super().paintEvent(event)
+        label = self._title_label
+        if label is None or label.isHidden():
+            return
+        x0 = label.x() + label.width() + self._RULE_GAP_X
+        x1 = self.width() - self._TITLE_MARGIN_X
+        if x1 <= x0:
+            return
+        y = label.y() + label.height() // 2
+        color = QtGui.QColor(label.palette().color(QtGui.QPalette.WindowText))
+        color.setAlpha(self._RULE_ALPHA)
+        painter = QtGui.QPainter(self)
+        painter.setPen(QtGui.QPen(color, 1))
+        painter.drawLine(x0, y, x1, y)
+        painter.end()
 
 
 # ----------------------------------------------------------------------------

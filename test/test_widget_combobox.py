@@ -161,6 +161,31 @@ class TestWidgetComboBoxUniformHeight(QtBaseTestCase):
             f"All rows must use uniform height {target}; got {heights}",
         )
 
+    def test_separator_row_keeps_its_own_height(self):
+        """A titled ``Separator`` row is sized to the separator, not the
+        uniform value-row height — and never feeds that height.
+
+        Section captions need the breathing room the separator draws for
+        them; stretching the row to a checkbox's height (or growing every
+        checkbox row to the separator's) makes the caption read as just
+        another row.
+        """
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.separator import Separator
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.item_spacing = 0
+        sep = Separator(title="General")
+        checkbox = QtWidgets.QCheckBox("c")
+        combo.add([(sep, "General"), (checkbox, "c")])
+        combo._recompute_uniform_heights()
+
+        sep_row_h = combo._model.item(0).sizeHint().height()
+        chk_row_h = combo._model.item(1).sizeHint().height()
+        self.assertEqual(sep_row_h, sep.height())
+        self.assertEqual(chk_row_h, checkbox.sizeHint().height())
+        self.assertEqual(combo._uniform_item_height, checkbox.sizeHint().height())
+
     def test_actions_section_does_not_inflate_uniform_height(self):
         """The actions container is multi-button and tall; it must not push
         uniform-height for the selectable rows above it."""

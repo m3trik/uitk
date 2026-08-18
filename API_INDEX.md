@@ -166,7 +166,7 @@ _Generated: 2026-08-18_
 - `class OverrideCursorGuard(QtCore.QObject)`
   - methods: shape, holding, apply, clear, holds, is_stale, notify_stack_drained, reconcile
 - `class SwitchboardUtilsMixin`
-  - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, simulate_key_press, defer_with_timer, gc_protect, modal_menu
+  - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
@@ -509,7 +509,7 @@ _Generated: 2026-08-18_
 
 ### `widgets/separator.py`
 - `class Separator(QtWidgets.QFrame, AttributesMixin)`
-  - methods: getTitle, setTitle, sizeHint, minimumSizeHint, resizeEvent
+  - methods: getTitle, setTitle, sizeHint, minimumSizeHint, resizeEvent, paintEvent
 
 ### `widgets/sequencer/_clip.py` — ClipItem — draggable, resizable clip rectangle on the timeline.
 - `class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`
