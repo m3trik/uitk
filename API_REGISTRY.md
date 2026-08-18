@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-17_
+_Generated: 2026-08-18_
 
 ## Index
 
@@ -726,7 +726,9 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardUtilsMixin.get_widgets_by_string_pattern(self, ui, name_string)` — Get a list of corresponding widgets from a single shorthand formatted string.
   - `SwitchboardUtilsMixin.get_methods_by_string_pattern(self, clss, name_string)` — Get a list of corresponding methods from a single shorthand formatted string.
   - `SwitchboardUtilsMixin.create_button_groups(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]` — Create button groups for a set of widgets.
-  - `SwitchboardUtilsMixin.toggle_multi(self, ui, trigger=None, signal=None, **kwargs)` — Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…
+  - `SwitchboardUtilsMixin.toggle_multi(self, ui, trigger=None, signal=None, apply_now=True, **kwargs)` — Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…
+  - `SwitchboardUtilsMixin.enable_when(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)` — Keep *targets* enabled exactly while *trigger*'s value satisfies
+  - `SwitchboardUtilsMixin.refresh_dependencies(self, ui) -> None` — Re-apply every :meth:`enable_when` rule on *ui* — for bulk value
   - `SwitchboardUtilsMixin.connect_multi(self, ui, widgets, signals, slots)` — Connect multiple signals to multiple slots at once.
   - `SwitchboardUtilsMixin.add_reset_buttons(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), **set_reset_kwargs)` — Give each matching value widget a per-field *reset-to-default* button.
   - `SwitchboardUtilsMixin.link_spinboxes(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), icon: str = 'lock', icon_off: str = 'unlock', tooltip_on: str = 'Linked. Changing this shifts the other linked fields by the same amount. Click to unlink.', tooltip_off: str = 'Unlinked. Click to link this field so it moves with the others.', initial: bool = False, **set_toggle_kwargs)` — Give each spin box a *lock* toggle that links locked boxes by an equal delta.
@@ -1979,6 +1981,7 @@ Host-agnostic script-output console widget.
   - `Separator.sizeHint(self) -> QtCore.QSize` — Advertise enough width for the title so parent layouts reserve room.
   - `Separator.minimumSizeHint(self) -> QtCore.QSize` — Match ``sizeHint`` so the widget can't be squeezed below its title.
   - `Separator.resizeEvent(self, event) -> None` — Position the title label on resize.
+  - `Separator.paintEvent(self, event) -> None` — Untitled: QFrame's HLine.
 
 <a id="widgets--sequencer--_clip"></a>
 ### `widgets/sequencer/_clip.py`

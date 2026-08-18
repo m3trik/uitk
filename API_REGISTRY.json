@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-08-17",
+  "generated_at": "2026-08-18",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -3869,9 +3869,27 @@
               "name": "toggle_multi",
               "qualname": "SwitchboardUtilsMixin.toggle_multi",
               "kind": "method",
-              "signature": "(self, ui, trigger=None, signal=None, **kwargs)",
+              "signature": "(self, ui, trigger=None, signal=None, apply_now=True, **kwargs)",
               "summary": "Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…",
-              "line": 549,
+              "line": 637,
+              "deprecated": false
+            },
+            {
+              "name": "enable_when",
+              "qualname": "SwitchboardUtilsMixin.enable_when",
+              "kind": "method",
+              "signature": "(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)",
+              "summary": "Keep *targets* enabled exactly while *trigger*'s value satisfies",
+              "line": 756,
+              "deprecated": false
+            },
+            {
+              "name": "refresh_dependencies",
+              "qualname": "SwitchboardUtilsMixin.refresh_dependencies",
+              "kind": "method",
+              "signature": "(self, ui) -> None",
+              "summary": "Re-apply every :meth:`enable_when` rule on *ui* — for bulk value",
+              "line": 909,
               "deprecated": false
             },
             {
@@ -3880,7 +3898,7 @@
               "kind": "method",
               "signature": "(self, ui, widgets, signals, slots)",
               "summary": "Connect multiple signals to multiple slots at once.",
-              "line": 659,
+              "line": 916,
               "deprecated": false
             },
             {
@@ -3889,7 +3907,7 @@
               "kind": "method",
               "signature": "(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), **set_reset_kwargs)",
               "summary": "Give each matching value widget a per-field *reset-to-default* button.",
-              "line": 712,
+              "line": 969,
               "deprecated": false
             },
             {
@@ -3898,7 +3916,7 @@
               "kind": "method",
               "signature": "(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), icon: str = 'lock', icon_off: str = 'unlock', tooltip_on: str = 'Linked. Changing this shifts the other linked fields by the same amount. Click to unlink.', tooltip_off: str = 'Unlinked. Click to link this field so it moves with the others.', initial: bool = False, **set_toggle_kwargs)",
               "summary": "Give each spin box a *lock* toggle that links locked boxes by an equal delta.",
-              "line": 809,
+              "line": 1066,
               "deprecated": false
             },
             {
@@ -3907,7 +3925,7 @@
               "kind": "method",
               "signature": "(self, checkboxes, axis, ui=None)",
               "summary": "Set the given checkbox's check states to reflect the specified axis.",
-              "line": 935,
+              "line": 1192,
               "deprecated": false
             },
             {
@@ -3916,7 +3934,7 @@
               "kind": "method",
               "signature": "(self, checkboxes, ui=None, return_type='str')",
               "summary": "Get the intended axis value as a string or integer by reading the multiple checkbox's check states.",
-              "line": 963,
+              "line": 1220,
               "deprecated": false
             },
             {
@@ -3925,7 +3943,7 @@
               "kind": "method",
               "signature": "(self, ui, unknown_tags) -> None",
               "summary": "Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted",
-              "line": 1006,
+              "line": 1263,
               "deprecated": false
             },
             {
@@ -3934,7 +3952,7 @@
               "kind": "staticmethod",
               "signature": "(value)",
               "summary": "Invert a numerical or boolean value if the alt key is pressed.",
-              "line": 1039,
+              "line": 1296,
               "deprecated": false
             },
             {
@@ -3943,7 +3961,7 @@
               "kind": "method",
               "signature": "(self, ui=None, total: Optional[int] = None, text: str = '')",
               "summary": "Context manager for cooperative progress / task feedback.",
-              "line": 1064,
+              "line": 1321,
               "deprecated": false
             },
             {
@@ -3952,7 +3970,7 @@
               "kind": "staticmethod",
               "signature": "(update: Callable[..., bool]) -> Callable[..., bool]",
               "summary": "Adapt the footer ``update`` callable to the shape downstream",
-              "line": 1128,
+              "line": 1385,
               "deprecated": false
             },
             {
@@ -3961,7 +3979,7 @@
               "kind": "method",
               "signature": "(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)",
               "summary": "Spawns a message box with the given text and optionally sets buttons.",
-              "line": 1191,
+              "line": 1448,
               "deprecated": false
             },
             {
@@ -3970,7 +3988,7 @@
               "kind": "method",
               "signature": "(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None)",
               "summary": "Spawn a scrollable text-viewer window with optional buttons.",
-              "line": 1237,
+              "line": 1494,
               "deprecated": false
             },
             {
@@ -3979,7 +3997,7 @@
               "kind": "staticmethod",
               "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]",
               "summary": "Open a file dialog to select files of the given type(s) using qtpy.",
-              "line": 1324,
+              "line": 1581,
               "deprecated": false
             },
             {
@@ -3988,7 +4006,7 @@
               "kind": "staticmethod",
               "signature": "(title: str = 'Select a directory', start_dir: str = '/home') -> str",
               "summary": "Open a directory dialog to select a directory using qtpy.",
-              "line": 1365,
+              "line": 1622,
               "deprecated": false
             },
             {
@@ -3997,7 +4015,7 @@
               "kind": "staticmethod",
               "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]",
               "summary": "Open a save-file dialog to choose a destination path.",
-              "line": 1387,
+              "line": 1644,
               "deprecated": false
             },
             {
@@ -4006,7 +4024,7 @@
               "kind": "staticmethod",
               "signature": "(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str",
               "summary": "Show a modal text-input dialog and return the entered string.",
-              "line": 1425,
+              "line": 1682,
               "deprecated": false
             },
             {
@@ -4015,7 +4033,7 @@
               "kind": "staticmethod",
               "signature": "(items, title: str = 'Select', label: str = 'Select item(s):', parent: QtWidgets.QWidget = None, multi: bool = True, selected=None) -> list",
               "summary": "Show a modal list picker and return the chosen entries.",
-              "line": 1520,
+              "line": 1777,
               "deprecated": false
             },
             {
@@ -4024,7 +4042,7 @@
               "kind": "staticmethod",
               "signature": "(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)",
               "summary": "Simulate a key press event for the given UI and optionally release the keyboard.",
-              "line": 1595,
+              "line": 1852,
               "deprecated": false
             },
             {
@@ -4033,7 +4051,7 @@
               "kind": "method",
               "signature": "(self, func: callable, *args, ms: int = 300, **kwargs) -> None",
               "summary": "Defer execution of any callable with arguments after a delay.",
-              "line": 1618,
+              "line": 1875,
               "deprecated": false
             },
             {
@@ -4042,7 +4060,7 @@
               "kind": "method",
               "signature": "(self, obj=None, clear=False)",
               "summary": "Protect the given object(s) from garbage collection by holding a strong reference.",
-              "line": 1658,
+              "line": 1915,
               "deprecated": false
             },
             {
@@ -4051,7 +4069,7 @@
               "kind": "staticmethod",
               "signature": "(content_fn, parent=None, **kwargs)",
               "summary": "Show a themed modal Menu popup, block until dismissed.",
-              "line": 1691,
+              "line": 1948,
               "deprecated": false
             }
           ]
@@ -12582,7 +12600,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Get the separator title.",
-              "line": 45,
+              "line": 53,
               "deprecated": false
             },
             {
@@ -12591,7 +12609,7 @@
               "kind": "method",
               "signature": "(self, value: str) -> None",
               "summary": "Set the separator title.",
-              "line": 51,
+              "line": 59,
               "deprecated": false
             },
             {
@@ -12600,7 +12618,7 @@
               "kind": "method",
               "signature": "(self) -> QtCore.QSize",
               "summary": "Advertise enough width for the title so parent layouts reserve room.",
-              "line": 98,
+              "line": 121,
               "deprecated": false
             },
             {
@@ -12609,7 +12627,7 @@
               "kind": "method",
               "signature": "(self) -> QtCore.QSize",
               "summary": "Match ``sizeHint`` so the widget can't be squeezed below its title.",
-              "line": 112,
+              "line": 135,
               "deprecated": false
             },
             {
@@ -12618,7 +12636,16 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Position the title label on resize.",
-              "line": 136,
+              "line": 161,
+              "deprecated": false
+            },
+            {
+              "name": "paintEvent",
+              "qualname": "Separator.paintEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "Untitled: QFrame's HLine.",
+              "line": 166,
               "deprecated": false
             }
           ]
@@ -16207,7 +16234,7 @@
               "kind": "property",
               "signature": "(self) -> int",
               "summary": "Vertical gap, in pixels, between embedded-widget rows in the",
-              "line": 575,
+              "line": 586,
               "deprecated": false
             },
             {
@@ -16216,7 +16243,7 @@
               "kind": "property",
               "signature": "(self) -> _ActionsNamespace",
               "summary": "Namespace for managing persistent action buttons at the bottom of",
-              "line": 614,
+              "line": 625,
               "deprecated": false
             },
             {
@@ -16225,7 +16252,7 @@
               "kind": "property",
               "signature": "(self) -> int",
               "summary": "Number of columns the persistent action buttons are arranged into.",
-              "line": 627,
+              "line": 638,
               "deprecated": false
             },
             {
@@ -16234,7 +16261,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "When True, action buttons show only their icon (compact, no text).",
-              "line": 645,
+              "line": 656,
               "deprecated": false
             },
             {
@@ -16243,7 +16270,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether a separator is drawn above the actions section (default True).",
-              "line": 662,
+              "line": 673,
               "deprecated": false
             },
             {
@@ -16252,7 +16279,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Override to expand popup to widest widget and update overflow.",
-              "line": 887,
+              "line": 898,
               "deprecated": false
             },
             {
@@ -16261,7 +16288,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Override to hide overflow indicator when popup is hidden.",
-              "line": 934,
+              "line": 945,
               "deprecated": false
             },
             {
@@ -16270,7 +16297,7 @@
               "kind": "property",
               "signature": "(self) -> Optional[str]",
               "summary": "Direction of the dropdown-affordance triangle drawn after the text.",
-              "line": 943,
+              "line": 954,
               "deprecated": false
             },
             {
@@ -16279,7 +16306,7 @@
               "kind": "property",
               "signature": "(self) -> Optional[QtGui.QIcon]",
               "summary": "Custom icon drawn as the dropdown affordance, in place of the",
-              "line": 965,
+              "line": 976,
               "deprecated": false
             },
             {
@@ -16288,7 +16315,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "Opacity (``0.0``–``1.0``) of the dropdown affordance — the triangle",
-              "line": 986,
+              "line": 997,
               "deprecated": false
             },
             {
@@ -16297,7 +16324,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Paint the base combo, then overlay the optional dropdown affordance",
-              "line": 1045,
+              "line": 1056,
               "deprecated": false
             },
             {
@@ -16306,7 +16333,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "Event filter to reposition indicator on scroll and resize events.",
-              "line": 1140,
+              "line": 1151,
               "deprecated": false
             },
             {
@@ -16315,7 +16342,7 @@
               "kind": "method",
               "signature": "(self, x, data=None, header=None, header_alignment='left', clear=True, restore_index=False, ascending=False, _recursion=False, **kwargs)",
               "summary": "Populate the combo box with text, widgets or actions.",
-              "line": 1173,
+              "line": 1184,
               "deprecated": false
             },
             {
@@ -16324,7 +16351,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "When True, adds a \"Restore Defaults\" action at the bottom of the",
-              "line": 1431,
+              "line": 1450,
               "deprecated": false
             },
             {
@@ -16333,7 +16360,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "",
-              "line": 1577,
+              "line": 1596,
               "deprecated": false
             }
           ]

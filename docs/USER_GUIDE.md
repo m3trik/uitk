@@ -317,6 +317,17 @@ sb.connect_multi(ui, widgets, signals, slots)
 sb.create_button_groups(ui, "chk001-3")    # exclusive group from a range
 ```
 
+Declare a dependency once instead of hand-wiring both branches — the rule reads the
+trigger's value (combos: `currentData`, else index; buttons: `isChecked`), applies at
+wire time, and picks up targets that register later (WidgetComboBox rows, option-box items):
+```python
+sb.enable_when(ui, "cmb_glb_textures", "cmb_format", lambda fmt: fmt != "fbx")
+sb.enable_when(ui, "s_max_size", "chk_optimize")              # truthiness
+sb.enable_when(ui, "s001,chk002", "cmb_mode", {"x", "both"})  # membership
+sb.enable_when(ui, "d000", "chk_master", invert=True)          # the other branch
+sb.enable_when(ui, "cmb_out", ["chk_a", "cmb_b"], lambda a, b: a or bool(b))
+```
+
 Range shorthand (`"chk001-3"` → `chk001`–`chk003`) keeps only letters and digits — a `chk_001`-style underscore is dropped during expansion, so it only works for names without separators.
 
 ---

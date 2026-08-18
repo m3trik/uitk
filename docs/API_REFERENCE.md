@@ -105,7 +105,9 @@ INIT_SUFFIX = "_init"
 | `save_file_dialog(file_types=["*.*"], title="Save file", start_dir="/home", filter_description="All Files") -> str \| None` | Static — save-destination picker |
 | `center_widget(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative=None)` | Reposition + optionally resize |
 | `get_cursor_offset_from_center(widget) -> QPoint` | Static — `QCursor.pos() - widget.rect().center()` |
-| `toggle_multi(ui, trigger=None, signal=None, **kwargs)` | Batch-set boolean properties on named widgets |
+| `toggle_multi(ui, trigger=None, signal=None, apply_now=True, **kwargs)` | Batch-set boolean properties on named widgets; with `trigger`, re-apply an `on_<state>` mapping on its change signal (and once at wire time) |
+| `enable_when(ui, targets, trigger, condition=True, signal=None, value=None, invert=False)` | Keep `targets` enabled exactly while `trigger`'s value satisfies `condition` (callable / value / set / truthiness); multi-trigger, order-independent, idempotent |
+| `refresh_dependencies(ui)` | Re-apply every `enable_when` rule after a bulk blocked-signal change (a preset load) |
 | `connect_multi(ui, widgets, signals, slots)` | Batch signal-slot connection |
 | `create_button_groups(ui, *args, allow_deselect=False, allow_multiple=False) -> list[QButtonGroup]` | Radio groups from ranges like `"chk_001-3"` |
 | `unpack_names(name_string) -> list[str]` | Class method — expand `"chk021-23,25,tb001"` into individual names |

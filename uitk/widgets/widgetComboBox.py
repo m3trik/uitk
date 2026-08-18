@@ -542,7 +542,7 @@ class WidgetComboBox(ComboBox):
         last_tracked = total - self._action_row_count
         for r in range(last_tracked):
             item = self._model.item(r)
-            if item is None:
+            if item is None or self._is_separator_row(r):
                 continue
             sh = item.sizeHint()
             if sh.height() != target:
@@ -565,11 +565,22 @@ class WidgetComboBox(ComboBox):
         tallest = 0
         for r in range(last_tracked):
             widget = self._widget_items.get(r)
-            if widget is not None:
+            if widget is not None and not self._is_separator_row(r):
                 tallest = max(tallest, widget.sizeHint().height())
         if tallest > 0:
             self._uniform_item_height = tallest
             self._resync_uniform_heights()
+
+    def _is_separator_row(self, row: int) -> bool:
+        """True when *row* embeds a ``Separator``.
+
+        Separator rows are excluded from the uniform-height policy in both
+        directions: a titled separator sizes its row to its own fixed height
+        (so the group caption keeps the breathing room the widget draws for
+        it), and it never feeds the running max that sizes the value rows.
+        """
+        widget = self._widget_items.get(row)
+        return widget is not None and widget.__class__.__name__ == "Separator"
 
     @property
     def item_spacing(self) -> int:
@@ -1392,7 +1403,8 @@ class WidgetComboBox(ComboBox):
         if widget.parent() is not None and widget.parent() is not self.view():
             widget.setParent(None)
 
-        if widget.__class__.__name__ == "Separator":
+        is_separator = widget.__class__.__name__ == "Separator"
+        if is_separator:
             # For separators, pass empty string to the item so text isn't drawn behind the widget
             row_item = QtGui.QStandardItem("")
             # Disable selection for separators
@@ -1401,12 +1413,19 @@ class WidgetComboBox(ComboBox):
                 & ~QtCore.Qt.ItemIsSelectable
                 & ~QtCore.Qt.ItemIsEnabled
             )
+            # A separator's row is its own height (see ``_is_separator_row``):
+            # untracked so it neither inflates the value rows nor gets
+            # stretched to them. Its sizeHint height is invalid (NoFrame /
+            # HLine), so pin the row to the widget's fixed height explicitly.
+            track_height = False
         else:
             row_item = QtGui.QStandardItem(label)
 
         payload = data if data is not None else widget
         row_item.setData(payload, QtCore.Qt.UserRole)
         self._apply_uniform_height(row_item, widget, track=track_height)
+        if is_separator:
+            row_item.setSizeHint(QtCore.QSize(0, widget.height()))
 
         if ascending:
             self._model.insertRow(0, row_item)

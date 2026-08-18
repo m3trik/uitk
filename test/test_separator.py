@@ -79,5 +79,33 @@ class TestSeparatorSizeHint(QtBaseTestCase):
         self.assertEqual(sep._title_label.x(), sep._TITLE_MARGIN_X)
 
 
+    def test_titled_caption_is_a_section_header(self):
+        """Titled mode: taller box (breathing room above), caption uppercased
+        via the font (so ``title`` round-trips as authored) and a rule painted
+        from the caption's right edge — the caption must not look like a row."""
+        from qtpy import QtGui
+
+        sep = Separator(title="Materials")
+        self.assertEqual(sep.height(), sep._TITLED_HEIGHT)
+        self.assertGreater(sep._TITLED_HEIGHT, 9)  # untitled HLine height
+        self.assertEqual(sep.title, "Materials")
+        self.assertEqual(
+            sep._title_label.font().capitalization(), QtGui.QFont.AllUppercase
+        )
+        # Bottom-aligned caption: the surplus is above it.
+        self.assertEqual(
+            sep._title_label.y(), sep.height() - sep._title_label.height()
+        )
+        # The rule is painted where the caption is not.
+        sep.resize(200, sep.height())
+        pixmap = sep.grab()
+        img = pixmap.toImage()
+        y = sep._title_label.y() + sep._title_label.height() // 2
+        x = sep.width() - sep._TITLE_MARGIN_X - 2
+        rule_px = QtGui.QColor(img.pixel(x, y))
+        bg_px = QtGui.QColor(img.pixel(x, 1))
+        self.assertNotEqual(rule_px.rgb(), bg_px.rgb())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

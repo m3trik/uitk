@@ -1458,10 +1458,14 @@ Separator {
 Separator:hover {
     border: none;
 }
+/* Titled separator caption: a section header, not a row. Muted + bold +
+   small so it separates from the TEXT_COLOR rows around it (the widget
+   uppercases it and paints a rule to its right — see separator.py). */
 Separator > QLabel {
-    color: {TEXT_COLOR};
-    font-size: 11px;
-    background: {PANEL_BACKGROUND};
+    color: {TEXT_DISABLED};
+    font-size: 10px;
+    font-weight: bold;
+    background: transparent;
     border: none;
     padding: 0px 0px;
 }

@@ -546,19 +546,116 @@ class SwitchboardUtilsMixin:
 
         return ptk.format_return(button_groups)
 
-    def toggle_multi(self, ui, trigger=None, signal=None, **kwargs):
+    # ------------------------------------------------------------------
+    # Widget value / signal plumbing shared by toggle_multi and enable_when
+    # ------------------------------------------------------------------
+
+    #: (widget type, value getter) — most-specific first. The one table behind
+    #: ``toggle_multi``'s initial apply and ``enable_when``'s reads, so "what
+    #: does this control's value mean" is decided once. A leading underscore
+    #: names a reader on this mixin; anything else is a zero-arg widget method.
+    #: signal name -> zero-arg widget getter that yields what that signal would
+    #: deliver for the CURRENT state (an initial apply runs before any signal).
+    _SIGNAL_VALUE_READERS = {
+        "toggled": "isChecked",
+        "clicked": "isChecked",
+        "stateChanged": "checkState",
+        "currentIndexChanged": "currentIndex",
+        "currentTextChanged": "currentText",
+        "textChanged": "text",
+        "valueChanged": "value",
+    }
+
+    _WIDGET_VALUE_READERS = (
+        (QtWidgets.QComboBox, "_combo_value"),
+        (QtWidgets.QAbstractButton, "isChecked"),
+        (QtWidgets.QGroupBox, "isChecked"),
+        (QtWidgets.QSpinBox, "value"),
+        (QtWidgets.QDoubleSpinBox, "value"),
+        (QtWidgets.QAbstractSlider, "value"),
+        (QtWidgets.QLineEdit, "text"),
+        (QtWidgets.QPlainTextEdit, "toPlainText"),
+        (QtWidgets.QTextEdit, "toPlainText"),
+    )
+
+    #: Change signals for types the Switchboard's ``default_signals`` table
+    #: (the slot-wiring SSoT) doesn't name, or names with a click-only signal
+    #: (``QPushButton: clicked`` never fires on a programmatic ``setChecked``,
+    #: which is exactly what a dependency rule has to see).
+    _VALUE_CHANGE_SIGNALS = (
+        (QtWidgets.QAbstractButton, "toggled"),
+        (QtWidgets.QGroupBox, "toggled"),
+        (QtWidgets.QPlainTextEdit, "textChanged"),
+    )
+
+    @staticmethod
+    def _combo_value(combo):
+        """A combo's value is its ``currentData`` when items carry data, else
+        its index — the same reading a slot's ``currentData()`` gives, so a
+        condition can be written against the payload ("fbx") not a position."""
+        data = combo.currentData()
+        return combo.currentIndex() if data is None else data
+
+    def _widget_value_reader(self, widget):
+        """``getter(widget) -> value`` for *widget*, or ``None`` if untabled."""
+        for wtype, getter in self._WIDGET_VALUE_READERS:
+            if isinstance(widget, wtype):
+                if getter.startswith("_"):
+                    return getattr(self, getter)
+                return lambda w, g=getter: getattr(w, g)()
+        return None
+
+    def _value_change_signal(self, widget):
+        """Name of the signal announcing a value change on *widget*: the
+        override table first, then the Switchboard's ``default_signals``."""
+        for wtype, name in self._VALUE_CHANGE_SIGNALS:
+            if isinstance(widget, wtype) and hasattr(widget, name):
+                return name
+        for wtype, name in getattr(self, "default_signals", {}).items():
+            if isinstance(widget, wtype) and hasattr(widget, name):
+                return name
+        return None
+
+    def _resolve_ui_widget(self, ui, ref):
+        """Resolve a widget reference — an instance or an objectName on *ui*."""
+        if isinstance(ref, QtWidgets.QWidget):
+            return ref
+        return getattr(ui, ref, None) if isinstance(ref, str) else None
+
+    def _read_signal_value(self, widget, signal):
+        """The value a *signal* would deliver for the widget's CURRENT state —
+        what an initial apply needs, since no signal has fired yet."""
+        reader = self._SIGNAL_VALUE_READERS.get(signal)
+        if reader and hasattr(widget, reader):
+            value = getattr(widget, reader)()
+            # PySide6 hands ``checkState()`` back as a Qt.CheckState enum while
+            # ``stateChanged`` delivers the int — match what the signal sends.
+            return getattr(value, "value", value)
+        getter = self._widget_value_reader(widget)
+        return getter(widget) if getter is not None else None
+
+    def toggle_multi(self, ui, trigger=None, signal=None, apply_now=True, **kwargs):
         """Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automatically.
 
         Parameters:
             ui (QWidget): A previously loaded dynamic UI object.
             trigger (str/QWidget, optional): If provided, connects this widget's signal to toggle the others.
                                              If None, toggles immediately.
-            signal (str, optional): Signal name to connect (only used when trigger is provided). Default: 'toggled'.
+            signal (str, optional): Signal name to connect (only used when trigger is provided).
+                                    Default: the widget's natural change signal (``toggled`` for
+                                    buttons, ``currentIndexChanged`` for combos, …; ``toggled`` if unknown).
+            apply_now (bool): Trigger mode only. Also apply the mapping for the trigger's
+                              CURRENT value at wire time (default True) — a widget restored
+                              from session state before the connection exists would otherwise
+                              leave its dependants in the wrong state until the user touches it.
             **kwargs: The properties to modify. Can be:
                      - Direct properties (immediate mode): setChecked, setUnChecked, setEnabled, setDisabled, etc.
                        Value: string of object_names separated by ',' ie. 'b000-12,b022'
                      - State mapping (trigger mode): on_<state>={...}, on_default={...}
                        Value: dict of toggle_multi kwargs to apply for that state
+
+        For the common "enable X while Y says so" dependency prefer :meth:`enable_when` —
+        one predicate instead of a mirrored ``on_True`` / ``on_False`` pair.
 
         Examples:
             # Immediate toggle (original behavior)
@@ -595,20 +692,16 @@ class SwitchboardUtilsMixin:
 
         # If trigger provided, set up connection
         if trigger is not None:
-            # Default signal to 'toggled' if not specified
-            if signal is None:
-                signal = "toggled"
+            trigger_widget = self._resolve_ui_widget(ui, trigger)
+            if trigger_widget is None:
+                self.logger.warning(
+                    f"Widget '{trigger}' not found in UI, cannot connect toggle."
+                )
+                return
 
-            # Get the trigger widget if string provided
-            if isinstance(trigger, str):
-                trigger_widget = getattr(ui, trigger, None)
-                if not trigger_widget:
-                    self.logger.warning(
-                        f"Widget '{trigger}' not found in UI, cannot connect toggle."
-                    )
-                    return
-            else:
-                trigger_widget = trigger
+            # Default to the widget's natural change signal ('toggled' if unknown).
+            if signal is None:
+                signal = self._value_change_signal(trigger_widget) or "toggled"
 
             # Get default state mapping if provided
             default_map = state_map.pop("default", None)
@@ -637,8 +730,12 @@ class SwitchboardUtilsMixin:
                     self.logger.warning(
                         f"Signal '{signal}' not found on widget '{trigger_widget}'"
                     )
+                    return
             except Exception as e:
                 self.logger.error(f"Failed to connect toggle: {e}")
+                return
+            if apply_now:
+                toggle_callback(self._read_signal_value(trigger_widget, signal))
             return
 
         # Original immediate toggle behavior
@@ -655,6 +752,166 @@ class SwitchboardUtilsMixin:
             # set the property state for each widget in the list.
             for w in widgets:
                 getattr(w, k)(state)
+
+    def enable_when(
+        self,
+        ui,
+        targets,
+        trigger,
+        condition=True,
+        signal=None,
+        value=None,
+        invert=False,
+    ):
+        """Keep *targets* enabled exactly while *trigger*'s value satisfies
+        *condition* — a declarative dependency, wired once.
+
+        The one-line answer to "grey this out when it can't apply": a lower-level
+        choice (output format, a master checkbox, a mode combo) makes some other
+        control irrelevant, and the panel should say so instead of leaving a
+        live dial the export ignores. Replaces the pattern of a per-trigger slot
+        + a ``_sync_*`` helper + a mirrored ``toggle_multi`` ``on_True`` /
+        ``on_False`` pair with one rule that reads as the sentence it encodes::
+
+            sb.enable_when(ui, "cmb006", "cmb004", lambda fmt: fmt != "fbx")
+            sb.enable_when(ui, "texture_max_size", "optimize_textures")
+            sb.enable_when(ui, "s001,chk002", "cmb035", 0)           # index / data == 0
+            sb.enable_when(ui, "d000", "cmb035", 0, invert=True)     # the other branch
+            sb.enable_when(ui, "texture_write_back",
+                           ["optimize_textures", "cmb005"], lambda opt, tpl: opt or tpl)
+
+        Parameters:
+            ui: The loaded UI (widgets resolve by objectName on it).
+            targets: Widget(s) to enable/disable — an objectName pattern string
+                (``'s000,b004-7'``), a widget, or a list of either.
+            trigger: The controlling widget(s) — objectName / widget, or a list
+                (the condition then receives one value per trigger, in order).
+            condition: What "on" means for the trigger's value: a callable
+                ``(value, …) -> bool``; a plain value (equality); a set / list /
+                tuple of values (membership); or ``True`` (default: truthiness —
+                the master-checkbox case).
+            signal: Change signal name (single trigger). Default: the widget's
+                natural signal from the value table.
+            value: Optional callable ``(widget) -> value`` overriding the
+                default reader (combos read ``currentData`` when items carry
+                data, else ``currentIndex``; buttons ``isChecked``; …).
+            invert: Enable when the condition is NOT met.
+
+        Order-independent by design: a target (or trigger) that isn't
+        registered on *ui* yet — a ``WidgetComboBox`` row, an option-box menu
+        item — is picked up when ``ui.on_child_registered`` announces it, and
+        the rule is (re)applied then and once more after the current event
+        (registration restores session state with signals blocked, so the
+        first read can be pre-restore). Every rule is also re-applied by
+        :meth:`refresh_dependencies` for bulk state changes made with signals
+        blocked (a preset load). Wiring the same targets to the same triggers
+        twice is a no-op, so an ``_init`` slot that re-runs can't stack rules.
+
+        Returns:
+            The rule's ``apply`` callable (handy as an ``on_loaded`` hook).
+        """
+        trigger_refs = list(trigger) if isinstance(trigger, (list, tuple)) else [trigger]
+        target_refs = list(targets) if isinstance(targets, (list, tuple)) else [targets]
+
+        def _ref_name(ref):
+            return ref.objectName() if isinstance(ref, QtWidgets.QWidget) else str(ref)
+
+        key = (tuple(map(_ref_name, trigger_refs)), tuple(map(_ref_name, target_refs)))
+        rules = ui.__dict__.setdefault("_enable_when_rules", {})
+        if key in rules:
+            return rules[key]
+
+        if callable(condition):
+            predicate = condition
+        elif isinstance(condition, (set, frozenset, list, tuple)):
+            allowed = set(condition)
+            predicate = lambda v, *rest: v in allowed  # noqa: E731
+        elif condition is True:
+            predicate = lambda *vals: all(bool(v) for v in vals)  # noqa: E731
+        else:
+            predicate = lambda v, *rest: v == condition  # noqa: E731
+
+        def resolve_triggers():
+            widgets = [self._resolve_ui_widget(ui, r) for r in trigger_refs]
+            return widgets if all(w is not None for w in widgets) else None
+
+        def resolve_targets():
+            out = []
+            for ref in target_refs:
+                if isinstance(ref, QtWidgets.QWidget):
+                    out.append(ref)
+                elif isinstance(ref, str):
+                    out.extend(self.get_widgets_by_string_pattern(ui, ref))
+            return out
+
+        def read(widget):
+            if value is not None:
+                return value(widget)
+            getter = self._widget_value_reader(widget)
+            return getter(widget) if getter is not None else None
+
+        def apply(*_):
+            triggers = resolve_triggers()
+            if triggers is None:
+                return
+            try:
+                on = bool(predicate(*[read(w) for w in triggers]))
+            except Exception as e:  # a half-built trigger; try again on the next signal
+                self.logger.debug(f"[enable_when] condition raised: {e}")
+                return
+            if invert:
+                on = not on
+            for w in resolve_targets():
+                w.setEnabled(on)
+
+        connected = set()
+
+        def connect_triggers():
+            triggers = resolve_triggers()
+            if triggers is None:
+                return
+            for w in triggers:
+                if id(w) in connected:
+                    continue
+                name = signal if (signal and len(triggers) == 1) else None
+                name = name or self._value_change_signal(w)
+                sig = getattr(w, name, None) if name else None
+                if sig is None or not callable(getattr(sig, "connect", None)):
+                    self.logger.warning(
+                        f"[enable_when] no change signal for {w.objectName()!r}"
+                    )
+                    continue
+                sig.connect(apply)
+                connected.add(id(w))
+            apply()
+
+        watched = set(key[0]) | {n for n in key[1] if not any(c in n for c in ",-")}
+        # Pattern targets ('b000-3') can't be matched by exact name — unpack them.
+        for n in key[1]:
+            if any(c in n for c in ",-"):
+                watched.update(self.unpack_names(n))
+
+        def on_registered(widget):
+            if widget.objectName() not in watched:
+                return
+            connect_triggers()
+            apply()
+            QtCore.QTimer.singleShot(0, apply)
+
+        connect_triggers()
+        on_reg = getattr(ui, "on_child_registered", None)
+        if on_reg is not None and callable(getattr(on_reg, "connect", None)):
+            on_reg.connect(on_registered)
+
+        rules[key] = apply
+        return apply
+
+    def refresh_dependencies(self, ui) -> None:
+        """Re-apply every :meth:`enable_when` rule on *ui* — for bulk value
+        changes made with signals blocked (a preset load, a programmatic
+        restore) that no trigger signal announced."""
+        for apply in list(ui.__dict__.get("_enable_when_rules", {}).values()):
+            apply()
 
     def connect_multi(self, ui, widgets, signals, slots):
         """Connect multiple signals to multiple slots at once.
