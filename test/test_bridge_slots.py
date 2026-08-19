@@ -26,7 +26,8 @@ from conftest import BaseTestCase, setup_qt_application
 app = setup_qt_application()
 
 import pythontk as ptk  # noqa: E402
-from qtpy import QtCore, QtWidgets  # noqa: E402
+from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
+from uitk.switchboard import Switchboard  # noqa: E402
 from uitk.bridge.slots import BridgeSlotsBase  # noqa: E402
 from uitk.bridge.spec import AttributeSpec, KindFactory  # noqa: E402
 from uitk.managers.preset_manager import PresetManager  # noqa: E402
@@ -335,9 +336,79 @@ class TestRequireOutputDir(BaseTestCase):
         self.assertFalse(os.path.isdir(r))
         self.assertNotIn(tag, _BridgeSlotsInternal._BRIDGE_TEMP_DIRS)
 
+    def test_bridge_temp_dir_survives_a_killed_host(self):
+        """A host that dies skips ``atexit``; the leftover must still be reclaimable.
+
+        Regression: the directory used to be a hand-rolled
+        ``<temp>/uitk_bridge/<tag>_<pid>`` whose ONLY cleanup was the exit hook.
+        DCC hosts are routinely killed, so each of those left a folder behind
+        with nothing able to reclaim it. Routed through ``ptk.TempArtifacts``
+        it joins a swept prefix namespace instead.  Added: 2026-08-18
+        """
+        import os
+        import shutil
+        import time
+
+        import pythontk as ptk
+
+        from uitk.bridge.slots import _BridgeSlotsInternal
+
+        tag = "test_bridge_swept"
+        self.addCleanup(_BridgeSlotsInternal._remove_bridge_temp_dir, tag)
+        s = self._make(default="", temp_fallback=True, tag=tag)
+        path = s.require_output_dir()
+        self.addCleanup(shutil.rmtree, path, True)
+        self.assertTrue(os.path.isdir(path))
+
+        # Simulate the killed host: the process is gone, so the exit hook never
+        # ran and the in-process registry is gone with it.
+        _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.pop(tag, None)
+        self.assertTrue(os.path.isdir(path), "precondition: the leftover is on disk")
+
+        # Backdate it into a PREVIOUS session, which is the case being modelled.
+        # `max_age_days=0` cannot express it: `sweep_stale` skips an entry whose
+        # `st_mtime >= cutoff`, and on Windows a directory created in the same
+        # clock tick reports st_mtime == time.time() exactly -- so the leftover
+        # survived its own sweep about two runs in three. Backdating is
+        # deterministic at any clock granularity.
+        past = time.time() - 2 * 86400
+        os.utime(path, (past, past))
+
+        # A later run allocating the same namespace reclaims it by age.
+        swept = ptk.TempArtifacts(
+            f"uitk_bridge_{tag}", policy="session", max_age_days=1
+        ).sweep_stale()
+        self.assertIn(os.path.normcase(path), [os.path.normcase(p) for p in swept])
+        self.assertFalse(os.path.isdir(path))
+
     def test_require_output_dir_false_short_circuits(self):
         s = self._make(require=False, temp_fallback=True, default="")
         self.assertEqual(s.require_output_dir(), "")
+
+    def test_transient_mode_skips_the_scene_default(self):
+        """A mode whose Output Dir is scratch must not adopt the scene dir.
+
+        Regression: a Marmoset bake roundtrip consumes its own hand-off
+        artifacts, but the blank field resolved to the scene/workspace dir and
+        left them beside the scene file. The bridge allocates -- and deletes --
+        its own scratch instead, so this tier hands it an empty string.
+        Added: 2026-08-18
+        """
+        s = self._make(default="D:/scene", temp_fallback=True)
+        s.TRANSIENT_OUTPUT_MODES = ("round_trip",)
+        self.assertEqual(s.require_output_dir("round_trip"), "")
+        # Nothing is written back -- a scratch path in the field would read as
+        # a user choice on the NEXT run.
+        self.assertEqual(s._output_dir_edit.text(), "")
+        self.assertFalse(s._bridge.logger.errors)
+        # Any other mode is unchanged.
+        self.assertEqual(s.require_output_dir("send_to"), "D:/scene")
+
+    def test_transient_mode_still_honors_a_typed_value(self):
+        """An explicitly named dir wins even for a transient mode. Added: 2026-08-18"""
+        s = self._make(typed="C:/pick", default="D:/scene")
+        s.TRANSIENT_OUTPUT_MODES = ("round_trip",)
+        self.assertEqual(s.require_output_dir("round_trip"), "C:/pick")
 
 
 class LogLinkDispatchTest(unittest.TestCase):
@@ -414,10 +485,10 @@ class LogLinkDispatchTest(unittest.TestCase):
 
         order = []
         BridgeSlotsBase.register_log_link_handler(
-            lambda u, l: (order.append("a"), True)[1]
+            lambda u, log: (order.append("a"), True)[1]
         )
         BridgeSlotsBase.register_log_link_handler(
-            lambda u, l: (order.append("b"), True)[1]
+            lambda u, log: (order.append("b"), True)[1]
         )
         self._dispatch("action://reveal?node=x")
         self.assertEqual(order, ["a"])  # 'b' never tried once 'a' handled it
@@ -427,10 +498,10 @@ class LogLinkDispatchTest(unittest.TestCase):
 
         order = []
         BridgeSlotsBase.register_log_link_handler(
-            lambda u, l: (order.append("a"), False)[1]
+            lambda u, log: (order.append("a"), False)[1]
         )
         BridgeSlotsBase.register_log_link_handler(
-            lambda u, l: (order.append("b"), True)[1]
+            lambda u, log: (order.append("b"), True)[1]
         )
         self._dispatch("action://select?node=x")
         self.assertEqual(order, ["a", "b"])
@@ -446,7 +517,7 @@ class LogLinkDispatchTest(unittest.TestCase):
 
         BridgeSlotsBase.register_log_link_handler(boom)
         BridgeSlotsBase.register_log_link_handler(
-            lambda u, l: (order.append("ok"), True)[1]
+            lambda u, log: (order.append("ok"), True)[1]
         )
         self._dispatch("action://select?node=x")  # must not raise
         self.assertEqual(order, ["boom", "ok"])
@@ -456,7 +527,7 @@ class LogLinkDispatchTest(unittest.TestCase):
 
         reached = []
         BridgeSlotsBase.register_log_link_handler(
-            lambda u, l: (reached.append(1), True)[1]
+            lambda u, log: (reached.append(1), True)[1]
         )
         self._dispatch("action://open?path=")  # empty path → internal no-op
         self.assertEqual(reached, [])
@@ -520,12 +591,18 @@ class TestKindWidgetPresetRoundTrip(BaseTestCase):
         KindFactory.set_value(widget, empty)
         self.assertEqual(KindFactory.read_value(widget), empty)
         mgr.load("p")
-        self.assertEqual(KindFactory.read_value(widget), value, f"{key} did not restore")
+        self.assertEqual(
+            KindFactory.read_value(widget), value, f"{key} did not restore"
+        )
 
     def test_every_kind_round_trips(self):
         empties = {
-            "path": "", "check_list": [], "file_list": [],
-            "float": 0.0, "bool": False, "choice": "x",
+            "path": "",
+            "check_list": [],
+            "file_list": [],
+            "float": 0.0,
+            "bool": False,
+            "choice": "x",
         }
         for key, spec_kw, value in self.CASES:
             with self.subTest(kind=spec_kw["kind"]):
@@ -765,6 +842,80 @@ class TestParamSupersessions(BaseTestCase):
         self.assertFalse(slot._param_widgets["VALUE"].isEnabled())
 
 
+class TestLiveParamTooltips(BaseTestCase):
+    """``live_param_tooltips`` -- a row whose tooltip is recomputed on hover.
+
+    ``format_param_tooltip`` runs once at build time, so a row describing
+    session state (a scene set the user defines from a selection) would
+    describe the state the panel opened on -- exactly the case being checked.
+    """
+
+    def _built(self, providers):
+        params = {
+            "SET": AttributeSpec(key="SET", label="Bake Source", kind="str", default="")
+        }
+        slot = _bare_slot(type("_Registry", (), {"PARAMS": params}))
+        slot._param_widgets, slot._param_rows = {}, {}
+        slot._param_labels = {}
+        slot._param_section, slot._section_separators = {}, {}
+        slot.sb = Switchboard()
+        slot.live_param_tooltips = lambda: providers
+
+        slot.ui = QtWidgets.QWidget()
+        slot.ui.grp_process = QtWidgets.QGroupBox(slot.ui)
+        QtWidgets.QVBoxLayout(slot.ui.grp_process)
+        slot.ui.b000 = QtWidgets.QPushButton(slot.ui.grp_process)
+        slot.ui.grp_process.layout().addWidget(slot.ui.b000)
+
+        slot._build_param_widgets()
+        slot._bind_live_param_tooltips()
+        return slot
+
+    @staticmethod
+    def _hover(widget):
+        """Deliver the ToolTip event Qt sends just before it paints the popup."""
+        QtWidgets.QApplication.sendEvent(
+            widget,
+            QtGui.QHelpEvent(
+                QtCore.QEvent.ToolTip, QtCore.QPoint(0, 0), QtCore.QPoint(0, 0)
+            ),
+        )
+
+    def test_provider_refreshes_the_control_on_every_hover(self):
+        state = {"n": 0}
+
+        def provider():
+            state["n"] += 1
+            return f"stored: {state['n']}"
+
+        slot = self._built({"SET": provider})
+        widget = slot._param_widgets["SET"]
+        self._hover(widget)
+        self.assertEqual(widget.toolTip(), "stored: 1")
+        self._hover(widget)
+        self.assertEqual(widget.toolTip(), "stored: 2")
+
+    def test_the_row_label_is_a_hover_target_too(self):
+        """The caption is the row's identity -- and on an ``action`` row it is
+        the only target left, since the buttons carry their own tips."""
+        slot = self._built({"SET": lambda: "live"})
+        label = slot._param_labels["SET"]
+        self._hover(label)
+        self.assertEqual(label.toolTip(), "live")
+
+    def test_unknown_keys_are_ignored(self):
+        """A shared base may offer a row only some of its panels register."""
+        slot = self._built({"NOT_A_PARAM": lambda: "x"})  # must not raise
+        self.assertNotIn("NOT_A_PARAM", slot._param_widgets)
+
+    def test_default_hook_is_empty_so_rows_keep_their_static_tooltip(self):
+        slot = self._built({})
+        widget = slot._param_widgets["SET"]
+        before = widget.toolTip()
+        self._hover(widget)
+        self.assertEqual(widget.toolTip(), before)
+
+
 class TestInlineParamRows(BaseTestCase):
     """``AttributeSpec.inline`` -- a compact modifier beside the value it governs.
 
@@ -777,6 +928,7 @@ class TestInlineParamRows(BaseTestCase):
     def _built(self, params):
         slot = _bare_slot(type("_Registry", (), {"PARAMS": params}))
         slot._param_widgets, slot._param_rows = {}, {}
+        slot._param_labels = {}
         slot._param_section, slot._section_separators = {}, {}
 
         slot.ui = QtWidgets.QWidget()
@@ -791,9 +943,16 @@ class TestInlineParamRows(BaseTestCase):
     @staticmethod
     def _specs(**overrides):
         return {
-            "CAGE": AttributeSpec(key="CAGE", label="Cage Offset", kind="float", default=0.02),
+            "CAGE": AttributeSpec(
+                key="CAGE", label="Cage Offset", kind="float", default=0.02
+            ),
             "AUTO": AttributeSpec(
-                key="AUTO", label="Auto", kind="bool", default=False, inline=True, **overrides
+                key="AUTO",
+                label="Auto",
+                kind="bool",
+                default=False,
+                inline=True,
+                **overrides,
             ),
         }
 
@@ -813,9 +972,7 @@ class TestInlineParamRows(BaseTestCase):
 
     def test_inline_values_are_collected_like_any_other(self):
         slot = self._built(self._specs())
-        self.assertEqual(
-            slot.collect_param_values(), {"CAGE": 0.02, "AUTO": False}
-        )
+        self.assertEqual(slot.collect_param_values(), {"CAGE": 0.02, "AUTO": False})
 
     def test_a_leading_inline_spec_still_gets_its_own_row(self):
         """Nothing to attach to -- it must not be dropped."""
@@ -853,12 +1010,16 @@ class TestCheckListKind(BaseTestCase):
     CHOICES = [("Audio Event", "audio_event"), ("Shot Metadata", "shot_metadata")]
 
     def _widget(self, **kwargs):
-        return KindFactory.make_widget(AttributeSpec(key="scripts", kind="check_list", **kwargs))
+        return KindFactory.make_widget(
+            AttributeSpec(key="scripts", kind="check_list", **kwargs)
+        )
 
     def test_default_checks_the_listed_values(self):
         w = self._widget(choices=self.CHOICES, default=["shot_metadata"])
-        self.assertEqual([w.item(i).text() for i in range(w.count())],
-                         ["Audio Event", "Shot Metadata"])
+        self.assertEqual(
+            [w.item(i).text() for i in range(w.count())],
+            ["Audio Event", "Shot Metadata"],
+        )
         self.assertEqual(KindFactory.read_value(w), ["shot_metadata"])
 
     def test_read_write_round_trip(self):
@@ -939,12 +1100,15 @@ class TestCheckListKind(BaseTestCase):
         """Same runtime path for the singular kind (the Unity panels' version
         combo): refilling keeps the current selection when it survives."""
         w = KindFactory.make_widget(
-            AttributeSpec(key="version", kind="choice", choices=[("Auto", "")], default="")
+            AttributeSpec(
+                key="version", kind="choice", choices=[("Auto", "")], default=""
+            )
         )
         KindFactory.set_choices(w, [("Auto", ""), ("6000.0.5f1", "6000.0.5f1")])
         KindFactory.set_value(w, "6000.0.5f1")
         KindFactory.set_choices(
-            w, [("Auto", ""), ("6000.0.5f1", "6000.0.5f1"), ("2021.3.1f1", "2021.3.1f1")]
+            w,
+            [("Auto", ""), ("6000.0.5f1", "6000.0.5f1"), ("2021.3.1f1", "2021.3.1f1")],
         )
         self.assertEqual(KindFactory.read_value(w), "6000.0.5f1")
 
@@ -1128,7 +1292,9 @@ class TestEnsureOptionalPackage(unittest.TestCase):
 
     def test_absent_package_still_says_install_not_update(self):
         sb, slots = self._make("No")
-        slots.ensure_optional_package("uitk-not-a-real-pkg>=1.0", feature="Unity Bridge")
+        slots.ensure_optional_package(
+            "uitk-not-a-real-pkg>=1.0", feature="Unity Bridge"
+        )
         self.assertIn("install", sb.prompts[0][0].lower())
         self.assertNotIn("older", sb.prompts[0][0].lower())
 
@@ -1171,9 +1337,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         try:
             # A folder with a nested real package, like a repo checkout:
             # tmp/uitk_fake_nsp_pkg/uitk_fake_nsp_pkg/__init__.py
-            (Path(tmp) / "uitk_fake_nsp_pkg" / "uitk_fake_nsp_pkg").mkdir(
-                parents=True
-            )
+            (Path(tmp) / "uitk_fake_nsp_pkg" / "uitk_fake_nsp_pkg").mkdir(parents=True)
             _sys.path.insert(0, tmp)
             try:
                 self.assertFalse(
@@ -1200,6 +1364,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         BRIDGE, which by definition does not exist yet here. Logging must go
         through ``self.sb`` or this raises AttributeError on the decline path.
         """
+
         class _NoLoggerSlots(BridgeSlotsBase):
             def __init__(self, sb):
                 self.sb = sb  # deliberately NO self.logger
@@ -1345,7 +1510,9 @@ class TestSharedSpecs(BaseTestCase):
         from uitk.bridge import Parameters
 
         self.assertEqual(Parameters.shader_type_spec().section, "")
-        self.assertEqual(Parameters.shader_type_spec(section="Import").section, "Import")
+        self.assertEqual(
+            Parameters.shader_type_spec(section="Import").section, "Import"
+        )
 
 
 if __name__ == "__main__":

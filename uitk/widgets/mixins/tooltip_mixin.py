@@ -397,6 +397,112 @@ class TooltipFormat:
             + (TooltipFormat.fmt(notes=note_list) if note_list else "")
         )
 
+    #: Default cap on how many entries :meth:`stored_items` lists before it
+    #: elides the tail. Sized so a hover stays a glance rather than a panel --
+    #: past roughly this many rows Qt's popup is taller than the widget that
+    #: spawned it, and the count line is the only part still worth reading.
+    STORED_ITEMS_MAX = 12
+
+    @staticmethod
+    def stored_items(
+        items,
+        *,
+        title: str = None,
+        body: str = None,
+        formatter=None,
+        max_items: int = None,
+        noun: str = "item(s)",
+        empty_text: str = None,
+        notes: list = None,
+    ) -> str:
+        """Build a live tooltip listing what a control currently has STORED.
+
+        The counterpart to :meth:`placeholder_preview` for the other common
+        "this widget owns hidden state" shape: a *Set From Selection* button
+        whose captured set is invisible until something consumes it. Bound with
+        ``widget.tooltip.bind``, the hover answers "what did I capture, and is
+        it still what I want?" without a round trip through the tool.
+
+        Renders instruction (*title* / *body*), then the live count, then the
+        entries -- capped at *max_items* with an elided-tail line, because a
+        captured selection can run to hundreds of objects and a tooltip that
+        long is both unreadable and slow to paint.
+
+        Entries are treated as **data** and HTML-escaped (a node name may hold
+        ``&`` or ``<``). *title* / *body* / *noun* / *empty_text* / *notes* are
+        caller **markup**, passed through verbatim.
+
+        Parameters:
+            items:      The stored entries (``None`` reads as empty).
+            title:      Optional heading -- typically the control's own name.
+                        Because ``bind`` replaces the widget's static tooltip,
+                        fold its help text in here rather than leaving it on
+                        ``setToolTip``.
+            body:       Optional purpose paragraph -- what the control captures.
+            formatter:  ``callable(item) -> str`` producing each entry's text.
+                        Defaults to ``str``. Use it to shorten a DCC's long path
+                        (``lambda n: n.rsplit("|", 1)[-1]``) or to read a name
+                        off a live object (``lambda o: o.name``).
+            max_items:  Cap on listed entries. ``None`` uses
+                        :attr:`STORED_ITEMS_MAX`; a non-positive value lists
+                        every entry.
+            noun:       Noun phrase for the count line, e.g.
+                        ``"stored source mesh(es)"``.
+            empty_text: Shown instead of the list when nothing is stored.
+            notes:      Extra callouts appended after the list (see :meth:`fmt`)
+                        -- a stale-entry warning, a "what reads this" pointer.
+
+        Returns:
+            An HTML tooltip string (see :meth:`fmt`).
+
+        Example::
+
+            self.sb.tooltip.bind(btn, self._source_tooltip)
+
+            def _source_tooltip(self):
+                return TooltipFormat.stored_items(
+                    self._sources,
+                    title="Set Source From Selection",
+                    body="Capture the current selection as the stored sources.",
+                    formatter=lambda n: n.rsplit("|", 1)[-1],
+                    noun="stored source mesh(es)",
+                    empty_text="Nothing stored yet.",
+                )
+        """
+        from html import escape as _esc
+
+        # Not ``items or []``: that asks the input for its truth value, which
+        # a numpy array refuses outright and a generator answers without
+        # consuming. ``None`` is the only "nothing" this has to absorb.
+        entries = [] if items is None else list(items)
+        head = TooltipFormat.fmt(title=title, body=body)
+        tail = TooltipFormat.fmt(notes=notes) if notes else ""
+
+        if not entries:
+            return (
+                head
+                + f"<p style='margin:3px 0 0 0; color:{_C_MUTED}; font-style:italic'>"
+                f"{empty_text or 'Nothing stored yet.'}</p>" + tail
+            )
+
+        cap = TooltipFormat.STORED_ITEMS_MAX if max_items is None else max_items
+        shown = entries if cap <= 0 else entries[:cap]
+        render = formatter or str
+        rows = "".join(f"<li>{_esc(str(render(item)))}</li>" for item in shown)
+        hidden = len(entries) - len(shown)
+        return (
+            head + f"<p style='margin:4px 0 1px 0'>"
+            f"{TooltipFormat.hl(str(len(entries)))} {noun}</p>"
+            + f"<ul style='margin:1px 0; padding-left:14px'>{rows}</ul>"
+            + (
+                f"<p style='margin:0; color:{_C_MUTED}; font-style:italic'>"
+                f"\u2026and {hidden} more</p>"
+                if hidden
+                else ""
+            )
+            + tail
+        )
+
 
 class TooltipProxy(TooltipFormat, _TooltipBindInternal):
     """Per-widget tooltip namespace stamped on each registered MainWindow widget.

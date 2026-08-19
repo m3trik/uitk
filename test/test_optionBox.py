@@ -2488,6 +2488,141 @@ class TestOptionBoxManagerReset(QtBaseTestCase):
         self.assertIn("reset", mgr.option_order)
 
 
+class TestOptionRestoreDefault(QtBaseTestCase):
+    """Resetting a field resets its *options* too, not just its value.
+
+    Backs the per-axis spacing lock (``Switchboard.link_spinboxes``): clicking a
+    field's reset button clears the lock it was linked by. Implemented as the
+    duck-typed ``BaseOption.restore_default`` hook so an option opts in without
+    ResetOption knowing its type.
+    """
+
+    def _make(self, *, default=0.0, start=5.0, lock_initial=False):
+        """A spin box wrapped with a reset button and a lock toggle."""
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        sb.setRange(-100.0, 100.0)
+        sb.setValue(start)
+        reset = ResetOption(sb, reset=lambda: sb.setValue(default))
+        lock = ToggleOption(
+            sb,
+            icon="lock",
+            icon_off="unlock",
+            initial=lock_initial,
+            settings_key=False,  # exercise the state machine, not persistence
+        )
+        box = OptionBox(options=[reset, lock])
+        self.track_widget(box.wrap(sb))
+        return sb, reset, lock, box
+
+    # ---- ordering --------------------------------------------------------
+
+    def test_toggle_sorts_before_reset(self):
+        """The lock sits to the LEFT of the reset — reset stays outermost."""
+        _, reset, lock, box = self._make()
+        order = box._sort_options()
+        self.assertLess(
+            order.index(lock),
+            order.index(reset),
+            "a state toggle must precede the reset button",
+        )
+
+    # ---- the hook --------------------------------------------------------
+
+    def test_toggle_restore_default_returns_to_initial(self):
+        _, _, lock, _ = self._make(lock_initial=False)
+        lock.set_on(True)
+        lock.restore_default()
+        self.assertFalse(lock.is_on)
+
+    def test_restore_default_honours_a_true_initial(self):
+        """``initial`` is the default — not a hard-coded ``False``."""
+        _, _, lock, _ = self._make(lock_initial=True)
+        lock.set_on(False)
+        lock.restore_default()
+        self.assertTrue(lock.is_on)
+
+    def test_base_restore_default_is_a_noop(self):
+        """An option that holds user data doesn't override the hook."""
+        pin = PinValuesOption(self.track_widget(QtWidgets.QLineEdit()))
+        pin.restore_default()  # must not raise, must not clear anything
+
+    def test_sibling_options_excludes_self(self):
+        _, reset, lock, _ = self._make()
+        self.assertEqual(reset.sibling_options(), [lock])
+        self.assertEqual(lock.sibling_options(), [reset])
+
+    def test_sibling_options_empty_before_wrap(self):
+        """Unwrapped options have no box to look sideways into."""
+        self.assertEqual(ResetOption().sibling_options(), [])
+
+    # ---- reset clears the lock ------------------------------------------
+
+    def test_reset_clears_the_lock(self):
+        sb, reset, lock, _ = self._make(default=0.0, start=5.0)
+        lock.set_on(True)
+        reset.reset()
+        self.assertEqual(sb.value(), 0.0, "the value still resets")
+        self.assertFalse(lock.is_on, "the reset also clears the lock")
+
+    def test_plain_click_clears_the_lock(self):
+        sb, reset, lock, _ = self._make(default=0.0, start=5.0)
+        lock.set_on(True)
+        reset._current_modifiers = lambda: QtCore.Qt.NoModifier
+        reset.widget.click()
+        app.processEvents()
+        self.assertEqual(sb.value(), 0.0)
+        self.assertFalse(lock.is_on)
+
+    def test_bypass_leaves_the_lock_alone(self):
+        """Bypass is a transient hold — it must restore exactly what it
+        suspended, so it does NOT clear sibling option state."""
+        sb, reset, lock, _ = self._make(default=0.0, start=5.0)
+        lock.set_on(True)
+        reset.set_bypassed(True)
+        self.assertTrue(lock.is_on, "bypass must not clear the lock")
+        reset.set_bypassed(False)
+        self.assertTrue(lock.is_on)
+
+    def test_one_bad_plugin_cannot_eat_the_reset(self):
+        sb, reset, lock, _ = self._make(default=0.0, start=5.0)
+
+        def boom():
+            raise RuntimeError("underlying C++ object already deleted")
+
+        lock.restore_default = boom
+        reset.reset()
+        self.assertEqual(sb.value(), 0.0, "the value reset still happened")
+
+    # ---- manager-level batch --------------------------------------------
+
+    def test_manager_restore_option_defaults(self):
+        """``restore_option_defaults`` clears every option, pending or live."""
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        mgr = OptionBoxManager(sb)
+        sb._option_box_manager = mgr
+        mgr.set_reset()
+        mgr.set_toggle(icon="lock", initial=False, settings_key=False)
+        lock = mgr.find_option(ToggleOption)
+        lock.set_on(True)
+
+        mgr.restore_option_defaults()
+        self.assertFalse(lock.is_on)
+
+    def test_manager_get_options_includes_pending(self):
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        mgr = OptionBoxManager(sb)
+        sb._option_box_manager = mgr
+        mgr.set_reset()
+        self.assertEqual(len(mgr.get_options()), 1)
+
+
 class TestOptionBoxInitPerfRegressions(QtBaseTestCase):
     """Phase-1 init-performance regressions.
 

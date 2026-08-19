@@ -45,6 +45,35 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
     # to ``MessageBox._default_theme`` after import affect new instances.
     _USE_DEFAULT_THEME = object()
 
+    # A MessageBox is two widgets wearing one class: a PASSIVE TOAST that must
+    # never take focus, and an INTERACTIVE PROMPT that cannot work unless it
+    # does. Only the toast flags were ever applied, to both.
+    _TOAST_FLAGS = (
+        QtCore.Qt.WindowType.WindowDoesNotAcceptFocus
+        | QtCore.Qt.WindowStaysOnTopHint
+        | QtCore.Qt.Tool
+        | QtCore.Qt.FramelessWindowHint
+    )
+    # ``exec_()`` is app-modal by definition: it blocks the host DCC until the
+    # user answers. Carrying WindowDoesNotAcceptFocus there produced a prompt
+    # that halted the host while refusing every keypress meant to dismiss it,
+    # and ``autoClose`` deliberately skips buttoned boxes, so nothing else
+    # could close it either -- an unrecoverable hang. Qt.Tool is dropped for the
+    # same reason: a Tool window need not appear in the task bar or above the
+    # host, so the thing blocking the session could not be found. Frameless and
+    # always-on-top are KEPT -- they are the styled look, and neither prevents
+    # answering the prompt.
+    # Qt.Dialog is REQUIRED, not decorative: a flag set carrying only hints has
+    # no window-type bit, and on a PARENTED widget (the production path always
+    # passes one) Qt resolves that to Qt.Widget -- an embedded child, not a
+    # top-level window. Measured: hints-only gives type 0x0 with a parent and
+    # 0x1 without, so testing this unparented hides it.
+    _PROMPT_FLAGS = (
+        QtCore.Qt.Dialog
+        | QtCore.Qt.WindowStaysOnTopHint
+        | QtCore.Qt.FramelessWindowHint
+    )
+
     def __init__(
         self,
         parent=None,
@@ -59,12 +88,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         self.setWindowModality(QtCore.Qt.NonModal)
         self.setStandardButtons(QtWidgets.QMessageBox.NoButton)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setWindowFlags(
-            QtCore.Qt.WindowType.WindowDoesNotAcceptFocus
-            | QtCore.Qt.WindowStaysOnTopHint
-            | QtCore.Qt.Tool
-            | QtCore.Qt.FramelessWindowHint
-        )
+        self.setWindowFlags(self._TOAST_FLAGS)
 
         self.setTextFormat(QtCore.Qt.RichText)
 
@@ -246,7 +270,29 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         self.menu_timer.stop()
         super().hideEvent(event)
 
+    def as_prompt(self):
+        """Re-flag this box as an interactive prompt rather than a toast.
+
+        Idempotent, and applied before the window is realised so the change
+        costs no flicker. Kept separate from :meth:`exec_` so the flag
+        contract is assertable without entering a modal event loop -- a test
+        that has to spin ``exec_()`` to check a window flag is a test that
+        hangs the suite the same way the bug hangs the host.
+        """
+        # ORDER IS LOAD-BEARING: setWindowModality() RESETS the window flags to
+        # Qt's defaults for the widget type (measured: 0x40801 -> 0x8003003, i.e.
+        # the frameless/on-top set replaced by Dialog|Title|SysMenu|Close). Setting
+        # the flags first therefore discards them silently, which is why modality
+        # is applied FIRST here and in __init__.
+        self.setWindowModality(QtCore.Qt.ApplicationModal)
+        self.setWindowFlags(self._PROMPT_FLAGS)
+        return self
+
     def exec_(self):
+        # A modal prompt needs focus and needs to be findable; the toast flags
+        # set in __init__ deny both. See _PROMPT_FLAGS.
+        self.as_prompt()
+
         # Call the original exec_ method and store the result
         resultEnum = super().exec_()
 

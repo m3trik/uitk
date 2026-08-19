@@ -8,6 +8,15 @@ from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
 
+# Lock-toggle tints used by :meth:`SwitchboardUtilsMixin.link_spinboxes`, taken
+# from the channel-box lock column so every lock in the ecosystem reads the
+# same: desaturated blue while locked, dim grey while unlocked. Unlocked is a
+# perfectly normal state, so it must NOT use ToggleOption's error-red default
+# (which is there to flag the control that stopped something working).
+_LOCK_ACTIVE_COLOR = "#8A9BB0"
+_LOCK_INACTIVE_COLOR = "#555555"
+
+
 class OverrideCursorGuard(QtCore.QObject):
     """Owns one application override cursor and guarantees its removal.
 
@@ -1075,6 +1084,8 @@ class SwitchboardUtilsMixin:
         tooltip_on: str = "Linked. Changing this shifts the other linked fields by the same amount. Click to unlink.",
         tooltip_off: str = "Unlinked. Click to link this field so it moves with the others.",
         initial: bool = False,
+        active_color: str = _LOCK_ACTIVE_COLOR,
+        disabled_color: str = _LOCK_INACTIVE_COLOR,
         **set_toggle_kwargs,
     ):
         """Give each spin box a *lock* toggle that links locked boxes by an equal delta.
@@ -1107,6 +1118,10 @@ class SwitchboardUtilsMixin:
             tooltip_on / tooltip_off: Toggle tooltips.
             initial (bool): Starting lock state (default unlinked). Overridden by
                 any persisted per-field value.
+            active_color / disabled_color: Icon tints for the locked / unlocked
+                states — the channel-box lock convention (see the module
+                constants). Overrides ``ToggleOption``'s error-red default,
+                which would misread an unlocked field as a fault.
             **set_toggle_kwargs: Forwarded verbatim to ``option_box.set_toggle``.
 
         Returns:
@@ -1176,6 +1191,8 @@ class SwitchboardUtilsMixin:
                 tooltip_on=tooltip_on,
                 tooltip_off=tooltip_off,
                 initial=initial,
+                active_color=active_color,
+                disabled_color=disabled_color,
                 **set_toggle_kwargs,
             )
             w.valueChanged.connect(_make_handler(w))

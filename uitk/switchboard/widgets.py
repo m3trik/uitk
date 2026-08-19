@@ -9,6 +9,252 @@ import pythontk as ptk
 class SwitchboardWidgetMixin:
     """Widget registration, resolution, and dynamic class loading for Switchboard."""
 
+    # ------------------------------------------------------------------ gating
+    #: How a widget whose requirement is unmet is presented. ``"hide"`` removes it
+    #: (the shipped default -- an unusable tool is clutter), ``"disable"`` greys it
+    #: and explains why in the tooltip (discoverable: the user learns the tool
+    #: exists and what to install), ``"show"`` leaves it alone (dev/passthrough).
+    UNMET_POLICIES = ("hide", "disable", "show")
+    UNMET_POLICY_DEFAULT = "hide"
+    UNMET_POLICY_KEY = "unmet_policy"
+
+    #: Marker stamped on a widget while a gate holds it: the FULL pre-gate
+    #: presentation (tooltip, visibility, enabled), so the restore branch knows
+    #: there is something to undo and exactly what to put back. Storing only the
+    #: tooltip made `_ungate` assume the other two were on, so a widget that was
+    #: already hidden or disabled before its first gate came back visible.
+    _GATE_STATE_ATTR = "_gate_restore"
+
+    @property
+    def _gate_registry(self) -> list:
+        """Live gates, as ``(widget-ref, availability, reason)`` -- see :meth:`recheck_gates`.
+
+        Lazily created so no ``__init__`` in the Switchboard chain has to know
+        about gating. Entries hold a weak reference where the binding allows one,
+        so a registered widget is never kept alive by being gated.
+        """
+        registry = getattr(self, "_gated_widgets", None)
+        if registry is None:
+            registry = []
+            setattr(self, "_gated_widgets", registry)
+        return registry
+
+    @property
+    def unmet_policy(self) -> str:
+        """How tools whose requirement is unmet are presented (persisted).
+
+        A user preference, so it lives in the shared ``configurable`` branch
+        rather than on the instance -- a dev reload that builds a second
+        Switchboard must not silently revert the user's choice. An unrecognized
+        stored value degrades to :attr:`UNMET_POLICY_DEFAULT` rather than raising:
+        a settings file written by a newer version must not break an older one.
+        """
+        value = self.configurable.value(
+            self.UNMET_POLICY_KEY, self.UNMET_POLICY_DEFAULT
+        )
+        return value if value in self.UNMET_POLICIES else self.UNMET_POLICY_DEFAULT
+
+    @unmet_policy.setter
+    def unmet_policy(self, value) -> None:
+        if value not in self.UNMET_POLICIES:
+            value = self.UNMET_POLICY_DEFAULT
+        self.configurable.setValue(self.UNMET_POLICY_KEY, value)
+
+    def gate(self, widget, available, reason: str = "") -> bool:
+        """Present *widget* according to whether its requirement is met.
+
+        The explicit counterpart to :meth:`apply_visibility_policy`: a slot calls
+        this from its ``*_init`` with a plain bool it computed however it likes --
+        ``mtk.MarmosetBridge.APP.available``, ``cmds.pluginInfo(..., loaded=True)``,
+        ``OptionalPackageManager.available("unitytk>=0.0.8")``. Nothing here knows
+        about apps, plugins, or packages; the caller owns the question and this
+        owns the answer's *presentation*, per :attr:`unmet_policy`.
+
+        Called from ``*_init``, which re-fires on every panel show, so it must be
+        idempotent and must fully restore -- both are covered: the pre-gate
+        presentation is stashed on first gate and put back when *available* turns
+        true, so repeated calls neither stack tooltips nor lose the widget's real
+        state. That re-fire is what makes a policy change take effect on the next
+        panel build; :meth:`recheck_gates` is the same thing on demand, for the
+        case the re-fire cannot serve -- the user installing the missing app
+        DURING the session, with the panel already open.
+
+        Parameters:
+            widget: The widget to gate. ``None`` is tolerated (a slot may gate an
+                optional widget without a guard) and returns *available*.
+            available: Whether the requirement is satisfied -- a bool, or a
+                zero-arg callable returning one. Pass the CALLABLE when the
+                answer can change while the session runs (an app the user may
+                install): it is what :meth:`recheck_gates` re-evaluates, where a
+                bare bool can only be re-applied as recorded.
+            reason (str): User-facing explanation shown in the disabled tooltip,
+                e.g. ``AppSpec.not_found_message``. Optional -- a generic line is
+                used when omitted.
+
+        Returns:
+            bool: *available*, so a slot can ``if not self.sb.gate(...): return``.
+        """
+        if widget is None:
+            return bool(available() if callable(available) else available)
+
+        self._remember_gate(widget, available, reason)
+        if callable(available):
+            available = available()
+
+        if available:
+            self._ungate(widget)
+            return True
+
+        # A HARD context exclusion outranks this soft one. ``register_widget``
+        # applies ``apply_visibility_policy`` and only then calls ``init_slot``, so
+        # a widget hidden for the wrong host (``requires``) or because its nav
+        # target doesn't exist (``nav-unresolved``) still reaches the panel's
+        # ``*_init`` and gets gated. The two policies are not equal partners:
+        # ``requires`` says this host must NEVER show the widget, while the gate
+        # only says the app behind it is missing — so the full-presentation write
+        # below (``setVisible(policy != "hide")``) would un-hide, under
+        # ``disable``/``show``, a button this DCC has no implementation for.
+        # Reporting unmet is still correct; overriding the exclusion is not.
+        existing = getattr(widget, "hidden_by_policy", None)
+        if existing not in (None, "unmet"):
+            return False
+
+        # Stash the pre-gate presentation ONCE. A second gate call (the *_init
+        # re-fire) must not capture the gated state as if it were the original.
+        if not hasattr(widget, self._GATE_STATE_ATTR):
+            setattr(widget, self._GATE_STATE_ATTR, self._presentation(widget))
+        stashed = getattr(widget, self._GATE_STATE_ATTR)
+        original = stashed["tooltip"] or ""
+
+        # Every branch specifies visibility, enabled-ness AND tooltip in full,
+        # rather than only the attributes its own policy cares about. Anything
+        # left implicit becomes stale when the policy CHANGES between two gate
+        # calls -- which it does, because the preference is user-facing and
+        # ``*_init`` re-fires on the next show: a partial ``hide`` branch left the
+        # widget invisible after a switch to ``show``, and a partial ``disable``
+        # branch left its appended reason on the tooltip after a switch to
+        # ``hide``. Declaring the whole presentation makes each call idempotent
+        # and every transition correct without tracking the previous policy.
+        #
+        # Declared relative to the STASHED baseline, not to True: a gate may only
+        # ever take presentation AWAY. `disable`/`show` writing a bare True would
+        # REVEAL a widget its panel had deliberately hidden (and re-enable one it
+        # had disabled) -- the app being missing is no reason to show a tool the
+        # panel decided against, and the reveal happened at gate time, before
+        # `_ungate` ever got the chance to put it back.
+        policy = self.unmet_policy
+        explanation = reason or "This tool's requirements are not installed."
+        widget.hidden_by_policy = "unmet"
+        widget.setVisible(stashed["visible"] and policy != "hide")
+        widget.setEnabled(stashed["enabled"] and policy != "disable")
+        widget.setToolTip(
+            f"{original}\n\n{explanation}".strip() if policy == "disable" else original
+        )
+        return False
+
+    def _remember_gate(self, widget, available, reason: str) -> None:
+        """Record (or refresh) *widget*'s gate so :meth:`recheck_gates` can re-apply it.
+
+        Keyed by widget identity, so the ``*_init`` re-fire updates the entry
+        rather than growing a duplicate for every panel show.
+        """
+        import weakref
+
+        try:
+            ref = weakref.ref(widget)
+        except TypeError:  # not weak-referenceable -- hold it directly
+
+            def ref(_w=widget):
+                return _w
+
+        registry = self._gate_registry
+        for i, (existing, _, _) in enumerate(registry):
+            if existing() is widget:
+                registry[i] = (ref, available, reason)
+                return
+        registry.append((ref, available, reason))
+
+    def recheck_gates(self) -> int:
+        """Re-apply every live gate; return how many widgets were re-presented.
+
+        The on-demand twin of the ``*_init`` re-fire, for the two things that
+        re-fire cannot reach: a user who installs a missing app WHILE a panel is
+        open, and a change to :attr:`unmet_policy` that should land on the panel
+        already in front of them.
+
+        A gate registered with a CALLABLE is re-evaluated, so a newly-installed
+        app is discovered here; one registered with a plain bool is re-applied as
+        recorded, which still picks up a policy change. Callers holding a cached
+        probe (``ptk.AppSpec.path`` memoizes, deliberately) must invalidate it
+        first -- ``AppSpec.refresh()`` -- or the callable will report the same
+        answer it did before; ``Slots.recheck_app_gates`` does exactly that pair.
+
+        Entries whose widget has been garbage-collected or whose underlying C++
+        object is gone are pruned as they are found, so the registry cannot grow
+        across panel rebuilds.
+        """
+        live, applied = [], 0
+        for ref, available, reason in self._gate_registry:
+            widget = ref()
+            if widget is None:
+                continue
+            try:
+                self.gate(widget, available, reason)
+            except RuntimeError:  # wrapped C++ object already deleted
+                continue
+            live.append((ref, available, reason))
+            applied += 1
+        # gate() re-registers each surviving widget, so rebuild from the survivors
+        # rather than appending -- otherwise a pruned entry could come back.
+        self._gate_registry[:] = live
+        return applied
+
+    @staticmethod
+    def _presentation(widget) -> dict:
+        """The three properties a gate overwrites, as found.
+
+        Visibility is read with ``isVisibleTo(parent)``, never ``isVisible()``:
+        a gate runs from ``*_init``, which fires while the panel is still being
+        built, so ``isVisible()`` is False for every widget on it and the stash
+        would record "hidden" for the whole panel. ``isVisibleTo`` answers the
+        question actually being asked -- would this widget show if its parent
+        did -- which is the property a gate later has to give back.
+        """
+        parent = widget.parentWidget() if hasattr(widget, "parentWidget") else None
+        try:
+            visible = (
+                widget.isVisibleTo(parent) if parent is not None else widget.isVisible()
+            )
+        except (AttributeError, RuntimeError):  # a non-QWidget item, or a dead one
+            visible = True
+        return {
+            "tooltip": widget.toolTip(),
+            "visible": visible,
+            "enabled": widget.isEnabled(),
+        }
+
+    def _ungate(self, widget) -> None:
+        """Undo a gate, restoring the widget's pre-gate presentation exactly.
+
+        A no-op on a widget that was never gated, so the available branch of
+        :meth:`gate` can call it unconditionally — and, critically, so it never
+        clobbers a widget hidden by a DIFFERENT policy (``requires`` /
+        ``nav-unresolved``), whose marker it leaves alone.
+
+        Restores from the stash rather than to ``True``: a widget that was
+        already hidden or disabled before it was ever gated must come back that
+        way, and assuming "on" silently un-hid it the first time its app showed up.
+        """
+        stashed = getattr(widget, self._GATE_STATE_ATTR, None)
+        if stashed is None:
+            return
+        widget.setToolTip(stashed["tooltip"])
+        delattr(widget, self._GATE_STATE_ATTR)
+        widget.setEnabled(stashed["enabled"])
+        widget.setVisible(stashed["visible"])
+        if getattr(widget, "hidden_by_policy", None) == "unmet":
+            widget.hidden_by_policy = None
+
     def is_registered_ui(self, name: str) -> bool:
         """True if *name* matches a known UI file stem in the registry (no load is triggered)."""
         if not name:

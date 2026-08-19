@@ -26,7 +26,7 @@ from unittest import mock
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from conftest import QtBaseTestCase
+from conftest import QtBaseTestCase, QtWait
 from test_marking_menu_integration import (
     DriveableMarkingMenu,
     StubUi,
@@ -402,9 +402,14 @@ class MarkingMenuChordReleaseDispatch(QtBaseTestCase):
         if not self._inside_tolerance(started_at):
             # Every assertion below rests on still being inside the window, so
             # there is nothing left to verify once the box has blown through it.
-            self.skipTest(
+            # Countable, not invisible: the premise depends on scheduler
+            # timing this process does not own, so it is GATED rather than
+            # silently skipped -- the runner reports the gated count apart
+            # from ordinary skips, so a rise under load is visible.
+            QtWait.flaky(
+                self,
                 f"event loop overshot the {self.mm.CHORD_RELEASE_TOLERANCE_MS} ms "
-                "tolerance under load — the within-tolerance premise is unavailable"
+                "tolerance under load — the within-tolerance premise is unavailable",
             )
         self.assertEqual(
             self.mm.sb.current_ui.objectName(),

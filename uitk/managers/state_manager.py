@@ -387,6 +387,7 @@ class StateManager(ptk.LoggingMixin):
         Note:
             Widgets with `exclude_from_reset=True` attribute will be skipped.
         """
+        targets = []
         for widget, default_value in list(self._defaults.items()):
             # A live wrapper can outlast its C++ object; touching it raises
             # RuntimeError. Drop the entry instead of crashing the reset.
@@ -403,6 +404,23 @@ class StateManager(ptk.LoggingMixin):
                 )
                 continue
 
+            targets.append((widget, default_value))
+
+        # Per-field option state is cleared FIRST, in its own pass, because some
+        # of it CHANGES WHAT APPLYING A VALUE DOES. A ``link_spinboxes`` lock
+        # links its field's value changes to its locked siblings' by an equal
+        # delta: with the locks still live, the first field's reset shoves a
+        # delta into every other locked field, and the deltas compound down the
+        # pass — a three-field panel reset landed on (8, 13, 0) instead of
+        # (0, 0, 0). Clearing per widget inside the apply loop is not enough;
+        # it only shortens the window. An excluded field keeps its lock (it is
+        # opting out of the reset entirely) and is still safe: propagation is
+        # driven by the lock on the field being *changed*, and every field that
+        # changes here has just been unlocked.
+        for widget, _ in targets:
+            self._restore_option_defaults(widget)
+
+        for widget, default_value in targets:
             # Temporarily override block_signals_on_restore if specified.
             # Default matches module-wide default (False) so widgets that
             # never had the attribute don't inherit it as True post-reset.
@@ -447,6 +465,26 @@ class StateManager(ptk.LoggingMixin):
                 hook(default_value)
             except Exception as e:
                 self.logger.debug(f"sync_stored_default hook failed: {e}")
+
+    def _restore_option_defaults(self, widget: QtWidgets.QWidget) -> None:
+        """Return the widget's option-box plugins to their own defaults.
+
+        A panel-wide "Reset to Defaults" resets *fields*, not just values — so a
+        per-field lock or disable toggle clears with the value it was modifying,
+        matching what that field's own reset button does. Read through the
+        cached ``_option_box_manager`` rather than the ``option_box`` property:
+        the property CREATES a manager on first access (it is auto-patched onto
+        every QWidget), so touching it here would spin one up for every widget
+        in the panel. Duck-typed both ways — StateManager doesn't import the
+        option box, and a widget that never had one is skipped.
+        """
+        mgr = getattr(widget, "_option_box_manager", None)
+        restore = getattr(mgr, "restore_option_defaults", None)
+        if callable(restore):
+            try:
+                restore()
+            except Exception as e:
+                self.logger.debug(f"restore_option_defaults failed: {e}")
 
     def clear(self, widget: QtWidgets.QWidget) -> None:
         """Removes the stored state for the widget from QSettings."""

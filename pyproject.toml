@@ -20,7 +20,10 @@ classifiers = [
 # shim with no binding dependency, imported unconditionally, so it must ship
 # (a clean `pip install` into stock mayapy has no qtpy and fails at import).
 dependencies = [
-    "pythontk>=0.9.24",
+    # 0.9.25 is the floor for ptk.StatusBadge's module-coverage badge gate
+    # (discover_module_names / module_of / is_import_standin / gate) that
+    # test/run_tests.py stamps through -- 0.9.24 ships the class without them.
+    "pythontk>=0.9.25",
     "qtpy>=2.0",  # PySide6 support landed in 2.0
 ]
 
@@ -43,3 +46,15 @@ include = ["uitk*"]
 testpaths = ["test"]
 pythonpath = [".", "test"]
 addopts = "--ignore=test/temp_tests"
+
+[tool.ruff]
+# House formatter/linter - rule set, exemptions and gate status: m3trik/docs/CODE_STANDARD.md section 1.
+line-length = 88
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E402"]  # house pattern: try-guarded DCC imports precede the other imports
+
+[tool.ruff.lint.per-file-ignores]
+"**/templates/**" = ["F821"]  # exec-templates carry __PLACEHOLDER__ tokens substituted at run time

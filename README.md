@@ -1,8 +1,8 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
-[![Qt](https://img.shields.io/badge/Qt-PySide2%20|%20PySide6-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/Tests-3456%20passed-brightgreen.svg)](test/)
+[![Qt](https://img.shields.io/badge/Qt-PySide6%20via%20qtpy-green.svg)](https://doc.qt.io/)
+[![Tests](https://img.shields.io/badge/Tests-3571%20passed-brightgreen.svg)](test/)
 
 # uitk
 
@@ -19,7 +19,7 @@ UITK drives the marginal cost of a **well-behaved** tool toward zero:
 
 - **The convention is the wiring.** `btn_save` in Designer connects to `def btn_save(self)` because the names match; UI files map to slot classes, filename tags map to UI hierarchy. What remains in a slot class is only the code that does something.
 - **Good behavior is the default.** Every widget persists state, every window remembers geometry, theming and positioning just work — no opt-in. Fifty tools wired one way feel like a single application.
-- **DCC-agnostic core, host-aware edges.** Built on `qtpy` (PySide2 / PySide6); runs standalone or hosted in Maya / Blender / 3ds Max via pluggable handlers. Extending UITK — handlers, widgets, mixins — never requires editing it.
+- **DCC-agnostic core, host-aware edges.** Built on `qtpy` over PySide6; runs standalone or hosted in Maya / Blender / 3ds Max via pluggable handlers. Extending UITK — handlers, widgets, mixins — never requires editing it.
 - **Escape hatches everywhere.** `@Signals(...)` overrides wiring, handlers override host behavior, every enhancement is opt-out per widget or per UI.
 
 **Fits:** fleets of small-to-medium Designer-based tools — especially DCC-hosted — where consistency and iteration speed beat bespoke UI architecture. **Doesn't:** a single large app with its own hand-rolled UI layer, non-Qt targets, or a workflow without Qt Designer.
@@ -39,7 +39,7 @@ UITK drives the marginal cost of a **well-behaved** tool toward zero:
 ## Install
 
 ```bash
-pip install uitk PySide6          # standalone — PySide2 works too
+pip install uitk PySide6          # standalone (PySide6 is the supported binding)
 python -m uitk.examples.example   # optional: interactive demo of the full feature set
 ```
 

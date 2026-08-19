@@ -6,7 +6,9 @@ This module provides common test infrastructure, fixtures, and utilities
 used across all UITK test modules.
 """
 
+import os
 import sys
+import time
 import logging
 from pathlib import Path
 from typing import Optional
@@ -46,6 +48,249 @@ def setup_qt_application():
     if app is None:
         app = QtWidgets.QApplication(sys.argv)
     return app
+
+
+# ---------------------------------------------------------------------------
+# Bounded waits — the one primitive every Qt test uses to reach a condition
+#
+# Two failure modes this replaces, both of which produce a GREEN run:
+#
+#   1. ``if not popup.isVisible(): self.skipTest("offscreen QPA did not show
+#      the popup")`` — a runtime self-skip. Measured 2026-08-02/03 across four
+#      full uitk runs: 3244 passed on an idle machine, 3236 on three runs made
+#      while other suites competed for the CPU, 0 failures every time. Eight
+#      tests quietly downgraded themselves under load — and a genuinely broken
+#      popup would downgrade them the same way, with the same green badge. A
+#      test that cannot tell "too slow" from "broken" carries no signal in
+#      exactly the case it was written for.
+#   2. ``for _ in range(20): processEvents()`` — an uncalibrated hand-rolled
+#      pump. Too few passes on a loaded machine (flake), too many on an idle
+#      one (wall-clock waste), and never a diagnosis when the condition is
+#      simply never reached.
+#
+# ``QtWait.until`` fixes both: it spends a *wall-clock* budget (so a loaded
+# machine gets more passes, not fewer) and raises ``AssertionError`` when the
+# budget runs out. Slow still passes; broken now fails.
+# ---------------------------------------------------------------------------
+
+
+class _QtWaitInternal:
+    """Spin mechanics behind :class:`QtWait`; not part of the test-facing API."""
+
+    @staticmethod
+    def _process(slice_ms):
+        """One event-loop pass, bounded so a busy queue cannot stall the wait."""
+        from qtpy import QtCore, QtWidgets
+
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.processEvents(QtCore.QEventLoop.AllEvents, slice_ms)
+
+    @classmethod
+    def _spin(cls, predicate, timeout_ms, poll_ms):
+        """Pump until *predicate* is truthy or the wall clock runs out.
+
+        Returns ``(value, elapsed_ms, pumps)``. The predicate is evaluated
+        BEFORE the first pump so an already-satisfied condition costs nothing,
+        and the loop yields the CPU between passes (``processEvents`` returns
+        immediately on an empty queue) — a hot spin would starve the very
+        machine whose slowness is being waited out.
+        """
+        start = time.monotonic()
+        deadline = start + timeout_ms / 1000.0
+        pumps = 0
+        value = predicate()
+        while not value and time.monotonic() < deadline:
+            cls._process(poll_ms)
+            pumps += 1
+            value = predicate()
+            if not value:
+                time.sleep(poll_ms / 1000.0)
+        return value, (time.monotonic() - start) * 1000.0, pumps
+
+
+class QtWait:
+    """Bounded event-loop waits for Qt tests: reach a condition, or FAIL.
+
+    Usage — in order of preference::
+
+        rows = QtWait.until(lambda: table.rowCount(), "table never populated")
+        QtWait.pump()                       # drain queued work, no condition
+        QtWait.require_clipboard(self)      # the one shared OS-resource probe
+        QtWait.flaky(self, "reason")        # last resort, countable marker
+
+    ``until`` is the default. Reach for ``flaky`` only when the condition
+    depends on a resource this process does not own (a machine-global OS
+    clipboard, say) — never for "the widget might be slow".
+    """
+
+    #: Wall-clock budget for a single wait. Generous by design: the operations
+    #: waited on take single-digit milliseconds idle, so this is ~1000x
+    #: headroom — it is spent only when something is actually broken.
+    TIMEOUT_MS = int(os.environ.get("UITK_TEST_WAIT_TIMEOUT_MS", "5000"))
+    #: Event-loop slice per pass, and the CPU yield between passes.
+    POLL_MS = 5
+    #: Default passes for the conditionless :meth:`pump` drain. ONE, so a bare
+    #: ``pump()`` is an exact drop-in for ``processEvents()`` — callers that
+    #: genuinely need repeated passes (tearDown's DeferredDelete drain) ask for
+    #: them explicitly rather than making every site pay.
+    PUMP_PASSES = 1
+    #: Slice for :meth:`pump` — long enough to drain a burst in one pass.
+    PUMP_SLICE_MS = 50
+    #: Stamped into the reason of every deliberately-gated skip, so a runner
+    #: (or ``grep``) counts them separately from ordinary environment skips.
+    FLAKY_MARKER = "FLAKY-GATED:"
+
+    #: Passes spent by the most recent wait — diagnostics only, never assert
+    #: on it outside this helper's own tests.
+    last_pumps = 0
+
+    @classmethod
+    def until(cls, predicate, message, *, timeout_ms=None, poll_ms=None):
+        """Pump the event loop until *predicate* is truthy; fail on timeout.
+
+        Args:
+            predicate: Callable re-evaluated between passes. Its truthy value
+                is returned, so a site can bind the thing it waited for.
+            message: What was expected — quoted verbatim in the failure.
+            timeout_ms: Wall-clock budget (default :attr:`TIMEOUT_MS`).
+            poll_ms: Event-loop slice per pass (default :attr:`POLL_MS`).
+
+        Returns:
+            The predicate's truthy value.
+
+        Raises:
+            AssertionError: The condition was not reached inside the budget.
+                Deliberately an assertion and never a skip: "the popup never
+                appeared" is the failure this test exists to report.
+        """
+        timeout_ms = cls.TIMEOUT_MS if timeout_ms is None else timeout_ms
+        poll_ms = cls.POLL_MS if poll_ms is None else poll_ms
+        value, elapsed_ms, pumps = _QtWaitInternal._spin(predicate, timeout_ms, poll_ms)
+        cls.last_pumps = pumps
+        if not value:
+            raise AssertionError(
+                f"{message} (waited {elapsed_ms:.0f}ms of a {timeout_ms}ms "
+                f"budget over {pumps} event-loop pass(es)). This is a real "
+                f"failure, not a slow machine: the budget is ~1000x the idle "
+                f"cost of the operation."
+            )
+        return value
+
+    @classmethod
+    def reached(cls, predicate, *, timeout_ms=None, poll_ms=None):
+        """Same bounded wait as :meth:`until`, reported as a bool.
+
+        For the rare site that must CHOOSE a policy on the outcome (fail here,
+        gate there) rather than simply fail. Prefer :meth:`until`.
+        """
+        timeout_ms = cls.TIMEOUT_MS if timeout_ms is None else timeout_ms
+        poll_ms = cls.POLL_MS if poll_ms is None else poll_ms
+        value, _elapsed_ms, pumps = _QtWaitInternal._spin(
+            predicate, timeout_ms, poll_ms
+        )
+        cls.last_pumps = pumps
+        return bool(value)
+
+    @classmethod
+    def pump(cls, passes=None, slice_ms=None):
+        """Drain queued Qt work (posted events, zero-timers) *n* passes.
+
+        The calibrated replacement for hand-rolled ``for _ in range(n):
+        processEvents()`` loops. Use it only when there is no condition to wait
+        on — when there is one, :meth:`until` is both faster idle and correct
+        under load.
+        """
+        passes = cls.PUMP_PASSES if passes is None else passes
+        slice_ms = cls.PUMP_SLICE_MS if slice_ms is None else slice_ms
+        for _ in range(passes):
+            _QtWaitInternal._process(slice_ms)
+
+    @classmethod
+    def require_clipboard(cls, case):
+        """Wait for the clipboard to round-trip; FAIL offscreen, gate elsewhere.
+
+        The offscreen QPA carries an in-memory clipboard and always works, so
+        CI (which runs offscreen) must never gate here -- a failed round-trip
+        there is a real Qt regression and is asserted as one. Under a REAL
+        platform the clipboard is a machine-global resource any other process
+        can hold open; the set then fails silently and ``text()`` comes back
+        empty -- a false failure that says nothing about the copy code.
+
+        The probe retries for a bounded window first, because a holder is
+        usually transient; only a clipboard that is still dead after that is
+        gated, and the gate is stamped with :attr:`FLAKY_MARKER` so a rise in
+        gated tests is countable instead of invisible in a green run.
+
+        The probe does not restore the previous contents: callers overwrite the
+        clipboard themselves, so "preserving" it would be false precision --
+        and a ``setText`` restore would DESTROY non-text content (an image the
+        developer had copied), which ``text()`` cannot capture to begin with.
+
+        Lives here rather than on one test module because two suites need it,
+        and the copy that was NOT maintained degraded to a bare ``skipTest``:
+        no retry, no offscreen assertion, and no countable marker -- so a
+        genuinely broken copy path read as an unavailable OS resource.
+
+        Args:
+            case: The ``TestCase`` to fail or gate.
+        """
+        from qtpy import QtWidgets
+
+        clipboard = QtWidgets.QApplication.clipboard()
+        if clipboard is None:
+            # No QApplication -> clipboard() is None, and the probe would
+            # die with an AttributeError several frames deep inside its own
+            # predicate. Say what is actually wrong instead.
+            case.fail(
+                "no QApplication: QApplication.clipboard() returned None. "
+                "Derive the test case from QtBaseTestCase (or call "
+                "setup_qt_application) before probing the clipboard."
+            )
+        sentinel = "uitk-clipboard-probe"
+
+        def round_trips():
+            clipboard.setText(sentinel)  # re-set: a holder may win a race
+            return clipboard.text() == sentinel
+
+        if cls.reached(round_trips, timeout_ms=1000):
+            return
+        if cls.is_offscreen():
+            case.fail(
+                "offscreen QPA carries an in-memory clipboard that always "
+                "round-trips -- a dead one here is a real regression, not an "
+                "unavailable OS resource"
+            )
+        cls.flaky(
+            case,
+            "OS clipboard is unavailable in this environment (another process "
+            "holds it); run with QT_QPA_PLATFORM=offscreen.",
+        )
+
+    @classmethod
+    def flaky(cls, testcase, reason):
+        """Skip *testcase* with a countable marker — the last resort.
+
+        Legitimate only when the condition depends on a resource outside this
+        process (the machine-global OS clipboard). Unlike a bare ``skipTest``
+        the reason is stamped, so a rise in gated tests is greppable rather
+        than invisible inside a green run.
+        """
+        testcase.skipTest(f"{cls.FLAKY_MARKER} {reason}")
+
+    @staticmethod
+    def is_offscreen():
+        """True when running on the offscreen QPA (CI, and the runner default).
+
+        Offscreen carries its own in-memory window/clipboard implementations,
+        so anything environment-gated under a real platform is *deterministic*
+        here and must be asserted rather than gated.
+        """
+        from qtpy import QtWidgets
+
+        app = QtWidgets.QApplication.instance()
+        name = app.platformName() if app is not None else ""
+        return (name or os.environ.get("QT_QPA_PLATFORM", "")).lower() == "offscreen"
 
 
 class BaseTestCase(TestCase):
@@ -113,10 +358,7 @@ class QtBaseTestCase(BaseTestCase):
         (default), and by input-sequence tests that drain in setUp instead (to
         isolate from a prior test's leftovers without advancing their own
         not-yet-built state)."""
-        from qtpy import QtCore, QtWidgets
-
-        for _ in range(passes):
-            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        QtWait.pump(passes=passes)
 
     def tearDown(self):
         """Clean up widgets created during the test."""
@@ -391,7 +633,7 @@ def assert_stable_after_show(testcase, window, pumps=20, settle_ms=12, ignore=()
     then flushes every ``singleShot(0, ...)`` correction — any diff is a
     user-visible init flash.
     """
-    from qtpy import QtCore, QtWidgets
+    from qtpy import QtCore
 
     window.show()
     # Qt processes posted LayoutRequests BEFORE the first paint — flush them
@@ -400,8 +642,7 @@ def assert_stable_after_show(testcase, window, pumps=20, settle_ms=12, ignore=()
     # would read as a post-show "mutation" on styles with large native hints.
     QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.LayoutRequest)
     before = visual_state_snapshot(window, ignore=ignore)
-    for _ in range(pumps):
-        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, settle_ms)
+    QtWait.pump(passes=pumps, slice_ms=settle_ms)
     after = visual_state_snapshot(window, ignore=ignore)
     delta = diff_visual_state(before, after)
     if delta:

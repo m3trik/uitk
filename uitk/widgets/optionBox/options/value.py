@@ -86,6 +86,7 @@ class ValueOption(BaseOption):
         self._widget.valueChanged.connect(self._on_field_changed)
 
     def on_wrap(self, option_box, container):
+        super().on_wrap(option_box, container)
         # Wrapped widget is guaranteed set by now; wire widget -> field.
         self._connect_wrapped()
         self._sync_field_from_wrapped()

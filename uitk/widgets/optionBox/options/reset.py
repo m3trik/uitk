@@ -38,7 +38,7 @@ _DEFAULT_DISABLED_COLOR: str = ptk.Palette.status()["error"][0]  # soft coral
 _DEFAULT_BYPASS_MODIFIER = QtCore.Qt.AltModifier | QtCore.Qt.ControlModifier
 
 
-class ResetOption(ButtonOption):
+class ResetOption(ButtonOption, ptk.LoggingMixin):
     """Reset-to-default button with a modifier-gated *bypass* toggle.
 
     Plain click resets the wrapped widget to its default (persisted). Hold a
@@ -111,8 +111,24 @@ class ResetOption(ButtonOption):
         This is the plain-click action; unlike :meth:`set_bypassed` it does not
         snapshot, grey out, or suppress persistence — the default is the value
         the user chose, so it should stick.
+
+        Resets the *field*, not just its value: every sibling option on the
+        same box is asked to :meth:`~.BaseOption.restore_default`, so a lock /
+        disable toggle clears with the value it was modifying. Options that
+        hold user data (pinned, recent) don't override the hook and are left
+        alone. Bypass deliberately does **not** do this — it is a transient
+        hold that must restore exactly what it suspended.
         """
         self._apply_reset(suppress=False)
+        self._restore_sibling_options()
+
+    def _restore_sibling_options(self) -> None:
+        """Return every other option on this field to its own default."""
+        for option in self.sibling_options():
+            try:
+                option.restore_default()
+            except Exception as e:  # one bad plugin must not eat the reset
+                self.logger.debug(f"restore_default failed on {option!r}: {e}")
 
     def set_bypassed(self, value: bool, *, emit: bool = True) -> None:
         """Bypass (``True``) or restore (``False``) the widget.

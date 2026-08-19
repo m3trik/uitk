@@ -51,6 +51,9 @@ class BaseOption(QtCore.QObject, ABC, metaclass=QObjectABCMeta):
         self.wrapped_widget = wrapped_widget
         self.order = order
         self._widget = None
+        # Owning OptionBox, recorded by on_wrap. Backs sibling_options() so an
+        # option can coordinate with the others on the same field.
+        self._option_box = None
 
     @classmethod
     def is_compatible(cls, widget) -> bool:
@@ -103,12 +106,38 @@ class BaseOption(QtCore.QObject, ABC, metaclass=QObjectABCMeta):
     def on_wrap(self, option_box, container):
         """Called when the option is added to a wrapped widget.
 
-        Override this method to perform any actions needed when
-        the option is added to an OptionBox container.
+        Records the owning OptionBox (so :meth:`sibling_options` works) and is
+        the hook for any other wrap-time setup. **Overrides must call
+        ``super().on_wrap(...)``** or the back-reference is lost. Re-entrant:
+        the box calls this again on every layout rebuild.
 
         Args:
             option_box: The OptionBox instance
             container: The container widget
+        """
+        self._option_box = option_box
+
+    def sibling_options(self):
+        """The other options sharing this field's OptionBox (never ``self``).
+
+        Empty until the option is wrapped. Lets one option coordinate with the
+        rest of the field's controls without any of them knowing each other's
+        concrete types — see :meth:`restore_default`.
+        """
+        box = self._option_box
+        if box is None:
+            return []
+        return [o for o in box.get_options() if o is not self]
+
+    def restore_default(self) -> None:
+        """Return this option's *own* state to its as-constructed default.
+
+        The field-level counterpart to a value reset: a sibling ``ResetOption``
+        calls this on every other option when the user resets the field, so a
+        reset clears the field's option state (a lock, a disable) as well as
+        its value. No-op by default — an option with no state of its own, or
+        whose state is user data worth keeping (pinned/recent values), simply
+        doesn't override it.
         """
         pass
 

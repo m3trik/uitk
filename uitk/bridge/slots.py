@@ -34,12 +34,9 @@ every kind the registry knows about.
 
 from __future__ import annotations
 
-import atexit
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -81,7 +78,10 @@ class _BridgeSlotsInternal(object):
     _LOG_LINK_HANDLERS: List[Callable] = []
 
     # One temp Output Dir per bridge tag per host process, removed at process exit.
-    _BRIDGE_TEMP_DIRS: Dict[str, str] = {}
+    # Values are ``(TempArtifacts store, path)`` -- the store so a killed host's
+    # leftovers have a swept namespace to be reclaimed from, the path so reading
+    # it back needs nothing private.
+    _BRIDGE_TEMP_DIRS: Dict[str, Tuple[Any, str]] = {}
 
     @staticmethod
     def _open_in_file_manager(path: str) -> None:
@@ -95,10 +95,14 @@ class _BridgeSlotsInternal(object):
 
     @staticmethod
     def _remove_bridge_temp_dir(key: str) -> None:
-        """atexit handler: remove the temp Output Dir created for *key* (best-effort)."""
-        path = _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.pop(key, None)
-        if path:
-            shutil.rmtree(path, ignore_errors=True)
+        """Remove the temp Output Dir created for *key* (best-effort).
+
+        Exposed for tests and for a host that wants to reclaim early; the
+        ordinary path is the store's own ``atexit``.
+        """
+        entry = _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.pop(key, None)
+        if entry is not None:
+            entry[0].cleanup(force=True)
 
 
 class BridgeSlotsBase(_BridgeSlotsInternal):
@@ -158,6 +162,17 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     # writing to temp would be wrong — those keep the hard "Output Dir is required"
     # error. No effect when :attr:`REQUIRE_OUTPUT_DIR` is False.
     TEMP_OUTPUT_FALLBACK: bool = False
+
+    # Modes whose Output Dir holds only intermediates the run itself consumes
+    # and can therefore delete -- a BLOCKING roundtrip that relocates its
+    # durable output elsewhere (the Marmoset bake: maps go to the project's
+    # texture folder). For these, a blank field resolves to neither the
+    # scene/workspace default nor the session temp dir: ``require_output_dir``
+    # returns ``""`` and the bridge allocates -- and cleans up -- a scratch
+    # dir of its own (``ptk.TempArtifacts``, scoped), which is the only tier
+    # that removes the artifacts when the run is over. A value the user typed
+    # still wins: naming a folder is a decision to keep what lands in it.
+    TRANSIENT_OUTPUT_MODES: Tuple[str, ...] = ()
 
     # ------------------ Cosmetics -------------------------------------
 
@@ -409,20 +424,24 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         Backs :attr:`TEMP_OUTPUT_FALLBACK`: the last-resort Output Dir when neither the
         user's value nor the DCC scene/workspace default resolves (e.g. an unsaved scene with no
         workspace), so a hand-off bridge can still export without forcing the user to pick a path. The
-        directory is registered for cleanup at process exit — it lives for the whole session (long
-        enough for the launched external app to read the exported files) and is then removed. Reused
-        across sends for the same *tag* (keyed by tag; the PID keeps concurrent DCCs from colliding on
-        a shared temp path)."""
+        directory lives for the whole session (long enough for the launched external app to read the
+        exported files) and is removed at process exit. Reused across sends for the same *tag*.
+
+        Allocated through ``ptk.TempArtifacts`` (``session`` policy) rather than a hand-rolled
+        ``tempfile.gettempdir()`` join: the exit hook alone is not cleanup here. DCC hosts are
+        routinely killed, and an ``atexit`` that never fires used to leave the directory behind
+        with nothing left to reclaim it — one per killed session, forever. Every allocation now
+        joins a swept prefix namespace, so the worst case is delayed collection. The unique tag
+        also retires the PID that was keeping concurrent DCCs off a shared path."""
+        import pythontk as ptk
+
         key = tag or "bridge"
-        path = _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.get(key)
-        if path is None:
-            path = os.path.join(
-                tempfile.gettempdir(), "uitk_bridge", f"{key}_{os.getpid()}"
-            )
-            os.makedirs(path, exist_ok=True)
-            _BridgeSlotsInternal._BRIDGE_TEMP_DIRS[key] = path
-            atexit.register(_BridgeSlotsInternal._remove_bridge_temp_dir, key)
-        return path
+        entry = _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.get(key)
+        if entry is None:
+            store = ptk.TempArtifacts(f"uitk_bridge_{key}", policy="session")
+            entry = (store, store.dir_path())
+            _BridgeSlotsInternal._BRIDGE_TEMP_DIRS[key] = entry
+        return entry[1]
 
     # ------------------ Init flow -------------------------------------
 
@@ -437,6 +456,9 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         self._bridge = None
         self._param_widgets: Dict[str, QtWidgets.QWidget] = {}
         self._param_rows: Dict[str, QtWidgets.QWidget] = {}
+        # The row's caption, kept alongside its control so a live tooltip
+        # provider can cover BOTH hover targets (see live_param_tooltips).
+        self._param_labels: Dict[str, QtWidgets.QLabel] = {}
         # Category dividers: section name -> Separator, plus each param's section,
         # so a divider can hide when its whole section is hidden for the mode.
         self._section_separators: Dict[str, QtWidgets.QWidget] = {}
@@ -453,6 +475,7 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             self._build_output_dir_row()
         self._build_param_widgets()
         self._wire_action_params()
+        self._bind_live_param_tooltips()
         self._build_preset_controls()
 
         self._wire_enablement_refresh()
@@ -668,30 +691,42 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             return ""
         return self._output_dir_edit.text().strip()
 
-    def require_output_dir(self) -> Optional[str]:
-        """Return the Output Dir or log an error on empty.
+    def require_output_dir(self, mode: Optional[str] = None) -> Optional[str]:
+        """Return the Output Dir for a run in *mode*, or log an error on empty.
 
         Resolution order:
 
         1. The user's typed value in the line edit.
-        2. :meth:`default_output_dir` (DCC-side fallback) -- on hit, the
+        2. When *mode* is one of :attr:`TRANSIENT_OUTPUT_MODES`, ``""`` --
+           the run's artifacts are its own scratch, so the bridge allocates
+           and deletes them rather than inheriting a durable location.
+        3. :meth:`default_output_dir` (DCC-side fallback) -- on hit, the
            chosen path is written back into the line edit and announced
            in the log panel so the user sees where files landed.
-        3. When :attr:`TEMP_OUTPUT_FALLBACK` is set, a self-cleaning temp
+        4. When :attr:`TEMP_OUTPUT_FALLBACK` is set, a self-cleaning temp
            directory (:func:`ensure_bridge_temp_dir`) -- also written back
            and announced -- so an unsaved scene can still hand off.
-        4. Log an error + focus the field, return ``None`` to signal
+        5. Log an error + focus the field, return ``None`` to signal
            the caller to abort.
 
         When :attr:`REQUIRE_OUTPUT_DIR` is False, returns ``""``
         unconditionally so the caller can pass the result through to
         bridges that tolerate empty output dirs.
+
+        ``""`` and ``None`` are distinct returns: ``""`` means "no location
+        chosen -- the bridge decides", ``None`` means abort.
         """
         if not self.REQUIRE_OUTPUT_DIR:
             return ""
         output_dir = self.resolved_output_dir()
         if output_dir:
             return output_dir
+
+        if mode is not None and mode in self.TRANSIENT_OUTPUT_MODES:
+            # Deliberately NOT written back into the field: a scratch path
+            # parked there would read as the user's own choice on the next
+            # run, and point it at a directory this one already deleted.
+            return ""
 
         fallback = self.default_output_dir()
         if fallback:
@@ -776,6 +811,7 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             label.setMinimumWidth(self.LABEL_MIN_WIDTH)
             label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
             label.setToolTip(tooltip_html)
+            self._param_labels[key] = label
 
             widget = self._make_param_widget(spec, key, row, tooltip_html)
 
@@ -835,6 +871,7 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         label = QtWidgets.QLabel(spec.display_label + ":", cell)
         label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         label.setToolTip(tooltip_html)
+        self._param_labels[key] = label
 
         widget = self._make_param_widget(spec, key, cell, tooltip_html)
 
@@ -844,6 +881,41 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
 
         self._param_rows[key] = cell
         return widget
+
+    def live_param_tooltips(self) -> Dict[str, Callable[[], str]]:
+        """Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.
+
+        :meth:`format_param_tooltip` runs once, at build time, so a row that
+        describes something the *session* owns -- a scene set the user defines
+        from a selection, a path that resolves per scene -- is stale the moment
+        that state moves. A provider registered here is called on every hover
+        instead (:mod:`uitk.widgets.mixins.tooltip_mixin`), so the row can
+        answer "what is captured right now?" with no refresh plumbing.
+
+        A provider returns the WHOLE tooltip, so fold the static text back in
+        with ``self.format_param_tooltip(spec)`` -- binding replaces the
+        widget's tooltip rather than appending to it. Pair it with
+        :meth:`uitk.widgets.mixins.tooltip_mixin.TooltipFormat.stored_items`
+        for the usual "here is what you captured" list.
+
+        Bound to the row's label AND its control -- both are hover targets for
+        the same row. An ``action`` row's buttons keep their own per-choice
+        tips: those describe the *click*, not the contents.
+
+        Returns:
+            (dict) Param key -> zero-argument callable returning tooltip HTML.
+            Prefer a bound method over a closure: the tooltip surface weakrefs
+            bound-method providers, so the binding can't outlive this panel.
+            Unknown keys are ignored, so a shared base may offer a row that
+            only some of its panels register.
+        """
+        return {}
+
+    def _bind_live_param_tooltips(self) -> None:
+        """Install every :meth:`live_param_tooltips` provider on its row."""
+        for key, provider in (self.live_param_tooltips() or {}).items():
+            targets = [self._param_widgets.get(key), self._param_labels.get(key)]
+            self.sb.tooltip.bind([t for t in targets if t is not None], provider)
 
     def _wire_action_params(self) -> None:
         """Connect ``action``-kind param buttons to same-named slot methods.

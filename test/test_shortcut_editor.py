@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from qtpy import QtWidgets, QtCore
-from conftest import QtBaseTestCase, setup_qt_application
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
 from uitk.switchboard import Switchboard
 from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
 from uitk.widgets.editors.editor_panel import EditorPanel
@@ -17,7 +17,57 @@ from uitk.examples.example import ExampleSlots
 app = setup_qt_application()
 
 
-class TestShortcutEditorPresets(QtBaseTestCase):
+class ShortcutEditorRequirements:
+    """Wait-then-FAIL preconditions shared by the ShortcutEditor suites.
+
+    Every helper here replaces a runtime self-skip that fired when
+    the example UI's registry/table "wasn't there yet". Those skips could not
+    distinguish a loaded machine from a genuinely broken populate/registry — a
+    green run either way (backlog 2026-08-03). Each precondition is now a
+    bounded wait that FAILS when it is not met, so slow still passes and broken
+    finally reports.
+    """
+
+    def _require_registry(self, minimum=1):
+        """The example UI's shortcut registry, with at least *minimum* slots."""
+
+        def enough():
+            registry = self.sb.get_shortcut_registry(self.ui)
+            return registry if len(registry or []) >= minimum else None
+
+        return QtWait.until(
+            enough,
+            f"the example UI never exposed {minimum} shortcut slot(s) — its "
+            f"registry is the fixture every binding test depends on",
+        )
+
+    def _require_example_ui_name(self):
+        """The exported key for the example UI (the name presets are keyed by)."""
+        return QtWait.until(
+            lambda: next(
+                (n for n in self.editor.export_shortcuts() if "example" in n.lower()),
+                None,
+            ),
+            "export_shortcuts() never listed the example UI",
+        )
+
+    def _require_real_rows(self):
+        """The table once it holds real rows — never the spanned placeholder.
+
+        A spanned first column is the "No shortcuts" placeholder, which is what
+        a populate regression also produces; waiting on it and failing is the
+        only way to tell the two apart.
+        """
+        t = self.editor.table
+        QtWait.until(
+            lambda: t.rowCount() > 0 and t.columnSpan(0, 0) == 1,
+            "the shortcut table never showed a real row (only the spanned "
+            "placeholder)",
+        )
+        return t
+
+
+class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
     """Tests for ShortcutEditor preset save/load/delete/rename."""
 
     _test_preset_dir: Path = None
@@ -37,7 +87,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
         )
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.editor = ShortcutEditor(self.sb, parent=None)
         # Redirect storage to a unique temp dir through the real preset_dir
         # setter (which routes the underlying PresetManager), so save/load go
@@ -127,8 +177,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
                 self.editor.cmb_ui.setCurrentIndex(i)
                 break
         self.editor.populate()
-        if self.editor.table.rowCount() == 0:
-            self.skipTest("no example slots in table")
+        self._require_real_rows()
 
         # Give row 0 a sequence (in the table) so the toggle runs a conflict check.
         self.editor.table.item(0, 1).setText("Ctrl+Alt+5")
@@ -213,22 +262,9 @@ class TestShortcutEditorPresets(QtBaseTestCase):
 
     def test_import_applies_shortcuts(self):
         """import_shortcuts should call set_user_shortcut for each entry."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
-
+        registry = self._require_registry()
         slot_name = registry[0]["method"]
-        ui_name = None
-
-        # Find the UI name used in export
-        data = self.editor.export_shortcuts()
-        for name in data:
-            if "example" in name.lower():
-                ui_name = name
-                break
-
-        if not ui_name:
-            self.skipTest("Example UI not found in export")
+        ui_name = self._require_example_ui_name()
 
         # Build a preset dict with a custom shortcut
         preset_data = {ui_name: {slot_name: "Ctrl+Alt+P"}}
@@ -238,8 +274,8 @@ class TestShortcutEditorPresets(QtBaseTestCase):
         # Verify the shortcut was applied
         new_registry = self.sb.get_shortcut_registry(self.ui)
         entry = next((r for r in new_registry if r["method"] == slot_name), None)
-        if entry:
-            self.assertEqual(entry["current"], "Ctrl+Alt+P")
+        self.assertIsNotNone(entry, "the imported slot must survive in the registry")
+        self.assertEqual(entry["current"], "Ctrl+Alt+P")
 
     # ------------------------------------------------------------------
     # Save / Load / Delete / Rename
@@ -255,21 +291,11 @@ class TestShortcutEditorPresets(QtBaseTestCase):
 
     def test_load_restores_shortcuts(self):
         """load_preset should apply saved shortcuts."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
-
+        registry = self._require_registry()
         slot_name = registry[0]["method"]
 
         # Set a custom shortcut and save
-        data = self.editor.export_shortcuts()
-        ui_name = None
-        for name in data:
-            if "example" in name.lower():
-                ui_name = name
-                break
-        if not ui_name:
-            self.skipTest("Example UI not found in export")
+        self._require_example_ui_name()
 
         self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+L")
         self.editor.save_preset("load_test")
@@ -283,8 +309,8 @@ class TestShortcutEditorPresets(QtBaseTestCase):
 
         new_registry = self.sb.get_shortcut_registry(self.ui)
         entry = next((r for r in new_registry if r["method"] == slot_name), None)
-        if entry:
-            self.assertEqual(entry["current"], "Ctrl+Alt+L")
+        self.assertIsNotNone(entry, "the restored slot must be in the registry")
+        self.assertEqual(entry["current"], "Ctrl+Alt+L")
 
     def test_load_nonexistent_returns_false(self):
         """load_preset should return False for a missing file."""
@@ -323,10 +349,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
 
     def test_export_includes_scope(self):
         """Exported bindings should be {seq, scope} dicts."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
-
+        registry = self._require_registry()
         slot_name = registry[0]["method"]
         self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+E", "application")
 
@@ -341,10 +364,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
 
     def test_import_legacy_string_format(self):
         """Legacy presets where values are bare strings should still import."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
-
+        registry = self._require_registry()
         slot_name = registry[0]["method"]
         ui_name = next(
             (n for n in self.editor.export_shortcuts() if "example" in n.lower()),
@@ -363,10 +383,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
 
     def test_import_new_format_round_trip(self):
         """Exported preset should re-import and restore both seq and scope."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
-
+        registry = self._require_registry()
         slot_name = registry[0]["method"]
         self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+R", "application")
         snapshot = self.editor.export_shortcuts()
@@ -398,9 +415,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
 
         self.editor.add_collision_checker(fake_checker)
 
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = self._require_registry()
         slot_name = registry[0]["method"]
         ui_name = next(
             (n for n in self.editor.export_shortcuts() if "example" in n.lower()),
@@ -419,10 +434,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
 
     def test_builtin_checker_flags_application_duplicate(self):
         """Two Application bindings on the same key should be a breaks_binding conflict."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if len(registry) < 2:
-            self.skipTest("Need at least two slots to test internal collision")
-
+        registry = self._require_registry(minimum=2)
         first = registry[0]["method"]
         second = registry[1]["method"]
 
@@ -449,10 +461,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
         genuinely conflicts, so the user must be offered the overwrite path —
         not just a soft 'may fire alongside' note.
         """
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if len(registry) < 2:
-            self.skipTest("Need at least two slots to test internal collision")
-
+        registry = self._require_registry(minimum=2)
         first = registry[0]["method"]
         second = registry[1]["method"]
         ui_name = self.editor.cmb_ui.currentText() or ""
@@ -472,9 +481,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
         """Two Window-scoped bindings on the same key in *different* UIs are
         safe — different windows are independent focus targets, so no conflict
         is reported (the scope rule that keeps reuse possible)."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = self._require_registry()
         first = registry[0]["method"]
         self.sb.set_user_shortcut(self.ui, first, "Ctrl+Alt+Q", "window")
 
@@ -541,8 +548,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
                 self.editor.cmb_ui.setCurrentIndex(i)
                 break
         self.editor.populate()
-        if self.editor.table.rowCount() == 0:
-            self.skipTest("no example slots in table")
+        self._require_real_rows()
 
         from uitk.widgets.editors.shortcut_editor.registry_editor import USER_SCOPES
 
@@ -579,6 +585,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
                 self.editor.cmb_ui.setCurrentIndex(i)
                 break
         self.editor.populate()
+        self._require_real_rows()
 
         # Find an unbound, user-scoped row (disabled toggle) to assign into.
         target = None
@@ -589,8 +596,11 @@ class TestShortcutEditorPresets(QtBaseTestCase):
             ):
                 target = row
                 break
-        if target is None:
-            self.skipTest("no unbound user-scoped example row")
+        self.assertIsNotNone(
+            target,
+            "the example UI must expose an unbound user-scoped row to assign "
+            "into — without one this test asserts nothing",
+        )
 
         method = self.editor.table.item(target, 0).toolTip().replace("Method: ", "")
         with mock.patch.object(self.editor, "_resolve_collisions", return_value=True):
@@ -617,12 +627,15 @@ class TestShortcutEditorPresets(QtBaseTestCase):
         from unittest import mock
 
         idx = self.editor.cmb_ui.findText(self.editor._COMMANDS_LABEL)
-        if idx < 0:
-            self.skipTest("no commands registered")
+        self.assertGreaterEqual(
+            idx,
+            0,
+            "the Switchboard's built-in nav commands are always registered, so "
+            "the Commands view must be listed",
+        )
         self.editor.cmb_ui.setCurrentIndex(idx)
         self.editor.populate()
-        if self.editor.table.rowCount() == 0 or self.editor.table.columnSpan(0, 0) > 1:
-            self.skipTest("no command rows")
+        self._require_real_rows()
 
         with mock.patch.object(self.editor, "_resolve_collisions", return_value=True):
             self.editor._apply_shortcut(0, "Ctrl+Alt+6")
@@ -720,7 +733,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
         # Force a re-selection to fire currentTextChanged → populate().
         self.editor.cmb_ui.setCurrentIndex(-1)
         self.editor.cmb_ui.setCurrentIndex(target_idx)
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
 
         self.assertIsNotNone(
             self.sb.loaded_ui.peek(target_name),
@@ -731,7 +744,7 @@ class TestShortcutEditorPresets(QtBaseTestCase):
             self.assertNotIn("Could not load", first_cell.text())
 
 
-class TestShortcutEditorFilter(QtBaseTestCase):
+class TestShortcutEditorFilter(ShortcutEditorRequirements, QtBaseTestCase):
     """The filter LineEdit hides non-matching rows in place, the option-box
     toggle disables filtering, and the footer reflects the visible count."""
 
@@ -749,7 +762,7 @@ class TestShortcutEditorFilter(QtBaseTestCase):
         )
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.editor = ShortcutEditor(self.sb, parent=None)
 
     def tearDown(self):
@@ -762,22 +775,16 @@ class TestShortcutEditorFilter(QtBaseTestCase):
             self.ui.close()
         super().tearDown()
 
-    def _table_with_real_rows(self):
-        t = self.editor.table
-        if t.columnSpan(0, 0) > 1 or t.rowCount() == 0:
-            self.skipTest("example UI has no real shortcut rows to filter")
-        return t
-
     def _first_row_token(self, t):
         first = t.item(0, 0).text()
         return first.split()[0] if first.split() else first
 
     def test_matching_term_keeps_row_and_others_only_if_they_match(self):
-        t = self._table_with_real_rows()
+        t = self._require_real_rows()
         token = self._first_row_token(t)
         # Strict matching → wrap in * for a substring search of the haystack.
         self.editor.le_filter.setText(f"*{token}*")
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
 
         self.assertFalse(t.isRowHidden(0), "row matching the query stays visible")
         # Every *visible* row must contain the token (case-insensitive).
@@ -788,18 +795,18 @@ class TestShortcutEditorFilter(QtBaseTestCase):
                 )
 
     def test_no_match_hides_every_row(self):
-        t = self._table_with_real_rows()
+        t = self._require_real_rows()
         self.editor.le_filter.setText("zzz_no_such_action_zzz")
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.assertTrue(
             all(t.isRowHidden(r) for r in range(t.rowCount())),
             "a query matching nothing hides every row",
         )
 
     def test_disabling_filter_reveals_all_even_with_text(self):
-        t = self._table_with_real_rows()
+        t = self._require_real_rows()
         self.editor.le_filter.setText("zzz_no_such_action_zzz")
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.editor._filter.set_on(False)
         self.assertTrue(
             all(not t.isRowHidden(r) for r in range(t.rowCount())),
@@ -831,11 +838,11 @@ class TestShortcutEditorFilter(QtBaseTestCase):
         self.assertTrue(le.isEnabled(), "re-enabling restores the field")
 
     def test_clearing_text_reveals_all(self):
-        t = self._table_with_real_rows()
+        t = self._require_real_rows()
         self.editor.le_filter.setText("zzz_no_such_action_zzz")
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.editor.le_filter.setText("")
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.assertTrue(
             all(not t.isRowHidden(r) for r in range(t.rowCount())),
             "empty filter text shows every row",
@@ -844,9 +851,9 @@ class TestShortcutEditorFilter(QtBaseTestCase):
     def test_filter_persists_across_ui_repopulate(self):
         """A UI switch rebuilds the table; the active filter must re-apply so a
         non-matching query keeps the rebuilt rows hidden."""
-        t = self._table_with_real_rows()
+        t = self._require_real_rows()
         self.editor.le_filter.setText("zzz_no_such_action_zzz")
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.editor.populate()  # simulate a rebuild
         self.assertTrue(
             all(t.isRowHidden(r) for r in range(t.rowCount())),
@@ -866,11 +873,10 @@ class TestShortcutEditorFilter(QtBaseTestCase):
     def test_show_all_filter_includes_ui_column(self):
         """In 'show all' mode the filter also matches the UI-name column."""
         self.editor._set_show_all(True)
-        if self.editor.table.columnSpan(0, 0) > 1 or not self.editor.table.rowCount():
-            self.skipTest("no real rows in all view")
+        self._require_real_rows()
         # The UI name ("example") is in column 5; filtering by it keeps rows.
         self.editor.le_filter.setText("*example*")
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.assertFalse(self.editor.table.isRowHidden(0))
 
     def test_empty_ui_clears_stale_filter_count(self):
@@ -889,7 +895,7 @@ class TestShortcutEditorFilter(QtBaseTestCase):
         self.assertNotIn("showing", self.editor._compose_status(None, 0))
 
 
-class TestShortcutEditorAllView(QtBaseTestCase):
+class TestShortcutEditorAllView(ShortcutEditorRequirements, QtBaseTestCase):
     """The 'show all' toggle lists every UI's slots at once, reveals the UI
     column, disables the combobox, keys each row to its own UI, and only
     instantiates a UI when one of its bindings is edited."""
@@ -908,7 +914,7 @@ class TestShortcutEditorAllView(QtBaseTestCase):
         )
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.editor = ShortcutEditor(self.sb, parent=None)
         self.editor._set_show_all(False)  # normalize (settings persist in-process)
 
@@ -922,10 +928,6 @@ class TestShortcutEditorAllView(QtBaseTestCase):
             self.ui.close()
         super().tearDown()
 
-    def _has_real_rows(self):
-        t = self.editor.table
-        return t.columnSpan(0, 0) == 1 and t.rowCount() > 0
-
     def test_toggle_reveals_ui_column_and_disables_combo(self):
         self.assertTrue(self.editor.table.isColumnHidden(5))
         self.assertTrue(self.editor.cmb_ui.isEnabled())
@@ -935,8 +937,8 @@ class TestShortcutEditorAllView(QtBaseTestCase):
         self.assertFalse(
             self.editor.cmb_ui.isEnabled(), "combo is disabled while showing all"
         )
-        if self._has_real_rows():
-            self.assertEqual(self.editor.table.item(0, 5).text(), "example")
+        self._require_real_rows()
+        self.assertEqual(self.editor.table.item(0, 5).text(), "example")
 
     def test_toggling_back_re_enables_combo_and_hides_column(self):
         self.editor._set_show_all(True)
@@ -950,8 +952,7 @@ class TestShortcutEditorAllView(QtBaseTestCase):
         from unittest import mock
 
         self.editor.populate()
-        if not self._has_real_rows():
-            self.skipTest("no real rows to edit")
+        self._require_real_rows()
 
         # Tag row 0 with a sentinel UI distinct from the combobox selection.
         self.editor.table.item(0, 0).setData(QtCore.Qt.UserRole, "sentinel_ui")
@@ -999,8 +1000,7 @@ class TestShortcutEditorAllView(QtBaseTestCase):
         from unittest import mock
 
         self.editor.populate()
-        if not self._has_real_rows():
-            self.skipTest("no real rows to edit")
+        self._require_real_rows()
         self.editor.table.item(0, 0).setData(QtCore.Qt.UserRole, "broken_ui")
 
         with mock.patch.object(self.sb, "get_ui", return_value=None), mock.patch.object(
@@ -1017,8 +1017,7 @@ class TestShortcutEditorAllView(QtBaseTestCase):
 
         del self.sb.loaded_ui["example"]
         self.editor._set_show_all(True)
-        if not self._has_real_rows():
-            self.skipTest("static registry produced no rows")
+        self._require_real_rows()
         self.assertIsNone(self.sb.loaded_ui.peek("example"))
 
         with mock.patch.object(self.editor, "_resolve_collisions", return_value=True):
@@ -1058,7 +1057,7 @@ class TestShortcutEditorGeometryPersistence(QtBaseTestCase):
         # A loaded UI so populate() has real rows (mirrors the other suites).
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self._editors = []
 
     def tearDown(self):
@@ -1096,16 +1095,16 @@ class TestShortcutEditorGeometryPersistence(QtBaseTestCase):
         e1 = self._make_editor()
         e1.clear_saved_geometry()
         e1.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         e1.resize(480, 420)
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         e1.hide()  # triggers save_window_geometry
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
 
         # --- Session 2: a fresh editor restores the saved size ---
         e2 = self._make_editor()
         e2.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.assertEqual((e2.width(), e2.height()), (480, 420))
 
     def test_restored_size_is_authoritative_over_fit(self):
@@ -1117,18 +1116,18 @@ class TestShortcutEditorGeometryPersistence(QtBaseTestCase):
         e1 = self._make_editor()
         e1.clear_saved_geometry()
         e1.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         e1.resize(520, 560)
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         e1.hide()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
 
         e2 = self._make_editor()
         e2.show()
         # Drain the deferred _fit_to_content tick; it must be skipped on a
         # restored window.
-        QtWidgets.QApplication.processEvents()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
+        QtWait.pump()
         self.assertEqual((e2.width(), e2.height()), (520, 560))
 
     def test_focus_variants_keep_separate_sizes(self):
@@ -1137,25 +1136,25 @@ class TestShortcutEditorGeometryPersistence(QtBaseTestCase):
         full = self._make_editor()
         full.clear_saved_geometry()
         full.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         full.resize(500, 500)
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         full.hide()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
 
         commands = self._make_editor(focus="commands")
         commands.clear_saved_geometry()
         commands.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         commands.resize(360, 300)
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         commands.hide()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
 
         # Reopen the full editor: it restores ITS size, not the commands panel's.
         full2 = self._make_editor()
         full2.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.assertEqual((full2.width(), full2.height()), (500, 500))
 
     def test_first_show_without_saved_geometry_fits_to_content(self):
@@ -1165,8 +1164,8 @@ class TestShortcutEditorGeometryPersistence(QtBaseTestCase):
         e.clear_saved_geometry()  # ensure a first-ever show (nothing restored)
         e.resize(600, 900)  # oversize before show; the fit should trim height
         e.show()
-        QtWidgets.QApplication.processEvents()
-        QtWidgets.QApplication.processEvents()  # let deferred _fit_to_content run
+        QtWait.pump()
+        QtWait.pump()  # let deferred _fit_to_content run
         self.assertLess(
             e.height(), 900, "first show with no saved size must fit to content"
         )
