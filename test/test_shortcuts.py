@@ -13,7 +13,7 @@ import unittest
 from qtpy import QtWidgets, QtCore, QtGui
 
 # Base Test
-from conftest import QtBaseTestCase
+from conftest import QtBaseTestCase, QtWait
 
 # Code to Test
 from uitk.switchboard import Switchboard
@@ -143,9 +143,10 @@ class TestShortcutAssignment(QtBaseTestCase):
 
     def test_set_user_shortcut_persists_to_settings(self):
         """set_user_shortcut should persist to settings."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = QtWait.until(
+            lambda: self.sb.get_shortcut_registry(self.ui),
+            "the example UI registered no shortcut slots",
+        )
 
         slot_name = registry[0]["method"]
         test_shortcut = "Ctrl+Alt+T"
@@ -160,9 +161,10 @@ class TestShortcutAssignment(QtBaseTestCase):
 
     def test_set_user_shortcut_creates_qshortcut(self):
         """set_user_shortcut should create a live QShortcut."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = QtWait.until(
+            lambda: self.sb.get_shortcut_registry(self.ui),
+            "the example UI registered no shortcut slots",
+        )
 
         slot_name = registry[0]["method"]
         test_shortcut = "Ctrl+Alt+X"
@@ -177,9 +179,10 @@ class TestShortcutAssignment(QtBaseTestCase):
 
     def test_registry_reflects_user_shortcut(self):
         """Registry should show user-assigned shortcut in 'current'."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = QtWait.until(
+            lambda: self.sb.get_shortcut_registry(self.ui),
+            "the example UI registered no shortcut slots",
+        )
 
         slot_name = registry[0]["method"]
         test_shortcut = "Alt+Shift+Z"
@@ -591,9 +594,10 @@ class TestShortcutScope(QtBaseTestCase):
 
     def test_registry_includes_scope_fields(self):
         """Each registry entry should expose current_scope and default_scope."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = QtWait.until(
+            lambda: self.sb.get_shortcut_registry(self.ui),
+            "the example UI registered no shortcut slots",
+        )
         for entry in registry:
             self.assertIn("current_scope", entry)
             self.assertIn("default_scope", entry)
@@ -604,9 +608,10 @@ class TestShortcutScope(QtBaseTestCase):
 
     def test_set_user_shortcut_persists_scope(self):
         """set_user_shortcut(..., scope=...) should write the scope settings key."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = QtWait.until(
+            lambda: self.sb.get_shortcut_registry(self.ui),
+            "the example UI registered no shortcut slots",
+        )
 
         slot_name = registry[0]["method"]
         self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+T", "application")
@@ -617,9 +622,10 @@ class TestShortcutScope(QtBaseTestCase):
 
     def test_set_user_shortcut_live_updates_context(self):
         """set_user_shortcut should update the live QShortcut's context."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = QtWait.until(
+            lambda: self.sb.get_shortcut_registry(self.ui),
+            "the example UI registered no shortcut slots",
+        )
 
         slot_name = registry[0]["method"]
         self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+T", "application")
@@ -631,9 +637,10 @@ class TestShortcutScope(QtBaseTestCase):
 
     def test_registry_reflects_scope_override(self):
         """Registry's current_scope should reflect a persisted override."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = QtWait.until(
+            lambda: self.sb.get_shortcut_registry(self.ui),
+            "the example UI registered no shortcut slots",
+        )
 
         slot_name = registry[0]["method"]
         self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+T", "application")
@@ -644,9 +651,10 @@ class TestShortcutScope(QtBaseTestCase):
 
     def test_omitting_scope_preserves_existing_override(self):
         """Calling set_user_shortcut without scope should not clobber a saved override."""
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = QtWait.until(
+            lambda: self.sb.get_shortcut_registry(self.ui),
+            "the example UI registered no shortcut slots",
+        )
 
         slot_name = registry[0]["method"]
         # First set scope=application
@@ -734,9 +742,10 @@ class TestApplicationScopeOwner(QtBaseTestCase):
         super().tearDown()
 
     def _first_slot(self):
-        registry = self.sb.get_shortcut_registry(self.ui)
-        if not registry:
-            self.skipTest("No slots available in example")
+        registry = QtWait.until(
+            lambda: self.sb.get_shortcut_registry(self.ui),
+            "the example UI registered no shortcut slots",
+        )
         return registry[0]["method"]
 
     def test_application_scope_owner_is_visible_when_ui_hidden(self):
@@ -1385,12 +1394,16 @@ class TestStaticShortcutRegistry(QtBaseTestCase):
         super().tearDown()
 
     def test_static_matches_live_methods_and_defaults(self):
-        live = {e["method"]: e for e in self.sb.get_shortcut_registry(self.ui)}
+        live = {
+            e["method"]: e
+            for e in QtWait.until(
+                lambda: self.sb.get_shortcut_registry(self.ui),
+                "the example UI registered no shortcut slots",
+            )
+        }
         static = {
             e["method"]: e for e in self.sb.get_static_shortcut_registry("example")
         }
-        if not live:
-            self.skipTest("example UI exposes no shortcut slots")
 
         # Static may legitimately miss slots bound to widgets created in code
         # (the documented fidelity caveat), so it must be a subset — never
@@ -1431,9 +1444,10 @@ class TestStaticShortcutRegistry(QtBaseTestCase):
     def test_static_reads_persisted_override(self):
         """An override persisted by the live UI must be read by the static path,
         proving both use the same per-UI QSettings namespace."""
-        live = self.sb.get_shortcut_registry(self.ui)
-        if not live:
-            self.skipTest("example UI exposes no shortcut slots")
+        live = QtWait.until(
+            lambda: self.sb.get_shortcut_registry(self.ui),
+            "the example UI registered no shortcut slots",
+        )
         method = live[0]["method"]
 
         self.sb.set_user_shortcut(self.ui, method, "Ctrl+Alt+7", "application")

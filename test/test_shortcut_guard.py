@@ -34,7 +34,7 @@ Run standalone: python -m test.test_shortcut_guard
 
 import unittest
 
-from conftest import QtBaseTestCase, setup_qt_application
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
 app = setup_qt_application()
 
@@ -256,14 +256,8 @@ class TestConsoleDoesNotStealCopy(QtBaseTestCase):
         QtWidgets.QApplication.processEvents()
         return clipboard.text()
 
-    def _require_clipboard(self):
-        clipboard = QtWidgets.QApplication.clipboard()
-        clipboard.setText("sentinel")
-        if clipboard.text() != "sentinel":
-            self.skipTest("environment cannot round-trip the clipboard")
-
     def test_focused_field_keeps_its_own_ctrl_c(self):
-        self._require_clipboard()
+        QtWait.require_clipboard(self)
         console = self._console_with_selection()
         window = self.track_widget(QtWidgets.QWidget())
         QtWidgets.QVBoxLayout(window).addWidget(console)
@@ -286,7 +280,7 @@ class TestConsoleDoesNotStealCopy(QtBaseTestCase):
         a read-only view claims nothing from Qt on its own, so it can only hold
         Ctrl+C against an app-wide binding once ``ShortcutGuardMixin`` speaks up.
         """
-        self._require_clipboard()
+        QtWait.require_clipboard(self)
         console = self._console_with_selection()
         window = self.track_widget(QtWidgets.QWidget())
         QtWidgets.QVBoxLayout(window).addWidget(console)
@@ -306,7 +300,7 @@ class TestConsoleDoesNotStealCopy(QtBaseTestCase):
 
     def test_console_copies_when_it_holds_focus(self):
         """The deference must not cost the console its own hover-focus copy."""
-        self._require_clipboard()
+        QtWait.require_clipboard(self)
         console = self._console_with_selection()
         console.activateWindow()
         console.setFocus(QtCore.Qt.MouseFocusReason)
@@ -316,7 +310,7 @@ class TestConsoleDoesNotStealCopy(QtBaseTestCase):
     def test_console_copies_when_focus_cannot_handle_copy(self):
         """``app_wide_copy``'s reason to exist: a focus widget with no Copy of its
         own (a button, the host's viewport) leaves the chord to the console."""
-        self._require_clipboard()
+        QtWait.require_clipboard(self)
         console = self._console_with_selection()
         button = self.track_widget(QtWidgets.QPushButton("x"))
         button.show()
@@ -329,7 +323,7 @@ class TestConsoleDoesNotStealCopy(QtBaseTestCase):
     def test_widget_scoped_console_never_reaches_outside_itself(self):
         """``app_wide_copy=False`` (Blender / standalone) must stay local even to a
         focus widget that has no Copy of its own."""
-        self._require_clipboard()
+        QtWait.require_clipboard(self)
         console = self.track_widget(ScriptOutput(app_wide_copy=False))
         console.setPlainText("CONSOLE TEXT")
         console.selectAll()
@@ -446,10 +440,10 @@ class TestConsoleShortcutIsGatedOnSelection(QtBaseTestCase):
     def test_unselected_console_leaves_a_bare_pane_its_own_copy(self):
         """End-to-end, and the exact user-visible symptom: the clipboard must get the
         pane's text, not stay untouched."""
+        # The inline copy that used to sit here skipped without retrying or
+        # marking the gate; the shared probe does both.
+        QtWait.require_clipboard(self)
         clipboard = QtWidgets.QApplication.clipboard()
-        clipboard.setText("sentinel")
-        if clipboard.text() != "sentinel":
-            self.skipTest("environment cannot round-trip the clipboard")
 
         console = self._console()  # no selection — the everyday state
         pane = QtWidgets.QTextBrowser()  # deliberately unguarded: shortcut gating alone

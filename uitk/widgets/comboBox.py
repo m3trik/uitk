@@ -1,9 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
 import re
+import time
 from contextlib import contextmanager, nullcontext
 from typing import Union
 from qtpy import QtWidgets, QtCore, QtGui
+from uitk.events import EventFactoryFilter
 from uitk.switchboard import Signals
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
@@ -248,6 +250,7 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
         to ``_FALLBACK_COLOR`` if the theme can't be inferred or parsed."""
         try:
             from uitk.themes.style_sheet import StyleSheet
+
             theme = self._resolve_active_theme()
             color_str = StyleSheet.get_variable("BUTTON_CHECKED", theme=theme)
             if color_str:
@@ -262,6 +265,7 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
         """Walk up the combobox's parent chain to find the nearest widget
         registered with ``StyleSheet`` and return its theme."""
         from uitk.themes.style_sheet import StyleSheet
+
         widget = self._combo
         while widget is not None:
             if widget in StyleSheet._widget_configs:
@@ -276,6 +280,7 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
         natural height."""
         try:
             from uitk.themes.style_sheet import StyleSheet
+
             return StyleSheet.get_variable_px(
                 "COMBOBOX_ITEM_HEIGHT", theme=self._resolve_active_theme()
             )
@@ -347,9 +352,7 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
             painter.setPen(QtCore.Qt.NoPen)
             painter.setBrush(self._strip_color)
             rect = option.rect
-            painter.drawRect(
-                rect.x(), rect.y(), self._STRIP_WIDTH, rect.height()
-            )
+            painter.drawRect(rect.x(), rect.y(), self._STRIP_WIDTH, rect.height())
             painter.restore()
 
 
@@ -447,6 +450,12 @@ class ComboBox(
     on_editing_finished = QtCore.Signal(str)
     on_item_deleted = QtCore.Signal(str)
 
+    #: Opt-in: double-clicking the combo (its body, showing the current item)
+    #: enters edit mode on that item, so renaming needs no menu command of its
+    #: own. Off by default — most combos are pickers whose text is not the
+    #: user's to rewrite. Mechanism: :meth:`_popup_mouseButtonPressEvent`.
+    rename_on_double_click = False
+
     # Qt Designer widget-box entry.
     designer_spec = {"icon": "list", "object_name": "cmb"}
 
@@ -460,6 +469,14 @@ class ComboBox(
         # has_header / header_text come from AlignedComboBox.
         self._current_text_suffix = ""
         self._current_text_prefix = ""
+        # (event timestamp ms, time.monotonic()) of the last left press on the
+        # body — the first click of a possible double-click; see
+        # _is_second_click_of_body_double_click.
+        self._body_press_stamp = None
+        # Timestamp of the second click once it has been acted on, so its
+        # replay (see _is_replayed_second_click) is recognised and dropped.
+        self._consumed_click_ts = None
+        self._replay_guard = None  # EventFactoryFilter on the rename's line edit
         # `self.editable = editable` (a plain attribute) never made the combo
         # editable — Qt properties aren't set by attribute assignment. Route
         # through the real setter; skip the signal on construction.
@@ -711,6 +728,173 @@ class ComboBox(
         elif index == -1 and self.has_header:
             self.setEditText(self.header_text)
 
+    def mousePressEvent(self, event):
+        if self._is_replayed_second_click(event):
+            event.accept()  # already acted on; would only re-open the popup
+            return
+        # Stamp the body press: it is the first click of a possible
+        # double-click, and the second one lands on the popup, not here.
+        if event.button() == QtCore.Qt.LeftButton:
+            self._body_press_stamp = self._press_stamp(event)
+        super().mousePressEvent(event)
+
+    def _is_replayed_second_click(self, event):
+        """Is *event* Qt's replay of the second click we already acted on?
+
+        When a press closes a popup, Qt may re-post ("replay") that press to
+        whatever is beneath the popup once it is gone. Its own guard against
+        that for a press on the combo (``WA_NoMouseReplay``, set by the popup
+        container) is a process-global flag, and it has been seen armed
+        anyway — on Windows, while another GUI process was active on the same
+        desktop; the exact path that arms it was not pinned down. Replayed a
+        beat after the click, the press lands on the just-created line edit
+        (dropping the pre-selected text, so typing appends to the old name)
+        or, earlier, on the combo (re-opening the popup). The replay keeps
+        the original event's timestamp, which is what was recorded when the
+        click was recognised — that is the whole test.
+        """
+        ts = self._consumed_click_ts
+        return ts is not None and event.timestamp() == ts
+
+    def _line_edit_mouseButtonPressEvent(self, line_edit, event):
+        """Drop the replayed second click on the rename's line edit.
+
+        Handler for the :class:`EventFactoryFilter` ``_begin_rename`` installs
+        on the line edit (see :meth:`_is_replayed_second_click`).
+        """
+        return self._is_replayed_second_click(event)
+
+    _line_edit_mouseButtonDblClickEvent = _line_edit_mouseButtonPressEvent
+
+    def mouseDoubleClickEvent(self, event):
+        # Reached only when no popup was open to swallow the gesture — e.g. the
+        # popup WAS open and the first click dismissed it, so Qt delivers the
+        # double-click here. With the popup open, the second click is caught on
+        # the container instead (``_popup_mouseButtonPressEvent``). QComboBox's
+        # default would just re-open the popup.
+        if self._rename_gesture_applies(event):
+            self._body_press_stamp = None
+            self.begin_rename()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def _rename_gesture_applies(self, event):
+        """Opted in, left button, and there is a current item to rename."""
+        return (
+            self.rename_on_double_click
+            and event.button() == QtCore.Qt.LeftButton
+            and self.currentIndex() >= 0
+        )
+
+    @staticmethod
+    def _press_stamp(event):
+        """(event timestamp in ms or None, monotonic seconds) for *event*.
+
+        Event timestamps are the OS's — robust to a slow ``showPopup`` (a
+        ``before_popup_shown`` handler repopulating a long list can outlast the
+        double-click interval in wall-clock while the two clicks were still a
+        double-click at the mouse). Some hand-built events carry timestamp 0;
+        the monotonic clock is the fallback for those.
+        """
+        ts = event.timestamp()
+        return (ts if ts else None, time.monotonic())
+
+    def _popup_mouseButtonPressEvent(self, container, event):
+        """Turn a double-click on the combo BODY into a rename while the popup is open.
+
+        Handler for the :class:`EventFactoryFilter` ``_ensure_popup_filters``
+        installs on the popup container. A non-editable combo opens its popup
+        on the first press of the gesture, and from then on Qt routes every
+        mouse event to the popup — so the second click never reaches the combo,
+        and :meth:`mouseDoubleClickEvent` alone can't see the gesture. What the
+        container receives for that second click depends on the Qt version:
+        Qt >= 6.8 forwards a press aimed at another window straight to the
+        popup and never synthesises a double-click at all; Qt <= 6.7 delivers
+        a ``MouseButtonDblClick`` (Maya 2025 = Qt 6.5). Either way the
+        container's own handler treats it as click-to-dismiss (hide the popup,
+        ``WA_NoMouseReplay`` so the press is not replayed onto the combo —
+        normally; :meth:`_is_replayed_second_click` covers when it is).
+
+        Recognises the second click — a left press or double-click over the
+        combo's own rect within ``mouseDoubleClickInterval`` of the press that
+        opened the popup — and starts the rename. Never consumes the event:
+        the container's dismiss path is left intact (that is what closes the
+        popup without replaying the press), and ``begin_rename`` is deferred
+        anyway.
+        """
+        if self._is_second_click_of_body_double_click(event, container):
+            self.begin_rename()
+        return False
+
+    _popup_mouseButtonDblClickEvent = _popup_mouseButtonPressEvent
+
+    def _is_second_click_of_body_double_click(self, event, receiver):
+        """Is *event* (a press/double-click delivered to the popup *receiver*)
+        the second click of a double-click on this combo's body?
+
+        True when the gesture applies (:meth:`_rename_gesture_applies`), the
+        click is over this combo's rect, and it follows the body press that
+        opened the popup within ``mouseDoubleClickInterval``. Consumes the
+        stamp so a third click can't re-trigger.
+        """
+        if not self._rename_gesture_applies(event):
+            return False
+        stamp = self._body_press_stamp
+        if stamp is None:
+            return False
+        try:
+            global_pos = receiver.mapToGlobal(event.pos())
+        except (AttributeError, RuntimeError):
+            return False
+        if not self.rect().contains(self.mapFromGlobal(global_pos)):
+            return False
+        ts_first, mono_first = stamp
+        ts_now, mono_now = self._press_stamp(event)
+        if ts_first is not None and ts_now is not None:
+            elapsed_ms = ts_now - ts_first
+        else:
+            elapsed_ms = (mono_now - mono_first) * 1000.0
+        interval = QtGui.QGuiApplication.styleHints().mouseDoubleClickInterval()
+        if not (0 <= elapsed_ms < interval):
+            return False
+        self._body_press_stamp = None
+        self._consumed_click_ts = ts_now
+        return True
+
+    def begin_rename(self):
+        """Enter edit mode on the current item, text selected, ready to retype.
+
+        The entry point behind ``rename_on_double_click`` and the way a slot
+        starts a rename programmatically. Deferred by a zero-timer because the
+        caller is usually inside the popup's own event delivery (the second
+        click of the double-click, see ``_popup_mouseButtonPressEvent``):
+        building the line edit there mutates the widget Qt is mid-delivery to,
+        the mirror of the teardown crash ``focusOutEvent`` documents. One turn
+        later the popup is gone and the combo owns its own state again.
+        """
+        QtCore.QTimer.singleShot(0, self._begin_rename)
+
+    def _begin_rename(self):
+        try:
+            if self.isEditable():  # already editing — don't restart / reselect
+                return
+            self.hidePopup()
+            self.setEditable(True)
+            line_edit = self.lineEdit()
+            if line_edit is not None:
+                # The replayed second click (see _is_replayed_second_click)
+                # may land here rather than on the combo — a press on the
+                # line edit would drop the selection just made. One filter
+                # per combo; Qt recreates the line edit per edit session.
+                if self._replay_guard is None:
+                    self._replay_guard = self._mouse_press_filter("_line_edit_")
+                self._replay_guard.install(line_edit)
+                line_edit.selectAll()
+                line_edit.setFocus(QtCore.Qt.OtherFocusReason)
+        except RuntimeError:  # combo deleted between the click and the timer
+            pass
+
     def focusOutEvent(self, event):
         # A popup taking focus is not the end of editing — the line edit's own
         # right-click menu (Cut/Copy/Paste) and this combo's Menu both raise one
@@ -925,23 +1109,76 @@ class ComboBox(
         # Ensure the host window is active so the first click in the popup selects
         # an item rather than being swallowed re-activating the window.
         self._activate_host_window()
-        self._ensure_item_click_filter(view)
+        self._ensure_popup_filters(view)
         self.before_popup_shown.emit()
-        super().showPopup()
+        with self._combo_animation_suppressed():
+            super().showPopup()
 
-    def _ensure_item_click_filter(self, view):
-        """Install the popup item-click committer once.
+    @staticmethod
+    @contextmanager
+    def _combo_animation_suppressed():
+        """Open the popup instantly instead of Qt's ~150 ms slide-in.
 
-        See :class:`_PopupItemClickCommitter`: it lets a deliberate click on a
-        list row commit even inside QComboBox's ``blockMouseReleaseTimer``
-        window, so a fast click (e.g. an option-box combo opened mid
-        marking-menu gesture, where the user clicks within ~``doubleClickInterval``
-        of the popup opening) isn't silently dropped.
+        With ``Qt.UI_AnimateCombo`` on (a Windows desktop's "animate controls"
+        default), ``QComboBox.showPopup`` hands the popup to ``QRollEffect``,
+        which fakes it as shown but does NOT show it until the roll ends: for
+        those ~150 ms there is no popup grab and no ``activePopupWidget``, so
+        input in that window goes to whatever is beneath. That dead zone eats
+        a fast click on a row, and it splits the double-click gesture behind
+        ``rename_on_double_click`` (a fast second click reaches the combo
+        while the popup is still rolling in — and then opens on top of the
+        edit). The animation is cosmetic; the dead zone is not. Suppressed
+        for the duration of the ``showPopup`` call only — the effect
+        decision is made inside it — and restored bit-exactly, so the host
+        app's setting is untouched.
+        """
+        app = QtWidgets.QApplication.instance()
+        effect = QtCore.Qt.UI_AnimateCombo
+        was_enabled = app is not None and app.isEffectEnabled(effect)
+        if was_enabled:
+            app.setEffectEnabled(effect, False)
+        try:
+            yield
+        finally:
+            if was_enabled:
+                app.setEffectEnabled(effect, True)
+
+    def _ensure_popup_filters(self, view):
+        """Install the popup event filters once.
+
+        - :class:`_PopupItemClickCommitter` on the list viewport: lets a
+          deliberate click on a row commit even inside QComboBox's
+          ``blockMouseReleaseTimer`` window, so a fast click (e.g. an option-box
+          combo opened mid marking-menu gesture, where the user clicks within
+          ~``doubleClickInterval`` of the popup opening) isn't silently dropped.
+        - :meth:`_popup_mouseButtonPressEvent` on the popup container: the
+          second click of a double-click on the combo body lands there, not on
+          the combo — this is what makes ``rename_on_double_click`` reachable.
         """
         if getattr(self, "_item_click_filter", None) is not None:
             return
         self._item_click_filter = _PopupItemClickCommitter(self)
         view.viewport().installEventFilter(self._item_click_filter)
+        self._body_double_click_filter = self._mouse_press_filter("_popup_")
+        self._body_double_click_filter.install(view.parentWidget())
+
+    def _mouse_press_filter(self, handler_prefix):
+        """An :class:`EventFactoryFilter` routing press/double-click to
+        ``<handler_prefix>mouseButtonPressEvent`` / ``...DblClickEvent`` here.
+
+        ``propagate_to_children=True`` because the targets (popup container,
+        line edit) are Qt-created: their Python wrappers are transient, so the
+        filter's per-widget install registry (a WeakSet of wrappers) would not
+        recognise them. The filter is only ever installed on those targets, so
+        skipping that registry costs nothing.
+        """
+        return EventFactoryFilter(
+            self,
+            forward_events_to=self,
+            event_name_prefix=handler_prefix,
+            event_types={"MouseButtonPress", "MouseButtonDblClick"},
+            propagate_to_children=True,
+        )
 
     def keyPressEvent(self, event):
         if self.isEditable() and event.key() == QtCore.Qt.Key_Return:

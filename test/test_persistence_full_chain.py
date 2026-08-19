@@ -661,6 +661,68 @@ class TestSyncStoredDefaultHook(QtBaseTestCase):
         self.assertEqual(sb.value(), 0.0)
 
 
+class TestResetAllRestoresOptionDefaults(QtBaseTestCase):
+    """A panel-wide "Reset to Defaults" resets fields, not just values.
+
+    ``reset_all`` asks each widget's option box to restore its plugins' own
+    state, so a per-axis spacing *lock* clears exactly as it does when the
+    user clicks that field's own reset button.
+    """
+
+    def _state(self):
+        qs = QtCore.QSettings("uitk_test", "reset_all_option_defaults")
+        qs.clear()
+        return StateManager(qs)
+
+    def _locked_spinbox(self, state):
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        sb.setObjectName("sb")
+        sb.setRange(-100.0, 100.0)
+        sb.derived_type = QtWidgets.QDoubleSpinBox
+        sb.default_signals = lambda: "valueChanged"
+        sb.restore_state = True
+        sb.setValue(0.0)
+        state.capture_default(sb)  # default = 0
+        sb.setValue(5.0)
+
+        mgr = OptionBoxManager(sb)
+        sb._option_box_manager = mgr
+        mgr.set_toggle(icon="lock", initial=False, settings_key=False)
+        lock = mgr.find_option(ToggleOption)
+        lock.set_on(True)
+        return sb, lock
+
+    def test_reset_all_clears_the_lock(self):
+        state = self._state()
+        sb, lock = self._locked_spinbox(state)
+        state.reset_all()
+        self.assertEqual(sb.value(), 0.0)
+        self.assertFalse(lock.is_on, "reset_all must clear the field's lock")
+
+    def test_widget_without_an_option_box_is_untouched(self):
+        """The lookup must not spin up a manager for every reset widget."""
+        state = self._state()
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        sb.setObjectName("sb_plain")
+        sb.setRange(-100.0, 100.0)
+        sb.derived_type = QtWidgets.QDoubleSpinBox
+        sb.default_signals = lambda: "valueChanged"
+        sb.restore_state = True
+        sb.setValue(0.0)
+        state.capture_default(sb)
+        sb.setValue(5.0)
+
+        state.reset_all()  # must not raise
+        self.assertEqual(sb.value(), 0.0)
+        self.assertIsNone(
+            getattr(sb, "_option_box_manager", None),
+            "reset_all must not create an option box for a plain widget",
+        )
+
+
 # ===========================================================================
 # Scenario 11: host-namespaced branch (Maya / Blender share one QSettings
 # backend, per mainWindow.py's Switchboard.add_ui / _relative_state fix)

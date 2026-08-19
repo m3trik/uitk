@@ -1065,6 +1065,102 @@ class TestSwitchboardLinkSpinboxes(QtBaseTestCase):
         # one propagation round: all three land on 1.0, no runaway
         self.assertEqual([w.value() for w in self.boxes], [1.0, 1.0, 1.0])
 
+    def test_lock_uses_the_channel_box_tints(self):
+        """Locked = desat blue, unlocked = dim grey. NOT ToggleOption's error
+        red — an unlocked field is a normal state, not a fault."""
+        from uitk.switchboard.utils import (
+            _LOCK_ACTIVE_COLOR,
+            _LOCK_INACTIVE_COLOR,
+        )
+
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        opt = self._toggle(self.boxes[0])
+        self.assertEqual(opt._active_color, _LOCK_ACTIVE_COLOR)
+        self.assertEqual(opt._disabled_color, _LOCK_INACTIVE_COLOR)
+
+    def test_lock_tints_are_overridable(self):
+        self.sb.link_spinboxes(
+            self.ui,
+            "s000-2",
+            settings_key=False,
+            active_color="#112233",
+            disabled_color="#445566",
+        )
+        opt = self._toggle(self.boxes[0])
+        self.assertEqual(opt._active_color, "#112233")
+        self.assertEqual(opt._disabled_color, "#445566")
+
+    def test_reset_button_clears_the_lock(self):
+        """A field carrying both buttons: its reset clears its lock too."""
+        from uitk.widgets.optionBox.options.reset import ResetOption
+
+        self.sb.add_reset_buttons(self.ui, "s000-2")
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a = self.boxes[0]
+        self._lock(a)
+        a.option_box.find_option(ResetOption).reset()
+        self.assertFalse(self._toggle(a).is_on)
+
+    def test_lock_sits_left_of_the_reset(self):
+        from uitk.widgets.optionBox.options.reset import ResetOption
+
+        self.sb.add_reset_buttons(self.ui, "s000-2")
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        box = self.boxes[0].option_box._option_box
+        order = box._sort_options()
+        self.assertLess(
+            order.index(self._toggle(self.boxes[0])),
+            order.index(self.boxes[0].option_box.find_option(ResetOption)),
+        )
+
+    def test_reset_all_leaves_every_locked_field_at_its_default(self):
+        """A panel-wide reset must clear the locks BEFORE applying the values.
+
+        Otherwise the first field's reset fires an equal-delta into its still
+        -locked siblings, shoving them off the default that is about to be (or
+        has already been) applied.
+        """
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, c = self.boxes
+        for w in self.boxes:  # opt back into state so reset_all sees them
+            w.restore_state = True
+            self.ui.state.capture_default(w)  # default = 0.0 for all three
+        a.setValue(5.0)
+        b.setValue(10.0)
+        c.setValue(-3.0)
+        for w in self.boxes:
+            self._lock(w)
+
+        self.ui.state.reset_all()
+
+        self.assertEqual([w.value() for w in self.boxes], [0.0, 0.0, 0.0])
+        self.assertFalse(
+            any(self._toggle(w).is_on for w in self.boxes),
+            "reset_all also clears the locks",
+        )
+
+    def test_excluded_field_keeps_its_lock(self):
+        """``exclude_from_reset`` opts a field out of the whole reset — its
+        lock is option state, so it is left alone too."""
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, _ = self.boxes
+        for w in (a, b):
+            w.restore_state = True
+            self.ui.state.capture_default(w)
+        a.setValue(5.0)
+        b.setValue(10.0)
+        self._lock(a)
+        self._lock(b)
+        b.exclude_from_reset = True
+
+        self.ui.state.reset_all()
+
+        self.assertEqual(a.value(), 0.0)
+        self.assertFalse(self._toggle(a).is_on, "a reset field is unlocked")
+        self.assertTrue(
+            self._toggle(b).is_on, "an excluded field keeps its lock"
+        )
+
     def test_no_propagation_during_state_restore(self):
         """A locked field restored under suppress_save must re-baseline WITHOUT
         propagating a delta (else restore corrupts siblings, order-dependent)."""

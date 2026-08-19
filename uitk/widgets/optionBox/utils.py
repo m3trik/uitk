@@ -6,6 +6,8 @@ from qtpy import QtWidgets, QtCore
 from typing import Optional, Union
 import pythontk as ptk
 
+from ._optionBox import DEFAULT_OPTION_ORDER
+
 
 class OptionBoxManager(ptk.LoggingMixin):
     """Elegant manager for option box functionality accessible as widget.option_box"""
@@ -20,21 +22,10 @@ class OptionBoxManager(ptk.LoggingMixin):
         self._container = None
         self._clear_enabled = False
         self._menu = None
-        # Default order. "value" first so an inline ValueOption field sits flush
-        # against the wrapped widget, ahead of every icon button. Mirrors
-        # OptionBox._option_order (the fallback when no order is passed here).
-        self._option_order = [
-            "value",
-            "affix",
-            "clear",
-            "recent",
-            "pin",
-            "reset",
-            "toggle",
-            "action",
-            "browse",
-            "menu",
-        ]
+        # Shared default placement (see DEFAULT_OPTION_ORDER) -- "value" first
+        # so an inline ValueOption field sits flush against the wrapped widget,
+        # ahead of every icon button.
+        self._option_order = list(DEFAULT_OPTION_ORDER)
         self._pending_options = []  # Store options until wrapping is needed
         self._wrap_retry_scheduled = False  # Prevent duplicate timer scheduling
         self._wrap_retry_count = 0  # Track retries while waiting for parent assignment
@@ -67,18 +58,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         if not isinstance(order, (list, tuple)):
             raise ValueError("Option order must be a list or tuple")
 
-        valid_options = {
-            "value",
-            "affix",
-            "clear",
-            "recent",
-            "pin",
-            "reset",
-            "toggle",
-            "action",
-            "browse",
-            "menu",
-        }
+        valid_options = set(DEFAULT_OPTION_ORDER)
         if not all(opt in valid_options for opt in order):
             raise ValueError(
                 f"Invalid options in order. Valid options: {valid_options}"
@@ -760,6 +740,29 @@ class OptionBoxManager(ptk.LoggingMixin):
                 self._option_box.remove_option(opt)
 
         self._pending_options = []
+        return self
+
+    def get_options(self):
+        """Every option on this widget — pending (not yet wrapped) and live."""
+        options = list(self._pending_options)
+        if self._option_box:
+            options.extend(self._option_box.get_options())
+        return options
+
+    def restore_option_defaults(self):
+        """Ask every option to return its own state to its default.
+
+        The field-level counterpart to a value reset (see
+        ``BaseOption.restore_default``): clears a lock / disable toggle while
+        leaving user data — pinned and recent values — alone. Called by a
+        panel-wide ``StateManager.reset_all``; the per-field reset button goes
+        through ``ResetOption`` instead, which skips itself.
+        """
+        for option in self.get_options():
+            try:
+                option.restore_default()
+            except Exception as e:  # one bad plugin must not eat the reset
+                self.logger.debug(f"restore_default failed on {option!r}: {e}")
         return self
 
     def find_option(self, option_type):

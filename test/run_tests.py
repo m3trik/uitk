@@ -20,9 +20,11 @@ import logging
 import argparse
 import faulthandler
 from datetime import datetime
-from pathlib import Path
 from io import StringIO
+from pathlib import Path
 from typing import Optional
+
+import pythontk as ptk
 
 # Dump a native traceback if Qt segfaults (e.g. during teardown) — otherwise
 # a crash surfaces only as an unexplained 0xC0000005 exit code on Windows.
@@ -51,6 +53,14 @@ if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 if str(TEST_DIR) not in sys.path:
     sys.path.insert(0, str(TEST_DIR))
+
+# AFTER the sys.path setup above, not with the stdlib imports: conftest
+# lives in TEST_DIR, so importing it earlier only works by the accident
+# of Python putting a script's own directory on sys.path -- which does
+# not hold when this module is imported by path (test_run_tests.py does
+# exactly that). QtWait.FLAKY_MARKER lets _print_summary count
+# deliberately-gated tests apart from ordinary environment skips.
+from conftest import QtWait  # noqa: E402
 
 
 class TestResult:
@@ -250,7 +260,39 @@ class TestSuiteRunner:
         self.logger.info(f"Failed:  {failed}")
         self.logger.info(f"Errors:  {errors}")
         self.logger.info(f"Skipped: {skipped}")
+
+        # A DELIBERATELY GATED test is not an ordinary skip: it is a test that
+        # could not run because a resource this process does not own was
+        # unavailable (the machine-global OS clipboard, say). Rolled into the
+        # skip count it is invisible, which is the whole failure mode this
+        # suite was fixed for -- a broken feature and a busy machine must not
+        # look alike. QtWait.flaky stamps the reason so it can be counted here.
+        gated = [
+            (test, reason)
+            for test, reason in result.skipped
+            if QtWait.FLAKY_MARKER in str(reason)
+        ]
+        if gated:
+            self.logger.warning(
+                f"Flaky-gated: {len(gated)} (of the {skipped} skipped) -- a rise "
+                "here means the environment is degrading, not the code"
+            )
+            for test, reason in gated:
+                self.logger.info(f"  - {test}: {reason}")
+
         self.logger.info(f"Duration: {duration:.2f}s")
+
+        # A module that imported but produced only skips still counts as run
+        # (the standard keeps environment-gated skips green) -- but say so.
+        skipped_only = sorted(
+            set(getattr(result, "modules_ran", ()))
+            - set(getattr(result, "modules_executed", ()))
+        )
+        if skipped_only:
+            self.logger.warning(
+                f"{len(skipped_only)} module(s) contributed only skips: "
+                + ", ".join(skipped_only)
+            )
         self.logger.info("")
 
         if result.wasSuccessful():
@@ -281,18 +323,37 @@ class TestSuiteRunner:
         Delegates to the ecosystem-wide SSoT (``ptk.StatusBadge``) so the count
         means the same thing here as in every sibling package: individual test
         cases, skips excluded. See m3trik/docs/TEST_BADGE_STANDARD.md.
-        """
-        from pythontk.core_utils.status_badge import StatusBadge
 
+        A partial run must not stamp the badge, whether it was scoped by argument
+        or by environment (no Qt binding available, so those modules never
+        import), so the write is gated on ``ptk.StatusBadge.gate``. The expected
+        module set is *derived* from the ``test_*.py`` files on disk rather than
+        recorded anywhere, so it can never go stale, and a refused stamp always
+        names its reason -- mirroring mayatk's runner, which prints
+        ``[INFO] Badge not updated (some modules did not run).`` The rule lives
+        on ``StatusBadge`` rather than here because six runners stamp this badge:
+        completeness has to be one implementation, not one per runner.
+        """
         total = result.testsRun
         passed = total - len(result.failures) - len(result.errors) - len(result.skipped)
         failed = len(result.failures) + len(result.errors)
+
+        # Never stamp a run the environment scoped down (see above).
+        allowed, reason = ptk.StatusBadge.gate(
+            ptk.StatusBadge.discover_module_names(TEST_DIR),
+            getattr(result, "modules_ran", ()),
+            passed,
+            failed,
+        )
+        if not allowed:
+            self.logger.warning(f"Badge not updated ({reason}).")
+            return
 
         try:
             stamped = [
                 p
                 for p in README_PATHS
-                if StatusBadge.update_test_badge(
+                if ptk.StatusBadge.update_test_badge(
                     p, passed, failed, test_dir=PACKAGE_ROOT / "test"
                 )
             ]
@@ -340,15 +401,54 @@ class TestSuiteRunner:
 
 
 class _DetailedTestResult(unittest.TextTestResult):
-    """Extended TestResult that tracks successful tests."""
+    """Extended TestResult that tracks successful tests.
+
+    Also records which test modules actually ran, so a run the environment
+    scoped down can be refused the README badge (see
+    :meth:`TestSuiteRunner._update_readme_badge`).
+    """
 
     def __init__(self, stream, descriptions, verbosity):
         super().__init__(stream, descriptions, verbosity)
         self.successes = []
+        self.modules_ran = set()  # imported, and its cases were run
+        self.modules_executed = set()  # produced at least one non-skipped case
+
+    def _note_module(self, test, executed: bool):
+        """Credit *test*'s module; a loader stand-in means it never ran."""
+        if ptk.StatusBadge.is_import_standin(test):
+            return
+        name = ptk.StatusBadge.module_of(test)
+        if not name:
+            return
+        self.modules_ran.add(name)
+        if executed:
+            self.modules_executed.add(name)
 
     def addSuccess(self, test):
         super().addSuccess(test)
         self.successes.append(test)
+        self._note_module(test, True)
+
+    def addError(self, test, err):
+        super().addError(test, err)
+        self._note_module(test, True)
+
+    def addFailure(self, test, err):
+        super().addFailure(test, err)
+        self._note_module(test, True)
+
+    def addExpectedFailure(self, test, err):
+        super().addExpectedFailure(test, err)
+        self._note_module(test, True)
+
+    def addUnexpectedSuccess(self, test):
+        super().addUnexpectedSuccess(test)
+        self._note_module(test, True)
+
+    def addSkip(self, test, reason):
+        super().addSkip(test, reason)
+        self._note_module(test, False)
 
 
 def parse_args():

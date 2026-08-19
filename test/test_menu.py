@@ -19,7 +19,7 @@ Run standalone: python -m test.test_menu
 import unittest
 from unittest.mock import MagicMock, patch
 
-from conftest import QtBaseTestCase, setup_qt_application
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
@@ -782,11 +782,11 @@ class TestMenuEmptyState(QtBaseTestCase):
         menu.show()
         self.assertTrue(menu.isVisible())
         # Spin the event loop until the singleshot fires (~30ms + slack).
-        deadline = QtCore.QElapsedTimer()
-        deadline.start()
-        while menu.isVisible() and deadline.elapsed() < 1000:
-            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 30)
-        self.assertFalse(menu.isVisible())
+        QtWait.until(
+            lambda: not menu.isVisible(),
+            "empty-timeout timer never hid the menu",
+            timeout_ms=1000,
+        )
 
 
 class TestMenuTitle(QtBaseTestCase):
@@ -1978,9 +1978,11 @@ class TestMenuRegistrationSurvivesReparent(QtBaseTestCase):
         parent.show()
         m = self.track_widget(Menu(parent=parent))
         m.show()
-        QtWidgets.QApplication.processEvents()
-        if not m.isVisible():
-            self.skipTest("Menu did not become visible in this Qt environment")
+        # A menu that never becomes visible is a broken menu, not a busy
+        # machine: wait on the real condition and FAIL when it is not met.
+        QtWait.until(
+            lambda: m.isVisible(), "Menu.show() never made the menu visible"
+        )
 
         with patch.object(m._layout, "activate") as mock_activate:
             m.add("QPushButton", setObjectName="b_visible")
@@ -2202,7 +2204,7 @@ class TestOptionBoxMenuPopupFlags(QtBaseTestCase):
 
         # Show the parent — cascade would auto-show Menu without explicit hide.
         parent.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
 
         self.assertFalse(
             menu.isVisible(),
@@ -2583,7 +2585,7 @@ class TestHideOnTrigger(QtBaseTestCase):
         )
         item = menu.add("QPushButton", setText="Go", setObjectName="btn_go")
         menu.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.until(lambda: menu.isVisible(), "menu never became visible")
         return menu, item
 
     def _release_on(self, widget):
@@ -2721,7 +2723,7 @@ class TestMenuNestedContainerTrigger(QtBaseTestCase):
         root_item = lw.add("Menu")
         root_item.sublist.add(["Leaf A", "Leaf B"])
         menu.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.until(lambda: menu.isVisible(), "menu never became visible")
         return menu, lw, root_item
 
     def _pump(self, ms=50):

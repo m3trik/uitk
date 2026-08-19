@@ -5,7 +5,10 @@
 Unlike :class:`ActionOption` (a one-shot or N-state cycling action), a
 :class:`ToggleOption` is a *stateful* boolean. The icon dims to the project's
 "error" red while off so the user can see which control caused a dependent
-widget / filter / process to stop working.
+widget / filter / process to stop working. That default only fits a toggle
+whose off state STOPS something: for one whose off state is perfectly ordinary
+— a *lock* — pass ``disabled_color`` / ``active_color`` (see
+``Switchboard.link_spinboxes``), or red reads as a fault that isn't there.
 
 Common pattern (line-edit filter gate)::
 
@@ -86,7 +89,8 @@ class BinaryToggleOption(GatingMixin, PersistedOption, ButtonOption):
         self._icon_off = icon_off or icon
         self._tooltip_on = tooltip_on
         self._tooltip_off = tooltip_off
-        self._is_on = bool(initial)
+        self._initial = bool(initial)
+        self._is_on = self._initial
 
         # Gating behaviour (gated widgets, keep-live flag, disabled tint, icon
         # swap) lives in GatingMixin — shared by both subclasses.
@@ -128,6 +132,16 @@ class BinaryToggleOption(GatingMixin, PersistedOption, ButtonOption):
         self._save_state()
         if emit:
             self.toggled.emit(self._is_on)
+
+    def restore_default(self) -> None:
+        """Return the toggle to its constructed ``initial`` state.
+
+        Called by a sibling ``ResetOption`` when the user resets the field, so
+        a reset also clears the toggle (a spacing *lock*, a *disable*). Routed
+        through :meth:`set_on`, so the cleared state persists and ``toggled``
+        fires exactly as it would for a click.
+        """
+        self.set_on(self._initial)
 
     # ------------------------------------------------------------------
     # ButtonOption overrides

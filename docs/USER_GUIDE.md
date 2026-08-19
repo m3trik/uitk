@@ -18,7 +18,7 @@ from uitk import Switchboard
 print(Switchboard.__module__)   # 'uitk.switchboard._core'
 ```
 
-UITK works with either PySide2 or PySide6 via `qtpy`. If neither is installed, pick one: `pip install PySide6`.
+UITK targets PySide6 through `qtpy` (Maya 2025+ and Blender ship it; standalone: `pip install PySide6`).
 
 ---
 

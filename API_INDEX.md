@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-08-18_
+_Generated: 2026-08-19_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -18,7 +18,7 @@ _Generated: 2026-08-18_
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
 - `class BridgeSlotsBase(_BridgeSlotsInternal)`
-  - methods: params_module, template_dir, make_bridge, optional_packages, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, set_param_enabled, param_supersessions, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, docs_url, header_init, reveal_folder, open_templates_folder, clear_log
+  - methods: params_module, template_dir, make_bridge, optional_packages, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, live_param_tooltips, set_param_enabled, param_supersessions, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, docs_url, header_init, reveal_folder, open_templates_folder, clear_log
 
 ### `bridge/spec.py` — Attribute spec + kind-handler registry for parameterised forms.
 - `class AttributeSpec`
@@ -170,7 +170,7 @@ _Generated: 2026-08-18_
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
-  - methods: is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at
+  - methods: unmet_policy, gate, recheck_gates, is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at
 
 ### `testing.py` — Test isolation for every suite in the ecosystem — keep test runs off live user state.
 - `class TestSandbox(_TestSandboxInternal)`
@@ -202,7 +202,7 @@ _Generated: 2026-08-18_
 - `class AlignedComboBox(QtWidgets.QComboBox)`
   - methods: setHeaderText, setHeaderAlignment, get_stylesheet_property, format_current_display_text, paintEvent
 - `class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`
-  - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, setCurrentTextPrefix, setCurrentTextSuffix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, focusOutEvent, editable, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
+  - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, setCurrentTextPrefix, setCurrentTextSuffix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, mousePressEvent, mouseDoubleClickEvent, begin_rename, focusOutEvent, editable, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
 
 ### `widgets/delegates/centered_icon.py` — Centered icon painting for item-view cells.
 - `class CenteredIconActionDelegate(RowSelectionBorderDelegate)`
@@ -328,7 +328,7 @@ _Generated: 2026-08-18_
 
 ### `widgets/messageBox.py`
 - `class MessageBox(QtWidgets.QMessageBox, AttributesMixin)`
-  - methods: setStandardButtons, move_, setText, autoClose, showEvent, hideEvent, exec_
+  - methods: setStandardButtons, move_, setText, autoClose, showEvent, hideEvent, as_prompt, exec_
 
 ### `widgets/mixins/attributes.py`
 - `class AttributesMixin`
@@ -394,7 +394,7 @@ _Generated: 2026-08-18_
 
 ### `widgets/mixins/tooltip_mixin.py`
 - `class TooltipFormat`
-  - methods: kbd, hl, fmt, placeholder_preview
+  - methods: kbd, hl, fmt, placeholder_preview, stored_items
 - `class TooltipProxy(TooltipFormat, _TooltipBindInternal)`
   - methods: bind
 - `class TooltipNamespace(TooltipFormat, _TooltipBindInternal)`
@@ -415,7 +415,7 @@ _Generated: 2026-08-18_
 - `class OptionButton(QtWidgets.QPushButton, AttributesMixin)`
 - `class QObjectABCMeta(type(QtCore.QObject), ABCMeta)`
 - `class BaseOption(QtCore.QObject, ABC)`
-  - methods: is_compatible, widget, create_widget, setup_widget, on_wrap, set_wrapped_widget
+  - methods: is_compatible, widget, create_widget, setup_widget, on_wrap, sibling_options, restore_default, set_wrapped_widget
 - `class ButtonOption(BaseOption)`
   - methods: create_widget, setup_widget, block_next_click, set_checked
 - `class GatingMixin`
@@ -470,12 +470,12 @@ _Generated: 2026-08-18_
   - methods: store, create_widget, record, add_recent_value, set_wrapped_widget, recent_values, clear_recent_values
 
 ### `widgets/optionBox/options/reset.py` — Reset option for OptionBox — one-click reset-to-default, with a modifier-gated
-- `class ResetOption(ButtonOption)`
+- `class ResetOption(ButtonOption, ptk.LoggingMixin)`
   - methods: is_bypassed, reset, set_bypassed, setup_widget
 
 ### `widgets/optionBox/options/toggle.py` — Toggle option for OptionBox — a persisted binary on/off button.
 - `class BinaryToggleOption(GatingMixin, PersistedOption, ButtonOption)`
-  - methods: is_on, set_on, setup_widget
+  - methods: is_on, set_on, restore_default, setup_widget
 - `class ToggleOption(BinaryToggleOption)`
 
 ### `widgets/optionBox/options/value.py` — Inline editable value readout for OptionBox.
@@ -484,7 +484,7 @@ _Generated: 2026-08-18_
 
 ### `widgets/optionBox/utils.py` — Utilities and helper functions for OptionBox.
 - `class OptionBoxManager(ptk.LoggingMixin)`
-  - methods: clear_option, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_affix, affix_mode, resolve_affix, set_reset, browse, enable_clear, disable_clear, clear_options, find_option, set_order, clear_first, enabled, widget, menu, get_menu, enable_menu, enable_option_menu, disable_menu, add_option, container, remove, add_option_box, add_clear_option, add_menu_option, patch_widget_class, patch_common_widgets
+  - methods: clear_option, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_affix, affix_mode, resolve_affix, set_reset, browse, enable_clear, disable_clear, clear_options, get_options, restore_option_defaults, find_option, set_order, clear_first, enabled, widget, menu, get_menu, enable_menu, enable_option_menu, disable_menu, add_option, container, remove, add_option_box, add_clear_option, add_menu_option, patch_widget_class, patch_common_widgets
 
 ### `widgets/progressBar.py`
 - `class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`

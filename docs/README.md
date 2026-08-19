@@ -1,8 +1,8 @@
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
-[![Qt](https://img.shields.io/badge/Qt-PySide2%20|%20PySide6-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/Tests-3456%20passed-brightgreen.svg)](../test/)
+[![Qt](https://img.shields.io/badge/Qt-PySide6%20via%20qtpy-green.svg)](https://doc.qt.io/)
+[![Tests](https://img.shields.io/badge/Tests-3571%20passed-brightgreen.svg)](../test/)
 
 # uitk
 
@@ -10,7 +10,7 @@
 **Name it, and it connects.** UITK is a convention-driven Qt framework that eliminates boilerplate. Design in Qt Designer, name your widgets, write matching Python methods — UITK discovers the files, auto-wires signals, persists state, and applies themes. Every convention is overridable when you need control.
 <!-- short_description_end -->
 
-Built on `qtpy` (PySide2 / PySide6). Runs standalone or hosted inside DCCs (Maya, Blender, 3ds Max) through a pluggable handler ecosystem, and ships a marking-menu subsystem for radial-menu tool shells.
+Built on `qtpy` over PySide6. Runs standalone or hosted inside DCCs (Maya, Blender, 3ds Max) through a pluggable handler ecosystem, and ships a marking-menu subsystem for radial-menu tool shells.
 
 ## Why
 
@@ -21,7 +21,7 @@ UITK's intent is to make the *well-behaved* version of a tool the cheapest one t
 ## Install
 
 ```bash
-pip install uitk PySide6   # standalone — PySide2 works too
+pip install uitk PySide6   # standalone (PySide6 is the supported binding)
 ```
 
 <!-- sync:qt-install-note -->

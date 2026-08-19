@@ -166,5 +166,98 @@ class TestMessageBoxMove(QtBaseTestCase):
 # Main
 # -----------------------------------------------------------------------------
 
+class TestMessageBoxPromptFlags(QtBaseTestCase):
+    """A buttoned, exec_()d box must be answerable.
+
+    ``__init__`` applied one flag set to both of the widgets this class is:
+    the passive toast (must never steal focus) and the interactive prompt
+    (useless unless it can take focus). ``exec_()`` makes the box app-modal,
+    so the toast flags produced a dialog that HALTED the host DCC while
+    refusing every keypress meant to answer it -- and ``autoClose`` skips
+    buttoned boxes, so nothing else dismissed it either.
+
+    Asserted through ``as_prompt`` rather than ``exec_`` on purpose: exec_
+    enters a modal event loop, and a test that spins one to read a window
+    flag hangs the suite exactly the way the bug hangs Blender.
+    """
+
+    def test_toast_refuses_focus_by_default(self):
+        """The passive path is unchanged -- a toast must not steal focus."""
+        box = MessageBox()
+        self.assertTrue(
+            bool(box.windowFlags() & QtCore.Qt.WindowDoesNotAcceptFocus),
+            "a passive toast must keep WindowDoesNotAcceptFocus",
+        )
+        self.assertEqual(box.windowModality(), QtCore.Qt.NonModal)
+
+    def test_prompt_can_take_focus(self):
+        """The regression: an answerable dialog cannot refuse the keyboard."""
+        box = MessageBox()
+        box.setStandardButtons("Yes", "No")
+        box.as_prompt()
+        self.assertFalse(
+            bool(box.windowFlags() & QtCore.Qt.WindowDoesNotAcceptFocus),
+            "an exec_()d prompt blocks the host, so refusing focus makes it "
+            "unanswerable -- there is no other way to dismiss it",
+        )
+
+    def test_prompt_is_findable_over_the_host(self):
+        """Qt.Tool need not appear in the task bar or above the host window."""
+        box = MessageBox()
+        box.as_prompt()
+        # Qt.Tool is a COMPOSITE (Popup|Dialog), so `flags & Qt.Tool` is truthy
+        # for any plain QDialog. The window TYPE is the only honest test.
+        self.assertNotEqual(
+            box.windowFlags() & QtCore.Qt.WindowType_Mask,
+            QtCore.Qt.Tool,
+            "a modal prompt must be findable -- a Tool window blocking the "
+            "session that the user cannot locate is the same hang",
+        )
+
+    def test_prompt_modality_matches_what_exec_actually_does(self):
+        """exec_() is app-modal; NonModal was a standing contradiction."""
+        box = MessageBox()
+        box.as_prompt()
+        self.assertEqual(box.windowModality(), QtCore.Qt.ApplicationModal)
+
+    def test_prompt_keeps_the_styled_look(self):
+        """The fix is scoped to answerability, not appearance.
+
+        Frameless + always-on-top are the styling and neither blocks an
+        answer, so they stay -- pinned so a later "make it a real dialog"
+        sweep is a deliberate choice rather than a silent restyle.
+        """
+        box = MessageBox()
+        box.as_prompt()
+        flags = box.windowFlags()
+        self.assertTrue(bool(flags & QtCore.Qt.FramelessWindowHint))
+        self.assertTrue(bool(flags & QtCore.Qt.WindowStaysOnTopHint))
+
+    def test_as_prompt_is_idempotent(self):
+        """exec_() calls it every time; a re-shown box must not drift."""
+        box = MessageBox()
+        first = box.as_prompt().windowFlags()
+        self.assertEqual(box.as_prompt().windowFlags(), first)
+
+    def test_parented_prompt_is_a_top_level_dialog_not_a_child_widget(self):
+        """A hints-only flag set silently demotes a PARENTED box to Qt.Widget.
+
+        Qt derives the window type from the flags; with no type bit and a
+        parent it resolves to Qt.Widget, i.e. an embedded child rather than a
+        window -- which would be worse than the bug being fixed, since the
+        production path (``sb.message_box`` -> ``MessageBox(self.parent())``)
+        ALWAYS passes a parent. Asserted parented on purpose: unparented, the
+        same flags resolve to Qt.Window and the defect is invisible.
+        """
+        host = QtWidgets.QWidget()
+        box = MessageBox(host)
+        box.as_prompt()
+        self.assertEqual(
+            box.windowFlags() & QtCore.Qt.WindowType_Mask,
+            QtCore.Qt.Dialog,
+            "a parented prompt must stay a top-level Dialog",
+        )
+        self.assertTrue(box.isWindow(), "the prompt must be a window")
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1,10 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
 """Regression tests for the base uitk ComboBox widget."""
+
 import re
 import unittest
 
-from conftest import QtBaseTestCase, setup_qt_application
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
 app = setup_qt_application()
 
@@ -124,9 +125,7 @@ class SetAsCurrentBlockSignalsSafety(QtBaseTestCase):
 
         combo.blockSignals(True)  # caller's own blocked scope
         combo.setAsCurrent("b", blockSignals=True)
-        self.assertTrue(
-            combo.signalsBlocked(), "prior blocked state must be preserved"
-        )
+        self.assertTrue(combo.signalsBlocked(), "prior blocked state must be preserved")
         combo.blockSignals(False)
 
 
@@ -221,7 +220,8 @@ class CustomStyleFocusStateStripping(QtBaseTestCase):
             "Non-combobox controls must keep their focus state",
         )
         self.assertIs(
-            prepared, opt,
+            prepared,
+            opt,
             "Non-combobox path must return the original option unchanged",
         )
 
@@ -282,7 +282,8 @@ class ComboBoxStyleConfiguration(QtBaseTestCase):
             combo.showPopup()
             view = combo.view()
             self.assertIs(
-                view.style(), combo.custom_style,
+                view.style(),
+                combo.custom_style,
                 "Popup view must share the Fusion-based proxy so item :hover "
                 "fires reliably and no native focus border is painted",
             )
@@ -307,7 +308,8 @@ class ComboBoxStyleConfiguration(QtBaseTestCase):
         try:
             combo.showPopup()
             self.assertIsInstance(
-                combo.view().itemDelegate(), _CurrentItemIndicatorDelegate,
+                combo.view().itemDelegate(),
+                _CurrentItemIndicatorDelegate,
                 "Popup view must use the current-item indicator delegate",
             )
         finally:
@@ -380,9 +382,9 @@ class ComboBoxPopupRowHeight(QtBaseTestCase):
         app.setFont(big)
         try:
             token = int(
-                StyleSheet.get_variable(
-                    "COMBOBOX_ITEM_HEIGHT", theme="light"
-                ).rstrip("px")
+                StyleSheet.get_variable("COMBOBOX_ITEM_HEIGHT", theme="light").rstrip(
+                    "px"
+                )
             )
             # The font alone would otherwise produce a taller row.
             self.assertGreater(QtGui.QFontMetrics(big).height(), token)
@@ -407,12 +409,8 @@ class ComboBoxPopupRowHeight(QtBaseTestCase):
         token = int(
             StyleSheet.get_variable("COMBOBOX_ITEM_HEIGHT", theme="light").rstrip("px")
         )
-        self.assertEqual(
-            deleg.sizeHint(opt, combo.model().index(1, 0)).height(), 40
-        )
-        self.assertEqual(
-            deleg.sizeHint(opt, combo.model().index(0, 0)).height(), token
-        )
+        self.assertEqual(deleg.sizeHint(opt, combo.model().index(1, 0)).height(), 40)
+        self.assertEqual(deleg.sizeHint(opt, combo.model().index(0, 0)).height(), token)
 
 
 class ActivateHostWindowBeforePopup(QtBaseTestCase):
@@ -496,6 +494,256 @@ class SetCurrentIndexNegativePreservesBlockState(QtBaseTestCase):
         self.assertFalse(combo.signalsBlocked())
 
 
+class DoubleClickBodyStartsRename(QtBaseTestCase):
+    """Double-clicking the combo BODY enters edit mode (``rename_on_double_click``).
+
+    The gesture is driven at the *window* level (``QTest`` ``QWindow``
+    overloads -> ``QWindowSystemInterface`` -> ``QGuiApplication``), which is
+    the only synthetic path that models what a real mouse does: the first
+    press opens the popup, and from then on Qt routes the gesture's later
+    events to the popup, never to the combo. Qt >= 6.8 forwards the second
+    press to the popup as a plain press and never synthesises a double-click
+    at all; Qt <= 6.7 delivers a ``MouseButtonDblClick`` to the popup
+    container. Neither ever reaches ``ComboBox.mouseDoubleClickEvent`` — and
+    ``QTest.mouseDClick(viewport)`` (what the first cut of this test did)
+    injects a bare double-click into the list, a path no real mouse can take
+    because the first click on a row commits it and closes the popup.
+    """
+
+    def _shown_combo(self, rename_on_double_click=True):
+        from qtpy import QtWidgets
+        from qtpy.QtTest import QTest
+        from uitk.widgets.comboBox import ComboBox
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.resize(300, 200)
+        combo = ComboBox(host)
+        combo.rename_on_double_click = rename_on_double_click
+        combo.addItems(["a", "b", "c"])
+        combo.move(10, 10)
+        combo.resize(120, 24)
+        host.show()
+        QTest.qWaitForWindowExposed(host)
+        # Active, not merely exposed: activation is asynchronous on a real
+        # desktop, and focus bookkeeping differs for an inactive window —
+        # start every gesture from the same state.
+        host.activateWindow()
+        QTest.qWaitForWindowActive(host)
+        combo.setCurrentIndex(1)
+        return combo
+
+    @staticmethod
+    def _body_click(combo, delay=1):
+        """One press+release on the combo body, at the window level.
+
+        *delay* is passed explicitly: with the default ``-1`` QTest bumps its
+        synthetic clock past the double-click interval after every release,
+        precisely so consecutive clicks are NOT read as a double-click.
+        """
+        from qtpy import QtCore
+        from qtpy.QtTest import QTest
+
+        window = combo.window().windowHandle()
+        pos = combo.mapTo(combo.window(), combo.rect().center())
+        QTest.mousePress(window, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pos, delay)
+        QTest.mouseRelease(
+            window, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pos, delay
+        )
+
+    def _double_click_body(self, combo):
+        self._body_click(combo)
+        self._body_click(combo)
+        QtWait.pump()
+
+    def test_first_press_opens_the_popup(self):
+        """Pins the premise: press 1 of the gesture opens the popup, so the
+        second click can only ever reach the popup, never the combo."""
+        from qtpy import QtCore
+        from qtpy.QtTest import QTest
+
+        combo = self._shown_combo()
+        window = combo.window().windowHandle()
+        pos = combo.mapTo(combo.window(), combo.rect().center())
+        QTest.mousePress(window, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pos, 1)
+        self.assertTrue(combo.view().isVisible())
+        QTest.mouseRelease(window, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pos, 1)
+        self.assertTrue(combo.view().isVisible(), "release must not close it")
+        combo.hidePopup()
+
+    def test_popup_opens_instantly_even_with_combo_animation_enabled(self):
+        """A Windows desktop's ``UI_AnimateCombo`` rolls a QComboBox popup in
+        over ~150 ms during which it is NOT a shown popup (no grab, no
+        ``activePopupWidget``) — a fast second click would fall through to
+        the combo and the popup would then open on top of the edit. The uitk
+        combo suppresses the roll for its own ``showPopup`` and leaves the
+        app setting exactly as it found it."""
+        from qtpy import QtCore, QtWidgets
+        from qtpy.QtTest import QTest
+
+        app = QtWidgets.QApplication.instance()
+        general_was = app.isEffectEnabled(QtCore.Qt.UI_General)
+        combo_was = app.isEffectEnabled(QtCore.Qt.UI_AnimateCombo)
+        app.setEffectEnabled(QtCore.Qt.UI_General, True)
+        app.setEffectEnabled(QtCore.Qt.UI_AnimateCombo, True)
+        try:
+            self.assertTrue(app.isEffectEnabled(QtCore.Qt.UI_AnimateCombo))
+            combo = self._shown_combo()
+            window = combo.window().windowHandle()
+            pos = combo.mapTo(combo.window(), combo.rect().center())
+            QTest.mousePress(window, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pos, 1)
+            self.assertTrue(
+                combo.view().isVisible(), "popup must be shown synchronously"
+            )
+            self.assertIsNotNone(QtWidgets.QApplication.activePopupWidget())
+            QTest.mouseRelease(
+                window, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pos, 1
+            )
+            self.assertTrue(
+                app.isEffectEnabled(QtCore.Qt.UI_AnimateCombo),
+                "the host app's effect setting must be restored",
+            )
+            combo.hidePopup()
+        finally:
+            app.setEffectEnabled(QtCore.Qt.UI_AnimateCombo, combo_was)
+            app.setEffectEnabled(QtCore.Qt.UI_General, general_was)
+
+    def test_double_click_on_the_body_enters_edit_mode(self):
+        combo = self._shown_combo()
+        self._double_click_body(combo)
+        QtWait.until(
+            combo.isEditable,
+            "double-clicking the combo body never entered edit mode",
+        )
+        self.assertEqual(combo.lineEdit().text(), "b")
+        self.assertEqual(
+            combo.lineEdit().selectedText(), "b", "text pre-selected to retype"
+        )
+        self.assertFalse(combo.view().isVisible(), "the popup must be gone")
+
+    def test_double_click_while_the_popup_is_open_enters_edit_mode(self):
+        """Popup already open (a prior click): press 1 closes it and the
+        double-click then lands on the combo itself."""
+        combo = self._shown_combo()
+        combo.showPopup()
+        QtWait.until(lambda: combo.view().isVisible(), "popup never showed")
+        self._double_click_body(combo)
+        QtWait.until(combo.isEditable, "double-click over an open popup never renamed")
+        self.assertFalse(combo.view().isVisible())
+
+    def test_the_typed_name_commits_on_enter(self):
+        """The whole gesture, keystrokes included — double-click, type, Enter."""
+        from qtpy import QtCore
+        from qtpy.QtTest import QTest
+
+        combo = self._shown_combo()
+        self._double_click_body(combo)
+        QtWait.until(combo.isEditable, "never entered edit mode")
+        renamed = []
+        combo.on_editing_finished.connect(renamed.append)
+
+        line_edit = combo.lineEdit()
+        QTest.keyClicks(line_edit, "b_renamed")  # replaces the pre-selected text
+        QTest.keyClick(combo, QtCore.Qt.Key_Return)
+        QtWait.pump()
+
+        self.assertEqual(renamed, ["b_renamed"])
+        self.assertEqual(combo.itemText(1), "b_renamed")
+        self.assertFalse(combo.isEditable(), "Enter must leave edit mode")
+
+    def test_two_slow_clicks_are_open_then_close_not_a_rename(self):
+        """Outside the double-click interval the second click is the ordinary
+        click-the-body-to-dismiss, and must not start a rename."""
+        from qtpy import QtGui
+
+        combo = self._shown_combo()
+        interval = QtGui.QGuiApplication.styleHints().mouseDoubleClickInterval()
+        self._body_click(combo, delay=1)
+        self.assertTrue(combo.view().isVisible())
+        self._body_click(combo, delay=interval + 50)
+        QtWait.pump()
+        self.assertFalse(combo.view().isVisible())
+        self.assertFalse(combo.isEditable())
+
+    def test_click_then_pick_a_row_is_a_plain_selection(self):
+        """A fast click on a popup ROW after opening is a selection — the
+        rename gesture is the body only."""
+        from qtpy import QtCore
+        from qtpy.QtTest import QTest
+
+        combo = self._shown_combo()
+        self._body_click(combo)
+        view = combo.view()
+        rect = view.visualRect(combo.model().index(2, 0))
+        QTest.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=rect.center())
+        QtWait.pump()
+        self.assertEqual(combo.currentIndex(), 2)
+        self.assertFalse(combo.isEditable())
+
+    def test_opt_out_combo_never_enters_edit_mode(self):
+        combo = self._shown_combo(rename_on_double_click=False)
+        self._double_click_body(combo)
+        QtWait.pump()
+        self.assertFalse(combo.isEditable())
+
+    def test_no_current_item_means_nothing_to_rename(self):
+        combo = self._shown_combo()
+        combo.setCurrentIndex(-1)
+        self._double_click_body(combo)
+        QtWait.pump()
+        self.assertFalse(combo.isEditable())
+
+    def test_replayed_second_click_does_not_disturb_the_edit(self):
+        """Qt may re-post ("replay") the press that closed the popup to what
+        is beneath once the popup is gone — the second click of the gesture,
+        again, now landing on the fresh line edit, where a press drops the
+        pre-selected text (seen as typed text APPENDING to the old name).
+        Qt's own guard against it (``WA_NoMouseReplay``) has been seen not
+        to hold — on Windows, with another GUI process active on the same
+        desktop — so the combo recognises the replay itself: same timestamp
+        as the click it already acted on. A later, genuine press must still
+        behave as a press."""
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        combo = self._shown_combo()
+        popup_presses = []
+
+        class PopupPressSpy(QtCore.QObject):
+            def eventFilter(self, obj, event):
+                if event.type() == QtCore.QEvent.MouseButtonPress:
+                    popup_presses.append(event.timestamp())
+                return False
+
+        spy = PopupPressSpy()
+        combo.view().parentWidget().installEventFilter(spy)
+        try:
+            self._double_click_body(combo)
+        finally:
+            combo.view().parentWidget().removeEventFilter(spy)
+        QtWait.until(combo.isEditable, "never entered edit mode")
+        self.assertEqual(len(popup_presses), 1, "the 2nd click lands on the popup")
+        line_edit = combo.lineEdit()
+        self.assertEqual(line_edit.selectedText(), "b")
+
+        def press(timestamp):
+            pos = QtCore.QPointF(line_edit.rect().center())
+            event = QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonPress,
+                pos,
+                QtCore.QPointF(line_edit.mapToGlobal(pos.toPoint())),
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.NoModifier,
+            )
+            event.setTimestamp(timestamp)
+            QtWidgets.QApplication.sendEvent(line_edit, event)
+
+        press(popup_presses[0])  # the replay: same timestamp -> dropped
+        self.assertEqual(line_edit.selectedText(), "b", "replay must not deselect")
+        self.assertTrue(combo.isEditable())
+        press(popup_presses[0] + 1000)  # a real later press -> ordinary press
+        self.assertEqual(line_edit.selectedText(), "", "a genuine press deselects")
+
+
 class ItemClickCommitsWithinBlockWindow(QtBaseTestCase):
     """A click on a popup row commits even within QComboBox's
     ``blockMouseReleaseTimer`` window (~``doubleClickInterval`` after open).
@@ -528,42 +776,43 @@ class ItemClickCommitsWithinBlockWindow(QtBaseTestCase):
         return combo
 
     def _open(self, combo):
-        from qtpy import QtCore, QtWidgets
+        """Click the combo open and WAIT for its popup — never skip on absence.
+
+        A popup that never appears is the bug these tests exist to catch, so
+        the wait is bounded and fails; it must not degrade into a skip that
+        reads identically to a busy machine.
+        """
+        from qtpy import QtCore
         from qtpy.QtTest import QTest
 
         QTest.mouseClick(combo, QtCore.Qt.LeftButton)
-        QtWidgets.QApplication.processEvents()
-        return combo.view().isVisible()
+        QtWait.until(
+            lambda: combo.view().isVisible(),
+            "clicking the combo never displayed its popup",
+        )
+        return combo
 
     def _click_row(self, combo, row):
-        from qtpy import QtCore, QtWidgets
+        from qtpy import QtCore
         from qtpy.QtTest import QTest
 
         view = combo.view()
         rect = view.visualRect(combo.model().index(row, 0))
         QTest.mouseClick(view.viewport(), QtCore.Qt.LeftButton, pos=rect.center())
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
 
     def test_immediate_item_click_commits(self):
-        combo = self._shown_combo()
-        if not self._open(combo):
-            self.skipTest("offscreen QPA did not display the popup")
+        combo = self._open(self._shown_combo())
         fired = []
         combo.activated.connect(fired.append)
         self._click_row(combo, 2)  # no wait -> inside the block-timer window
-        self.assertEqual(
-            combo.currentIndex(), 2, "a fast item click must still commit"
-        )
-        self.assertEqual(
-            fired, [2], "activated must fire on the bypassed selection"
-        )
+        self.assertEqual(combo.currentIndex(), 2, "a fast item click must still commit")
+        self.assertEqual(fired, [2], "activated must fire on the bypassed selection")
 
     def test_opening_click_does_not_autoselect(self):
         """The fix must NOT turn the popup-opening click into a selection — only
         a press AND release that both land on the list commit."""
-        combo = self._shown_combo()
-        if not self._open(combo):
-            self.skipTest("offscreen QPA did not display the popup")
+        combo = self._open(self._shown_combo())
         self.assertEqual(combo.currentIndex(), 0, "opening click must not select")
         self.assertTrue(combo.view().isVisible(), "popup must stay open")
 
@@ -744,7 +993,9 @@ class SetAsCurrentByText(QtBaseTestCase):
         from uitk.widgets.comboBox import ComboBox
 
         combo = self.track_widget(ComboBox())
-        combo.add(["weighted", "instance", "linked"], clear=True)  # data falsy -> items == texts
+        combo.add(
+            ["weighted", "instance", "linked"], clear=True
+        )  # data falsy -> items == texts
         combo.setAsCurrent("instance")
         self.assertEqual(combo.currentText(), "instance")
 

@@ -189,6 +189,24 @@ fully transient). `set_bypassed(value, emit=False)` flips the bypass silently;
 `reset()` performs the plain reset; `toggled(bool)` fires when the bypass state
 changes (`True` = now bypassed). Use `find_option(ResetOption)` to retrieve it.
 
+A plain reset resets the **field**, not just its value: every sibling option on
+the same box is asked to `restore_default()` (see below), so a lock / disable
+toggle clears along with the value it was modifying. Bypass deliberately does
+not — it is a transient hold that must restore exactly what it suspended.
+
+### Resetting an option's own state — `restore_default()`
+`BaseOption.restore_default()` is a no-op hook every option inherits. Override
+it to declare "this is my default state", and both a sibling `ResetOption` and
+a panel-wide `StateManager.reset_all()` will clear you when the user resets the
+field. `BinaryToggleOption` (so `ToggleOption` / `DisableOption` / the filter
+gate) implements it as `set_on(initial)`; options holding user data — pinned
+and recent values — leave it a no-op and are never cleared.
+
+```python
+widget.option_box.restore_option_defaults()   # batch, all options on a field
+option.sibling_options()                      # the other options on the box
+```
+
 ### PinValuesOption
 Allows pinning/saving and restoring widget values.
 
@@ -407,7 +425,12 @@ python demo_optionbox_modular.py
 
 ## Notes
 
-- Options are added to the OptionBox in the order they are provided
+- Options are added to the OptionBox in the order they are provided, then laid
+  out left-to-right per `DEFAULT_OPTION_ORDER` (`_optionBox.py`) — the single
+  source of truth, which `OptionBoxManager` also validates a custom
+  `option_order` against. Binary state toggles (lock / disable / filter) sit
+  inboard of the reset, so the reset stays the outermost of a field's own
+  buttons. Pass `order=<int>` on an option to override placement entirely.
 - Each option is responsible for creating and managing its own widget
 - Options can interact with the wrapped widget through the `wrapped_widget` attribute
 - The OptionBox automatically handles sizing and layout

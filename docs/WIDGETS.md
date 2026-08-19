@@ -29,7 +29,7 @@ from uitk import DesignerPlugin
 env = DesignerPlugin.environment()   # PYSIDE_DESIGNER_PLUGINS + PYTHONPATH + UITK_DESIGNER
 ```
 
-Needs **PySide6** — PySide2 ships no Designer Python bindings. Existing values in both variables are preserved, so several packages can publish widgets into one Designer session.
+Needs **PySide6** (the only supported binding; it ships the Designer Python bindings this relies on). Existing values in both variables are preserved, so several packages can publish widgets into one Designer session.
 
 ### Publishing a downstream package's widgets
 

@@ -161,9 +161,7 @@ class TestPlaceholderPreview(unittest.TestCase):
         self.assertIn("scenes/shot", html)
 
     def test_final_empty_string_suppresses_line(self):
-        html = TooltipFormat.placeholder_preview(
-            "{name}", {"name": "shot"}, final=""
-        )
+        html = TooltipFormat.placeholder_preview("{name}", {"name": "shot"}, final="")
         # The value still appears in the table, but there is no "→" final line.
         self.assertIn("shot", html)
         self.assertNotIn("→", html)
@@ -291,6 +289,76 @@ class TestPlaceholderPreview(unittest.TestCase):
         self.assertLess(html.index("X_FINAL_X"), html.index("note:"))
 
 
+class TestStoredItems(unittest.TestCase):
+    """`stored_items` — the live "what did I capture?" list, with a hard cap."""
+
+    def test_lists_every_entry_under_the_cap(self):
+        html = TooltipFormat.stored_items(["a", "b", "c"])
+        for name in ("a", "b", "c"):
+            self.assertIn(f"<li>{name}</li>", html)
+        self.assertNotIn("more", html)
+
+    def test_count_reflects_the_whole_set_not_the_shown_slice(self):
+        html = TooltipFormat.stored_items([f"m{i}" for i in range(40)], max_items=3)
+        self.assertIn(">40<", html)  # the count is of everything stored
+        self.assertEqual(html.count("<li>"), 3)
+
+    def test_truncates_with_an_elided_tail_line(self):
+        html = TooltipFormat.stored_items(["a", "b", "c", "d", "e"], max_items=2)
+        self.assertIn("<li>a</li>", html)
+        self.assertIn("<li>b</li>", html)
+        self.assertNotIn("<li>c</li>", html)
+        self.assertIn("3 more", html)
+
+    def test_default_cap_is_the_class_constant(self):
+        n = TooltipFormat.STORED_ITEMS_MAX
+        html = TooltipFormat.stored_items([str(i) for i in range(n + 5)])
+        self.assertEqual(html.count("<li>"), n)
+        self.assertIn("5 more", html)
+
+    def test_non_positive_cap_lists_everything(self):
+        html = TooltipFormat.stored_items(list("abcdefgh"), max_items=0)
+        self.assertEqual(html.count("<li>"), 8)
+        self.assertNotIn("more", html)
+
+    def test_formatter_shortens_entries(self):
+        html = TooltipFormat.stored_items(
+            ["|grp|pCube1", "|grp|pCube2"], formatter=lambda n: n.rsplit("|", 1)[-1]
+        )
+        self.assertIn("<li>pCube1</li>", html)
+        self.assertNotIn("grp", html)
+
+    def test_entries_are_escaped_but_caller_markup_is_not(self):
+        """A node name is DATA (it can hold `&`/`<`); title/body are markup."""
+        html = TooltipFormat.stored_items(
+            ["a<b>&c"], title="Sources", body="Pick <b>meshes</b>."
+        )
+        self.assertIn("a&lt;b&gt;&amp;c", html)
+        self.assertIn("<b>meshes</b>", html)
+
+    def test_empty_renders_the_empty_text_and_no_list(self):
+        html = TooltipFormat.stored_items([], empty_text="Nothing captured.")
+        self.assertIn("Nothing captured.", html)
+        self.assertNotIn("<li>", html)
+
+    def test_none_reads_as_empty(self):
+        self.assertNotIn("<li>", TooltipFormat.stored_items(None))
+
+    def test_instruction_and_notes_survive_the_empty_case(self):
+        """Bind replaces the static tooltip, so the help text must still show
+        when nothing is stored — that is exactly when it is needed."""
+        html = TooltipFormat.stored_items(
+            [], title="Set Source", body="Capture the selection.", notes=["a caveat"]
+        )
+        self.assertIn("Set Source", html)
+        self.assertIn("Capture the selection.", html)
+        self.assertIn("a caveat", html)
+
+    def test_noun_labels_the_count(self):
+        html = TooltipFormat.stored_items(["a"], noun="stored source mesh(es)")
+        self.assertIn("stored source mesh(es)", html)
+
+
 class TestReachability(unittest.TestCase):
     """The DSL must be reachable without importing uitk internals — consumers
     (tentacle slots, DCC panels) build tooltips off the objects they already
@@ -301,7 +369,14 @@ class TestReachability(unittest.TestCase):
 
         # widget.tooltip.fmt(...) alongside widget.tooltip.bind(...)
         self.assertTrue(issubclass(TooltipProxy, TooltipFormat))
-        for name in ("fmt", "kbd", "hl", "placeholder_preview", "bind"):
+        for name in (
+            "fmt",
+            "kbd",
+            "hl",
+            "placeholder_preview",
+            "stored_items",
+            "bind",
+        ):
             self.assertTrue(hasattr(TooltipProxy, name), name)
 
     def test_switchboard_namespace_is_the_superset(self):
@@ -458,7 +533,9 @@ class TestImportableWithoutQt(unittest.TestCase):
     already-imported copy is left alone.
     """
 
-    MODULE = Path(__file__).resolve().parents[1] / "uitk/widgets/mixins/tooltip_mixin.py"
+    MODULE = (
+        Path(__file__).resolve().parents[1] / "uitk/widgets/mixins/tooltip_mixin.py"
+    )
 
     def _load_without(self, qtpy_stub):
         """Exec the module with *qtpy_stub* standing in for qtpy."""

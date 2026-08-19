@@ -8,7 +8,7 @@ Run standalone: python -m test.test_script_output
 import logging
 import unittest
 
-from conftest import QtBaseTestCase, setup_qt_application
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
 app = setup_qt_application()
 
@@ -81,7 +81,7 @@ class TestScriptOutput(QtBaseTestCase):
     def _line_colors(self, widget, lineno):
         """Set of (r,g,b) foreground colors applied to a document line by the highlighter."""
         widget.highlighter.rehighlight()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         block = widget.document().findBlockByLineNumber(lineno)
         return {
             (fr.format.foreground().color().red(),
@@ -229,7 +229,7 @@ class TestScriptOutput(QtBaseTestCase):
         w = self.track_widget(ScriptOutput())
         w.append_text("checking for error conditions\n", level=logging.DEBUG)
         w.highlighter.rehighlight()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.assertEqual(self._line_color(w, 0), COLOR_COMMENT)
 
     def test_level_does_not_leak_to_later_appends(self):
@@ -335,40 +335,13 @@ class TestScriptOutput(QtBaseTestCase):
         """Regression vs uitk.TextEdit (which wipes its document on hide)."""
         w = self.track_widget(ScriptOutput())
         w.setPlainText("persist across hide")
-        w.show(); QtWidgets.QApplication.processEvents()
-        w.hide(); QtWidgets.QApplication.processEvents()
-        w.show(); QtWidgets.QApplication.processEvents()
+        w.show(); QtWait.pump()
+        w.hide(); QtWait.pump()
+        w.show(); QtWait.pump()
         self.assertEqual(w.toPlainText(), "persist across hide")
 
-    def _require_clipboard(self):
-        """Skip when this environment cannot round-trip the clipboard at all.
-
-        The offscreen QPA carries an in-memory clipboard and always works, so
-        CI (which runs offscreen) is unaffected. Under a REAL platform the
-        clipboard is a machine-global resource any other process can hold open;
-        the set then fails silently and ``text()`` comes back empty — a false
-        failure that says nothing about the copy code under test.
-
-        Deliberately probes rather than keying off the platform name: it skips
-        only when the clipboard is provably broken, so a genuine regression in
-        ``_handle_copy_shortcut`` still fails the assertion below.
-
-        The probe does not restore the previous contents: these tests overwrite
-        the clipboard themselves, so "preserving" it would be false precision —
-        and a ``setText`` restore would DESTROY non-text content (an image the
-        developer had copied), which ``text()`` cannot capture to begin with.
-        """
-        cb = QtWidgets.QApplication.clipboard()
-        sentinel = "uitk-clipboard-probe"
-        cb.setText(sentinel)
-        if cb.text() != sentinel:
-            self.skipTest(
-                "OS clipboard is unavailable in this environment (another "
-                "process holds it); run with QT_QPA_PLATFORM=offscreen."
-            )
-
     def test_copy_joins_with_newlines(self):
-        self._require_clipboard()
+        QtWait.require_clipboard(self)
         w = self.track_widget(ScriptOutput())
         w.setPlainText("line1\nline2")
         w.selectAll()
@@ -439,26 +412,26 @@ class TestScriptOutput(QtBaseTestCase):
         w = self.track_widget(ScriptOutput())
         w.show()
         w.activateWindow()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         w.clearFocus()
         self.assertFalse(w.hasFocus())
         w.enterEvent(_enter_event())
-        QtWidgets.QApplication.processEvents()
+        QtWait.until(lambda: w.hasFocus(), "hover never gave the widget focus")
         self.assertTrue(w.hasFocus())
 
     def test_hover_focus_makes_ctrl_c_copy_without_clicking(self):
         """The user-facing behavior: hover + Ctrl+C copies, no click-to-focus first."""
-        self._require_clipboard()
+        QtWait.require_clipboard(self)
         w = self.track_widget(ScriptOutput(app_wide_copy=False))
         w.setPlainText("copy me")
         w.show()
         w.activateWindow()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         w.clearFocus()
         w.selectAll()
         QtWidgets.QApplication.clipboard().clear()
         w.enterEvent(_enter_event())  # hover, never a click
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         _key_click(w, QtCore.Qt.Key_C, QtCore.Qt.ControlModifier)
         self.assertEqual(QtWidgets.QApplication.clipboard().text(), "copy me")
 
@@ -468,9 +441,9 @@ class TestScriptOutput(QtBaseTestCase):
         w = self.track_widget(ScriptOutput())
         w.setPlainText("x")
         w.show()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         _key_click(w, QtCore.Qt.Key_C, QtCore.Qt.ControlModifier)
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         self.assertEqual(
             QtWidgets.QApplication.keyboardModifiers(), QtCore.Qt.NoModifier
         )
@@ -513,7 +486,7 @@ class TestScriptOutput(QtBaseTestCase):
         w.setPlainText("line1\nline2")
         w.show()
         w.activateWindow()
-        QtWidgets.QApplication.processEvents()
+        QtWait.pump()
         w.enterEvent(_enter_event())
         _key_click(w, QtCore.Qt.Key_A, QtCore.Qt.ControlModifier)
         self.assertEqual(

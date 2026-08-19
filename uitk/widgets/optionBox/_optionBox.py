@@ -38,10 +38,34 @@ _TYPE_TO_KEY = {
     # FilterOption is a third leaf sibling on BinaryToggleOption (its on/off
     # button is itself a toggle). Keyed off the leaf for the same ABCMeta-cache
     # reason as ToggleOption/DisableOption. Its sibling scope ActionOption sorts
-    # as "action", so the scope button naturally follows the filter toggle.
+    # as "action", so the scope button follows the filter toggle (a reset, on a
+    # field that also carries one, sorts between them).
     FilterOption: "toggle",
     BrowseOption: "browse",
 }
+
+
+# Default left-to-right placement of the option buttons, keyed by the grouping
+# keys above. Single source of truth: ``OptionBoxManager`` imports it for its
+# own default and for validating a caller-supplied order, so the two can't
+# drift apart.
+DEFAULT_OPTION_ORDER = (
+    # The inline value field sits flush against the wrapped widget, ahead of
+    # the icon buttons.
+    "value",
+    "affix",
+    "clear",
+    "recent",
+    "pin",
+    # Binary state toggles (lock / disable / filter) sit inboard of the reset,
+    # so the reset stays the outermost of the field's own buttons -- matching
+    # the channel-box convention, where the lock column leads.
+    "toggle",
+    "reset",
+    "action",
+    "browse",
+    "menu",
+)
 
 
 # Shared repolish primitive — see its docstring for the stale property-
@@ -283,20 +307,7 @@ class OptionBox:
     ):
         self._show_clear_button = show_clear
         self._options = []
-        self._option_order = option_order or [
-            # The inline value field sits flush against the wrapped widget,
-            # ahead of the icon buttons.
-            "value",
-            "affix",
-            "clear",
-            "recent",
-            "pin",
-            "reset",
-            "toggle",
-            "action",
-            "browse",
-            "menu",
-        ]
+        self._option_order = list(option_order or DEFAULT_OPTION_ORDER)
         self.wrapped_widget = None
         self.container = None
 
