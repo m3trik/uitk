@@ -791,6 +791,120 @@ class TestLegacyMigration(BaseTestCase):
         )
 
 
+class TestUncoveredKeyWarning(BaseTestCase):
+    """``load()`` warns when the stored preset doesn't cover managed widgets.
+
+    Overlay semantics are deliberate (a preset may set only what it cares
+    about), but a preset saved before a panel gained a setting leaves that
+    setting silently untouched on load — the widget keeps whatever value the
+    previous preset (or session) left, with no dirty marker. The warning names
+    the uncovered widgets so the drift is visible and the fix (re-save the
+    preset) is obvious.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from qtpy import QtWidgets
+
+        self._tmp = Path(tempfile.mkdtemp(prefix="presets_uncovered_"))
+        self.chk = QtWidgets.QCheckBox()
+        self.chk.setObjectName("chk_a")
+        self.spn = QtWidgets.QSpinBox()
+        self.spn.setObjectName("spn_b")
+        self.spn.setMaximum(100)
+        self.mgr = PresetManager.from_widgets(
+            preset_dir=str(self._tmp),
+            widgets=[self.chk, self.spn],
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        super().tearDown()
+
+    def test_load_warns_on_uncovered_widgets(self):
+        self.mgr.save("full")
+        # Simulate a preset saved before spn_b existed on the panel.
+        path = self._tmp / "full.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        del data["spn_b"]
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        # DEBUG capture level so both records land: the user-facing WARNING is
+        # a plain count + remedy (no objectNames — meaningless to end users);
+        # the key names ride the DEBUG record for developers.
+        with self.assertLogs(self.mgr.logger, level="DEBUG") as cm:
+            self.mgr.load("full")
+        warnings = [r for r in cm.records if r.levelname == "WARNING"]
+        self.assertEqual(len(warnings), 1)
+        msg = warnings[0].getMessage()
+        self.assertIn("doesn't cover 1 new panel settings", msg)
+        self.assertNotIn("spn_b", msg)  # names are not user-facing
+        uncovered = [
+            r.getMessage() for r in cm.records if "uncovered keys" in r.getMessage()
+        ]
+        self.assertEqual(len(uncovered), 1)
+        self.assertIn("spn_b", uncovered[0])
+        self.assertNotIn("chk_a", uncovered[0])
+
+    def test_load_with_full_coverage_does_not_warn(self):
+        import logging
+
+        self.mgr.save("full")
+        records = []
+
+        class _Catcher(logging.Handler):
+            def emit(self, record):
+                records.append(record)
+
+        handler = _Catcher(level=logging.WARNING)
+        self.mgr.logger.addHandler(handler)
+        try:
+            self.mgr.load("full")
+        finally:
+            self.mgr.logger.removeHandler(handler)
+        self.assertEqual(
+            [r.getMessage() for r in records if "cover" in r.getMessage()], []
+        )
+
+    def test_unsaveable_widget_is_not_reported_as_uncovered(self):
+        """A managed widget ``save`` drops must never count as schema drift.
+
+        ``_capture_values`` keeps only non-``None``, serializable values, so a
+        widget it cannot read (a button, a bare container) can never appear in
+        any preset. Counting it here would warn on EVERY load, forever, and
+        offer a remedy — re-save — that cannot possibly clear it.
+        """
+        import logging
+        from qtpy import QtWidgets
+
+        btn = QtWidgets.QPushButton()
+        btn.setObjectName("b_valueless")
+        mgr = PresetManager.from_widgets(
+            preset_dir=str(self._tmp),
+            widgets=[self.chk, self.spn, btn],
+        )
+        mgr.save("full")
+        self.assertNotIn(
+            "b_valueless", json.loads((self._tmp / "full.json").read_text())
+        )
+
+        records = []
+
+        class _Catcher(logging.Handler):
+            def emit(self, record):
+                records.append(record)
+
+        handler = _Catcher(level=logging.WARNING)
+        mgr.logger.addHandler(handler)
+        try:
+            mgr.load("full")
+        finally:
+            mgr.logger.removeHandler(handler)
+        self.assertEqual(
+            [r.getMessage() for r in records if "cover" in r.getMessage()], []
+        )
+
+
 class TestBuiltinTier(BaseTestCase):
     """Built-in (shipped) presets layered under user presets via PresetStore.
 

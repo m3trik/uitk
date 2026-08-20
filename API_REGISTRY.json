@@ -1,7 +1,7 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-08-19",
+  "generated_at": "2026-08-20",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -2106,7 +2106,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "Return a sorted list of available preset names across both tiers.",
-              "line": 869,
+              "line": 898,
               "deprecated": false
             },
             {
@@ -2115,7 +2115,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> Optional[str]",
               "summary": "Which tier *name* resolves from: ``\"user\"``, ``\"builtin\"``, or ``None``.",
-              "line": 877,
+              "line": 906,
               "deprecated": false
             },
             {
@@ -2124,7 +2124,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Delete a *user* preset (built-ins are read-only).",
-              "line": 884,
+              "line": 913,
               "deprecated": false
             },
             {
@@ -2133,7 +2133,7 @@
               "kind": "method",
               "signature": "(self, old_name: str, new_name: str) -> bool",
               "summary": "Rename a *user* preset.",
-              "line": 899,
+              "line": 928,
               "deprecated": false
             },
             {
@@ -2142,7 +2142,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Check whether a named preset exists in either tier.",
-              "line": 917,
+              "line": 946,
               "deprecated": false
             },
             {
@@ -2151,7 +2151,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> Optional[Dict[str, Any]]",
               "summary": "Return preset *name*'s stored values WITHOUT applying them.",
-              "line": 921,
+              "line": 950,
               "deprecated": false
             },
             {
@@ -2160,7 +2160,7 @@
               "kind": "method",
               "signature": "(self, select_name: Optional[str] = None) -> None",
               "summary": "Repopulate the wired preset combo from disk (no-op when none).",
-              "line": 936,
+              "line": 965,
               "deprecated": false
             },
             {
@@ -2169,7 +2169,7 @@
               "kind": "method",
               "signature": "(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None, placeholder: Optional[str] = None) -> 'QtWidgets.QWidget'",
               "summary": "Create a fully-wired preset selector and return its layout container.",
-              "line": 1188,
+              "line": 1217,
               "deprecated": false
             },
             {
@@ -2178,7 +2178,7 @@
               "kind": "method",
               "signature": "(self, combo, on_loaded=None, placeholder=None)",
               "summary": "Wire a uitk ``ComboBox`` as a fully-functional preset selector.",
-              "line": 1231,
+              "line": 1260,
               "deprecated": false
             },
             {
@@ -2187,7 +2187,7 @@
               "kind": "staticmethod",
               "signature": "() -> str",
               "summary": "Return Qt's per-application writable config directory.",
-              "line": 1579,
+              "line": 1608,
               "deprecated": false
             },
             {
@@ -2196,7 +2196,7 @@
               "kind": "staticmethod",
               "signature": "() -> str",
               "summary": "Return Qt's host-independent writable config directory.",
-              "line": 1596,
+              "line": 1625,
               "deprecated": false
             },
             {
@@ -2205,7 +2205,7 @@
               "kind": "staticmethod",
               "signature": "() -> Path",
               "summary": "Root directory under which every relative ``preset_dir`` is resolved.",
-              "line": 1609,
+              "line": 1638,
               "deprecated": false
             }
           ]
