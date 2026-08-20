@@ -731,6 +731,12 @@ class PresetManager(ptk.LoggingMixin):
         would revert to their pre-load values -- "template active, values not
         restored".)
 
+        Overlay semantics: only keys present in the stored preset are applied;
+        managed widgets the preset does not cover keep their current values.
+        A short user-facing WARNING states how many settings were uncovered
+        (schema drift is otherwise invisible — ``is_modified`` compares
+        overlapping keys only); the key names are logged at DEBUG.
+
         Parameters:
             name: The preset name to load.
             scope: Optional container widget to limit which children are
@@ -777,6 +783,29 @@ class PresetManager(ptk.LoggingMixin):
 
         widgets = self._get_widgets(scope)
         widget_map = {w.objectName(): w for w in widgets if w.objectName()}
+
+        # Surface schema drift: a setting added to the panel after this preset
+        # was saved has no stored key, so overlay semantics leave it at whatever
+        # the previous preset (or session) set — invisibly, since is_modified
+        # only compares overlapping keys. The user-facing line is a plain count
+        # + remedy (objectNames mean nothing to an end user); the names go to
+        # the debug log for developers.
+        #
+        # Measured against ``_capture_values`` — what a re-save WOULD write —
+        # not against every managed widget: a widget whose value ``save`` drops
+        # (``_read_widget`` returns None, or a non-serializable value) can never
+        # appear in a preset, so counting it here would warn on every load
+        # forever and point at a remedy that cannot work. Same reason this is
+        # not ``widget_map``: with a ``value_provider`` configured the stored
+        # keys are the provider's, and widget objectNames would all read as
+        # uncovered.
+        uncovered = sorted(set(self._capture_values(scope)) - set(data))
+        if uncovered:
+            self.logger.warning(
+                f"Preset '{name}' doesn't cover {len(uncovered)} new panel "
+                "settings. Re-save the preset to include them."
+            )
+            self.logger.debug(f"Preset '{name}' uncovered keys: {', '.join(uncovered)}")
 
         applied = 0
 
