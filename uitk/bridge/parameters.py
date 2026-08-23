@@ -129,6 +129,57 @@ class Parameters(_ParametersInternal):
         )
 
     @staticmethod
+    def carrier_spec(default: str = "fbx", section: str = "") -> AttributeSpec:
+        """The shared **Format** parameter: which interchange carrier the payload
+        leaves as (FBX or USD).
+
+        What format a hand-off is written in is a property of hand-off bridges
+        in general, not of any one target app, so the spec lives here -- one
+        label, one vocabulary, one tooltip across every bridge and both DCCs.
+        The vocabulary is pythontk's :data:`~pythontk.core_utils.app_handoff.CARRIER_EXTENSIONS`
+        verbatim: the engine refuses any other spelling before it exports, so
+        the panel offers exactly what the engine accepts. A bridge whose target
+        reads only FBX simply does not register the spec (its engine declares
+        ``carriers = ("fbx",)``) -- the panel shows no choice rather than a
+        choice the send would refuse.
+
+        Default ``fbx``: the shipped route on every bridge. USD is the opt-in
+        parallel -- materials travel natively as UsdPreviewSurface and the
+        scene graph arrives typed, but the format has no equivalent of Maya's
+        shared-shape / Blender's linked-duplicate instancing, so a structural
+        hand-off refuses an instanced selection on it rather than silently
+        flattening the scene (the regression that reverted a USD default
+        once). Order is append-only: combos persist by INDEX.
+
+        Like :meth:`shader_type_spec`, *section* defaults to EMPTY so the spec
+        can drop into an unsectioned registry without re-labelling its
+        neighbours. Returns a FRESH spec per call (the ``choices`` list is
+        mutable).
+        """
+        import pythontk as ptk
+
+        return AttributeSpec(
+            key=ptk.CARRIER_PARAM,
+            label="Format",
+            kind="choice",
+            default=default,
+            choices=[
+                ("FBX", "fbx"),
+                ("USD", "usd"),
+            ],
+            section=section,
+            tooltip=(
+                "Which interchange format the selection leaves as:\n"
+                "• FBX — the shipped default; carries instancing natively.\n"
+                "• USD — opt-in. Materials travel as UsdPreviewSurface (no\n"
+                "  texture-manifest rebuild needed), groups/locators arrive as\n"
+                "  typed Xform prims. Instanced / linked-duplicate selections\n"
+                "  are REFUSED on a scene hand-off rather than flattened —\n"
+                "  send those via FBX."
+            ),
+        )
+
+    @staticmethod
     def referenced_keys(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]:
         """Return registry keys whose ``__KEY__`` token appears in *script_text*.
 

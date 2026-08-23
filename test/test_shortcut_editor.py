@@ -1,17 +1,18 @@
 # !/usr/bin/python
 # coding=utf-8
 """Tests for ShortcutEditor preset management."""
+
 import json
 import shutil
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
-from qtpy import QtWidgets, QtCore
+from qtpy import QtCore
 from conftest import QtBaseTestCase, QtWait, setup_qt_application
 from uitk.switchboard import Switchboard
 from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
-from uitk.widgets.editors.editor_panel import EditorPanel
 from uitk.examples.example import ExampleSlots
 
 app = setup_qt_application()
@@ -61,8 +62,7 @@ class ShortcutEditorRequirements:
         t = self.editor.table
         QtWait.until(
             lambda: t.rowCount() > 0 and t.columnSpan(0, 0) == 1,
-            "the shortcut table never showed a real row (only the spanned "
-            "placeholder)",
+            "the shortcut table never showed a real row (only the spanned placeholder)",
         )
         return t
 
@@ -170,7 +170,9 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         reserved for binding a key).
         """
         from unittest import mock
-        from uitk.widgets.editors.shortcut_editor.registry_editor import CollisionConflict
+        from uitk.widgets.editors.shortcut_editor.registry_editor import (
+            CollisionConflict,
+        )
 
         for i in range(self.editor.cmb_ui.count()):
             if "example" in self.editor.cmb_ui.itemText(i).lower():
@@ -185,9 +187,10 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         self.editor.add_collision_checker(
             lambda *a, **k: [CollisionConflict("uitk", "dup", breaks_binding=True)]
         )
-        with mock.patch.object(self.editor, "_prompt_conflicts") as prompt, mock.patch.object(
-            self.sb, "set_user_shortcut"
-        ) as setsc:
+        with (
+            mock.patch.object(self.editor, "_prompt_conflicts") as prompt,
+            mock.patch.object(self.sb, "set_user_shortcut") as setsc,
+        ):
             self.editor._on_scope_toggle(self.ui, method, "window")
         prompt.assert_not_called()  # modeless — no modal on a scope flip
         setsc.assert_called_once()  # but the toggle was applied
@@ -197,18 +200,26 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         binding' button; clicking it runs the Maya clear and proceeds.
         """
         from unittest import mock
-        from uitk.widgets.editors.shortcut_editor.registry_editor import CollisionConflict
+        from uitk.widgets.editors.shortcut_editor.registry_editor import (
+            CollisionConflict,
+        )
         import uitk.widgets.editors.shortcut_editor.registry_editor as he
 
         cleared = []
         conf = CollisionConflict(
-            "maya", "Maya 'cut'", breaks_binding=False,
+            "maya",
+            "Maya 'cut'",
+            breaks_binding=False,
             clear_action=lambda: cleared.append("maya"),
         )
         buttons = {}
         box = mock.MagicMock()
-        box.addButton.side_effect = lambda *a, **k: buttons.setdefault(a[0], mock.Mock())
-        box.clickedButton.side_effect = lambda: buttons.get("Assign && free Maya binding")
+        box.addButton.side_effect = lambda *a, **k: buttons.setdefault(
+            a[0], mock.Mock()
+        )
+        box.clickedButton.side_effect = lambda: buttons.get(
+            "Assign && free Maya binding"
+        )
         MB = mock.MagicMock(return_value=box)
         MB.Cancel, MB.Warning, MB.AcceptRole = "CANCEL", "WARN", "ACCEPT"
         with mock.patch.object(he.QtWidgets, "QMessageBox", MB):
@@ -222,13 +233,17 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         disabled rather than absent, and clears nothing on 'Assign anyway'.
         """
         from unittest import mock
-        from uitk.widgets.editors.shortcut_editor.registry_editor import CollisionConflict
+        from uitk.widgets.editors.shortcut_editor.registry_editor import (
+            CollisionConflict,
+        )
         import uitk.widgets.editors.shortcut_editor.registry_editor as he
 
         conf = CollisionConflict("maya", "Maya 'cut' (locked)", breaks_binding=False)
         buttons = {}
         box = mock.MagicMock()
-        box.addButton.side_effect = lambda *a, **k: buttons.setdefault(a[0], mock.Mock())
+        box.addButton.side_effect = lambda *a, **k: buttons.setdefault(
+            a[0], mock.Mock()
+        )
         box.clickedButton.side_effect = lambda: buttons.get("Assign anyway")
         MB = mock.MagicMock(return_value=box)
         MB.Cancel, MB.Warning, MB.AcceptRole = "CANCEL", "WARN", "ACCEPT"
@@ -245,14 +260,19 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         hidden child attached to the editor for the life of the window.
         """
         from unittest import mock
-        from uitk.widgets.editors.shortcut_editor.registry_editor import CollisionConflict
+        from uitk.widgets.editors.shortcut_editor.registry_editor import (
+            CollisionConflict,
+        )
         import uitk.widgets.editors.shortcut_editor.registry_editor as he
 
-        conf = CollisionConflict("uitk", "dup", breaks_binding=True,
-                                 clear_action=lambda: None)
+        conf = CollisionConflict(
+            "uitk", "dup", breaks_binding=True, clear_action=lambda: None
+        )
         buttons = {}
         box = mock.MagicMock()
-        box.addButton.side_effect = lambda *a, **k: buttons.setdefault(a[0], mock.Mock())
+        box.addButton.side_effect = lambda *a, **k: buttons.setdefault(
+            a[0], mock.Mock()
+        )
         box.clickedButton.side_effect = lambda: buttons.get("Assign anyway")
         MB = mock.MagicMock(return_value=box)
         MB.Cancel, MB.Warning, MB.AcceptRole = "CANCEL", "WARN", "ACCEPT"
@@ -417,10 +437,6 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
 
         registry = self._require_registry()
         slot_name = registry[0]["method"]
-        ui_name = next(
-            (n for n in self.editor.export_shortcuts() if "example" in n.lower()),
-            None,
-        )
 
         proceed = self.editor._resolve_collisions(
             self.ui, slot_name, "Ctrl+Alt+K", "application"
@@ -489,9 +505,7 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         conflicts = self.editor._builtin_internal_collision_checker(
             "Ctrl+Alt+Q", "window", "some_other_ui", "other_method"
         )
-        self.assertEqual(
-            conflicts, [], "window dupes across different UIs are safe"
-        )
+        self.assertEqual(conflicts, [], "window dupes across different UIs are safe")
 
     def test_builtin_checker_flags_unloaded_overridden_ui(self):
         """An app-scoped binding persisted on an *unbuilt* UI still collides: it
@@ -515,15 +529,18 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
             "default_scope": "application",
             "doc": "",
         }
-        with mock.patch.object(
-            self.editor, "_registered_ui_names", return_value=[ghost]
-        ), mock.patch.object(
-            self.sb, "_ui_names_with_shortcut_overrides", return_value={ghost}
-        ), mock.patch.object(
-            self.sb, "get_static_shortcut_registry", return_value=[static_entry]
-        ) as static_spy, mock.patch.object(
-            self.sb, "get_ui", wraps=self.sb.get_ui
-        ) as build_spy:
+        with (
+            mock.patch.object(
+                self.editor, "_registered_ui_names", return_value=[ghost]
+            ),
+            mock.patch.object(
+                self.sb, "_ui_names_with_shortcut_overrides", return_value={ghost}
+            ),
+            mock.patch.object(
+                self.sb, "get_static_shortcut_registry", return_value=[static_entry]
+            ) as static_spy,
+            mock.patch.object(self.sb, "get_ui", wraps=self.sb.get_ui) as build_spy,
+        ):
             # ``ghost_panel`` is never loaded, so loaded_ui.peek() returns None
             # for it naturally — the checker falls to the static-registry branch.
             conflicts = self.editor._builtin_internal_collision_checker(
@@ -608,9 +625,10 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
 
         # Row order is stable (sorted by method); locate the same method's row.
         for row in range(self.editor.table.rowCount()):
-            if self.editor.table.item(row, 0).toolTip().replace(
-                "Method: ", ""
-            ) == method:
+            if (
+                self.editor.table.item(row, 0).toolTip().replace("Method: ", "")
+                == method
+            ):
                 self.assertEqual(self.editor.table.item(row, 1).text(), "Ctrl+Alt+7")
                 self.assertTrue(
                     self.editor.scope_interactive(row),
@@ -662,7 +680,9 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         no key is bound."""
         from uitk.widgets.editors.shortcut_editor.registry_editor import _TT_KEY
 
-        tip = ShortcutEditor._binding_tooltip("Save & Exit", "Saves the <file>.", "Ctrl+S")
+        tip = ShortcutEditor._binding_tooltip(
+            "Save & Exit", "Saves the <file>.", "Ctrl+S"
+        )
         self.assertTrue(tip.lstrip().startswith("<"), "tooltip should be rich text")
         self.assertIn("<b>Save &amp; Exit</b>", tip, "name escaped + bold")
         self.assertIn("Saves the &lt;file&gt;.", tip, "description escaped")
@@ -757,9 +777,7 @@ class TestShortcutEditorFilter(ShortcutEditorRequirements, QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        self.sb = Switchboard(
-            ui_source=self.example_module, slot_source=ExampleSlots
-        )
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
         QtWait.pump()
@@ -790,9 +808,7 @@ class TestShortcutEditorFilter(ShortcutEditorRequirements, QtBaseTestCase):
         # Every *visible* row must contain the token (case-insensitive).
         for row in range(t.rowCount()):
             if not t.isRowHidden(row):
-                self.assertIn(
-                    token.lower(), self.editor._row_haystack(row).lower()
-                )
+                self.assertIn(token.lower(), self.editor._row_haystack(row).lower())
 
     def test_no_match_hides_every_row(self):
         t = self._require_real_rows()
@@ -830,9 +846,7 @@ class TestShortcutEditorFilter(ShortcutEditorRequirements, QtBaseTestCase):
         toggle.set_on(False)  # user clicks the filter toggle off
         le.container._sync_option_buttons_enabled()
         self.assertFalse(le.isEnabled(), "filter off must grey out the field")
-        self.assertTrue(
-            btn.isEnabled(), "the filter toggle button must stay clickable"
-        )
+        self.assertTrue(btn.isEnabled(), "the filter toggle button must stay clickable")
 
         toggle.set_on(True)
         self.assertTrue(le.isEnabled(), "re-enabling restores the field")
@@ -909,9 +923,7 @@ class TestShortcutEditorAllView(ShortcutEditorRequirements, QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        self.sb = Switchboard(
-            ui_source=self.example_module, slot_source=ExampleSlots
-        )
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
         QtWait.pump()
@@ -962,9 +974,11 @@ class TestShortcutEditorAllView(ShortcutEditorRequirements, QtBaseTestCase):
             captured["name"] = x
             return self.ui  # any live UI so the commit can proceed
 
-        with mock.patch.object(self.sb, "get_ui", side_effect=fake_get_ui), mock.patch.object(
-            self.editor, "_resolve_collisions", return_value=True
-        ), mock.patch.object(self.sb, "set_user_shortcut"):
+        with (
+            mock.patch.object(self.sb, "get_ui", side_effect=fake_get_ui),
+            mock.patch.object(self.editor, "_resolve_collisions", return_value=True),
+            mock.patch.object(self.sb, "set_user_shortcut"),
+        ):
             self.editor._apply_shortcut(0, "Ctrl+Alt+8")
 
         self.assertEqual(
@@ -978,13 +992,14 @@ class TestShortcutEditorAllView(ShortcutEditorRequirements, QtBaseTestCase):
         from unittest import mock
 
         del self.sb.loaded_ui["example"]  # make it unloaded
-        with mock.patch.object(
-            self.sb, "get_ui", wraps=self.sb.get_ui
-        ) as get_ui_spy, mock.patch.object(
-            self.sb,
-            "get_static_shortcut_registry",
-            wraps=self.sb.get_static_shortcut_registry,
-        ) as static_spy:
+        with (
+            mock.patch.object(self.sb, "get_ui", wraps=self.sb.get_ui) as get_ui_spy,
+            mock.patch.object(
+                self.sb,
+                "get_static_shortcut_registry",
+                wraps=self.sb.get_static_shortcut_registry,
+            ) as static_spy,
+        ):
             self.editor._set_show_all(True)
 
         get_ui_spy.assert_not_called()
@@ -1003,9 +1018,10 @@ class TestShortcutEditorAllView(ShortcutEditorRequirements, QtBaseTestCase):
         self._require_real_rows()
         self.editor.table.item(0, 0).setData(QtCore.Qt.UserRole, "broken_ui")
 
-        with mock.patch.object(self.sb, "get_ui", return_value=None), mock.patch.object(
-            self.sb, "set_user_shortcut"
-        ) as setsc:
+        with (
+            mock.patch.object(self.sb, "get_ui", return_value=None),
+            mock.patch.object(self.sb, "set_user_shortcut") as setsc,
+        ):
             self.editor._apply_shortcut(0, "Ctrl+Alt+9")  # must not raise
 
         setsc.assert_not_called()
@@ -1029,10 +1045,6 @@ class TestShortcutEditorAllView(ShortcutEditorRequirements, QtBaseTestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestShortcutEditorGeometryPersistence(QtBaseTestCase):
     """The editor must remember a user-adjusted window size across sessions.
 
@@ -1051,9 +1063,7 @@ class TestShortcutEditorGeometryPersistence(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        self.sb = Switchboard(
-            ui_source=self.example_module, slot_source=ExampleSlots
-        )
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
         # A loaded UI so populate() has real rows (mirrors the other suites).
         self.ui = self.sb.loaded_ui.example
         self.ui.show()
@@ -1169,3 +1179,341 @@ class TestShortcutEditorGeometryPersistence(QtBaseTestCase):
         self.assertLess(
             e.height(), 900, "first show with no saved size must fit to content"
         )
+
+
+class TestOpenOverFacade(QtBaseTestCase):
+    """``ShortcutEditor.open_over_facade`` — the one path every non-Switchboard
+    owner of this editor takes (the sequencer's ``ShortcutManager``, and
+    mayatk / blendertk's Macro Manager). Each used to hand-roll cache-probe →
+    build → hide columns → show + raise, and all three drifted from
+    ``sb.editors.show`` by dropping the popup re-raise a menu-triggered editor
+    needs — which is how every one of them is opened.
+    """
+
+    ENTRY = {
+        "method": "m_demo",
+        "name": "Demo",
+        "doc": "A demo binding.",
+        "current": "",
+        "default": "",
+        "current_scope": "application",
+        "default_scope": "application",
+        "scope_editable": False,
+    }
+
+    def _facade(self):
+        from uitk.widgets.editors.shortcut_editor import RegistrySwitchboardFacade
+
+        self.built += 1
+        return RegistrySwitchboardFacade(
+            groups=lambda: ["Alpha"],
+            get_entries=lambda group: [dict(self.ENTRY)],
+            apply_binding=lambda *a, **k: None,
+            settings_namespace="test_open_over_facade",
+            editor_title="Demo Manager",
+            ui_column_label="Category",
+            default_show_all=True,
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.built = 0
+        self.editors = []
+
+    def tearDown(self):
+        for editor in self.editors:
+            try:
+                editor.deleteLater()
+            except RuntimeError:
+                pass
+        super().tearDown()
+
+    def _open(self, **kwargs):
+        editor = ShortcutEditor.open_over_facade(self._facade, **kwargs)
+        self.editors.append(editor)
+        return editor
+
+    def test_builds_presents_and_tailors_the_columns(self):
+        editor = self._open(hide_columns=ShortcutEditor.COL_SCOPE)
+        self.assertEqual(self.built, 1)
+        self.assertTrue(editor.isVisible(), "the editor is presented, not just built")
+        self.assertTrue(editor.table.isColumnHidden(ShortcutEditor.COL_SCOPE))
+        self.assertFalse(editor.table.isColumnHidden(ShortcutEditor.COL_UI))
+
+    def test_hides_several_columns(self):
+        editor = self._open(
+            hide_columns=(ShortcutEditor.COL_DESCRIPTION, ShortcutEditor.COL_SCOPE)
+        )
+        self.assertTrue(editor.table.isColumnHidden(ShortcutEditor.COL_DESCRIPTION))
+        self.assertTrue(editor.table.isColumnHidden(ShortcutEditor.COL_SCOPE))
+
+    def test_window_title_and_collision_checker_are_wired(self):
+        checker = object()
+        added = []
+        with unittest.mock.patch.object(
+            ShortcutEditor, "add_collision_checker", lambda _s, c: added.append(c)
+        ):
+            editor = self._open(window_title="Macro Manager", collision_checker=checker)
+        self.assertEqual(editor.windowTitle(), "Macro Manager")
+        # The editor registers its own builtin checker in __init__; ours is added on top.
+        self.assertIn(checker, added)
+
+    def test_no_checker_added_when_none_given(self):
+        added = []
+        with unittest.mock.patch.object(
+            ShortcutEditor, "add_collision_checker", lambda _s, c: added.append(c)
+        ):
+            self._open()
+        self.assertEqual(
+            [c for c in added if not hasattr(c, "__self__")],
+            [],
+            "only the editor's own builtin checker",
+        )
+
+    def test_a_live_cached_editor_is_re_presented_not_rebuilt(self):
+        """The facade is a FACTORY precisely so re-showing doesn't construct one
+        (a facade owns settings + logger state)."""
+        first = self._open()
+        again = self._open(existing=first)
+        self.assertIs(again, first)
+        self.assertEqual(self.built, 1, "no second facade built")
+
+    def test_a_destroyed_editor_is_rebuilt_transparently(self):
+        class _Destroyed:
+            def present(self, *a, **k):
+                raise RuntimeError("wrapped C/C++ object has been deleted")
+
+        editor = self._open(existing=_Destroyed())
+        self.assertIsInstance(editor, ShortcutEditor)
+        self.assertEqual(self.built, 1)
+
+    def test_presentation_is_the_shared_one(self):
+        """It must route through ``WindowPanel.present`` — that is what carries
+        the popup recovery these owners were each missing."""
+        with unittest.mock.patch.object(
+            ShortcutEditor, "present", autospec=True, side_effect=lambda s, **k: s
+        ) as present:
+            self._open()
+        self.assertEqual(present.call_count, 1)
+
+
+class TestShortcutEditorHideEmptyUis(ShortcutEditorRequirements, QtBaseTestCase):
+    """The 'Hide empty UIs' view option drops UIs whose only content would be
+    the "No shortcuts defined for this UI." placeholder from the target combo,
+    without touching the gathers/export/collision scan that read the full list.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
+        self.ui = self.sb.loaded_ui.example
+        self.ui.show()
+        QtWait.pump()
+        self.editor = ShortcutEditor(self.sb, parent=None)
+        # Normalize: these flags persist in-process via the sandboxed QSettings.
+        self.editor._set_show_all(False)
+        self.editor._hide_empty_uis = False
+        self.editor._show_hidden = False
+        self.ghost = "ghost_ui_without_shortcuts"
+
+    def tearDown(self):
+        if getattr(self, "editor", None):
+            self.editor._settings.setValue("hide_empty_uis", False)
+            self.editor._settings.setValue("show_hidden", False)
+            self.editor.close()
+        if getattr(self, "ui", None):
+            self.ui.close()
+        super().tearDown()
+
+    def _stub_registries(self, ghost_entries, editor=None):
+        """Patch *editor* onto a two-UI world: the real example UI plus a
+        ``ghost`` whose registry is *ghost_entries* — the shape the filter is
+        measured against, independent of on-disk fixtures."""
+        from unittest import mock
+
+        editor = editor or self.editor
+        real = self.sb.get_shortcut_registry(self.ui)
+        self.assertTrue(real, "fixture UI should expose shortcut slots")
+
+        def registry_for(name):
+            return ghost_entries if name == self.ghost else real
+
+        return (
+            mock.patch.object(
+                editor,
+                "_registered_ui_names",
+                return_value=["example", self.ghost],
+            ),
+            mock.patch.object(editor, "_registry_for", side_effect=registry_for),
+        )
+
+    def test_off_by_default_lists_every_ui(self):
+        """With nothing persisted the filter is off — opt-in only, because it
+        inherits the static registry's fidelity caveat — so an empty UI lists."""
+        self.editor._settings.clear("hide_empty_uis")
+        fresh = self.track_widget(ShortcutEditor(self.sb, parent=None))  # owns teardown
+
+        self.assertFalse(fresh._hide_empty_uis)
+        self.assertFalse(fresh._hide_empty_uis_checkbox.isChecked())
+        names, registries = self._stub_registries([], editor=fresh)
+        with names, registries:
+            self.assertEqual(fresh._combo_ui_names(), ["example", self.ghost])
+
+    def test_on_drops_only_the_empty_ui(self):
+        names, registries = self._stub_registries([])
+        self.editor._hide_empty_uis = True
+        with names, registries:
+            self.assertEqual(self.editor._combo_ui_names(), ["example"])
+
+    def test_unresolvable_registry_counts_as_empty(self):
+        """A provider that answers None for a name must not crash the filter."""
+        names, registries = self._stub_registries(None)
+        self.editor._hide_empty_uis = True
+        with names, registries:
+            self.assertEqual(self.editor._combo_ui_names(), ["example"])
+
+    def test_toggle_rebuilds_the_combobox(self):
+        """The View-menu checkbox persists the choice and refreshes the combo
+        in place."""
+        cb = self.editor._hide_empty_uis_checkbox
+        self.assertFalse(cb.isChecked(), "off by default")
+
+        names, registries = self._stub_registries([])
+        with names, registries:
+            self.editor.refresh_ui_list()
+            listed = {
+                self.editor.cmb_ui.itemText(i)
+                for i in range(self.editor.cmb_ui.count())
+            }
+            self.assertIn(self.ghost, listed)
+
+            cb.setChecked(True)  # drive it through the real signal path
+            self.assertTrue(self.editor._hide_empty_uis)
+            listed = {
+                self.editor.cmb_ui.itemText(i)
+                for i in range(self.editor.cmb_ui.count())
+            }
+            self.assertNotIn(self.ghost, listed)
+            self.assertIn("example", listed)
+
+            cb.setChecked(False)
+            listed = {
+                self.editor.cmb_ui.itemText(i)
+                for i in range(self.editor.cmb_ui.count())
+            }
+            self.assertIn(self.ghost, listed)
+
+        self.assertFalse(
+            self.editor._settings.value("hide_empty_uis", False),
+            "the choice must round-trip through settings",
+        )
+
+    def test_hidden_only_ui_follows_the_show_hidden_toggle(self):
+        """A UI whose every binding is ``hidden`` counts as empty while
+        'Show hidden bindings' is off, and comes back when it is on."""
+        hidden_only = [
+            {
+                "method": "ghost_action",
+                "display": "Ghost Action",
+                "description": "",
+                "current": "",
+                "default": "",
+                "current_scope": "window",
+                "default_scope": "window",
+                "hidden": True,
+            }
+        ]
+        names, registries = self._stub_registries(hidden_only)
+        self.editor._hide_empty_uis = True
+        with names, registries:
+            self.assertEqual(self.editor._combo_ui_names(), ["example"])
+            self.editor._set_show_hidden(True)
+            self.assertEqual(
+                self.editor._combo_ui_names(),
+                ["example", self.ghost],
+                "revealing hidden bindings must un-empty the UI",
+            )
+
+    def test_hidden_ui_still_blocks_a_colliding_assignment(self):
+        """Only the combobox is filtered. A UI the filter drops keeps its
+        persisted bindings, which still become live shortcuts — so the internal
+        collision checker (reading the full name list, not the combo) must
+        still flag it."""
+        from unittest import mock
+
+        seq = "Ctrl+Alt+Shift+9"
+        ghost_binding = [
+            {
+                "method": "b999",
+                "name": "b999",
+                "current": seq,
+                "default": "",
+                "current_scope": "application",
+                "default_scope": "application",
+                "doc": "",
+                "hidden": True,  # invisible in every view while 'show hidden' is off
+            }
+        ]
+        names, registries = self._stub_registries(ghost_binding)
+        self.editor._hide_empty_uis = True
+        with (
+            names,
+            registries,
+            mock.patch.object(
+                self.sb, "_ui_names_with_shortcut_overrides", return_value={self.ghost}
+            ),
+        ):
+            self.assertNotIn(
+                self.ghost,
+                self.editor._combo_ui_names(),
+                "a hidden-only registry counts as empty for the combo",
+            )
+            conflicts = self.editor._builtin_internal_collision_checker(
+                seq, "application", self.editor._COMMAND_UI, "some_command"
+            )
+
+        self.assertTrue(
+            any(c.breaks_binding and self.ghost in c.description for c in conflicts),
+            f"a UI dropped from the combo must still collide, got {conflicts}",
+        )
+
+    def test_empty_list_says_why_instead_of_blanking(self):
+        """Filtering every UI out must not leave a silent blank table."""
+        from unittest import mock
+
+        with (
+            mock.patch.object(
+                self.editor, "_registered_ui_names", return_value=["example"]
+            ),
+            mock.patch.object(self.editor, "_registry_for", return_value=[]),
+            mock.patch.object(self.editor, "_command_entries", return_value=[]),
+        ):
+            self.editor._set_hide_empty_uis(True)
+            self.assertEqual(self.editor.cmb_ui.count(), 0, "every entry filtered out")
+            self.assertEqual(self.editor.table.rowCount(), 1, "one message row")
+            self.assertIn("Hide empty UIs", self.editor.table.item(0, 0).text())
+
+    def test_focused_launch_has_no_toggle(self):
+        """A focused launch pins one view, so the option-box show-all toggle and
+        this combo filter are both skipped."""
+        self.editor._settings.setValue("hide_empty_uis", True)  # persisted on
+        editor = self.track_widget(
+            ShortcutEditor(self.sb, parent=None, focus="commands")
+        )
+        self.assertFalse(hasattr(editor, "_hide_empty_uis_checkbox"))
+        self.assertFalse(
+            editor._hide_empty_uis,
+            "a focused launch must not inherit a filter it has no control to undo",
+        )
+        editor.close()
+
+
+if __name__ == "__main__":
+    unittest.main()

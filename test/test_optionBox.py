@@ -3340,6 +3340,168 @@ class TestPluginStateIconVisuals(QtBaseTestCase):
         self.assertEqual(info.get("color"), dim, "clearing history re-dims the button")
 
 
+class TestHostNamespacedOptionPersistence(QtBaseTestCase):
+    """Persisted option state must not leak between DCC hosts.
+
+    QSettings is keyed by ``(org, app)`` and shared by every process on the
+    machine, so ``SettingsManager(org="uitk", app="PinValues",
+    namespace="reference_manager_directories")`` resolves to ONE store for a Maya
+    session and a Blender session alike. Not a hypothetical collision: mayatk and
+    blendertk panels are deliberate mirrors, so a twin pair passes the *identical*
+    ``settings_key`` by construction — ``reference_manager_directories`` (pin),
+    ``scene_exporter_output_dirs`` / ``scene_exporter_output_filenames`` (recent).
+    Pinning a directory in Maya's Reference Manager put it in Blender's list.
+
+    The namespace is now suffixed with the owning Switchboard's host context,
+    through the same ``ShortcutManager.host_namespace_suffix`` SSoT the shortcut
+    store and the marking-menu binding store already use.
+    """
+
+    KEY = "host_ns_probe"
+
+    # One Switchboard per host tag, not per panel: constructing one costs ~0.9s
+    # (source registration), and what these tests vary is the PANEL, never the
+    # host identity within a tag. Class-scoped so the windows built on it stay
+    # valid for the whole class; the windows themselves are still tracked and
+    # torn down per test.
+    _switchboards = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._switchboards.clear()
+        super().tearDownClass()
+
+    def _panel(self, tag, obj_name="txt000"):
+        """A widget registered on a MainWindow whose Switchboard carries *tag* —
+        the real path ``host_suffix_for`` resolves (``widget.ui.sb.context_tags``),
+        not a stub of it."""
+        from uitk import Switchboard
+        from uitk.widgets.mainWindow import MainWindow
+
+        if tag not in self._switchboards:
+            self._switchboards[tag] = Switchboard(context_tags={tag} if tag else None)
+        ui = self.track_widget(
+            MainWindow(
+                name=f"host_ns_{tag or 'standalone'}_{obj_name}",
+                switchboard_instance=self._switchboards[tag],
+                restore_window_size=False,
+                ensure_on_screen=False,
+            )
+        )
+        w = QtWidgets.QLineEdit(ui)
+        w.setObjectName(obj_name)
+        ui.register_widget(w)
+        return w
+
+    def _pin(self, tag, key=None, obj_name="txt000"):
+        return PinValuesOption(
+            wrapped_widget=self._panel(tag, obj_name), settings_key=key or self.KEY
+        )
+
+    def test_pins_do_not_cross_between_maya_and_blender(self):
+        maya = self._pin("maya")
+        maya.add_pinned_value("C:/proj/maya_only")
+        self.assertEqual(maya.pinned_values, ["C:/proj/maya_only"])
+
+        blender = self._pin("blender")
+        self.assertNotIn(
+            "C:/proj/maya_only",
+            blender.pinned_values,
+            "a Maya pin must not appear in a Blender session's list",
+        )
+
+        blender.add_pinned_value("C:/proj/blender_only")
+        # ...and the reverse: Maya must not pick up Blender's on a fresh read.
+        self.assertNotIn("C:/proj/blender_only", self._pin("maya").pinned_values)
+
+    def test_same_host_still_shares_one_list(self):
+        """The fix must separate hosts, not every option instance — two panels in
+        the SAME Maya session naming the same key are one list, as before."""
+        first = self._pin("maya", key="host_ns_same_host")
+        first.add_pinned_value("C:/proj/shared")
+        second = self._pin("maya", key="host_ns_same_host", obj_name="txt001")
+        self.assertIn("C:/proj/shared", second.pinned_values)
+
+    def test_standalone_keeps_the_unsuffixed_namespace(self):
+        """No ``context_tags`` (a bare Switchboard — what every ``extapps`` panel
+        builds) means no suffix. Those tools are host-agnostic file utilities;
+        their recent-directory list SHOULD stay shared across every session that
+        opens them, and their existing keys must not move."""
+        opt = self._pin(None, key="host_ns_standalone")
+        self.assertEqual(opt._settings.namespace, "host_ns_standalone")
+
+    def test_host_suffix_comes_from_the_shared_ssot(self):
+        """Formatted by ``ShortcutManager.host_namespace_suffix``, not a private
+        copy — a second implementation would drift from the shortcut / marking-menu
+        stores and re-open the collision they already guard against."""
+        from uitk.managers.shortcut_manager import ShortcutManager
+        from uitk.widgets.optionBox.options._persistence import PersistedOption
+
+        for tag in ("maya", "blender"):
+            self.assertEqual(
+                PersistedOption.host_suffix_for(self._panel(tag)),
+                ShortcutManager.host_namespace_suffix({tag}),
+            )
+        self.assertEqual(PersistedOption.host_suffix_for(None), "")
+
+    def test_existing_shared_values_seed_each_host_once(self):
+        """Migration: values written before namespacing live under the bare key.
+        Each host copies them into its own namespace on first use (so the change
+        doesn't read as "my pinned directories vanished"), then diverges — and the
+        shared originals are left in place so the OTHER host can seed too."""
+        from uitk.managers.settings_manager import SettingsManager
+
+        key = "host_ns_legacy"
+        legacy = SettingsManager(org="uitk", app="PinValues", namespace=key)
+        legacy.setValue("entries", [{"value": "C:/proj/pre_existing", "alias": None}])
+
+        for tag in ("maya", "blender"):
+            opt = self._pin(tag, key=key)
+            self.assertEqual(
+                opt.pinned_values,
+                ["C:/proj/pre_existing"],
+                f"{tag} did not inherit the pre-namespacing list",
+            )
+        self.assertIsNotNone(legacy.value("entries"), "shared originals were consumed")
+
+        # Diverge: Maya's new pin stays out of Blender.
+        maya = self._pin("maya", key=key)
+        maya.add_pinned_value("C:/proj/maya_after")
+        self.assertNotIn(
+            "C:/proj/maya_after", self._pin("blender", key=key).pinned_values
+        )
+
+    def test_seeding_does_not_resurrect_a_cleared_list(self):
+        """Guarded by a marker, not by "the namespace is empty" — otherwise a user
+        who deliberately unpins everything gets the old list back next launch."""
+        from uitk.managers.settings_manager import SettingsManager
+
+        key = "host_ns_cleared"
+        legacy = SettingsManager(org="uitk", app="PinValues", namespace=key)
+        legacy.setValue("entries", [{"value": "C:/proj/old", "alias": None}])
+
+        first = self._pin("maya", key=key)
+        self.assertEqual(first.pinned_values, ["C:/proj/old"])  # premise
+        first.clear_pinned_values()
+
+        self.assertEqual(
+            self._pin("maya", key=key).pinned_values,
+            [],
+            "the cleared list came back from the shared namespace",
+        )
+
+    def test_recent_values_are_host_namespaced_too(self):
+        """Same collision, same fix, via the shared factory — the twin scene
+        exporters both pass ``scene_exporter_output_dirs``."""
+        key = "host_ns_recent"
+        maya = RecentValuesOption(wrapped_widget=self._panel("maya"), settings_key=key)
+        maya.store.add("C:/out/maya")
+        blender = RecentValuesOption(
+            wrapped_widget=self._panel("blender"), settings_key=key
+        )
+        self.assertNotIn("C:/out/maya", [str(v) for v in blender.store.values])
+
+
 # -----------------------------------------------------------------------------
 # Interactive Demo (Legacy)
 # -----------------------------------------------------------------------------

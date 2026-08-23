@@ -270,8 +270,17 @@ class TestConsoleDoesNotStealCopy(QtBaseTestCase):
         field.setText("field text")
         field.setFocus(QtCore.Qt.MouseFocusReason)
         field.selectAll()
-        QtWidgets.QApplication.processEvents()
-        self.assertIs(QtWidgets.QApplication.focusWidget(), field)
+        # `activateWindow` is a REQUEST to the window manager, not a state
+        # change, so a single processEvents can return before focus has
+        # moved -- and the console here was shown as its OWN top-level
+        # before being reparented into `window`, which is when the race
+        # actually bites (measured: focusWidget() was still the console).
+        # Wait for the precondition instead of sampling it once; a genuine
+        # failure to move focus still fails, with the budget named.
+        QtWait.until(
+            lambda: QtWidgets.QApplication.focusWidget() is field,
+            "focus never moved to the field",
+        )
 
         self.assertEqual(self._copy_from(field), "field text")
 
@@ -293,8 +302,17 @@ class TestConsoleDoesNotStealCopy(QtBaseTestCase):
 
         viewer.selectAll()
         viewer.setFocus(QtCore.Qt.MouseFocusReason)
-        QtWidgets.QApplication.processEvents()
-        self.assertIs(QtWidgets.QApplication.focusWidget(), viewer)
+        # `activateWindow` is a REQUEST to the window manager, not a state
+        # change, so a single processEvents can return before focus has
+        # moved -- and the console here was shown as its OWN top-level
+        # before being reparented into `window`, which is when the race
+        # actually bites (measured: focusWidget() was still the console).
+        # Wait for the precondition instead of sampling it once; a genuine
+        # failure to move focus still fails, with the budget named.
+        QtWait.until(
+            lambda: QtWidgets.QApplication.focusWidget() is viewer,
+            "focus never moved to the read-only view",
+        )
 
         self.assertEqual(self._copy_from(viewer), "VIEWER TEXT")
 
@@ -311,13 +329,19 @@ class TestConsoleDoesNotStealCopy(QtBaseTestCase):
         """``app_wide_copy``'s reason to exist: a focus widget with no Copy of its
         own (a button, the host's viewport) leaves the chord to the console."""
         QtWait.require_clipboard(self)
-        console = self._console_with_selection()
+        # Named `_console` because only its EXISTENCE matters here: the console
+        # has to be alive and shown for its app-wide binding to be under test,
+        # and `track_widget` inside the helper holds the reference. (Pre-existing
+        # F841 -- ruff reads the bare name as a dead assignment.)
+        _console = self._console_with_selection()
         button = self.track_widget(QtWidgets.QPushButton("x"))
         button.show()
         button.activateWindow()
         button.setFocus()
-        QtWidgets.QApplication.processEvents()
-        self.assertIs(QtWidgets.QApplication.focusWidget(), button)
+        QtWait.until(
+            lambda: QtWidgets.QApplication.focusWidget() is button,
+            "focus never moved to the button",
+        )
         self.assertEqual(self._copy_from(button), "CONSOLE TEXT")
 
     def test_widget_scoped_console_never_reaches_outside_itself(self):
@@ -456,8 +480,10 @@ class TestConsoleShortcutIsGatedOnSelection(QtBaseTestCase):
 
         pane.selectAll()
         pane.setFocus(QtCore.Qt.MouseFocusReason)
-        QtWidgets.QApplication.processEvents()
-        self.assertIs(QtWidgets.QApplication.focusWidget(), pane)
+        QtWait.until(
+            lambda: QtWidgets.QApplication.focusWidget() is pane,
+            "focus never moved to the pane",
+        )
 
         clipboard.clear()
         _key_click(pane, QtCore.Qt.Key_C, QtCore.Qt.ControlModifier)
@@ -546,8 +572,10 @@ class TestFieldOwnsTheEditingFamily(QtBaseTestCase):
         window, field = self._focused_field("alpha beta")
         fired = []
         self._shortcut(QtGui.QKeySequence.SelectAll, window, fired)
-        QtWidgets.QApplication.processEvents()
-        self.assertIs(QtWidgets.QApplication.focusWidget(), field)
+        QtWait.until(
+            lambda: QtWidgets.QApplication.focusWidget() is field,
+            "focus never moved to the field",
+        )
 
         field.deselect()
         _key_click(field, QtCore.Qt.Key_A, QtCore.Qt.ControlModifier)

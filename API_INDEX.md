@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-08-20_
+_Generated: 2026-08-23_
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
@@ -14,7 +14,7 @@ _Generated: 2026-08-20_
 
 ### `bridge/parameters.py` — Registry helpers for bridge parameter dicts.
 - `class Parameters(_ParametersInternal)`
-  - methods: scope_spec, shader_type_spec, referenced_keys, defaults, render_context
+  - methods: scope_spec, shader_type_spec, carrier_spec, referenced_keys, defaults, render_context
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
 - `class BridgeSlotsBase(_BridgeSlotsInternal)`
@@ -166,7 +166,7 @@ _Generated: 2026-08-20_
 - `class OverrideCursorGuard(QtCore.QObject)`
   - methods: shape, holding, apply, clear, holds, is_stale, notify_stack_drained, reconcile
 - `class SwitchboardUtilsMixin`
-  - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, simulate_key_press, defer_with_timer, gc_protect, modal_menu
+  - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, text_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
@@ -244,7 +244,7 @@ _Generated: 2026-08-20_
 ### `widgets/editors/shortcut_editor/registry_editor.py`
 - `class CollisionConflict`
 - `class ShortcutEditor(EditorPanel)`
-  - methods: export_preset_data, import_preset_data, export_shortcuts, import_shortcuts, showEvent, refresh_ui_list, populate, set_columns_hidden, reset_shortcut, scope_at, scope_interactive, add_collision_checker, remove_collision_checker
+  - methods: export_preset_data, import_preset_data, export_shortcuts, import_shortcuts, showEvent, refresh_ui_list, populate, open_over_facade, set_columns_hidden, reset_shortcut, scope_at, scope_interactive, add_collision_checker, remove_collision_checker
 
 ### `widgets/editors/shortcut_editor/registry_facade.py` — Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
 - `class RegistrySwitchboardFacade`
@@ -422,9 +422,10 @@ _Generated: 2026-08-20_
 
 ### `widgets/optionBox/options/_persistence.py` — Shared persistence wiring for OptionBox plugins.
 - `class PersistedOption`
+  - methods: host_suffix_for, settings_for
 
 ### `widgets/optionBox/options/action.py` — Action option for OptionBox - provides customizable action buttons.
-- `class ActionOption(ButtonOption)`
+- `class ActionOption(PersistedOption, ButtonOption)`
   - methods: create_widget, set_action_handler, current_state, set_states
 - `class MenuOption(ActionOption)`
   - methods: set_menu, set_wrapped_widget
@@ -635,4 +636,4 @@ _Generated: 2026-08-20_
 
 ### `widgets/windowPanel.py` — Themed top-level uitk window: Header → body → Footer.
 - `class WindowPanel(QtWidgets.QWidget)`
-  - methods: style, showEvent, persist_geometry, save_window_geometry, restore_window_geometry, clear_saved_geometry, resizeEvent, moveEvent, hideEvent, closeEvent, header, footer, body_layout, tighten_sublayouts, icon_button
+  - methods: style, showEvent, persist_geometry, save_window_geometry, restore_window_geometry, clear_saved_geometry, resizeEvent, moveEvent, hideEvent, closeEvent, present, is_in_popup_context, header, footer, body_layout, tighten_sublayouts, icon_button

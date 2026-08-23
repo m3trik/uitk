@@ -4,6 +4,7 @@
 
 from qtpy import QtWidgets, QtCore
 from ._options import ButtonOption
+from ._persistence import PersistedOption
 
 
 class PinnedValueEntry:
@@ -422,12 +423,10 @@ class PinValuesOption(ButtonOption):
             self._load_pinned_values()
 
     def _init_settings(self):
-        """Initialize settings manager for persistence."""
+        """Initialize settings manager for persistence (host-namespaced)."""
         if self._settings is None and self._settings_key:
-            from uitk.managers.settings_manager import SettingsManager
-
-            self._settings = SettingsManager(
-                org="uitk", app="PinValues", namespace=self._settings_key
+            self._settings = PersistedOption.settings_for(
+                "PinValues", self._settings_key, self.wrapped_widget
             )
 
     def _save_pinned_values(self):

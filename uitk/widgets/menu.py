@@ -802,9 +802,17 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self._last_parent_geometry = None
         self._cached_menu_position = None
         self._popup_configured = False  # Track if popup setup has been done
+        # Window type the last ``_setup_as_popup`` pass applied (Qt.Tool or
+        # Qt.Popup). Re-checked on every show: a menu opened while another
+        # popup holds the app-wide grab must itself be a Qt.Popup to get
+        # any input at all. See ``_resolve_popup_window_type``.
+        self._popup_window_type: Optional[QtCore.Qt.WindowType] = None
         self._tracked_as_menu = False  # Registered with owning MainWindow.menus()
         self._dismiss_on_move_filter: Optional[_DismissOnAncestorMove] = None
         self._activating_chain = False  # Re-entrancy guard for sizeHint activation
+        # The popup whose native mouse grab this menu stole on show (weakref),
+        # to hand back on hide. See _ensure_popup_input_grab.
+        self._grab_stolen_from: Optional["weakref.ref"] = None
 
         # Transient popup family: child popups (option-menu dropdowns, context
         # menus, value popups) opened from within this menu that should keep it
@@ -875,14 +883,17 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.init_layout()
         self.style = StyleSheet(self, log_level="WARNING")
 
-        # Popup setup (Qt.Tool|FramelessWindowHint reparent + WA_* attributes)
-        # is deferred until the menu is actually shown — running it during
-        # ``__init__`` creates an OS-level Tool window per Menu, which on
+        # Popup setup (window-type|FramelessWindowHint reparent + WA_*
+        # attributes) is deferred until the menu is actually shown — running
+        # it during ``__init__`` creates an OS-level window per Menu, which on
         # Windows produces a brief WM-visible artifact (a flash) for every
-        # option_box menu created during ``register_children``.  Construction
-        # leaves the Menu as a hidden child widget; ``show_as_popup`` and
-        # ``showEvent`` both call ``_setup_as_popup`` (idempotent via
-        # ``_popup_configured``) before the menu becomes visible.
+        # option_box menu created during ``register_children``.  Deferring it
+        # is also what lets the window TYPE be chosen against the popup grab
+        # in effect at show time (see ``_resolve_popup_window_type``).
+        # Construction leaves the Menu as a hidden child widget;
+        # ``show_as_popup`` and ``showEvent`` both call ``_setup_as_popup``
+        # (idempotent per resolved window type) before the menu becomes
+        # visible.
         #
         # Explicit hide() prevents Qt's "auto-show with parent" behavior:
         # without it, ``OptionBox.wrap``'s ``container.show()`` cascades to
@@ -1678,19 +1689,109 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             existing.detach()
             self._dismiss_on_move_filter = None
 
+    def _resolve_popup_window_type(self) -> QtCore.Qt.WindowType:
+        """The window type this menu must use for the *current* show.
+
+        ``Qt.Tool`` normally — a tool window floats above its parent, keeps
+        the host window active, and does not steal input from the rest of
+        the app.
+
+        ``Qt.Popup`` when some *other* widget already holds Qt's app-wide
+        popup grab.  While ``QApplication.activePopupWidget()`` is set, Qt
+        routes every mouse event to that popup (or to a widget inside it) —
+        a ``Qt.Tool`` window shown on top receives **nothing**, and the
+        pointer appears to interact with whatever sits underneath.  That is
+        the case for an option-box menu opened from a row embedded in a
+        ``WidgetComboBox`` dropdown: the combo's native popup owns the grab,
+        so the menu renders but is input-dead while the combo view below it
+        keeps taking the hover.  Declaring ``Qt.Popup`` pushes this menu onto
+        Qt's popup stack, so it becomes the active popup and gets the input;
+        hiding it pops the stack and hands the grab back.
+        """
+        active = QtWidgets.QApplication.activePopupWidget()
+        if active is self:
+            # A re-show while we already hold the grab: keep the type we have,
+            # since re-declaring it would drop the grab mid-life.
+            return self._popup_window_type or QtCore.Qt.Popup
+        if active is not None:
+            return QtCore.Qt.Popup
+        return QtCore.Qt.Tool
+
+    def _ensure_popup_input_grab(self, prev_popup) -> None:
+        """Route native mouse input here while this menu overlays another popup's grab.
+
+        Qt 6.8 rewrote popup handling: ``QWidgetWindow`` no longer remaps a
+        mouse event delivered to an OLDER popup into the active one. On
+        Windows the older popup (e.g. a combo's native dropdown hosting this
+        menu's option-box row) keeps the OS mouse capture, so every press is
+        still delivered to ITS window and this menu is input-dead even while
+        it is the active popup — measured live over Blender (PySide6 6.11):
+        presses at the menu's own buttons routed into the combo view
+        beneath. Do what pre-6.8 ``grabForPopup`` did internally: move the
+        WINDOW-level grab (``QWindow.setMouseGrabEnabled`` → ``SetCapture``)
+        to this menu. Window-level, not ``QWidget.grabMouse`` — a widget
+        grab funnels events to the menu widget itself, bypassing its child
+        buttons. The grab is handed back on hide
+        (:meth:`_release_popup_input_grab`) so the underlying popup's
+        click-outside dismissal keeps working. No-op in the common
+        single-popup case (*prev_popup* is None). Best-effort: a platform
+        that refuses the grab leaves behavior unchanged.
+        """
+        if prev_popup is None or prev_popup is self or not self.isVisible():
+            return
+        if self._popup_window_type != QtCore.Qt.Popup:
+            return
+        try:
+            handle = self.windowHandle()
+            if handle is None:
+                return
+            handle.setMouseGrabEnabled(True)
+            self._grab_stolen_from = weakref.ref(prev_popup.window())
+        except Exception as e:  # pragma: no cover - platform-defensive
+            self.logger.debug(f"_ensure_popup_input_grab skipped: {e}")
+
+    def _release_popup_input_grab(self) -> None:
+        """Hand a stolen native mouse grab back to the popup it came from.
+
+        Runs on hide. Without the hand-back, the underlying popup (the combo
+        dropdown this menu opened over) never sees another native mouse
+        event over a non-Qt host, so it stops dismissing on outside clicks.
+        Re-granting a grab Qt already restored itself (pre-6.8 hosts) is a
+        harmless duplicate ``SetCapture``.
+        """
+        ref, self._grab_stolen_from = self._grab_stolen_from, None
+        if ref is None:
+            return
+        try:
+            handle = self.windowHandle()
+            if handle is not None:
+                handle.setMouseGrabEnabled(False)
+            prev = ref()
+            if prev is not None and prev.isVisible():
+                prev_handle = prev.windowHandle()
+                if prev_handle is not None:
+                    prev_handle.setMouseGrabEnabled(True)
+        except Exception as e:  # pragma: no cover - platform-defensive
+            self.logger.debug(f"_release_popup_input_grab skipped: {e}")
+
     def _setup_as_popup(self):
         """Configure this menu as a popup window.
 
-        Only runs once to avoid repeated reparenting issues.
+        Idempotent per window type: it re-runs only when
+        :meth:`_resolve_popup_window_type` returns something other than what
+        is currently applied (Tool -> Popup when opened inside a foreign
+        popup grab), since reparenting recreates the native handle.
         """
-        if self._popup_configured:
+        window_type = self._resolve_popup_window_type()
+        if self._popup_configured and window_type == self._popup_window_type:
             return
 
         self._popup_configured = True
+        self._popup_window_type = window_type
 
         # Store current parent before changing window flags
         parent_widget = self.parentWidget()
-        flags = QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint
+        flags = window_type | QtCore.Qt.FramelessWindowHint
 
         # Use a single setParent(parent, flags) call to avoid double native
         # window recreation (setWindowFlags alone recreates the handle, then
@@ -1893,6 +1994,11 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             f"Menu.show_as_popup: anchor_widget={anchor_widget}, position={position}"
         )
 
+        # Captured BEFORE the popup setup: the popup (if any) whose grab this
+        # menu is about to overlay — the native-grab handoff after show (step
+        # 7) needs to know who to steal from / hand back to.
+        prev_popup = QtWidgets.QApplication.activePopupWidget()
+
         # Order matters: every step that affects size must run before
         # positioning, and positioning must run before the on-screen
         # check, all while the menu is still hidden.  By the time
@@ -1900,7 +2006,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # at its final size and final position — Qt never paints a
         # pre-final state, so the user sees no flicker.
         #
-        # 1. Configure as popup (Qt.Tool | FramelessWindowHint).
+        # 1. Configure as popup (Qt.Tool or Qt.Popup | FramelessWindowHint).
         self._setup_as_popup()
         self._current_anchor_widget = anchor_widget
 
@@ -1940,6 +2046,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         self.show()
         self.raise_()
         self.activateWindow()
+
+        # 7. Native-grab handoff when overlaying another popup's grab
+        #    (Qt 6.8+ no longer remaps events off the older popup).
+        self._ensure_popup_input_grab(prev_popup)
 
         self._current_anchor_widget = None
 
@@ -2968,6 +3078,20 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                     widget_type = getattr(QtWidgets, type_item, None)
                     if widget_type is not None:
                         processed_types.append(widget_type)
+                    else:
+                        # A name is resolved against QtWidgets, so a uitk class name
+                        # ("CheckBox") or a typo resolves to nothing — and dropping
+                        # it silently leaves an EMPTY processed_types, which filters
+                        # every item out. That reads as "the menu holds none of
+                        # those" rather than "you asked for a type that isn't one".
+                        # Caught in the field: a tb004 whose state was read from
+                        # get_items("CheckBox") was False no matter what the boxes
+                        # said, so its label could never say ON.
+                        self.logger.warning(
+                            f"[get_items] {type_item!r} is not a QtWidgets class; "
+                            f"nothing can match it (pass the class itself, or the "
+                            f"Q-prefixed base name)."
+                        )
                 else:
                     processed_types.append(type_item)
 
@@ -3774,6 +3898,12 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # hiding this menu does NOT reach it through the QObject tree. Hide the
         # family explicitly here so closing the menu can't leave orphan popups.
         self._hide_transient_children()
+
+        # Hand a stolen native mouse grab back to the popup underneath — AFTER
+        # the transient children, so a child that stole OUR grab unwinds first
+        # (its restore-to-us skips, we are hidden) and the popup at the bottom
+        # of the chain is re-granted exactly once, by this outermost release.
+        self._release_popup_input_grab()
 
         # CRITICAL FIX: Restore focus to prevent application focus loss
         # Qt.Tool windows can cause focus loss when hidden

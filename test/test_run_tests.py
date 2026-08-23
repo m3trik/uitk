@@ -23,6 +23,7 @@ import logging
 import sys
 import unittest
 from conftest import QtWait
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from unittest import mock
@@ -218,6 +219,81 @@ class TestModuleCoverage(RunnerTestCase):
         self.assertEqual(
             result.modules_ran - result.modules_executed, {"test_probe_all_skipped"}
         )
+
+
+class TestRunLogFidelity(RunnerTestCase):
+    """The log file has to carry the part of a failure that explains it.
+
+    Two ways it did not: a message was truncated to its first 200 characters --
+    which for a traceback is the "Traceback (most recent call last):" header and
+    a frame or two, never the assertion at the end -- and anything the run
+    PRINTED went to the console only, so a swallowed exception's
+    traceback.print_exc() left no trace in the artifact that outlives the run.
+    """
+
+    LONG_TRACE = (
+        "Traceback (most recent call last):\n"
+        + '  File "widget.py", line 12, in build\n    layout.addWidget(w)\n' * 12
+        + "AssertionError: PROBE-THE-ASSERTION-THAT-FAILED\n"
+    )
+
+    def setUp(self):
+        # Deliberately NOT dir=test/temp_tests: that directory is on the
+        # cloud-synced O: drive, where the sync client can still hold a file the
+        # next line reads back -- measured here as a PermissionError under a
+        # concurrent full suite. TempArtifacts defaults to the unsynced system
+        # TEMP, which is the discriminator the 2026-08-10 backlog entry
+        # measured, and it leaves this test measuring the writer rather than
+        # the environment.
+        self.artifacts = ptk.TempArtifacts("uitk_run_log", policy="scoped")
+        self.log_path = Path(self.artifacts.path())
+
+    def tearDown(self):
+        self.artifacts.cleanup()
+
+    def write_summary(self, printed="", failed=True):
+        """Drive `_write_log_summary` alone, returning what it wrote.
+
+        Built with `__new__`: the writer reads four attributes, and a real
+        constructor would install logging handlers this test has no use for.
+        """
+        runner = self.runner.TestSuiteRunner.__new__(self.runner.TestSuiteRunner)
+        runner.log_file_path = self.log_path
+        runner.end_time = datetime.now()
+        runner._console = StringIO(printed)
+        runner.results = [
+            self.runner.TestResult(
+                name="test_probe", status="failed", message=self.LONG_TRACE
+            ),
+            self.runner.TestResult(
+                name="test_skipped", status="skipped", message="x" * 500
+            ),
+        ]
+        result = unittest.TestResult()
+        if failed:
+            result.failures = [("test_probe", self.LONG_TRACE)]
+        runner._write_log_summary(result, 1.0)
+        return self.log_path.read_text(encoding="utf-8")
+
+    def test_the_assertion_survives_into_the_log(self):
+        self.assertIn("PROBE-THE-ASSERTION-THAT-FAILED", self.write_summary())
+
+    def test_a_skip_reason_is_still_capped(self):
+        """The counterweight: writing everything whole is not the fix -- a skip
+        reason is one line, and its cap keeps a pathological one from filling
+        the log."""
+        text = self.write_summary()
+        self.assertIn("x" * 200 + "...", text)
+        self.assertNotIn("x" * 300, text)
+
+    def test_printed_output_reaches_the_log_on_failure(self):
+        text = self.write_summary(printed="PROBE-PRINTED-EXPLANATION\n")
+        self.assertIn("PROBE-PRINTED-EXPLANATION", text)
+
+    def test_printed_output_is_left_out_of_a_clean_run(self):
+        """A passing run's chatter would bury the report."""
+        text = self.write_summary(printed="PROBE-PRINTED-EXPLANATION\n", failed=False)
+        self.assertNotIn("PROBE-PRINTED-EXPLANATION", text)
 
 
 class TestBadgeWiring(RunnerTestCase):

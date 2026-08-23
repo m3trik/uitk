@@ -69,6 +69,13 @@ class RecentValuesStore:
             explicit *settings*), a :class:`SettingsManager` is created under
             ``org="uitk", app="RecentValues"`` — the same location the legacy
             ``RecentValuesOption`` used, so existing history is preserved.
+            Used **verbatim**: this store is widget-free by design, so it cannot
+            reach a Switchboard to host-namespace the key the way the option-box
+            plugins do (see ``_persistence.PersistedOption.settings_for``).
+            A DCC-hosted caller building a store directly therefore owns that
+            distinction itself — either pass a host-distinct *settings_key*, or
+            hand in a *settings* manager built by that factory. ``RecentValuesOption``
+            takes the second route, so a widget-wrapped history is namespaced.
         max_recent: Maximum number of entries to keep.
         display_format: How values render in :meth:`display_map`:
             ``"auto"`` — strip the common directory prefix when all values are

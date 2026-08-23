@@ -103,6 +103,15 @@ class TestSuiteRunner:
         """Configure logging for the test runner."""
         self.logger = logging.getLogger("UITK.TestRunner")
         self.logger.setLevel(logging.DEBUG)
+        # `getLogger` hands back the SAME logger to every instance, so handlers
+        # installed by a previous construction are still attached and each one
+        # re-emits the line. `test_run_tests` constructs the runner twice, which
+        # left the real run printing its whole report THREE times (measured in a
+        # full run: every summary line tripled). Own the list rather than
+        # appending to whatever is on it.
+        for handler in list(self.logger.handlers):
+            self.logger.removeHandler(handler)
+            handler.close()
 
         # Console handler
         console_handler = logging.StreamHandler()
@@ -180,7 +189,22 @@ class TestSuiteRunner:
             resultclass=_DetailedTestResult,
         )
 
-        result = runner.run(suite)
+        # unittest reports through `stream`, but product code does not: a bare
+        # print(), or the traceback.print_exc() of an exception the product
+        # swallowed, goes to the REAL stdout/stderr and was absent from the log
+        # file -- so a failure whose only explanation was printed reached the
+        # reader as a bare assertion diff. Tee both for the run; `stream` above
+        # holds the ORIGINAL stdout object, so nothing is doubled.
+        self._console = StringIO()
+        real_out, real_err = sys.stdout, sys.stderr
+        sys.stdout = ptk.TeeStream(real_out, self._console)
+        sys.stderr = ptk.TeeStream(real_err, self._console)
+        try:
+            result = runner.run(suite)
+        finally:
+            # In a finally so a runner crash cannot leave the process writing
+            # into a buffer nobody reads.
+            sys.stdout, sys.stderr = real_out, real_err
 
         # Collect results
         self._collect_results(result)
@@ -388,12 +412,31 @@ class TestSuiteRunner:
                     f.write("-" * 40 + "\n")
                     for r in status_results:
                         f.write(f"  {r.name}\n")
-                        if r.message:
-                            f.write(
-                                f"    {r.message[:200]}...\n"
-                                if len(r.message) > 200
-                                else f"    {r.message}\n"
-                            )
+                        if not r.message:
+                            continue
+                        # A traceback's payload -- the assertion that actually
+                        # failed -- is its LAST lines, so truncating to the
+                        # first 200 characters kept the "Traceback (most recent
+                        # call last):" header and cut off the answer. Failures
+                        # and errors are written whole; a skip reason is one
+                        # line, so keeping its cap costs nothing.
+                        message = r.message
+                        if status == "skipped" and len(message) > 200:
+                            message = message[:200] + "..."
+                        for line in message.rstrip().splitlines():
+                            f.write(f"    {line}\n")
+
+            # What the run PRINTED, on failure only: a passing run's chatter
+            # would bury the report, while a failing one's is often the only
+            # record of why (see the tee in `run`).
+            console = getattr(self, "_console", None)
+            printed = console.getvalue().strip() if console else ""
+            if printed and (result.failures or result.errors):
+                f.write("\n" + "=" * 70 + "\n")
+                f.write("CAPTURED CONSOLE OUTPUT (tail)\n")
+                f.write("=" * 70 + "\n")
+                for line in printed.splitlines()[-200:]:
+                    f.write(f"  {line}\n")
 
             f.write("\n" + "=" * 70 + "\n")
             f.write(f"Completed at: {self.end_time.strftime('%Y-%m-%d %H:%M:%S')}\n")

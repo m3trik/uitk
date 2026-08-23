@@ -150,8 +150,8 @@ class ShortcutEditor(EditorPanel):
         self.sb = switchboard
         self.resize(600, 600)
         # Focused launch (e.g. ``focus="commands"`` → a single-purpose global-
-        # shortcuts panel): pin a view + hide the UI selector. Applied in
-        # showEvent once the UI list exists (see :meth:`_apply_focus`).
+        # shortcuts panel): pin a view + hide the UI selector, applied in
+        # ``refresh_ui_list`` / the column config below.
         self._focus = focus
         # Manager mode: the editor is rendering a standalone
         # ``ShortcutManager`` (via :class:`ManagerSwitchboardFacade`) rather than
@@ -191,6 +191,16 @@ class ShortcutEditor(EditorPanel):
         # ``set_binding_hidden``) are omitted from every view unless this is on.
         # They remain in the registry — collision detection always sees them.
         self._show_hidden = bool(self._settings.value("show_hidden", False))
+        # Drop UIs with nothing to show from the target combobox — the ones that
+        # would only render the "No shortcuts defined for this UI." placeholder.
+        # A view filter only: the hidden names stay in ``_registered_ui_names``,
+        # so the show-all / assigned gathers, the preset export and the collision
+        # scan are untouched.
+        self._hide_empty_uis = bool(self._settings.value("hide_empty_uis", False))
+        if self._focus:
+            # The checkbox is skipped in a focused launch (single locked combo
+            # entry), so a persisted True would be a filter with no way back.
+            self._hide_empty_uis = False
 
         # UI selection. A uitk ComboBox carries the "Target UI:" label as a
         # display-only prefix on the current item, so there's no separate
@@ -497,6 +507,15 @@ class ShortcutEditor(EditorPanel):
         super().showEvent(event)
         # Re-measure the Shortcut column against the now-themed font.
         self._size_shortcut_column()
+        self._refresh_ui_list_preserving_selection()
+
+    def _refresh_ui_list_preserving_selection(self) -> None:
+        """Rebuild the UI combobox, keeping the current selection when it survives.
+
+        Shared by ``showEvent`` and the view toggles that can change *which* UIs
+        the combo lists (see :meth:`_set_hide_empty_uis`): a dropped selection
+        falls back to whatever ``refresh_ui_list`` defaults to.
+        """
         # Preserve current selection if possible
         current_ui = self.cmb_ui.currentText()
         self.refresh_ui_list()
@@ -508,14 +527,15 @@ class ShortcutEditor(EditorPanel):
         self.populate()
 
     def refresh_ui_list(self):
-        """Populate the UI combobox: special views first, then every registered UI.
+        """Populate the UI combobox: special views first, then the listed UIs.
 
         Lists names directly from the ui_registry (populated at startup) without
         instantiating any widgets — the actual UI is built only when the user
         selects it (see ``populate``). The cross-cutting special views (Assigned,
         Commands) sort to the top and are accent-coloured; the initial *selection*
         still lands on the first real UI so the editor opens on a concrete UI,
-        not a filtered view.
+        not a filtered view. Which real UIs are listed is
+        :meth:`_combo_ui_names`' call (the 'Hide empty UIs' option).
         """
         self.cmb_ui.clear()
 
@@ -535,13 +555,17 @@ class ShortcutEditor(EditorPanel):
             self.populate()
             return
 
-        real_names = self._registered_ui_names()
+        real_names = self._combo_ui_names()
         specials = self._special_entries(real_names)
         labels = [label for label, _tip in specials] + real_names
         self.cmb_ui.addItems(labels)
         self._style_special_items(specials)
 
         if not labels:
+            # Let populate() paint the reason (it owns the table's empty
+            # states); clearing an already-empty combo emits nothing, so it
+            # would not otherwise run.
+            self.populate()
             return
         # Open on the first real UI (after the specials), falling back to item 0
         # when there are no real UIs (a commands-only host). Block signals across
@@ -578,8 +602,9 @@ class ShortcutEditor(EditorPanel):
         """Sorted, de-duplicated legal names of every registered UI.
 
         Read straight from the ui_registry (populated at startup) — no widget is
-        instantiated. Single source for the combobox list, the show-all/assigned
-        gather, the preset export, and the internal collision scan.
+        instantiated. Single source for the show-all/assigned gather, the preset
+        export, the internal collision scan, and (through the emptiness filter in
+        :meth:`_combo_ui_names`) the combobox list.
         """
         filenames = self.sb.registry.ui_registry.get("filename") or []
         if self._manager_mode:
@@ -593,6 +618,28 @@ class ShortcutEditor(EditorPanel):
                 for name in filenames
             )
         )
+
+    def _combo_ui_names(self) -> list:
+        """The UI names the target combobox lists.
+
+        Every registered UI, minus the ones with nothing to show when the
+        'Hide empty UIs' view option is on — a UI whose visible registry is
+        empty renders only the "No shortcuts defined for this UI." placeholder,
+        so listing it is pure noise for a host with many shortcut-less UIs.
+
+        Emptiness is measured through :meth:`_registry_for` (peek the loaded
+        registry, else the static one) so the filter never force-builds a UI.
+        That carries the static registry's fidelity caveat: a slot bound to a
+        widget created in code at runtime (not declared in the ``.ui``) is
+        invisible until that UI is loaded, so such a UI can be filtered out
+        while unloaded. Hence the option is opt-in and off by default.
+        """
+        names = self._registered_ui_names()
+        if not self._hide_empty_uis:
+            return names
+        # ``or []`` mirrors the gather: a provider may answer None for a name
+        # it cannot resolve.
+        return [n for n in names if self._visible_entries(self._registry_for(n) or [])]
 
     def _special_entries(self, real_names: list) -> list:
         """The non-UI 'pseudo-UI' combobox entries, shown at the top.
@@ -667,6 +714,15 @@ class ShortcutEditor(EditorPanel):
         # the Commands view (which reveals it) was shown just before.
         self.table.setColumnHidden(self.COL_UI, not self._show_all)
         if not ui_name:
+            # Nothing selectable: the host registered no UIs, or 'Hide empty
+            # UIs' dropped them all. Name the cause — a silent blank table
+            # reads as a broken editor, and the filter is undone in the ⋯ menu.
+            self._show_message_row(
+                "No UIs with shortcuts — turn off 'Hide empty UIs' to list them all."
+                if self._hide_empty_uis
+                else "No UIs registered.",
+                status="0 UIs",
+            )
             return
 
         target_ui = self.sb.loaded_ui.peek(ui_name) or self.sb.get_ui(ui_name)
@@ -914,6 +970,62 @@ class ShortcutEditor(EditorPanel):
             self.COL_SHORTCUT, advance("Ctrl+Shift+Alt+Backspace") + 24
         )
 
+    @classmethod
+    def open_over_facade(
+        cls,
+        facade_factory,
+        *,
+        existing=None,
+        parent=None,
+        hide_columns=(),
+        window_title=None,
+        collision_checker=None,
+    ) -> "ShortcutEditor":
+        """Open — or re-show — the one editor over a Switchboard-shaped facade.
+
+        Every non-Switchboard owner of this editor (the sequencer's
+        ``ShortcutManager``, and the DCC macro managers in mayatk / blendertk)
+        wants the same five steps: re-show a cached editor if its C++ side is
+        still alive, else build one over a facade, tailor which columns make
+        sense for that facade, optionally add a host collision checker, and
+        present it. They each re-derived that, and all three drifted from
+        ``sb.editors.show`` by omitting the popup re-raise a menu-triggered
+        editor needs — which is how every one of them is actually opened. This
+        is that path, once.
+
+        Parameters:
+            facade_factory: Zero-arg callable returning the facade to build
+                over — a callable, not a facade, so re-showing a cached editor
+                doesn't construct one (facades own settings + logger state).
+            existing: The editor this owner cached from a previous call, if
+                any. Re-shown when its C++ side is alive; a destroyed one is
+                rebuilt transparently.
+            parent: Parent window for a newly built editor.
+            hide_columns: Column index (or indices) to hide — the per-facade
+                tailoring, e.g. a fixed scope renders as all-inert toggles.
+            window_title: Title for a newly built editor, when the facade
+                doesn't carry one.
+            collision_checker: Optional host-side checker (see
+                :meth:`add_collision_checker`) — e.g. Maya's native hotkey map.
+
+        Returns:
+            The live editor. **Assign it back to the owner's cache**, e.g.
+            ``self._editor = ShortcutEditor.open_over_facade(..., existing=self._editor)``.
+        """
+        if existing is not None:
+            try:
+                return existing.present()
+            except RuntimeError:
+                pass  # underlying C++ editor was destroyed — rebuild below
+
+        editor = cls(facade_factory(), parent=parent)
+        editor.set_columns_hidden(hide_columns)  # a no-op for the default ()
+        if window_title:
+            editor.setWindowTitle(window_title)
+        if collision_checker is not None:
+            editor.add_collision_checker(collision_checker)
+        return editor.present()
+
     @staticmethod
     def _binding_tooltip(name: str, doc: str, seq: str) -> str:
         """Rich-text hover card for a row: bold action name, muted description,
@@ -1011,9 +1123,9 @@ class ShortcutEditor(EditorPanel):
     def _build_header_menu(self) -> None:
         """Populate the header ⋯-menu with titled sections.
 
-        Order top→bottom: a **View** section (the 'Show hidden bindings' toggle)
-        and, for a real Switchboard, a **Presets** section pinned to the bottom
-        (the preset combo + its toolbar). Titled :class:`Separator`\\ s label each
+        Order top→bottom: a **View** section (the 'Show hidden bindings' and
+        'Hide empty UIs' toggles) and, for a real Switchboard, a **Presets**
+        section pinned to the bottom (the preset combo + its toolbar). Titled :class:`Separator`\\ s label each
         section. The preset row is added last so it sits at the bottom regardless
         of the other items. Ensures the header's menu button exists first — in
         manager mode the preset row (which normally creates it) is skipped.
@@ -1031,6 +1143,22 @@ class ShortcutEditor(EditorPanel):
         cb.toggled.connect(self._set_show_hidden)
         menu.add(cb)
         self._show_hidden_checkbox = cb
+
+        # Combo-list filter — pointless in a focused launch, where the combo is
+        # a single locked entry (mirrors the skipped show-all toggle).
+        if not self._focus:
+            cb = QtWidgets.QCheckBox("Hide empty UIs")
+            cb.setToolTip(
+                "Drop UIs with no shortcuts from the target list.\n"
+                "Unloaded UIs are measured from their .ui file, so a shortcut "
+                "bound to a widget created in code is only seen once that UI "
+                "has been loaded."
+            )
+            cb.setFixedHeight(self.HEADER_WIDGET_HEIGHT)
+            cb.setChecked(self._hide_empty_uis)  # set before connect
+            cb.toggled.connect(self._set_hide_empty_uis)
+            menu.add(cb)
+            self._hide_empty_uis_checkbox = cb
 
         # Presets section, pinned to the bottom of the menu. For a real
         # Switchboard the presets are the editor's own shortcut snapshots (the
@@ -1063,7 +1191,17 @@ class ShortcutEditor(EditorPanel):
         """Reveal/omit ``hidden=True`` bindings across every view."""
         self._show_hidden = bool(show_hidden)
         self._settings.setValue("show_hidden", self._show_hidden)
-        self.populate()
+        if self._hide_empty_uis:
+            # Visibility decides emptiness, so the combo list can change too.
+            self._refresh_ui_list_preserving_selection()
+        else:
+            self.populate()
+
+    def _set_hide_empty_uis(self, hide_empty: bool) -> None:
+        """Omit/restore the UIs with no shortcuts in the target combobox."""
+        self._hide_empty_uis = bool(hide_empty)
+        self._settings.setValue("hide_empty_uis", self._hide_empty_uis)
+        self._refresh_ui_list_preserving_selection()
 
     def _refresh_preset_state(self) -> None:
         """Refresh the preset row's dirty indicator, if there is one.
@@ -1743,15 +1881,18 @@ class ShortcutEditor(EditorPanel):
                     f"{other_ui_name}.{other_method} "
                     f"({SCOPE_LABELS.get(other_scope, other_scope)})"
                 )
+
                 # Resolve by *name* (not the captured object) so the clear works
                 # for an unloaded UI too — set_user_shortcut needs a live slots
                 # instance, so get_ui builds it on demand only when the user
                 # actually accepts the clear.
-                clear = (
-                    lambda name=other_ui_name, m=other_method, dscope=entry.get("default_scope", "window"): (
-                        self.sb.set_user_shortcut(self.sb.get_ui(name), m, "", dscope)
-                    )
-                )
+                def clear(
+                    name=other_ui_name,
+                    m=other_method,
+                    dscope=entry.get("default_scope", "window"),
+                ):
+                    self.sb.set_user_shortcut(self.sb.get_ui(name), m, "", dscope)
+
                 conflicts.append(
                     CollisionConflict(
                         source="uitk",
