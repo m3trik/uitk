@@ -904,6 +904,134 @@ class TestMouseTrackingDragHoverHandoff(QtBaseTestCase):
             self.assertFalse(tracker._buttons_held())
 
 
+class _ViewportProbeWidget(QtWidgets.QWidget):
+    """Plain QWidget that counts ``hasattr(w, "viewport")`` probes against it.
+
+    ``hasattr`` only reaches ``__getattr__`` when normal lookup fails, which is
+    exactly what happens for the non-scroll-area widgets that make up nearly all
+    of a tracked set — so the counter measures the exception-driven probe the
+    viewport filter used to run on every ``MouseMove``.
+    """
+
+    probe_count = 0
+
+    def __getattr__(self, name):
+        if name == "viewport":
+            type(self).probe_count += 1
+        raise AttributeError(name)
+
+
+class TestMouseTrackingViewportFiltering(QtBaseTestCase):
+    """Viewport event-filter installation: correctness + hot-path cost.
+
+    Scroll-area widgets get an event filter on their ``viewport()`` rather than
+    an overwritten ``mouseMoveEvent``. That decision is per widget and permanent,
+    so it belongs to the moment a widget ENTERS the tracking set — not to
+    ``track()``, which runs on every mouse move.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.parent_widget = self.track_widget(QtWidgets.QWidget())
+        self.tracker = MouseTracking(self.parent_widget, auto_update=False)
+        self._filtered = []
+        original = self.tracker._handle_viewport_widget
+
+        def _spy(widget):
+            self._filtered.append(widget)
+            return original(widget)
+
+        self.tracker._handle_viewport_widget = _spy
+
+    def test_viewport_widget_present_at_build_is_filtered_once(self):
+        """A scroll area in the tree gets its viewport filtered exactly once."""
+        view = QtWidgets.QListView(self.parent_widget)
+
+        self.tracker.update_child_widgets()
+        self.tracker.update_child_widgets()
+        self.tracker.track()
+        self.tracker.track()
+
+        self.assertEqual(self._filtered.count(view), 1)
+        self.assertIn(view.viewport(), self.tracker._filtered_widgets)
+
+    def test_viewport_widget_added_after_tracking_begins_is_filtered_once(self):
+        """A scroll area created AFTER tracking started still gets filtered.
+
+        The tracker refreshes its cache on MouseButtonPress / Enter
+        (``auto_update``); a widget that appears between refreshes must be
+        picked up by the next one, exactly once, and must not be re-filtered
+        by later refreshes or moves.
+        """
+        self.tracker.update_child_widgets()
+        self.tracker.track()
+        self.assertEqual(self._filtered, [])
+
+        late = QtWidgets.QListView(self.parent_widget)
+
+        self.tracker.update_child_widgets()  # what a press/enter triggers
+        self.assertEqual(self._filtered.count(late), 1)
+        self.assertIn(late.viewport(), self.tracker._filtered_widgets)
+
+        for _ in range(5):
+            self.tracker.track()
+            self.tracker.update_child_widgets()
+        self.assertEqual(self._filtered.count(late), 1)
+
+    def test_externally_registered_viewport_widget_is_filtered(self):
+        """``register_external_widgets`` merges into the live cache — its
+        viewport widgets must be filtered on that merge.
+
+        ExpandableList sublists are reparented out of the tracked subtree and
+        registered explicitly; the registration mutates ``_widgets`` WITHOUT a
+        rebuild, so hanging the viewport scan off ``update_child_widgets``
+        alone would silently skip them.
+        """
+        self.tracker.update_child_widgets()
+
+        sublist = self.track_widget(QtWidgets.QWidget())
+        sublist.setWindowFlags(QtCore.Qt.ToolTip)
+        view = QtWidgets.QListView(sublist)
+
+        self.tracker.register_external_widgets([sublist])
+
+        self.assertIn(view, self.tracker._widgets)
+        self.assertEqual(self._filtered.count(view), 1)
+        self.assertIn(view.viewport(), self.tracker._filtered_widgets)
+
+    def test_mouse_move_does_not_rescan_the_tracked_set(self):
+        """``track()`` must not re-probe every tracked widget per move.
+
+        Regression: ``track()`` ended with a full ``_filter_viewport_widgets()``
+        sweep that ran ``hasattr(widget, "viewport")`` — an exception-driven
+        lookup for plain QWidgets — over the WHOLE tracking set on every single
+        MouseMove, and only then consulted the already-filtered guard. With 60
+        widgets and 20 moves that is 1200 raised-and-swallowed AttributeErrors
+        for zero new information.
+        """
+        widget_count = 60
+        for _ in range(widget_count):
+            _ViewportProbeWidget(self.parent_widget)
+
+        _ViewportProbeWidget.probe_count = 0
+        self.tracker.update_child_widgets()
+        probes_after_build = _ViewportProbeWidget.probe_count
+        self.assertGreater(
+            probes_after_build, 0, "the build-time scan must actually probe"
+        )
+
+        moves = 20
+        for _ in range(moves):
+            self.tracker.track()
+
+        self.assertEqual(
+            _ViewportProbeWidget.probe_count,
+            probes_after_build,
+            "MouseMove re-probed the tracked set; the scan belongs to the "
+            "moment a widget is tracked, not to every move",
+        )
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

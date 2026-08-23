@@ -22,9 +22,10 @@ from .options.affix import AffixOption
 # so these top-level imports introduce no cycle.
 _TYPE_TO_KEY = {
     ValueOption: "value",
-    # Inline mode picker; sits next to the value field, ahead of icon buttons.
-    AffixOption: "affix",
     ClearOption: "clear",
+    # Tri-state mode picker; an icon button like the rest, so it sorts after
+    # the clear button (which leads every button on the field).
+    AffixOption: "affix",
     RecentValuesOption: "recent",
     PinValuesOption: "pin",
     ResetOption: "reset",
@@ -53,8 +54,11 @@ DEFAULT_OPTION_ORDER = (
     # The inline value field sits flush against the wrapped widget, ahead of
     # the icon buttons.
     "value",
-    "affix",
+    # The clear button leads the icon buttons: emptying the field is the one
+    # action that applies to every field type, so it keeps a fixed home at the
+    # inboard end rather than shifting with whatever else a field carries.
     "clear",
+    "affix",
     "recent",
     "pin",
     # Binary state toggles (lock / disable / filter) sit inboard of the reset,

@@ -428,9 +428,11 @@ python demo_optionbox_modular.py
 - Options are added to the OptionBox in the order they are provided, then laid
   out left-to-right per `DEFAULT_OPTION_ORDER` (`_optionBox.py`) — the single
   source of truth, which `OptionBoxManager` also validates a custom
-  `option_order` against. Binary state toggles (lock / disable / filter) sit
-  inboard of the reset, so the reset stays the outermost of a field's own
-  buttons. Pass `order=<int>` on an option to override placement entirely.
+  `option_order` against. The clear button leads the icon buttons (it applies
+  to every field type, so it keeps a fixed inboard home), and binary state
+  toggles (lock / disable / filter) sit inboard of the reset, so the reset
+  stays the outermost of a field's own buttons. Pass `order=<int>` on an
+  option to override placement entirely.
 - Each option is responsible for creating and managing its own widget
 - Options can interact with the wrapped widget through the `wrapped_widget` attribute
 - The OptionBox automatically handles sizing and layout

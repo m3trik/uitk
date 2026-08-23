@@ -2,8 +2,6 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-23_
-
 ## Index
 
 - [`_bootstrap.py`](#_bootstrap) — Standalone-process bootstrap helpers.
@@ -1661,11 +1659,11 @@ Shared modifier-driven wheel-step handling for spin-box widgets.
 
 OptionBox - Plugin-based container for wrapping widgets with action buttons.
 
-- **[`class OptionBoxContainer(QtWidgets.QWidget)`](uitk/uitk/widgets/optionBox/_optionBox.py#L94)** — Container widget that wraps a widget with option buttons.
+- **[`class OptionBoxContainer(QtWidgets.QWidget)`](uitk/uitk/widgets/optionBox/_optionBox.py#L98)** — Container widget that wraps a widget with option buttons.
   - `OptionBoxContainer.changeEvent(self, event)`
   - `OptionBoxContainer.showEvent(self, event)` — Re-fit to content when shown without a managing parent layout.
   - `OptionBoxContainer.eventFilter(self, obj, event)` — Watch the wrapped widget for enabled/visibility and height changes.
-- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L292)** — Plugin-based option manager that wraps widgets with action buttons.
+- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L296)** — Plugin-based option manager that wraps widgets with action buttons.
   - `OptionBox.add_option(self, option)` — Add an option plugin instance.
   - `OptionBox.remove_option(self, option)` — Remove an option plugin instance.
   - `OptionBox.get_options(self)` — Get all registered option plugins.
