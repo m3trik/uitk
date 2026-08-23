@@ -5,6 +5,7 @@
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 from ._options import ButtonOption
+from ._persistence import PersistedOption
 
 # Canonical home for the storage/formatting logic is the widget-free
 # RecentValuesStore; the value/display helpers are its staticmethods
@@ -269,11 +270,19 @@ class RecentValuesOption(ButtonOption):
         self._auto_record_connected = False
 
         # Storage, persistence and display-formatting live in the shared,
-        # widget-free store; this option is just a presenter over it.
+        # widget-free store; this option is just a presenter over it. The
+        # SettingsManager is built HERE rather than inside the store, through the
+        # same factory the other persisted options use: host namespacing needs the
+        # wrapped widget (to reach its Switchboard's ``context_tags``) and the
+        # store is deliberately widget-free. An injected *store* is left alone —
+        # it is a caller-owned model, and its namespace is the caller's business.
         self._store = store or RecentValuesStore(
             settings_key=settings_key,
             max_recent=max_recent,
             display_format=display_format,
+            settings=PersistedOption.settings_for(
+                "RecentValues", settings_key, wrapped_widget
+            ),
         )
         self._store.subscribe(self._update_button_visuals)
 

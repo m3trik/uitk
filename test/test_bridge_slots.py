@@ -1515,5 +1515,33 @@ class TestSharedSpecs(BaseTestCase):
         )
 
 
+
+    def test_carrier_vocabulary_is_pythontk_s_own(self):
+        """The carrier choice renders pythontk's CARRIER_EXTENSIONS vocabulary --
+        the engine refuses any other spelling, so the panel may offer no other."""
+        from pythontk.core_utils.app_handoff import CARRIER_EXTENSIONS, CARRIER_PARAM
+        from uitk.bridge import Parameters
+
+        spec = Parameters.carrier_spec()
+        self.assertEqual(spec.key, CARRIER_PARAM)
+        self.assertEqual(spec.kind, "choice")
+        self.assertEqual(
+            [value for _label, value in spec.choices], list(CARRIER_EXTENSIONS)
+        )
+        # FBX leads: it is the shipped default on every bridge (USD is opt-in
+        # until its live passes close), and combos persist by INDEX.
+        self.assertEqual(spec.default, "fbx")
+        self.assertEqual(Parameters.carrier_spec(default="usd").default, "usd")
+
+    def test_carrier_spec_is_distinct_per_caller_and_unsectioned(self):
+        from uitk.bridge import Parameters
+
+        first, second = Parameters.carrier_spec(), Parameters.carrier_spec()
+        self.assertIsNot(first, second)
+        self.assertIsNot(first.choices, second.choices)
+        self.assertEqual(first.section, "")
+        self.assertEqual(Parameters.carrier_spec(section="Export").section, "Export")
+
+
 if __name__ == "__main__":
     unittest.main()

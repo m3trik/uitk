@@ -17,7 +17,7 @@ Run standalone: python -m test.test_menu
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
@@ -830,6 +830,25 @@ class TestMenuGetItems(QtBaseTestCase):
         labels = self.menu.get_items(types="QLabel")
         self.assertEqual(len(labels), 1)
         self.assertIsInstance(labels[0], QtWidgets.QLabel)
+
+    def test_an_unresolvable_type_name_is_reported_not_silently_empty(self):
+        """A name is resolved against QtWidgets, so a uitk class name or a typo
+        matches nothing — and the empty result reads as "the menu holds none of
+        those". Field case: a state read from get_items("CheckBox") was False no
+        matter what the boxes said, so its button could never say ON."""
+        self.menu.add("QCheckBox", setText="A")
+        with self.assertLogs(self.menu.logger, level="WARNING") as caught:
+            items = self.menu.get_items(types="CheckBox")
+        self.assertEqual(items, [])
+        self.assertTrue(
+            any("not a QtWidgets class" in line for line in caught.output),
+            caught.output,
+        )
+
+    def test_a_resolvable_type_name_stays_quiet(self):
+        self.menu.add("QCheckBox", setText="A")
+        with self.assertNoLogs(self.menu.logger, level="WARNING"):
+            self.assertEqual(len(self.menu.get_items(types="QCheckBox")), 1)
 
     def test_get_items_filters_by_type_class(self):
         """Should filter items by type class."""
@@ -2573,8 +2592,6 @@ class TestHideOnTrigger(QtBaseTestCase):
     """
 
     def _shown_menu(self, **menu_kwargs):
-        from qtpy import QtTest
-
         menu = self.track_widget(
             Menu(
                 trigger_button="none",
@@ -2757,6 +2774,172 @@ class TestMenuNestedContainerTrigger(QtBaseTestCase):
         root_item.sublist.eventFilter(leaf, self._release_event())
         self._pump()
         self.assertTrue(menu.isVisible())
+
+
+class TestMenuPopupGrabHandoff(QtBaseTestCase):
+    """A menu opened inside a foreign popup grab must declare ``Qt.Popup``.
+
+    While ``QApplication.activePopupWidget()`` is set, Qt routes every mouse
+    event to that popup — a ``Qt.Tool`` window shown on top receives nothing
+    and the pointer keeps interacting with whatever is underneath.  That is
+    what an option-box menu on a row embedded in a ``WidgetComboBox``
+    dropdown hits: the combo's native popup owns the grab.
+    """
+
+    def _menu(self):
+        return self.track_widget(
+            Menu(trigger_button="none", add_header=False, add_footer=False)
+        )
+
+    @staticmethod
+    def _window_type(widget):
+        return QtCore.Qt.WindowType(
+            int(widget.windowFlags()) & int(QtCore.Qt.WindowType_Mask)
+        )
+
+    def test_tool_window_when_no_popup_grab_is_active(self):
+        menu = self._menu()
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: None)
+        ):
+            self.assertEqual(menu._resolve_popup_window_type(), QtCore.Qt.Tool)
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Tool)
+
+    def test_popup_window_when_a_foreign_popup_holds_the_grab(self):
+        menu = self._menu()
+        foreign = self.track_widget(QtWidgets.QWidget(None, QtCore.Qt.Popup))
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: foreign)
+        ):
+            self.assertEqual(menu._resolve_popup_window_type(), QtCore.Qt.Popup)
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Popup)
+
+    def test_setup_reruns_when_the_window_type_changes(self):
+        """Tool first, then Popup on a later show inside a grab."""
+        menu = self._menu()
+        foreign = self.track_widget(QtWidgets.QWidget(None, QtCore.Qt.Popup))
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: None)
+        ):
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Tool)
+
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: foreign)
+        ):
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Popup)
+
+    def test_reverts_to_tool_once_the_grab_is_gone(self):
+        """Popup is a per-show accommodation, not a permanent state change."""
+        menu = self._menu()
+        foreign = self.track_widget(QtWidgets.QWidget(None, QtCore.Qt.Popup))
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: foreign)
+        ):
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Popup)
+
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: None)
+        ):
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Tool)
+
+    def test_being_the_active_popup_keeps_the_popup_type(self):
+        """A re-show inside our own grab must not drop back to Tool."""
+        menu = self._menu()
+        foreign = self.track_widget(QtWidgets.QWidget(None, QtCore.Qt.Popup))
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: foreign)
+        ):
+            menu._setup_as_popup()
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: menu)
+        ):
+            self.assertEqual(menu._resolve_popup_window_type(), QtCore.Qt.Popup)
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Popup)
+
+    def test_show_inside_a_widget_combobox_popup_takes_the_grab(self):
+        """End-to-end: the real grab, not a patched ``activePopupWidget``.
+
+        Pre-fix this left ``activePopupWidget()`` pointing at the combo's
+        own popup frame, so the menu rendered but was input-dead.
+        """
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
+
+        host = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(host)
+        combo = WidgetComboBox(host)
+        layout.addWidget(combo)
+
+        row = ComboBox()
+        row.setObjectName("row000")
+        row.add(["None", "a"], clear=True)
+        row.option_box.menu.add("QPushButton", setText="Act", setObjectName="bAct")
+        combo.addWidgetItem(row, "row")
+
+        host.show()
+        QtWait.until(lambda: host.isVisible(), "host never became visible")
+
+        from uitk.widgets.optionBox.options.action import MenuOption
+
+        # The option-box wrap is deferred a tick past ``menu.add``.
+        QtWait.until(
+            lambda: row.option_box.find_option(MenuOption)._widget is not None,
+            "option-box wrap never produced its menu button",
+        )
+
+        combo.showPopup()
+        QtWait.until(
+            lambda: QtWidgets.QApplication.activePopupWidget() is not None,
+            "combo popup never took the grab",
+        )
+        container = QtWidgets.QApplication.activePopupWidget().window()
+
+        menu = row.option_box.menu
+        row.option_box.find_option(MenuOption)._widget.click()
+        QtWait.until(lambda: menu.isVisible(), "option menu never became visible")
+
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Popup)
+        self.assertIs(
+            QtWidgets.QApplication.activePopupWidget(),
+            menu,
+            "the option menu must own the popup grab, else it gets no input",
+        )
+
+        # NATIVE grab handoff (Qt 6.8+ no longer remaps mouse events off the
+        # older popup): the menu must have stolen the window-level grab from
+        # the combo's popup frame — without it, presses at the menu's own
+        # buttons are delivered to the combo view beneath (measured live over
+        # Blender / PySide6 6.11).
+        stolen = menu._grab_stolen_from
+        self.assertIsNotNone(
+            stolen, "menu did not record stealing the native grab"
+        )
+        self.assertIs(stolen(), container)
+
+        menu.hide()
+        self.assertIsNone(
+            menu._grab_stolen_from,
+            "hide must hand the native grab back to the popup underneath",
+        )
+        combo.hidePopup()
+
+    def test_show_as_popup_without_a_prior_popup_steals_no_grab(self):
+        """The native-grab handoff is scoped to the popup-over-popup case."""
+        menu = self._menu()
+        menu.add("QPushButton", setText="Act")
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: None)
+        ):
+            menu.show_as_popup()
+        self.assertIsNone(menu._grab_stolen_from)
+        menu.hide()
 
 
 # -----------------------------------------------------------------------------

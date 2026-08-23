@@ -3,9 +3,10 @@
 """Action option for OptionBox - provides customizable action buttons."""
 
 from ._options import ButtonOption
+from ._persistence import PersistedOption
 
 
-class ActionOption(ButtonOption):
+class ActionOption(PersistedOption, ButtonOption):
     """A customizable action button option.
 
     This option can execute any callable when clicked, or trigger
@@ -139,24 +140,13 @@ class ActionOption(ButtonOption):
     # Persistence
     # ------------------------------------------------------------------
 
-    def _resolve_settings_key(self):
-        """Derive the persistence key.
-
-        Priority:
-          1. Explicit ``settings_key`` string passed at construction.
-          2. Auto-derived from ``wrapped_widget.objectName()``.
-          3. ``None`` (no persistence) — when the widget has no name
-             or ``settings_key=False`` was passed.
-        """
-        if self._settings_key is False:
-            return None
-        if self._settings_key:
-            return self._settings_key
-        # Auto-derive from the wrapped widget's objectName
-        w = self.wrapped_widget
-        if w and hasattr(w, "objectName") and w.objectName():
-            return w.objectName()
-        return None
+    # ``_resolve_settings_key`` comes from PersistedOption — it was an identical
+    # copy of that mixin's, and the two had to agree for this option's keys to
+    # land beside the other plugins'. ``_init_persistence`` is NOT used, because
+    # persistence here is conditional on ``_state_cycle`` (see below); the settings
+    # handle is still built by the mixin's factory, so the storage root and the
+    # host suffix stay shared.
+    SETTINGS_APP = "ActionOption"
 
     def _init_settings(self):
         if self._settings is not None:
@@ -167,12 +157,9 @@ class ActionOption(ButtonOption):
         # plain-action case and runs synchronously per widget at register time.
         if not self._state_cycle:
             return
-        key = self._resolve_settings_key()
-        if not key:
-            return
-        from uitk.managers.settings_manager import SettingsManager
-
-        self._settings = SettingsManager(org="uitk", app="ActionOption", namespace=key)
+        self._settings = PersistedOption.settings_for(
+            self.SETTINGS_APP, self._resolve_settings_key(), self.wrapped_widget
+        )
 
     def _save_state(self):
         if not self._settings:

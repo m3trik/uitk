@@ -11,6 +11,7 @@ Covers:
 - Unknown editor names raise ``KeyError``
 - Parent resolution: handlers.marking_menu first, then sb.parent()
 """
+
 import os
 import tempfile
 import unittest
@@ -64,9 +65,7 @@ class EditorsProperty(_Base):
 
     def test_known_editor_names(self):
         names = set(self.sb.editors.names())
-        self.assertEqual(
-            names, {"style", "shortcut", "global_shortcuts", "browser"}
-        )
+        self.assertEqual(names, {"style", "shortcut", "global_shortcuts", "browser"})
 
 
 class EditorsGet(_Base):
@@ -233,62 +232,108 @@ class UiHandlerEditorsDelegate(_Base):
 
 
 class PopupContextRecovery(_Base):
-    """Verify the popup-context predicate that drives the deferred re-raise.
+    """Verify the popup-context recovery behind every uitk window's ``present``.
 
     The bug guarded against: ``QMenu`` action slots fire while the menu
     is still the active popup. After the slot returns, the menu's own
     ``hideEvent`` runs and explicitly raises whatever window was active
-    before the menu opened — which buries our just-shown editor. The
-    registry handles this by checking :meth:`_is_in_popup_context` and
-    scheduling a deferred re-raise on the next event-loop tick.
-
-    Tests target the predicate directly (not the QTimer scheduling)
-    because the browser's construction issues many incidental
-    ``QTimer.singleShot`` calls that would drown out a fixture targeted
-    at the show-time call count.
+    before the menu opened — which buries our just-shown editor. So
+    ``WindowPanel.present`` checks :meth:`WindowPanel.is_in_popup_context`
+    and schedules a deferred re-raise on the next event-loop tick; the
+    registry's ``show`` delegates to it, as do the editor's non-Switchboard
+    owners (``ShortcutManager``, the DCC macro managers), which each used to
+    hand-roll a show+raise without this recovery.
     """
 
-    def test_no_popup_context_when_no_active_popup(self):
-        from uitk.switchboard.editors import _EditorRegistry
+    def _panel(self):
+        from uitk.widgets.windowPanel import WindowPanel
 
-        widget = QtWidgets.QWidget()
-        try:
-            self.assertFalse(_EditorRegistry._is_in_popup_context(widget))
-        finally:
-            widget.deleteLater()
+        panel = WindowPanel()
+        self.addCleanup(panel.deleteLater)
+        return panel
+
+    def test_no_popup_context_when_no_active_popup(self):
+        self.assertFalse(self._panel().is_in_popup_context())
 
     def test_popup_context_true_when_other_popup_active(self):
         from unittest.mock import patch
-        from uitk.switchboard.editors import _EditorRegistry
 
-        editor = QtWidgets.QWidget()
+        panel = self._panel()
         sentinel = QtWidgets.QWidget()
-        try:
-            with patch(
-                "qtpy.QtWidgets.QApplication.activePopupWidget",
-                return_value=sentinel,
-            ):
-                self.assertTrue(_EditorRegistry._is_in_popup_context(editor))
-        finally:
-            editor.deleteLater()
-            sentinel.deleteLater()
+        self.addCleanup(sentinel.deleteLater)
+        with patch(
+            "qtpy.QtWidgets.QApplication.activePopupWidget", return_value=sentinel
+        ):
+            self.assertTrue(panel.is_in_popup_context())
 
-    def test_popup_context_false_when_editor_is_the_popup(self):
-        # If the editor itself is the active popup (e.g. a modal it
-        # spawned), we don't want to defer a self-raise — there's
-        # nothing to lose focus to.
+    def test_popup_context_false_when_the_window_is_the_popup(self):
+        # If the window itself is the active popup (e.g. a modal it spawned),
+        # we don't want to defer a self-raise — there's nothing to lose focus to.
         from unittest.mock import patch
-        from uitk.switchboard.editors import _EditorRegistry
 
-        editor = QtWidgets.QWidget()
-        try:
-            with patch(
-                "qtpy.QtWidgets.QApplication.activePopupWidget",
-                return_value=editor,
-            ):
-                self.assertFalse(_EditorRegistry._is_in_popup_context(editor))
-        finally:
-            editor.deleteLater()
+        panel = self._panel()
+        with patch("qtpy.QtWidgets.QApplication.activePopupWidget", return_value=panel):
+            self.assertFalse(panel.is_in_popup_context())
+
+    def _present(self, panel, popup=None):
+        """``panel.present()`` with every deferred callback run inline, returning
+        the raise/activate call log.
+
+        Asserting on the *effect* rather than on how many callbacks got
+        scheduled: ``show()`` itself schedules incidental ``singleShot`` work
+        (``_fit_to_content``), so a count is noise — the question is whether the
+        window gets raised a second time after the menu closes.
+        """
+        from unittest.mock import patch
+        from qtpy import QtCore
+
+        calls = []
+        panel.raise_ = lambda: calls.append("raise")
+        panel.activateWindow = lambda: calls.append("activate")
+        popup_patch = patch(
+            "qtpy.QtWidgets.QApplication.activePopupWidget", return_value=popup
+        )
+        with (
+            popup_patch,
+            patch.object(
+                QtCore.QTimer, "singleShot", staticmethod(lambda _ms, cb: cb())
+            ),
+        ):
+            self.assertIs(panel.present(), panel, "present returns the window")
+        return calls
+
+    def test_present_re_raises_after_the_popup_closes(self):
+        """The synchronous raise happens first (callers/tests see it visible
+        immediately); the deferred one runs once the menu has closed."""
+        panel = self._panel()
+        sentinel = QtWidgets.QWidget()
+        self.addCleanup(sentinel.deleteLater)
+        calls = self._present(panel, popup=sentinel)
+        self.assertTrue(panel.isVisible())
+        self.assertEqual(calls, ["raise", "activate", "raise", "activate"])
+
+    def test_present_raises_once_without_a_popup(self):
+        panel = self._panel()
+        self.assertEqual(self._present(panel), ["raise", "activate"])
+
+    def test_present_can_show_without_raising(self):
+        panel = self._panel()
+        calls = []
+        panel.raise_ = lambda: calls.append("raise")
+        panel.present(raise_window=False)
+        self.assertTrue(panel.isVisible())
+        self.assertEqual(calls, [])
+
+    def test_registry_show_delegates_to_present(self):
+        """The registry must not re-derive the presentation — a second copy is
+        how the other three owners drifted."""
+        from unittest.mock import patch
+
+        sb = self.sb
+        editor = sb.editors.get("style")
+        with patch.object(type(editor), "present", return_value=editor) as present:
+            self.assertIs(sb.editors.show("style"), editor)
+        present.assert_called_once_with(raise_window=True)
 
 
 class ParentResolution(_Base):

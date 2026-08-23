@@ -2,7 +2,7 @@
 
 _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_registry.py`._
 
-_Generated: 2026-08-20_
+_Generated: 2026-08-23_
 
 ## Index
 
@@ -162,6 +162,7 @@ Registry helpers for bridge parameter dicts.
 - **[`class Parameters(_ParametersInternal)`](uitk/uitk/bridge/parameters.py#L38)** — Registry helpers operating over a ``{key: AttributeSpec}`` PARAMS dict.
   - `Parameters.scope_spec(default: str = 'selected', section: str = 'Export') -> AttributeSpec` *(static)* — The shared **Scope** parameter every hand-off bridge exposes.
   - `Parameters.shader_type_spec(default: str = 'stingray', section: str = '') -> AttributeSpec` *(static)* — The shared **Rebuild Shader** parameter a material-rebuilding bridge exposes.
+  - `Parameters.carrier_spec(default: str = 'fbx', section: str = '') -> AttributeSpec` *(static)* — The shared **Format** parameter: which interchange carrier the payload
   - `Parameters.referenced_keys(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]` *(static)* — Return registry keys whose ``__KEY__`` token appears in *script_text*.
   - `Parameters.defaults(params: Dict[str, AttributeSpec]) -> Dict[str, Any]` *(static)* — Return ``{key: default}`` for every registered parameter.
   - `Parameters.render_context(values: Dict[str, Any], params: Dict[str, AttributeSpec], formatter: Callable[[AttributeSpec, Any], str] = Formatters.python_literal) -> Dict[str, str]` *(static)* — Format *values* through *formatter* for ``StrUtils.replace_delimited``.
@@ -622,7 +623,7 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
 
 Mixin that exposes the bundled editor windows on the Switchboard.
 
-- **[`class SwitchboardEditorsMixin`](uitk/uitk/switchboard/editors.py#L227)** — Adds an ``editors`` property to Switchboard exposing the bundled editors.
+- **[`class SwitchboardEditorsMixin`](uitk/uitk/switchboard/editors.py#L200)** — Adds an ``editors`` property to Switchboard exposing the bundled editors.
   - `SwitchboardEditorsMixin.editors(self) -> _EditorRegistry` *(property)* — Cached editor registry — see :class:`_EditorRegistry`.
 
 <a id="switchboard--history"></a>
@@ -709,7 +710,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 <a id="switchboard--utils"></a>
 ### `switchboard/utils.py`
 
-- **[`class OverrideCursorGuard(QtCore.QObject)`](uitk/uitk/switchboard/utils.py#L20)** — Owns one application override cursor and guarantees its removal.
+- **[`class OverrideCursorGuard(QtCore.QObject)`](uitk/uitk/switchboard/utils.py#L21)** — Owns one application override cursor and guarantees its removal.
   - `OverrideCursorGuard.shape(self)` *(property)* — The cursor shape this guard owns.
   - `OverrideCursorGuard.holding(self) -> bool` *(property)* — True while this guard holds an application override cursor.
   - `OverrideCursorGuard.apply(self) -> None` — Push the override (idempotent) and start the watchdog.
@@ -718,7 +719,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `OverrideCursorGuard.is_stale(cls, cursor) -> bool` *(class)* — True if ``cursor`` is a guard-owned shape that no guard holds —
   - `OverrideCursorGuard.notify_stack_drained(cls) -> None` *(class)* — Drop every guard's ownership because the whole stack was dropped
   - `OverrideCursorGuard.reconcile(cls) -> None` *(class)* — Drop every orphaned guard cursor from the application stack,
-- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L197)** — Utility methods for widget positioning, centering, and screen geometry.
+- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L198)** — Utility methods for widget positioning, centering, and screen geometry.
   - `SwitchboardUtilsMixin.pop_override_cursor_stack(app)` *(static)* — Pop the whole application override-cursor stack.
   - `SwitchboardUtilsMixin.push_override_cursor_stack(app, saved)` *(static)* — Re-push cursors captured by :meth:`pop_override_cursor_stack`,
   - `SwitchboardUtilsMixin.get_cursor_offset_from_center(widget)` *(static)* — Get the relative position of the cursor with respect to the center of a given widget.
@@ -729,7 +730,8 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardUtilsMixin.create_button_groups(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]` — Create button groups for a set of widgets.
   - `SwitchboardUtilsMixin.toggle_multi(self, ui, trigger=None, signal=None, apply_now=True, **kwargs)` — Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…
   - `SwitchboardUtilsMixin.enable_when(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)` — Keep *targets* enabled exactly while *trigger*'s value satisfies
-  - `SwitchboardUtilsMixin.refresh_dependencies(self, ui) -> None` — Re-apply every :meth:`enable_when` rule on *ui* — for bulk value
+  - `SwitchboardUtilsMixin.text_from(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], formatter: Callable[..., str], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]` — Keep *targets*' text derived from *sources* — a self-labelling widget,
+  - `SwitchboardUtilsMixin.refresh_dependencies(self, ui) -> None` — Re-apply every declarative rule on *ui* — :meth:`enable_when`'s and
   - `SwitchboardUtilsMixin.connect_multi(self, ui, widgets, signals, slots)` — Connect multiple signals to multiple slots at once.
   - `SwitchboardUtilsMixin.add_reset_buttons(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), **set_reset_kwargs)` — Give each matching value widget a per-field *reset-to-default* button.
   - `SwitchboardUtilsMixin.link_spinboxes(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), icon: str = 'lock', icon_off: str = 'unlock', tooltip_on: str = 'Linked. Changing this shifts the other linked fields by the same amount. Click to unlink.', tooltip_off: str = 'Unlinked. Click to link this field so it moves with the others.', initial: bool = False, active_color: str = _LOCK_ACTIVE_COLOR, disabled_color: str = _LOCK_INACTIVE_COLOR, **set_toggle_kwargs)` — Give each spin box a *lock* toggle that links locked boxes by an equal delta.
@@ -1018,8 +1020,9 @@ Adapter that lets the unified :class:`ShortcutEditor` render a standalone
   - `ShortcutEditor.export_shortcuts(self, loaded_only: bool = False) -> dict` — Export all user-customised shortcuts across loaded UIs.
   - `ShortcutEditor.import_shortcuts(self, data: dict) -> int` — Bulk-apply shortcut bindings from a preset dict.
   - `ShortcutEditor.showEvent(self, event)` — Refresh data each time the editor is shown.
-  - `ShortcutEditor.refresh_ui_list(self)` — Populate the UI combobox: special views first, then every registered UI.
+  - `ShortcutEditor.refresh_ui_list(self)` — Populate the UI combobox: special views first, then the listed UIs.
   - `ShortcutEditor.populate(self)` — Populate the table with shortcuts for the selected UI.
+  - `ShortcutEditor.open_over_facade(cls, facade_factory, *, existing=None, parent=None, hide_columns=(), window_title=None, collision_checker=None) -> 'ShortcutEditor'` *(class)* — Open — or re-show — the one editor over a Switchboard-shaped facade.
   - `ShortcutEditor.set_columns_hidden(self, columns, hidden: bool = True) -> None` — Show/hide table columns for a focused editor launch.
   - `ShortcutEditor.reset_shortcut(self, ui, method_name, default_seq, default_scope='window')` — Reset sequence and scope to decorator/registration defaults.
   - `ShortcutEditor.scope_at(self, row: int)` — The scope name stored on a row's Scope cell (``None`` for a message row).
@@ -1697,19 +1700,21 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
 
 Shared persistence wiring for OptionBox plugins.
 
-- **[`class PersistedOption`](uitk/uitk/widgets/optionBox/options/_persistence.py#L15)** — Mixin that adds ``settings_key`` resolution + lazy SettingsManager.
+- **[`class PersistedOption`](uitk/uitk/widgets/optionBox/options/_persistence.py#L28)** — Mixin that adds ``settings_key`` resolution + lazy SettingsManager.
+  - `PersistedOption.host_suffix_for(widget) -> str` *(static)* — Host-context suffix (``"_maya"`` / ``"_blender"`` / ``""``) for *widget*.
+  - `PersistedOption.settings_for(app: str, key: str, widget=None) -> Optional['SettingsManager']` *(static)* — A :class:`SettingsManager` for an option plugin's persisted state.
 
 <a id="widgets--optionBox--options--action"></a>
 ### `widgets/optionBox/options/action.py`
 
 Action option for OptionBox - provides customizable action buttons.
 
-- **[`class ActionOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/action.py#L8)** — A customizable action button option.
+- **[`class ActionOption(PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/action.py#L9)** — A customizable action button option.
   - `ActionOption.create_widget(self)` — Create the action button widget.
   - `ActionOption.set_action_handler(self, handler)` — Set or update the action handler.
   - `ActionOption.current_state(self)` *(property)* — The current state index (0-based).
   - `ActionOption.set_states(self, states)` — Set multiple cycling states.
-- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L226)** — A menu action option specifically for showing menus.
+- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L213)** — A menu action option specifically for showing menus.
   - `MenuOption.set_menu(self, menu)` — Set or update the menu.
   - `MenuOption.set_wrapped_widget(self, widget)` — Update wrapped widget and reparent menu if needed.
 
@@ -1790,9 +1795,9 @@ Option Menu - A dropdown menu option for OptionBox.
 
 Pin Values option for OptionBox - allows pinning/saving widget values.
 
-- **[`class PinnedValueEntry`](uitk/uitk/widgets/optionBox/options/pin_values.py#L9)** — Represents a pinned value with an optional alias.
+- **[`class PinnedValueEntry`](uitk/uitk/widgets/optionBox/options/pin_values.py#L10)** — Represents a pinned value with an optional alias.
   - `PinnedValueEntry.display_text(self)` *(property)* — Get the text to display (alias if set, otherwise value).
-- **[`class PinnedValuesPopup(QtCore.QObject)`](uitk/uitk/widgets/optionBox/options/pin_values.py#L41)** — A popup that displays pinned values using the Menu widget.
+- **[`class PinnedValuesPopup(QtCore.QObject)`](uitk/uitk/widgets/optionBox/options/pin_values.py#L42)** — A popup that displays pinned values using the Menu widget.
   - `PinnedValuesPopup.menu(self)` *(property)* — Get the underlying Menu widget.
   - `PinnedValuesPopup.eventFilter(self, watched, event)` — Close popup when any parent widget is hidden or a window-ancestor moves.
   - `PinnedValuesPopup.connect_signals(self, on_value_pinned=None, on_value_unpinned=None, on_value_selected=None, on_alias_changed=None)` — Connect signal handlers.
@@ -1806,7 +1811,7 @@ Pin Values option for OptionBox - allows pinning/saving widget values.
   - `PinnedValuesPopup.add_separator(self)` — Add a separator line.
   - `PinnedValuesPopup.add_pinned_value(self, entry)` — Add a pinned value row.
   - `PinnedValuesPopup.add_empty_message(self)` — Add a message when there are no pinned values.
-- **[`class PinValuesOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/pin_values.py#L353)** — A pin button option that manages pinned widget values.
+- **[`class PinValuesOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/pin_values.py#L354)** — A pin button option that manages pinned widget values.
   - `PinValuesOption.create_widget(self)` — Create the pin button widget.
   - `PinValuesOption.pinned_values(self)` *(property)* — Get the list of pinned values (raw values, not entries).
   - `PinValuesOption.pinned_entries(self)` *(property)* — Get the list of PinnedValueEntry objects.
@@ -1819,7 +1824,7 @@ Pin Values option for OptionBox - allows pinning/saving widget values.
 
 Recent Values option for OptionBox — shows a selectable history list.
 
-- **[`class RecentValuesPopup(QtCore.QObject)`](uitk/uitk/widgets/optionBox/options/recent_values.py#L16)** — Popup that displays recent values using the Menu widget.
+- **[`class RecentValuesPopup(QtCore.QObject)`](uitk/uitk/widgets/optionBox/options/recent_values.py#L17)** — Popup that displays recent values using the Menu widget.
   - `RecentValuesPopup.menu(self)` *(property)* — Get the underlying Menu widget.
   - `RecentValuesPopup.eventFilter(self, watched, event)` — Close popup when any parent widget is hidden or a window-ancestor moves.
   - `RecentValuesPopup.connect_signals(self, on_value_selected=None, on_value_removed=None)` — Connect signal handlers.
@@ -1831,7 +1836,7 @@ Recent Values option for OptionBox — shows a selectable history list.
   - `RecentValuesPopup.width(self)`
   - `RecentValuesPopup.add_recent_value(self, value, display_text=None)` — Add a recent-value row.
   - `RecentValuesPopup.add_empty_message(self)`
-- **[`class RecentValuesOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/recent_values.py#L180)** — A history button that manages recent widget values.
+- **[`class RecentValuesOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/recent_values.py#L181)** — A history button that manages recent widget values.
   - `RecentValuesOption.store(self)` *(property)* — The backing :class:`RecentValuesStore` (shareable across presenters).
   - `RecentValuesOption.create_widget(self)`
   - `RecentValuesOption.record(self, value=None)` — Record a value into the recent list.
@@ -2515,7 +2520,7 @@ Scrollable rich-text viewer window.
 
 Themed top-level uitk window: Header → body → Footer.
 
-- **[`class WindowPanel(QtWidgets.QWidget)`](uitk/uitk/widgets/windowPanel.py#L26)** — Themed top-level window with a Header / body / Footer layout.
+- **[`class WindowPanel(QtWidgets.QWidget)`](uitk/uitk/widgets/windowPanel.py#L27)** — Themed top-level window with a Header / body / Footer layout.
   - `WindowPanel.style(self) -> 'StyleSheet'` *(property)* — Lazy :class:`StyleSheet` bound to this panel.
   - `WindowPanel.showEvent(self, event)`
   - `WindowPanel.persist_geometry(self, settings, key: str = 'window_geometry') -> None` — Enable saving / restoring this window's geometry via *settings*.
@@ -2526,6 +2531,8 @@ Themed top-level uitk window: Header → body → Footer.
   - `WindowPanel.moveEvent(self, event)` — Debounce-save geometry on move once persistence is enabled.
   - `WindowPanel.hideEvent(self, event)` — Persist geometry on hide — the editors' normal 'close' path.
   - `WindowPanel.closeEvent(self, event)` — Persist geometry on close.
+  - `WindowPanel.present(self, raise_window: bool = True) -> 'WindowPanel'` — Show this window, raise + activate it, and return it.
+  - `WindowPanel.is_in_popup_context(self) -> bool` — True when an active popup will steal focus back from this window.
   - `WindowPanel.header(self)` *(property)* — The :class:`Header` widget at the top.
   - `WindowPanel.footer(self)` *(property)* — The :class:`Footer` widget at the bottom.
   - `WindowPanel.body_layout(self)` *(property)* — ``QVBoxLayout`` for panel content.

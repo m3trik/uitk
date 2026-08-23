@@ -600,24 +600,17 @@ class ShortcutManager:
         )
         from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
 
-        if getattr(self, "_editor", None) is not None:
-            try:
-                self._editor.show()
-                self._editor.raise_()
-                return
-            except RuntimeError:
-                pass  # underlying C++ editor was destroyed — rebuild below
-        facade = ManagerSwitchboardFacade(self, ui_name=title)
-        self._editor = ShortcutEditor(facade, parent=parent or self.widget)
         # Focused-view column tailoring: a manager binding's description is
         # already its Action-column name (Description would be empty), and its
         # scope is fixed by the owner widget (not per-row editable, so the Scope
         # column's toggles would all be inert) — hide both.
-        self._editor.set_columns_hidden(
-            (self._editor.COL_DESCRIPTION, self._editor.COL_SCOPE)
+        self._editor = ShortcutEditor.open_over_facade(
+            lambda: ManagerSwitchboardFacade(self, ui_name=title),
+            existing=getattr(self, "_editor", None),
+            parent=parent or self.widget,
+            hide_columns=(ShortcutEditor.COL_DESCRIPTION, ShortcutEditor.COL_SCOPE),
+            window_title=title,
         )
-        self._editor.setWindowTitle(title)
-        self._editor.show()
 
     def get_shortcuts_info(self) -> Dict[str, str]:
         """Get information about all registered shortcuts

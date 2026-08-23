@@ -13,6 +13,7 @@ preset-enabled subclass. Keeping presets out of the base makes
 ``WindowPanel`` usable for read-only viewers and other non-editor
 surfaces without dragging in editor-specific machinery.
 """
+
 from typing import TYPE_CHECKING
 
 from qtpy import QtWidgets, QtCore
@@ -338,6 +339,53 @@ class WindowPanel(QtWidgets.QWidget):
         """Persist geometry on close."""
         self.save_window_geometry()
         super().closeEvent(event)
+
+    def present(self, raise_window: bool = True) -> "WindowPanel":
+        """Show this window, raise + activate it, and return it.
+
+        The one way a uitk window is brought up, because a plain ``show()``
+        loses to the popup case below and every caller would otherwise
+        re-derive it (three did: ``sb.editors.show``, ``ShortcutManager``, and
+        the DCC macro managers — only the first got it right).
+
+        Popup-context recovery
+        ----------------------
+        When this runs from inside a ``QMenu`` action slot (the user clicked a
+        menu item which fired our slot), the menu's ``hideEvent`` runs *after*
+        the slot returns and explicitly ``raise_()`` / ``activateWindow()``-s
+        the previously-active window — burying the window just shown. So when
+        an active popup is present, a re-raise is scheduled on the next
+        event-loop tick, once the menu has finished closing. The synchronous
+        show + raise still happens first, so callers and tests see the window
+        become visible immediately.
+
+        Parameters:
+            raise_window: When False, show without raising / activating (for a
+                caller that is only un-hiding a window, not bringing it forward).
+
+        Returns:
+            ``self`` — so a caller can cache what it just presented.
+        """
+        self.show()
+        if raise_window:
+            self.raise_()
+            self.activateWindow()
+            if self.is_in_popup_context():
+                QtCore.QTimer.singleShot(
+                    0, lambda: (self.raise_(), self.activateWindow())
+                )
+        return self
+
+    def is_in_popup_context(self) -> bool:
+        """True when an active popup will steal focus back from this window.
+
+        True iff there is currently an active popup widget that is not this
+        window — meaning the popup's own hide flow will run after the caller
+        returns and re-raise its previously-active window, so this window needs
+        the deferred re-raise :meth:`present` schedules.
+        """
+        active_popup = QtWidgets.QApplication.activePopupWidget()
+        return active_popup is not None and active_popup is not self
 
     @property
     def header(self):

@@ -21,6 +21,7 @@ Mirrors the spirit of :class:`mayatk.MayaUiHandler`'s "use what's given,
 otherwise stand one up" pattern; the mixin doesn't need a host instance
 because the Switchboard itself is the ambient host.
 """
+
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -120,50 +121,22 @@ class _EditorRegistry:
     def show(self, name: str, *, raise_window: bool = True) -> "QtWidgets.QWidget":
         """Show, optionally raise / activate, and return the named editor.
 
-        Folds the four-step pattern from every caller (cache check,
-        deletion probe, show, raise) into one call.
-
-        Popup-context recovery
-        ----------------------
-        When this is called from inside a ``QMenu`` action slot (i.e. the
-        user clicked a menu item which fired our slot), the menu's
-        ``hideEvent`` runs *after* the slot returns and explicitly
-        ``raise_()`` / ``activateWindow()``-s the previously-active
-        window — which buries our just-shown editor. To survive that,
-        we detect the active-popup case via :meth:`_is_in_popup_context`
-        and schedule a deferred re-raise on the next event-loop tick,
-        after the menu has finished closing. The synchronous show +
-        raise still happens first so callers and tests see the window
-        become visible immediately.
+        Folds the four-step pattern from every caller (cache check, deletion
+        probe, show, raise) into one call. The presentation half — including
+        the popup-context recovery a menu-triggered editor needs — is
+        :meth:`~uitk.widgets.windowPanel.WindowPanel.present`, shared with
+        every other uitk window (a non-``WindowPanel`` editor, should one ever
+        be registered, falls back to a plain show).
         """
-        from qtpy import QtCore
-
         editor = self.get(name)
-        editor.show()
+        present = getattr(editor, "present", None)
+        if callable(present):
+            return present(raise_window=raise_window)
+        editor.show()  # not a WindowPanel — nothing to recover from
         if raise_window:
             editor.raise_()
             editor.activateWindow()
-            if self._is_in_popup_context(editor):
-                QtCore.QTimer.singleShot(
-                    0,
-                    lambda e=editor: (e.raise_(), e.activateWindow()),
-                )
         return editor
-
-    @staticmethod
-    def _is_in_popup_context(editor) -> bool:
-        """True when an active popup will steal focus back from *editor*.
-
-        Returns True iff there is currently an active popup widget that
-        is *not* the editor itself — meaning the popup's own hide flow
-        will run after our caller returns and re-raise its
-        previously-active window. The editor needs a deferred re-raise
-        to survive that.
-        """
-        from qtpy import QtWidgets
-
-        active_popup = QtWidgets.QApplication.activePopupWidget()
-        return active_popup is not None and active_popup is not editor
 
     # ── Property shortcuts ──────────────────────────────────────────────────
 

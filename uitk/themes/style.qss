@@ -548,21 +548,26 @@ QLabel:disabled {
     border: {BORDER_W} solid {DISABLED_BACKGROUND};
 }
 
-/* WidgetComboBox popup row caption (the opt-in `set_row_label`). Reads as a
-   caption beside the control, so it drops the base QLabel chrome -- the row's
+/* Field caption -- a label that names the control beside it instead of being a
+   field of its own: the WidgetComboBox popup row label (the opt-in
+   `set_row_label`) and any label opting in with a `caption` property (a `.ui`
+   sets it as a dynamic property). Both drop the base QLabel chrome -- the row's
    own background must show through, and a bordered box beside every field
    would fight the control it describes. */
-QLabel#widgetComboBoxRowLabel {
+QLabel#widgetComboBoxRowLabel,
+QLabel[caption="true"] {
     background: transparent;
     border: none;
     color: {TEXT_COLOR};
     padding: 0px {TEXT_INSET} 0px 0px;
 }
-QLabel#widgetComboBoxRowLabel:hover {
+QLabel#widgetComboBoxRowLabel:hover,
+QLabel[caption="true"]:hover {
     background: transparent;
     border: none;
 }
-QLabel#widgetComboBoxRowLabel:disabled {
+QLabel#widgetComboBoxRowLabel:disabled,
+QLabel[caption="true"]:disabled {
     background: transparent;
     border: none;
     color: {TEXT_DISABLED};

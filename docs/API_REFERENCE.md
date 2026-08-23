@@ -107,7 +107,8 @@ INIT_SUFFIX = "_init"
 | `get_cursor_offset_from_center(widget) -> QPoint` | Static — `QCursor.pos() - widget.rect().center()` |
 | `toggle_multi(ui, trigger=None, signal=None, apply_now=True, **kwargs)` | Batch-set boolean properties on named widgets; with `trigger`, re-apply an `on_<state>` mapping on its change signal (and once at wire time) |
 | `enable_when(ui, targets, trigger, condition=True, signal=None, value=None, invert=False)` | Keep `targets` enabled exactly while `trigger`'s value satisfies `condition` (callable / value / set / truthiness); multi-trigger, order-independent, idempotent |
-| `refresh_dependencies(ui)` | Re-apply every `enable_when` rule after a bulk blocked-signal change (a preset load) |
+| `text_from(ui, target, sources, formatter, signal=None, value=None)` | Keep `target`'s text derived from `sources` — the button names its own outcome instead of hiding it behind a gear icon; re-applies on a blocked-signal preset load like `enable_when` |
+| `refresh_dependencies(ui)` | Re-apply every declarative rule — `enable_when`'s and `text_from`'s — after a bulk blocked-signal change (a preset load) |
 | `connect_multi(ui, widgets, signals, slots)` | Batch signal-slot connection |
 | `create_button_groups(ui, *args, allow_deselect=False, allow_multiple=False) -> list[QButtonGroup]` | Radio groups from ranges like `"chk_001-3"` |
 | `unpack_names(name_string) -> list[str]` | Class method — expand `"chk021-23,25,tb001"` into individual names |
