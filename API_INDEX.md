@@ -2,8 +2,6 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
-_Generated: 2026-08-23_
-
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
   - methods: configure_high_dpi

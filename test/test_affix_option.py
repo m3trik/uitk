@@ -24,6 +24,7 @@ app = setup_qt_application()
 from uitk.widgets.lineEdit import LineEdit
 from uitk.widgets.slider import Slider
 from uitk.widgets.optionBox.options.affix import AffixOption
+from uitk.widgets.optionBox.options.clear import ClearOption
 
 
 def _icon_name(widget):
@@ -239,6 +240,19 @@ class TestAffixOptionManager(QtBaseTestCase):
         picker = le.option_box.find_option(AffixOption).widget
         button = le.option_box.find_option(ToggleOption).widget
         self.assertLess(widgets.index(picker), widgets.index(button))
+
+    def test_clear_sits_left_of_affix(self):
+        """The clear button leads the affix picker (and every other button)."""
+        le = self.track_widget(LineEdit())
+        le.option_box.clear_option = True
+        le.option_box.set_affix()
+        self.track_widget(le.option_box.container)
+
+        layout = le.option_box.container.layout()
+        widgets = [layout.itemAt(i).widget() for i in range(layout.count())]
+        clear = le.option_box.find_option(ClearOption).widget
+        picker = le.option_box.find_option(AffixOption).widget
+        self.assertLess(widgets.index(clear), widgets.index(picker))
 
 
 if __name__ == "__main__":

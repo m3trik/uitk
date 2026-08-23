@@ -24,7 +24,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         self._menu = None
         # Shared default placement (see DEFAULT_OPTION_ORDER) -- "value" first
         # so an inline ValueOption field sits flush against the wrapped widget,
-        # ahead of every icon button.
+        # ahead of every icon button, then "clear" leading the icon buttons.
         self._option_order = list(DEFAULT_OPTION_ORDER)
         self._pending_options = []  # Store options until wrapping is needed
         self._wrap_retry_scheduled = False  # Prevent duplicate timer scheduling

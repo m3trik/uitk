@@ -1,7 +1,6 @@
 {
   "name": "uitk",
   "source_root": "uitk/uitk",
-  "generated_at": "2026-08-23",
   "modules": [
     {
       "relpath": "_bootstrap.py",
@@ -983,7 +982,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Updates the set of child widgets of the parent.",
-              "line": 295,
+              "line": 301,
               "deprecated": false
             },
             {
@@ -992,7 +991,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Drive enter/leave + grab handoff for whatever's under the cursor.",
-              "line": 337,
+              "line": 348,
               "deprecated": false
             },
             {
@@ -1001,7 +1000,7 @@
               "kind": "staticmethod",
               "signature": "(widget)",
               "summary": "Return True if the Qt widget and its C++ object still exist.",
-              "line": 396,
+              "line": 406,
               "deprecated": false
             },
             {
@@ -1010,7 +1009,7 @@
               "kind": "method",
               "signature": "(self, widget, event)",
               "summary": "Filter mouse move and release events.",
-              "line": 555,
+              "line": 587,
               "deprecated": false
             }
           ]
@@ -10585,7 +10584,7 @@
         {
           "name": "OptionBoxContainer",
           "summary": "Container widget that wraps a widget with option buttons.",
-          "line": 94,
+          "line": 98,
           "bases": [
             "QtWidgets.QWidget"
           ],
@@ -10596,7 +10595,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 124,
+              "line": 128,
               "deprecated": false
             },
             {
@@ -10605,7 +10604,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Re-fit to content when shown without a managing parent layout.",
-              "line": 129,
+              "line": 133,
               "deprecated": false
             },
             {
@@ -10614,7 +10613,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "Watch the wrapped widget for enabled/visibility and height changes.",
-              "line": 227,
+              "line": 231,
               "deprecated": false
             }
           ]
@@ -10622,7 +10621,7 @@
         {
           "name": "OptionBox",
           "summary": "Plugin-based option manager that wraps widgets with action buttons.",
-          "line": 292,
+          "line": 296,
           "bases": [],
           "members": [
             {
@@ -10631,7 +10630,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Add an option plugin instance.",
-              "line": 323,
+              "line": 327,
               "deprecated": false
             },
             {
@@ -10640,7 +10639,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Remove an option plugin instance.",
-              "line": 334,
+              "line": 338,
               "deprecated": false
             },
             {
@@ -10649,7 +10648,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get all registered option plugins.",
-              "line": 341,
+              "line": 345,
               "deprecated": false
             },
             {
@@ -10658,7 +10657,7 @@
               "kind": "method",
               "signature": "(self, order)",
               "summary": "Update the sort order and re-lay-out existing options in place.",
-              "line": 345,
+              "line": 349,
               "deprecated": false
             },
             {
@@ -10667,7 +10666,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get clear button state.",
-              "line": 641,
+              "line": 645,
               "deprecated": false
             },
             {
@@ -10676,7 +10675,7 @@
               "kind": "method",
               "signature": "(self, visible=True)",
               "summary": "Enable or disable the clear button.",
-              "line": 676,
+              "line": 680,
               "deprecated": false
             },
             {
@@ -10685,7 +10684,7 @@
               "kind": "method",
               "signature": "(self, wrapped_widget: QtWidgets.QWidget, frameless=False)",
               "summary": "Wrap target widget with option buttons.",
-              "line": 696,
+              "line": 700,
               "deprecated": false
             }
           ]

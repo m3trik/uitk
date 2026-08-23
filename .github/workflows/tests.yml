@@ -35,13 +35,29 @@ jobs:
           # when chip buttons are deleteLater()'d during processEvents()).
           # 6.10.x is the last stable line on the headless runner.
           pip install pytest pytest-timeout qtpy 'PySide6<6.11'
-          # --no-cache-dir + --upgrade forces a fresh resolution from PyPI for
-          # in-house deps. Without this, pip's wheel cache can return a stale
-          # pythontk that lacks newly-shipped APIs (the canonical-module-path
-          # logic), making CI fail on tests the editable uitk source expects
-          # to work.
-          pip install --no-cache-dir --upgrade pythontk mayatk
-          pip install -e . --no-deps
+          # mayatk is a TEST fixture here, not a declared dependency (several
+          # tests import stable mayatk symbols); it is downstream of uitk, so
+          # it is always the last PUBLISHED mayatk and has no floor to honor.
+          pip install --no-cache-dir mayatk
+          # WITH deps, in a retry loop. pip resolves the floors declared in
+          # pyproject.toml (`pythontk>=X`), so a stale PyPI CDN edge that still
+          # lists the previous release fails LOUDLY with "No matching
+          # distribution" and is retried -- instead of silently installing the
+          # old version and running this suite against code that lacks the new
+          # symbols. Measured 2026-08-23: the bare-name install resolved
+          # pythontk 0.9.28 82 s after 0.9.30 was uploaded, and the only failure
+          # was two tests importing symbols that exist only in 0.9.30.
+          # --no-cache-dir: pip's HTTP cache can hold the stale index page too.
+          for attempt in 1 2 3 4 5 6; do
+            if pip install --no-cache-dir -e "."; then break; fi
+            if [ "$attempt" -lt 6 ]; then
+              echo "::warning::editable install attempt $attempt failed (index propagation lag?); retrying in 30s"
+              sleep 30
+            else
+              echo "::error::editable install failed after $attempt attempts"
+              exit 1
+            fi
+          done
 
       - name: Run tests
         # mayatk installed because several tests import stable mayatk symbols
