@@ -373,6 +373,26 @@ class MainWindow(
                 )
             return
 
+        # Qt reserves the "qt_" objectName prefix for the internals a compound
+        # control builds for itself -- a spin box's editor, a scroll area's
+        # viewport, a splitter's handle. Registering them is not just noise:
+        # EVERY QAbstractSpinBox names its editor "qt_spinbox_lineedit", so a
+        # panel's spin boxes all collapsed onto one state key and the
+        # last-edited field's text was restored into all the others (then
+        # persisted under their real keys by the resulting valueChanged).
+        # Skipping costs nothing -- the owning widget is registered in its own
+        # right, and _guard_editing_shortcuts reaches an internal editor
+        # through it via widget.lineEdit() -- and register_children still
+        # RECURSES past these, so a user widget inside one is unaffected.
+        # Same rule the switchboard applies to slot discovery / .ui parsing
+        # (SwitchboardShortcutMixin).
+        if widget.objectName().startswith("qt_"):
+            self.logger.debug(
+                f"[register_widget]: skipping Qt-internal widget "
+                f"{widget.objectName()!r}"
+            )
+            return
+
         widget.ui = self
         widget.base_name = lambda: self.sb.get_base_name(widget.objectName())
         widget.legal_name = lambda: self.sb.convert_to_legal_name(widget.objectName())

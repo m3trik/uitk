@@ -16,7 +16,7 @@ Run standalone: python -m test.test_mainwindow
 """
 
 import unittest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
 
 from conftest import QtBaseTestCase, setup_qt_application
 
@@ -392,6 +392,130 @@ class TestMainWindowWidgetRegistration(QtBaseTestCase):
 
         window.register_widget(widget)
         self.assertIs(window.b023, widget)
+
+
+class TestQtInternalWidgetsAreNotRegistered(QtBaseTestCase):
+    """Qt's own "qt_"-prefixed internals must never register as panel widgets.
+
+    A compound control builds internal children with reserved objectNames -- a
+    spin box's editor is always "qt_spinbox_lineedit", a scroll area's viewport
+    always "qt_scrollarea_viewport". Registering them made every spin box on a
+    panel share ONE state key, so the last-edited field's text was restored
+    into all the others (live on duplicate_linear: Weight Bias 1 instead of
+    0.5, Weight Curve 1 instead of 10) and then persisted under their real keys
+    by the resulting valueChanged.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+        # MainWindow.register_widget looks default_signals up by the resolved
+        # derived_type, which is a CLASS -- the mock's string keys never match,
+        # so state keys would all come back None and prove nothing.
+        self.sb.default_signals[QtWidgets.QDoubleSpinBox] = "valueChanged"
+        self.sb.default_signals[QtWidgets.QLineEdit] = "textChanged"
+
+    def _window_with(self, *widgets):
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("QtInternals", self.sb))
+        central = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(central)
+        window.setCentralWidget(central)
+        for w in widgets:
+            central.layout().addWidget(w)
+        return window
+
+    def test_spinbox_editor_is_not_registered(self):
+        """The internal editor is skipped; the spin box itself still registers."""
+        box = QtWidgets.QDoubleSpinBox()
+        box.setObjectName("s000")
+        window = self._window_with(box)
+
+        window.register_children()
+
+        editor = box.findChild(QtWidgets.QLineEdit, "qt_spinbox_lineedit")
+        self.assertIsNotNone(editor, "Qt no longer names the spin-box editor")
+        self.assertIn(box, window.widgets)
+        self.assertNotIn(editor, window.widgets)
+
+    def test_register_widget_rejects_a_qt_internal_name_directly(self):
+        """The guard lives in register_widget, so every entry point is covered."""
+        box = QtWidgets.QDoubleSpinBox()
+        box.setObjectName("s000")
+        window = self._window_with(box)
+        editor = box.findChild(QtWidgets.QLineEdit, "qt_spinbox_lineedit")
+
+        window.register_widget(editor)
+
+        self.assertNotIn(editor, window.widgets)
+
+    def test_registration_still_recurses_past_an_internal_container(self):
+        """A user widget inside a scroll area's viewport must still register."""
+        area = QtWidgets.QScrollArea()
+        area.setObjectName("scroll000")
+        content = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(content)
+        inner = QtWidgets.QPushButton("Inner")
+        inner.setObjectName("b000")
+        content.layout().addWidget(inner)
+        area.setWidget(content)
+        window = self._window_with(area)
+
+        window.register_children()
+
+        viewport = area.viewport()
+        self.assertEqual(viewport.objectName(), "qt_scrollarea_viewport")
+        self.assertNotIn(viewport, window.widgets)
+        self.assertIn(inner, window.widgets, "recursion must pass through internals")
+
+    def test_no_two_registered_widgets_share_a_state_key(self):
+        """A shared key is what let one field's value overwrite another's.
+
+        Two spin boxes carry two editors both named "qt_spinbox_lineedit"; with
+        them registered, both resolve to "qt_spinbox_lineedit/textChanged" and
+        whichever saved last is restored into the other's field.
+        """
+        a = QtWidgets.QDoubleSpinBox()
+        a.setObjectName("s000")
+        b = QtWidgets.QDoubleSpinBox()
+        b.setObjectName("s011")
+        window = self._window_with(a, b)
+
+        window.register_children()
+
+        keys = [window.state._get_state_key(w) for w in window.widgets]
+        keys = [k for k in keys if k]
+        self.assertTrue(keys, "no widget produced a state key -- test is inert")
+        duplicates = {k for k in keys if keys.count(k) > 1}
+        self.assertEqual(duplicates, set(), f"widgets collapsed onto one key: {keys}")
+
+    def test_a_stored_internal_value_cannot_leak_into_another_field(self):
+        """The behaviour the shared key produced, asserted end to end.
+
+        A store written before this guard still holds
+        "qt_spinbox_lineedit/textChanged"; restoring a panel must ignore it
+        rather than stamp it into every spin box. Seeded through save_value
+        because the key belongs to no registered widget any more.
+        """
+        a = QtWidgets.QDoubleSpinBox()
+        a.setObjectName("s000")
+        a.setRange(-1e9, 1e9)
+        a.setValue(0.0)
+        b = QtWidgets.QDoubleSpinBox()
+        b.setObjectName("s011")
+        b.setRange(1.0, 100.0)
+        b.setValue(10.0)
+        window = self._window_with(a, b)
+        window.register_children()
+        window.state.save_value("qt_spinbox_lineedit/textChanged", "1")
+
+        window.restored_widgets.clear()
+        for widget in list(window.widgets):
+            window.perform_restore_state(widget, force=True)
+
+        self.assertEqual(a.value(), 0.0, "foreign text leaked into s000")
+        self.assertEqual(b.value(), 10.0, "foreign text leaked into s011")
 
 
 class TestMainWindowPinned(QtBaseTestCase):
