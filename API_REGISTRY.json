@@ -7745,7 +7745,7 @@
               "kind": "method",
               "signature": "(self, menu: QtWidgets.QWidget) -> None",
               "summary": "Track a child Menu under this window.",
-              "line": 485,
+              "line": 505,
               "deprecated": false
             },
             {
@@ -7754,7 +7754,7 @@
               "kind": "method",
               "signature": "(self, *, visible: Optional[bool] = None, pinned: Optional[bool] = None, persistent: Optional[bool] = None) -> List[QtWidgets.QWidget]",
               "summary": "Return this window's tracked child menus, filtered by status.",
-              "line": 496,
+              "line": 516,
               "deprecated": false
             },
             {
@@ -7763,7 +7763,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Executes all deferred methods, in priority order.",
-              "line": 599,
+              "line": 619,
               "deprecated": false
             },
             {
@@ -7772,7 +7772,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable[[], Any]) -> None",
               "summary": "Run *callback* once this window's child widgets are registered.",
-              "line": 611,
+              "line": 631,
               "deprecated": false
             },
             {
@@ -7781,7 +7781,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, force=False) -> None",
               "summary": "Restores the state of a given widget if it has a restore_state attribute.",
-              "line": 629,
+              "line": 649,
               "deprecated": false
             },
             {
@@ -7790,7 +7790,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Persist a widget's value and mirror it across related surfaces.",
-              "line": 659,
+              "line": 679,
               "deprecated": false
             },
             {
@@ -7799,7 +7799,7 @@
               "kind": "method",
               "signature": "(self, watched, event) -> bool",
               "summary": "Override the event filter to register widgets when they are polished.",
-              "line": 750,
+              "line": 770,
               "deprecated": false
             },
             {
@@ -7808,7 +7808,7 @@
               "kind": "method",
               "signature": "(self, delta: int, baseline: Optional[int] = None) -> None",
               "summary": "Apply a signed pixel delta to the window's height.",
-              "line": 826,
+              "line": 846,
               "deprecated": false
             },
             {
@@ -7817,7 +7817,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Snap the window's height to its layout's natural content size.",
-              "line": 867,
+              "line": 887,
               "deprecated": false
             },
             {
@@ -7826,7 +7826,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Save the current window geometry (size and position) to settings.",
-              "line": 903,
+              "line": 923,
               "deprecated": false
             },
             {
@@ -7835,7 +7835,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Restore the window geometry (size and position) from settings.",
-              "line": 926,
+              "line": 946,
               "deprecated": false
             },
             {
@@ -7844,7 +7844,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear any saved window geometry from settings.",
-              "line": 973,
+              "line": 993,
               "deprecated": false
             },
             {
@@ -7853,7 +7853,7 @@
               "kind": "method",
               "signature": "(self, visible: bool) -> None",
               "summary": "Override setVisible to respect pin state when hiding.",
-              "line": 1031,
+              "line": 1051,
               "deprecated": false
             },
             {
@@ -7862,7 +7862,7 @@
               "kind": "method",
               "signature": "(self, pos=None, app_exec=False) -> None",
               "summary": "Show the MainWindow.",
-              "line": 1037,
+              "line": 1057,
               "deprecated": false
             },
             {
@@ -7871,7 +7871,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the show event to initialize untracked widgets and restore their states.",
-              "line": 1058,
+              "line": 1078,
               "deprecated": false
             },
             {
@@ -7880,7 +7880,7 @@
               "kind": "method",
               "signature": "(self, root_widget: Optional[QtWidgets.QWidget] = None) -> None",
               "summary": "Registers all child widgets starting from the given widget (or central widget if None).",
-              "line": 1137,
+              "line": 1157,
               "deprecated": false
             },
             {
@@ -7889,7 +7889,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the focus event to set the current UI when this window gains focus.",
-              "line": 1172,
+              "line": 1192,
               "deprecated": false
             },
             {
@@ -7898,7 +7898,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 1178,
+              "line": 1198,
               "deprecated": false
             },
             {
@@ -7907,7 +7907,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on resize so pinned/non-hidden windows persist size.",
-              "line": 1182,
+              "line": 1202,
               "deprecated": false
             },
             {
@@ -7916,7 +7916,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on move so pinned/non-hidden windows persist position.",
-              "line": 1188,
+              "line": 1208,
               "deprecated": false
             },
             {
@@ -7925,7 +7925,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement hideEvent to emit custom signal when window is hidden.",
-              "line": 1194,
+              "line": 1214,
               "deprecated": false
             },
             {
@@ -7934,7 +7934,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement closeEvent to save window geometry and emit custom signal.",
-              "line": 1218,
+              "line": 1238,
               "deprecated": false
             },
             {
@@ -7943,7 +7943,7 @@
               "kind": "method",
               "signature": "(self, style: str) -> None",
               "summary": "Overrides the setStyleSheet method to respect locking.",
-              "line": 1226,
+              "line": 1246,
               "deprecated": false
             },
             {
@@ -7952,7 +7952,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Resets the window's stylesheet to its original state.",
-              "line": 1240,
+              "line": 1260,
               "deprecated": false
             }
           ]

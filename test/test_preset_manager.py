@@ -21,7 +21,7 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from conftest import BaseTestCase, setup_qt_application
+from conftest import BaseTestCase, QtBaseTestCase, setup_qt_application
 
 # QApplication needed because preset_manager imports from qtpy at module load.
 app = setup_qt_application()
@@ -1852,6 +1852,55 @@ class TestCaptureScope(BaseTestCase):
         mgr = self._mgr("auto")
         with self.assertRaises(ValueError):
             mgr.scope = "everything"
+
+
+class TestQtInternalsExcludedFromPresets(QtBaseTestCase):
+    """A window-scoped preset must not capture Qt's internal spin-box editor.
+
+    Every ``QAbstractSpinBox`` names its editor ``qt_spinbox_lineedit``, so
+    capturing them wrote one arbitrary field's text into the preset under a
+    name that, on load, an arbitrary OTHER spin box's editor received (the
+    widget map keeps a single winner). ``_window_candidates`` sources the
+    registered widget set, so the exclusion is inherited from
+    ``MainWindow.register_widget``'s ``qt_`` guard — pinned here because this is
+    the contract preset callers depend on, whichever way that set is sourced.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from qtpy import QtWidgets
+        from test_mainwindow import MockSwitchboard
+        from uitk.widgets.mainWindow import MainWindow
+
+        self._tmp = Path(tempfile.mkdtemp(prefix="presets_qt_internal_"))
+        sb = MockSwitchboard()
+        # Looked up by resolved derived_type (a class), not by name.
+        sb.default_signals[QtWidgets.QDoubleSpinBox] = "valueChanged"
+        sb.default_signals[QtWidgets.QLineEdit] = "textChanged"
+
+        self.window = self.track_widget(MainWindow("PresetQtInternals", sb))
+        central = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(central)
+        self.window.setCentralWidget(central)
+        for name in ("s000", "s011"):
+            box = QtWidgets.QDoubleSpinBox()
+            box.setObjectName(name)
+            central.layout().addWidget(box)
+        self.window.register_children()
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        super().tearDown()
+
+    def test_window_scope_captures_the_fields_but_not_their_editors(self):
+        mgr = PresetManager(parent=self.window, preset_dir=str(self._tmp / "u"))
+        mgr.scope = "window"
+
+        names = {w.objectName() for w in mgr._get_widgets()}
+
+        self.assertIn("s000", names)
+        self.assertIn("s011", names)
+        self.assertNotIn("qt_spinbox_lineedit", names)
 
 
 class TestLoadPersistsSessionState(BaseTestCase):
