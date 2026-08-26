@@ -12,11 +12,17 @@ conventions.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from uitk.bridge.spec import AttributeSpec
 from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
+
+# A substitution placeholder (``__SCOPE__``). Matched inside comment prose to
+# tell a machine directive from a sentence -- see
+# :meth:`_TooltipInternal._lua_leading_comment_block`.
+_PLACEHOLDER_RE = re.compile(r"__[A-Z0-9_]+__")
 
 
 class _TooltipInternal(object):
@@ -32,7 +38,27 @@ class _TooltipInternal(object):
 
     @staticmethod
     def _lua_leading_comment_block(template_path: Path) -> Optional[str]:
-        """Return the contiguous ``--`` block at the top of *template_path*."""
+        """Return the leading ``--`` SUMMARY paragraph of *template_path*.
+
+        The first paragraph only, not the whole comment block. These headers
+        are read by two audiences at once: the artist picking a preset in the
+        panel, and whoever maintains the Lua. Taking everything up to the
+        first blank line handed the artist the maintainer's half as well --
+        measured-behaviour notes, host-version constraints, why a token is
+        spelled without its underscores -- so switching preset dumped a wall
+        of text into the log panel where two lines were wanted (live report).
+
+        The split point is an EMPTY ``--`` line, which is how these files
+        already separate their paragraphs, so the rationale stays exactly
+        where it is and simply stops being user-facing. Empty comment lines
+        BEFORE any content are skipped rather than treated as the end, so a
+        header that opens with a separator still yields its summary.
+
+        Lines carrying a ``__TOKEN__`` placeholder are dropped wherever they
+        appear: those are machine directives aimed at
+        ``Parameters.referenced_keys`` -- the ``scope=__SCOPE__`` echo that
+        makes the panel show its Scope row -- never prose.
+        """
         try:
             text = template_path.read_text(encoding="utf-8")
         except OSError:
@@ -49,6 +75,12 @@ class _TooltipInternal(object):
             # indentation in the source without introducing leading whitespace.
             if body.startswith(" "):
                 body = body[1:]
+            if not body.strip():
+                if out:
+                    break  # paragraph break: the summary is complete
+                continue  # leading separator: the summary hasn't started
+            if _PLACEHOLDER_RE.search(body):
+                continue  # machine directive, not prose
             out.append(body)
         return "\n".join(out) if out else None
 

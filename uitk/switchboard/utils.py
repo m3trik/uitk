@@ -17,7 +17,6 @@ _LOCK_ACTIVE_COLOR = "#8A9BB0"
 _LOCK_INACTIVE_COLOR = "#555555"
 
 
-
 class OverrideCursorGuard(QtCore.QObject):
     """Owns one application override cursor and guarantees its removal.
 
@@ -2169,6 +2168,177 @@ class SwitchboardUtilsMixin:
             accepted = dlg.exec_() == QtWidgets.QDialog.Accepted
 
         return [i.text() for i in listing.selectedItems()] if accepted else []
+
+    @staticmethod
+    def form_dialog(
+        fields,
+        title: str = "Options",
+        parent: QtWidgets.QWidget = None,
+        ok_text: Union[str, Callable] = "OK",
+        validate: Callable = None,
+        message: str = "",
+    ) -> Optional[dict]:
+        """Show a modal form of labelled rows and return ``{name: value}``.
+
+        The multi-field twin of :meth:`input_dialog`, for the case a sequence
+        of single-purpose dialogs handles badly: **two or more answers the
+        user has to tell apart**. A pair of native folder pickers shown back
+        to back are the same widget with different captions, so which one is
+        "search here" and which is "write here" lives entirely in a title
+        bar — and the answer changes when one of them is skipped. Side by
+        side and labelled, there is nothing to confuse and no order to
+        remember.
+
+        The window is a :class:`~uitk.widgets.formPanel.FormPanel`, so it
+        wears the toolset's own chrome (Header, Footer, theme) rather than a
+        bare dialog's host default, and every row's ``hint`` is a formatted
+        tooltip. See :meth:`FormPanel.set_fields` for the full field spec.
+
+        Use this when the caller does the work AFTER the answers are in.
+        When the work belongs on the form — a verb button, a log to watch,
+        a second run with one value changed — use :meth:`form_panel`, which
+        stays open and keeps its output pane.
+
+        Parameters:
+            fields: Iterable of row specs (dicts). See
+                :meth:`FormPanel.set_fields`.
+            title: Window title.
+            parent: Optional parent for correct modality and position.
+            ok_text: Accept-button text. Say what will happen ("Copy 12
+                files") — the button is the last thing read before
+                committing. A ``callable(values) -> str`` is re-evaluated on
+                every edit, so a verb chosen ON the form (a Copy/Move row)
+                reaches the button that names the operation.
+            validate: Optional ``callable(values: dict) -> str``. Return ""
+                (or None) when the form is valid, else the message to show in
+                the footer; OK stays disabled while it is non-empty.
+            message: Optional line above the rows.
+
+        Returns:
+            dict|None: ``{name: value}`` for every row, or None when the
+            dialog was cancelled or closed.
+
+        Example:
+            paths = sb.form_dialog(
+                [
+                    {"name": "src", "kind": "dir", "label": "Search in",
+                     "hint": "3 unresolved texture(s), searched recursively"},
+                    {"name": "dest", "kind": "dir", "label": "Copy into",
+                     "value": sourceimages, "hint": "12 file(s) land here"},
+                ],
+                title="Find & Copy Textures",
+                ok_text="Copy 12 files",
+                validate=lambda v: (
+                    "Destination is the search folder — nothing would move."
+                    if v["src"] and v["src"] == v["dest"] else ""
+                ),
+            )
+        """
+        panel = SwitchboardUtilsMixin.form_panel(
+            fields,
+            title=title,
+            parent=parent,
+            ok_text=ok_text,
+            validate=validate,
+            message=message,
+            # A modal that closes before the work starts has nothing to
+            # stream, so it carries no output pane.
+            output=False,
+        )
+        accepted = panel.exec_panel()
+        values = panel.values() if accepted else None
+        panel.deleteLater()
+        return values
+
+    @staticmethod
+    def form_panel(
+        fields,
+        title: str = "Options",
+        parent: QtWidgets.QWidget = None,
+        ok_text: Union[str, Callable] = "OK",
+        cancel_text: str = None,
+        validate: Callable = None,
+        message: str = "",
+        help_text: str = "",
+        on_run: Callable = None,
+        apply_text: str = "Apply",
+        output: bool = True,
+        min_width: int = 560,
+        settings=None,
+        settings_key: str = "window_geometry",
+    ):
+        """Build a :class:`~uitk.widgets.formPanel.FormPanel` — the modeless twin.
+
+        The same rows as :meth:`form_dialog`, in a window that STAYS OPEN and
+        runs the operation itself: the accept button calls ``on_run(values)``
+        with the panel still up, the operation's log streams into the single
+        output pane at the bottom, and the footer carries the status. That is
+        the shape every other tool window in the toolset has, and it is what a
+        modal cannot be — a modal that has closed can neither show what it did
+        nor be re-run with one value changed.
+
+        Does NOT show the panel: the caller decides, because a caller that
+        keeps the panel (to re-seed it from live state on the next invocation
+        rather than stacking a second window) needs the reference before the
+        first show. Call ``panel.present()``. It is a ``WindowPanel``, so
+        anything beyond the field specs is added the way a Menu item is —
+        ``panel.add("PushButton", setText=..., clicked=...)``.
+
+        Parameters:
+            fields: Iterable of row specs (dicts). See
+                :meth:`FormPanel.set_fields`.
+            title: Header text.
+            parent: Anchor widget; the panel reparents to ``parent.window()``.
+            ok_text: Accept-button text, or ``callable(values) -> str``.
+            cancel_text: Reject-button text. A run-in-place panel gets no
+                reject button by default (the header carries the window's
+                close); pass a string to force one.
+            validate: ``callable(values: dict) -> str`` — "" when valid.
+            message: Optional rich-text line above the rows.
+            help_text: Rich text for the header's ``?`` button. Build it with
+                ``sb.tooltip.fmt(...)``.
+            on_run: ``callable(values: dict)`` run in place by the accept
+                button. Return a ``callable()`` to say "this was a preview" —
+                the panel arms Apply with it (the naming panel's dry-run
+                contract). Omit for a panel the caller drives itself.
+            apply_text: Text of the armed-preview button.
+            output: Show the collapsable output pane (default True).
+            min_width: Minimum window width.
+            settings: Optional store (``sb.settings.branch("<tool>")``) the
+                window's size and position survive across sessions in.
+            settings_key: Settings key holding the serialized geometry.
+
+        Returns:
+            FormPanel: the (unshown) panel.
+
+        Example:
+            panel = sb.form_panel(
+                fields,
+                title="Find & Copy Textures",
+                parent=self.ui,
+                on_run=self._execute_find_and_copy,
+                validate=self._validate_find_and_copy,
+            )
+            panel.present()
+        """
+        from uitk.widgets.formPanel import FormPanel
+
+        return FormPanel(
+            fields,
+            title=title,
+            parent=parent,
+            ok_text=ok_text,
+            cancel_text=cancel_text,
+            validate=validate,
+            message=message,
+            help_text=help_text,
+            on_run=on_run,
+            apply_text=apply_text,
+            output=output,
+            min_width=min_width,
+            settings=settings,
+            settings_key=settings_key,
+        )
 
     @staticmethod
     def simulate_key_press(

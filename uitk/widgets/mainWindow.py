@@ -804,14 +804,48 @@ class MainWindow(
             if wl:
                 layouts.append(wl)
         # Two-pass: invalidate first (drops cached sizes everywhere), then
-        # activate (recomputes from leaves up).
+        # activate from the LEAVES UP.
+        #
+        # The order of the second pass is load-bearing, and the collection
+        # above produces the wrong one: this window's own layout goes in
+        # first, then ``findChildren`` walks the tree parent-first. Activating
+        # a parent before the layouts nested inside it recomputes it from
+        # child hints that have not refreshed yet, so the window's own
+        # ``minimumSizeHint`` comes back STALE for one more event cycle.
+        # Reading it in the same call frame -- which is exactly what
+        # :meth:`fit_height_to_content` does -- then snaps the window to the
+        # PREVIOUS content's height: a bridge panel switched to a template
+        # with fewer parameter rows kept the taller window until some later
+        # change happened to fit it again (measured on the substance panel:
+        # content 265px, window stuck at 341px, every time).
+        #
+        # Sorted by depth rather than merely reversed: ``findChildren``'s order
+        # is not a documented contract, and "every layout is activated after
+        # everything nested inside it" is the property that actually matters.
         for layout in layouts:
             layout.invalidate()
-        for layout in layouts:
+        for layout in sorted(layouts, key=self._layout_depth, reverse=True):
             layout.activate()
         # Mark this window's size hint dirty so the next call returns the
         # recomputed value, not the cached one.
         self.updateGeometry()
+
+    def _layout_depth(self, layout: QtWidgets.QLayout) -> int:
+        """How many widgets separate *layout*'s owner from this window (0 = own).
+
+        The sort key for the leaves-up activation above. Only the ORDER matters,
+        so the two degenerate cases are both harmless: a layout with no owner
+        yet reads as 0 and activates alongside this window's own layout (last),
+        and one owned outside this window's tree counts its own ancestors and
+        activates early — neither can displace a real descendant from behind
+        its parent.
+        """
+        widget = layout.parentWidget()
+        depth = 0
+        while widget is not None and widget is not self:
+            widget = widget.parentWidget()
+            depth += 1
+        return depth
 
     def _content_min_height(self) -> int:
         """Return the true minimum height the content needs.

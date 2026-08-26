@@ -23,7 +23,11 @@ app = setup_qt_application()
 
 from uitk.widgets.lineEdit import LineEdit
 from uitk.widgets.slider import Slider
-from uitk.widgets.optionBox.options.affix import AffixOption
+from uitk.widgets.optionBox.options.affix import (
+    AffixMode,
+    AffixOption,
+    BUILTIN_AFFIX_MODES,
+)
 from uitk.widgets.optionBox.options.clear import ClearOption
 
 
@@ -253,6 +257,305 @@ class TestAffixOptionManager(QtBaseTestCase):
         clear = le.option_box.find_option(ClearOption).widget
         picker = le.option_box.find_option(AffixOption).widget
         self.assertLess(widgets.index(clear), widgets.index(picker))
+
+
+class TestAffixOptionPersistence(QtBaseTestCase):
+    """The selected mode survives a session (regression: it never persisted).
+
+    AffixOption was a plain ButtonOption, so the picker reset to the caller's
+    ``default`` on every launch while the field's TEXT was restored by
+    StateManager — the spelling came back applied to the wrong side.
+    """
+
+    def _fresh(self, key, **kw):
+        """A new option over a new field — stands in for a new session."""
+        le = self.track_widget(LineEdit())
+        le.setObjectName("txt_affix_persist")
+        return AffixOption(wrapped_widget=le, settings_key=key, **kw)
+
+    def _clear(self, option):
+        if getattr(option, "_settings", None):
+            option._settings.clear()
+            option._settings.sync()
+
+    def test_mode_round_trips_across_sessions(self):
+        key = "test_affix_round_trip"
+        first = self._fresh(key, default="auto")
+        first.set_mode("prefix")
+
+        second = self._fresh(key, default="auto")
+        self.assertEqual(
+            second.mode, "prefix", "persisted mode must override the caller's default"
+        )
+        self.assertEqual(_icon_name(second.widget), "arrow_left")
+        self._clear(second)
+
+    def test_click_cycle_persists(self):
+        """The user-facing path (clicking the button), not just set_mode."""
+        key = "test_affix_cycle_persist"
+        first = self._fresh(key, default="auto")
+        first.widget.click()  # auto -> suffix
+
+        second = self._fresh(key, default="auto")
+        self.assertEqual(second.mode, "suffix")
+        self._clear(second)
+
+    def test_restore_silently_does_not_fire_on_change(self):
+        """Restoring is not a user action — on_change must stay quiet."""
+        key = "test_affix_quiet_restore"
+        first = self._fresh(key, default="auto")
+        first.set_mode("suffix")
+
+        seen = []
+        second = self._fresh(key, default="auto", on_change=seen.append)
+        second.widget  # force the build; a restore must not fire through it
+        self.assertEqual(second.mode, "suffix")
+        self.assertEqual(seen, [], "restoring a persisted mode is not a change")
+        self._clear(second)
+
+    def test_settings_key_false_disables_persistence(self):
+        le = self.track_widget(LineEdit())
+        le.setObjectName("txt_affix_optout")
+        option = AffixOption(wrapped_widget=le, settings_key=False)
+        option.set_mode("prefix")
+        self.assertIsNone(option._settings)
+
+        again = AffixOption(wrapped_widget=self.track_widget(LineEdit()))
+        again.wrapped_widget.setObjectName("txt_affix_optout")
+        self.assertEqual(again.mode, "auto")
+
+    def test_unnamed_widget_persists_nothing(self):
+        """No objectName to auto-derive from ⇒ no QSettings namespace."""
+        option = AffixOption(wrapped_widget=self.track_widget(LineEdit()))
+        self.assertIsNone(option._settings)
+
+    def test_restore_default_returns_to_constructed_mode(self):
+        """A sibling ResetOption must be able to reach a persisted mode."""
+        key = "test_affix_restore_default"
+        option = self._fresh(key, default="suffix")
+        option.set_mode("prefix")
+        option.restore_default()
+        self.assertEqual(option.mode, "suffix")
+
+        after = self._fresh(key, default="auto")
+        self.assertEqual(after.mode, "suffix", "the reset must persist too")
+        self._clear(after)
+
+    def test_manager_forwards_settings_key(self):
+        key = "test_affix_manager_key"
+        le = self.track_widget(LineEdit())
+        le.setObjectName("txt_affix_mgr")
+        le.option_box.set_affix(default="auto", settings_key=key)
+        le.option_box.find_option(AffixOption).set_mode("prefix")
+
+        le2 = self.track_widget(LineEdit())
+        le2.setObjectName("txt_affix_mgr")
+        le2.option_box.set_affix(default="auto", settings_key=key)
+        option = le2.option_box.find_option(AffixOption)
+        self.assertEqual(le2.option_box.affix_mode, "prefix")
+        self._clear(option)
+
+
+class TestAffixOptionModeSet(QtBaseTestCase):
+    """The cycle is configurable — three built-ins are a DEFAULT, not the API.
+
+    Most fields want the three manual states; some want two; some want a custom
+    state of their own. None of that may require editing the plugin.
+    """
+
+    def _make(self, **kw):
+        le = self.track_widget(LineEdit())
+        kw.setdefault("settings_key", False)
+        return le, AffixOption(wrapped_widget=le, **kw)
+
+    def test_defaults_to_the_three_builtins(self):
+        _le, opt = self._make()
+        self.assertEqual(opt.modes, ["auto", "suffix", "prefix"])
+
+    def test_two_state_picker(self):
+        _le, opt = self._make(modes=("suffix", "prefix"), default="suffix")
+        self.assertEqual(opt.modes, ["suffix", "prefix"])
+        opt.widget.click()
+        self.assertEqual(opt.mode, "prefix")
+        opt.widget.click()
+        self.assertEqual(opt.mode, "suffix", "a two-state cycle wraps at two")
+
+    def test_custom_mode_instance(self):
+        custom = AffixMode(
+            key="shout",
+            label="Shout",
+            icon="asterisk",
+            resolver=lambda text, _default: ("", text.upper()),
+        )
+        le, opt = self._make(modes=("auto", custom), default="shout")
+        le.setText("_mat")
+        self.assertEqual(opt.modes, ["auto", "shout"])
+        self.assertEqual(opt.resolve(), ("", "_MAT"))
+
+    def test_unknown_mode_is_skipped_not_raised(self):
+        _le, opt = self._make(modes=("suffix", "bogus"))
+        self.assertEqual(opt.modes, ["suffix"])
+
+    def test_all_bogus_falls_back_to_builtins(self):
+        """A picker with no usable state would be worse than the default."""
+        _le, opt = self._make(modes=("nope", "nah"))
+        self.assertEqual(opt.modes, ["auto", "suffix", "prefix"])
+
+    def test_duplicates_collapse_preserving_order(self):
+        _le, opt = self._make(modes=("prefix", "auto", "prefix"))
+        self.assertEqual(opt.modes, ["prefix", "auto"])
+
+    def test_unknown_default_falls_back_to_first_available(self):
+        _le, opt = self._make(modes=("suffix", "prefix"), default="auto")
+        self.assertEqual(opt.mode, "suffix")
+
+    def test_mode_spec_exposes_the_builtin(self):
+        _le, opt = self._make()
+        self.assertIs(opt.mode_spec("suffix"), BUILTIN_AFFIX_MODES["suffix"])
+
+    def test_tooltip_names_the_configured_cycle(self):
+        _le, opt = self._make(modes=("suffix", "prefix"), default="suffix")
+        tip = opt.widget.toolTip()
+        self.assertIn("Suffix -> Prefix", tip)
+        self.assertNotIn("Auto", tip)
+
+
+class TestAffixConventionMode(QtBaseTestCase):
+    """The fourth state: a CUSTOM mode bound to the shared naming convention.
+
+    It fills the field from ``pythontk.NamingConvention`` and makes it
+    read-only — the widget stays ENABLED, so the value is still visible and the
+    slot still reads it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import pythontk as ptk
+
+        self.NC = ptk.NamingConvention
+        self.NC.reload()
+
+    def _make(self, *, convention_key="material", **kw):
+        le = self.track_widget(LineEdit())
+        kw.setdefault("settings_key", False)
+        opt = AffixOption(wrapped_widget=le, convention_key=convention_key, **kw)
+        opt.widget  # build, so setup_widget applies field effects
+        return le, opt
+
+    def test_convention_key_appends_a_fourth_state(self):
+        _le, opt = self._make()
+        self.assertEqual(opt.modes, ["auto", "suffix", "prefix", "convention"])
+
+    def test_not_present_without_an_opt_in(self):
+        """Most fields want three states — the fourth must never appear unasked."""
+        le = self.track_widget(LineEdit())
+        opt = AffixOption(wrapped_widget=le, settings_key=False)
+        self.assertNotIn("convention", opt.modes)
+
+    def test_selecting_it_fills_the_field_from_the_ssot(self):
+        le, opt = self._make()
+        le.setText("_MyOwn")
+        opt.set_mode("convention")
+        self.assertEqual(le.text(), self.NC.affix("material"))
+
+    def test_field_is_read_only_but_still_enabled(self):
+        le, opt = self._make()
+        opt.set_mode("convention")
+        self.assertTrue(le.isReadOnly(), "typing must be refused")
+        self.assertTrue(le.isEnabled(), "but the value must still read")
+        self.assertTrue(le.text(), "and still be visible")
+
+    def test_leaving_the_mode_restores_the_users_text(self):
+        le, opt = self._make()
+        le.setText("_MyOwn")
+        opt.set_mode("convention")
+        opt.set_mode("auto")
+        self.assertEqual(le.text(), "_MyOwn")
+        self.assertFalse(le.isReadOnly())
+
+    def test_resolve_answers_from_the_convention(self):
+        le, opt = self._make()
+        opt.set_mode("convention")
+        self.assertEqual(opt.resolve(), self.NC.affix_parts("material"))
+
+    def test_resolve_ignores_a_field_written_over_behind_our_back(self):
+        """StateManager restores text after build; the SSoT must still win."""
+        le, opt = self._make()
+        opt.set_mode("convention")
+        le.setText("_CLOBBERED")  # e.g. a session-state restore
+        self.assertEqual(opt.resolve(), self.NC.affix_parts("material"))
+
+    def test_refresh_repulls_after_the_convention_changes(self):
+        le, opt = self._make()
+        opt.set_mode("convention")
+        try:
+            self.NC.set("material", "MTL_")
+            opt.refresh()
+            self.assertEqual(le.text(), "MTL_")
+            self.assertEqual(opt.resolve(), ("MTL_", ""))
+        finally:
+            self.NC.reset("material")
+
+    def test_convention_mode_honours_the_conventions_own_placement(self):
+        """A convention spelled as a prefix must land as a prefix."""
+        _le, opt = self._make(convention_key="mesh")
+        opt.set_mode("convention")
+        try:
+            self.NC.set("mesh", "GEO_")
+            opt.refresh()
+            self.assertEqual(opt.resolve(), ("GEO_", ""))
+        finally:
+            self.NC.reset("mesh")
+
+    def test_modes_explicit_overrides_convention_key(self):
+        le = self.track_widget(LineEdit())
+        opt = AffixOption(
+            wrapped_widget=le,
+            modes=("auto", "suffix"),
+            convention_key="material",
+            settings_key=False,
+        )
+        self.assertEqual(opt.modes, ["auto", "suffix"])
+
+    def test_showing_the_box_repulls_the_convention(self):
+        """The clobber path: StateManager restores a field's saved text AFTER
+        the option applied the convention at wrap time, so the picker would say
+        Scene beside stale text. Showing the box re-pulls."""
+        le = self.track_widget(LineEdit())
+        le.setObjectName("txt_affix_show")
+        le.option_box.set_affix(convention_key="material", settings_key=False)
+        option = le.option_box.find_option(AffixOption)
+        option.set_mode("convention")
+        container = self.track_widget(le.option_box.container)
+
+        le.setText("_CLOBBERED")  # e.g. a session-state restore landing late
+        # The container is already visible from the wrap, so hide first —
+        # otherwise show() is a no-op and no QShowEvent is delivered. In a real
+        # panel the equivalent event is the owning window becoming visible,
+        # which every un-hidden child receives.
+        container.hide()
+        container.show()
+        self.assertEqual(le.text(), self.NC.affix("material"))
+
+    def test_unknown_convention_key_is_skipped_not_dead_locked(self):
+        """Regression: a typo produced a state that emptied the field, locked
+        it read-only, and applied nothing — with no visible cause. A picker
+        missing its fourth state is diagnosable; a dead field is not."""
+        le = self.track_widget(LineEdit())
+        le.setText("_MyOwn")
+        option = AffixOption(
+            wrapped_widget=le, convention_key="materal", settings_key=False
+        )
+        option.widget  # build
+        self.assertNotIn("convention", option.modes)
+        self.assertEqual(le.text(), "_MyOwn", "the user's text must survive")
+        self.assertFalse(le.isReadOnly(), "the field must stay typeable")
+
+    def test_manager_forwards_convention_key(self):
+        le = self.track_widget(LineEdit())
+        le.option_box.set_affix(convention_key="material", settings_key=False)
+        opt = le.option_box.find_option(AffixOption)
+        self.assertIn("convention", opt.modes)
 
 
 if __name__ == "__main__":

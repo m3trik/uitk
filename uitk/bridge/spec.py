@@ -66,7 +66,8 @@ class AttributeSpec:
         label: Display label. Defaults to *key* if empty.
         kind: One of the registered kinds (``"bool" | "int" | "float" |
             "str" | "choice" | "check_list" | "path" | "file_list" |
-            "action"``) or ``"auto"`` to derive from ``type(default)``.
+            "action" | "affix"``) or ``"auto"`` to derive from
+            ``type(default)``.
             Custom kinds added via :meth:`KindFactory.register_kind` are
             also accepted.
         default: Initial widget value.
@@ -78,7 +79,10 @@ class AttributeSpec:
             triples. The value is what :meth:`KindFactory.read_value` returns
             (``check_list`` returns the list of checked ones). Leave empty and
             call :meth:`KindFactory.set_choices` when the entries are only
-            known at runtime.
+            known at runtime. The ``"action"`` kind reads the same shape as
+            ``(label, action_id, tooltip)`` and accepts a 4th element -- an
+            icon name -- that turns the entry into an option-box icon button
+            on the row's primary action rather than a second text button.
         tooltip: Tooltip text. The DCC-bridge slots feed this through
             :meth:`uitk.bridge.tooltip.Tooltip.format_param_tooltip` to build
             a rich-text version with type/range/default rows.
@@ -145,6 +149,12 @@ class KindHandler:
     ``set_choices`` is optional and only meaningful for kinds that render a
     fixed entry set; kinds without one reject
     :meth:`KindFactory.set_choices` rather than silently no-op'ing.
+
+    ``literal`` is optional and only meaningful for kinds whose value is
+    COMPOSITE (``affix`` returns ``{"text", "mode"}``): it names the scalar
+    stand-in a template substitution should see, so a ``__KEY__`` token renders
+    as the spelling the user typed rather than a dict repr. Kinds without one
+    substitute their value unchanged.
     """
 
     build: Callable[[AttributeSpec, Optional[QtWidgets.QWidget]], QtWidgets.QWidget]
@@ -153,6 +163,7 @@ class KindHandler:
     signal: Optional[str] = None
     connect: Optional[Callable[[QtWidgets.QWidget, Callable[[Any], None]], None]] = None
     set_choices: Optional[Callable[[QtWidgets.QWidget, ChoicesSeq], None]] = None
+    literal: Optional[Callable[[Any], Any]] = None
 
     def __post_init__(self):
         # Surface malformed handlers at construction, not at registration time.
@@ -497,15 +508,74 @@ class _KindFactoryInternal(object):
     # ---- action: composite (row of action buttons) -------------------------
     #
     # A parameter row whose "value" is a set of ACTIONS, not data: each
-    # ``choices`` entry is ``(label, action_id)`` / ``(label, action_id, tip)``
-    # and becomes one QPushButton. The container exposes
-    # ``_action_buttons = {action_id: QPushButton}`` so the hosting panel can
-    # wire each button to its own method after build (BridgeSlotsBase does
-    # this automatically for action ids that name a slot method). ``read``
-    # returns ``None`` -- there is no value to collect or preset -- and the
-    # change-wirer is a deliberate no-op so preset dirty-tracking ignores
-    # clicks. The first action is the primary affordance and takes the row's
-    # stretch; the rest stay compact.
+    # ``choices`` entry is ``(label, action_id)``, ``(label, action_id, tip)``
+    # or ``(label, action_id, tip, icon)`` and becomes one button. The
+    # container exposes ``_action_buttons = {action_id: QPushButton}`` so the
+    # hosting panel can wire each button to its own method after build
+    # (BridgeSlotsBase does this automatically for action ids that name a slot
+    # method). ``read`` returns ``None`` -- there is no value to collect or
+    # preset -- and the change-wirer is a deliberate no-op so preset
+    # dirty-tracking ignores clicks. The first action is the primary affordance
+    # and takes the row's stretch; the rest stay compact.
+    #
+    # An entry that names an ``icon`` renders as an option-box icon button
+    # riding the primary action instead of as a second full-width label. Once
+    # the primary says what the row is for, its secondary verbs read better as
+    # the compact icon grammar the rest of the toolkit already uses for exactly
+    # this (uitk's ClearOption, tentacle's uv Transfer source row) -- and the
+    # row stops spending its whole width on chrome. The button registered in
+    # ``_action_buttons`` is the option's own, so wiring and disabling are
+    # identical either way.
+
+    @staticmethod
+    def _option_box(widget):
+        """The widget's ``OptionBoxManager``, or ``None`` if one can't be made.
+
+        ``Switchboard.__init__`` patches the common Qt classes with an
+        ``option_box`` property, but this factory is usable with no Switchboard
+        at all (AttributeWindow panels, headless tests) -- and a row that
+        silently lost its icon buttons or its affix picker depending on
+        construction order would be a bug nobody could see. So: use the patched
+        property when it is there, otherwise attach a manager to the instance
+        under the same ``_option_box_manager`` name the patch caches on, which
+        keeps a later patched access returning this very manager.
+        """
+        manager = getattr(widget, "_option_box_manager", None)
+        if manager is not None:
+            return manager
+        manager = getattr(widget, "option_box", None)
+        if manager is not None:
+            return manager
+        try:
+            from uitk.widgets.optionBox.utils import OptionBoxManager
+
+            manager = OptionBoxManager(widget)
+        except Exception:  # noqa: BLE001 -- degrade to a plain widget
+            return None
+        widget._option_box_manager = manager
+        return manager
+
+    @staticmethod
+    def _split_action_choice(entry) -> Tuple[Any, Any, str, str]:
+        """Normalize one ``action`` entry to ``(label, action_id, tooltip, icon)``.
+
+        Extends :meth:`_split_choice` with the action-only 4th element. Kept
+        separate so the combo kinds' 3-tuple contract stays exactly as it was.
+        """
+        if isinstance(entry, tuple) and len(entry) == 4:
+            return entry[0], entry[1], str(entry[2] or ""), str(entry[3] or "")
+        label, action_id, tip = _KindFactoryInternal._split_choice(entry)
+        return label, action_id, tip, ""
+
+    @staticmethod
+    def _add_action_button(container, label, tip) -> QtWidgets.QPushButton:
+        """Build one compact text button for an action row (not yet laid out)."""
+        btn = QtWidgets.QPushButton(str(label), container)
+        btn.setMinimumHeight(19)
+        btn.setMaximumHeight(19)
+        if tip:
+            btn.setToolTip(tip)
+        return btn
 
     @staticmethod
     def _build_action(spec, parent):
@@ -514,18 +584,207 @@ class _KindFactoryInternal(object):
         hl.setContentsMargins(0, 0, 0, 0)
         hl.setSpacing(2)
         container._action_buttons = {}  # noqa: SLF001 -- intentional public attr
-        for i, entry in enumerate(spec.choices or []):
-            label, action_id, tip = _KindFactoryInternal._split_choice(entry)
+        primary = None
+        icon_entries = []
+        for entry in spec.choices or []:
+            label, action_id, tip, icon = _KindFactoryInternal._split_action_choice(
+                entry
+            )
             if action_id is _NO_VALUE:
                 action_id = str(label)
-            btn = QtWidgets.QPushButton(str(label), container)
-            btn.setMinimumHeight(19)
-            btn.setMaximumHeight(19)
-            if tip:
-                btn.setToolTip(tip)
-            hl.addWidget(btn, 1 if i == 0 else 0)
-            container._action_buttons[str(action_id)] = btn
+            action_id = str(action_id)
+            # An icon entry needs a host to hang its option box off, so the
+            # FIRST entry always renders as the text button even if it names
+            # an icon -- an all-icon row would have nothing to attach to and
+            # no label saying what the row does.
+            if icon and primary is not None:
+                icon_entries.append((action_id, label, tip, icon))
+                continue
+            btn = _KindFactoryInternal._add_action_button(container, label, tip)
+            hl.addWidget(btn, 1 if primary is None else 0)
+            container._action_buttons[action_id] = btn
+            if primary is None:
+                primary = btn
+
+        # Wrapped only now that the primary is layout-managed: the option box
+        # replaces it in place (keeping the stretch) instead of briefly showing
+        # as a top-level widget, whose showEvent collapses the container -- the
+        # same ordering BridgeSlotsBase's output-dir row documents.
+        manager = (
+            _KindFactoryInternal._option_box(primary) if primary is not None else None
+        )
+        for action_id, label, tip, icon in icon_entries:
+            if manager is None:
+                # No option-box support on this host (a bare Qt build with no
+                # Switchboard to patch QPushButton): degrade to a text button
+                # rather than dropping the action off the panel entirely.
+                btn = _KindFactoryInternal._add_action_button(container, label, tip)
+                hl.addWidget(btn, 0)
+                container._action_buttons[action_id] = btn
+                continue
+            option = manager.add_action(
+                icon=icon,
+                tooltip=tip or str(label),
+                settings_key=False,
+            )
+            # The option is a placement vehicle only -- the click is wired by
+            # the hosting panel through ``_action_buttons``, exactly like a
+            # text action, so neither wiring path has to know which it got.
+            container._action_buttons[action_id] = option.widget
         return container
+
+    # ---- affix: QLineEdit + tri-state affix-mode icon ----------------------
+    #
+    # A text entry whose value is an AFFIX: the spelling plus a declaration of
+    # which side of a base name it lands on. The picker is uitk's shared
+    # :class:`~uitk.widgets.optionBox.options.affix.AffixOption` -- one cycling
+    # icon (Auto -> Suffix -> Prefix) over ``pythontk.StrUtils.split_affix`` --
+    # so a bridge parameter wears exactly the control the mat_utils panels and
+    # tentacle's uv Transfer already do, instead of a second combo per registry.
+    #
+    # ``read`` returns ``{"text": str, "mode": str}``: both halves, so a preset
+    # restores the side as well as the spelling. Consumers turn one into the
+    # pair they actually apply with :meth:`KindFactory.affix_parts`. The
+    # ``literal`` hook renders the text alone, so a template substituting
+    # ``__KEY__`` sees the spelling rather than a dict repr.
+
+    #: The three built-in affix modes, in ``AffixOption``'s cycle order.
+    #: Descriptive only -- a picker's mode set is configurable, so this is NOT
+    #: a whitelist anything is filtered against (see :meth:`_affix_value`).
+    AFFIX_MODES = ("auto", "suffix", "prefix")
+
+    @staticmethod
+    def _affix_value(value) -> Dict[str, str]:
+        """Normalize *value* (``dict`` | ``str`` | ``None``) to ``{text, mode}``.
+
+        A bare string is read as the spelling with mode ``auto`` -- which is
+        what a registry default of ``""`` means, and what a preset written
+        before this kind existed carries.
+
+        A ``"convention"`` entry in the dict is a DECLARATION, not a value (see
+        :meth:`_affix_convention`), so it is deliberately dropped here: what
+        this returns is what a preset stores, and the type a field is bound to
+        belongs to the registry, not to the user's saved run.
+        """
+        if isinstance(value, dict):
+            text, mode = value.get("text", ""), value.get("mode", "auto")
+        else:
+            text, mode = value, "auto"
+        # NOT filtered against ``AFFIX_MODES``: a picker's mode set is
+        # configurable (a spec can declare a convention-bound state, and a
+        # caller can register any other), so a whitelist here would silently
+        # rewrite every custom mode to "auto" on a preset round-trip. Validation
+        # belongs to the one place that knows the mode set --
+        # ``AffixOption.set_mode``, which no-ops on a mode it does not have, so
+        # a stale or hand-edited preset degrades to the built default.
+        return {
+            "text": "" if text is None else str(text),
+            "mode": str(mode or "auto").lower(),
+        }
+
+    @staticmethod
+    def _affix_convention(value) -> Optional[str]:
+        """The ``NamingConvention`` key an affix spec binds to, if any.
+
+        Declared on the spec as ``default={"text": ..., "convention": "texture"}``.
+        Opt-in per parameter: most affixes are a per-run label with no shared
+        definition to follow, which is exactly why the state is not built in.
+        """
+        if isinstance(value, dict):
+            key = value.get("convention")
+            return str(key) if key else None
+        return None
+
+    @staticmethod
+    def _affix_option(widget):
+        """The widget's :class:`AffixOption`, or ``None`` (no option-box host)."""
+        manager = _KindFactoryInternal._option_box(widget)
+        if manager is None:
+            return None
+        from uitk.widgets.optionBox.options.affix import AffixOption
+
+        return manager.find_option(AffixOption)
+
+    @staticmethod
+    def _build_affix(spec, parent):
+        # Composite, exactly like ``path``: the option box replaces the field
+        # it wraps IN ITS PARENT LAYOUT, so the field has to be layout-managed
+        # before the wrap. Returning a bare QLineEdit meant the wrap happened
+        # while the field was still parentless-in-layout (the row builder adds
+        # it afterwards) -- the container then floated over the row instead of
+        # joining it, and every row-level operation missed it: greying the row
+        # left the mode and clear icons live beside a disabled value.
+        container = QtWidgets.QWidget(parent)
+        hl = QtWidgets.QHBoxLayout(container)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(2)
+        value = _KindFactoryInternal._affix_value(spec.default)
+        edit = QtWidgets.QLineEdit(value["text"], container)
+        # Named like the container (see ``_build_path``) so preset capture keys
+        # on the value-bearing child rather than skipping an empty objectName.
+        edit.setObjectName(spec.key)
+        edit.setMinimumHeight(19)
+        edit.setMaximumHeight(19)
+        hl.addWidget(edit, 1)
+        container._line_edit = edit  # noqa: SLF001 -- intentional public attr
+
+        # One dispatcher installed at build time: AffixOption takes its
+        # ``on_change`` at construction, while ``connect`` arrives later and
+        # possibly more than once (a panel may wire both a dependency sync and
+        # preset dirty-tracking to the same row).
+        container._affix_listeners = []  # noqa: SLF001 -- intentional public attr
+
+        def _mode_changed(_mode, _c=container):
+            for callback in list(_c._affix_listeners):
+                callback(_KindFactoryInternal._read_affix(_c))
+
+        manager = _KindFactoryInternal._option_box(edit)
+        if manager is not None:
+            manager.clear_option = True
+            convention_key = _KindFactoryInternal._affix_convention(spec.default)
+            # settings_key=False: the bridge owns this row's state end to end
+            # (registry default -> preset -> ``_write_affix``), and only the
+            # PAIR is meaningful. StateManager does not restore kind-built
+            # composites, so letting the picker self-persist would restore the
+            # MODE from QSettings beside a TEXT that fell back to the registry
+            # default -- the spelling applied to the wrong side of the name.
+            manager.set_affix(
+                default=value["mode"],
+                on_change=_mode_changed,
+                settings_key=False,
+                convention_key=convention_key,
+            )
+        return container
+
+    @staticmethod
+    def _read_affix(widget):
+        option = _KindFactoryInternal._affix_option(widget._line_edit)
+        return {
+            "text": widget._line_edit.text(),
+            "mode": option.mode if option is not None else "auto",
+        }
+
+    @staticmethod
+    def _write_affix(widget, value):
+        value = _KindFactoryInternal._affix_value(value)
+        widget._line_edit.setText(value["text"])
+        option = _KindFactoryInternal._affix_option(widget._line_edit)
+        if option is not None:
+            option.set_mode(value["mode"])
+
+    @staticmethod
+    def _connect_affix(widget, callback):
+        widget._line_edit.textChanged.connect(
+            lambda *_: callback(_KindFactoryInternal._read_affix(widget))
+        )
+        listeners = getattr(widget, "_affix_listeners", None)
+        if listeners is not None:
+            listeners.append(callback)
+
+    @staticmethod
+    def _literal_affix(value):
+        """Substitution stand-in: the spelling, without the mode."""
+        return _KindFactoryInternal._affix_value(value)["text"]
 
     @staticmethod
     def _read_action(widget):
@@ -797,6 +1056,57 @@ class KindFactory(_KindFactoryInternal):
         handler.set_choices(widget, choices)
 
     @staticmethod
+    def to_literal(spec: AttributeSpec, value: Any) -> Any:
+        """The scalar stand-in *value* substitutes as, for a composite kind.
+
+        Most kinds already hold a scalar and pass through unchanged; a kind
+        whose ``read`` returns a composite (``affix`` -> ``{"text", "mode"}``)
+        registers a ``literal`` on its handler naming the part a template
+        actually wants. Called by
+        :meth:`uitk.bridge.parameters.Parameters.render_context` before the
+        target-language formatter, so a ``__KEY__`` token never renders as a
+        dict repr.
+
+        Unregistered kinds pass through -- a caller with a custom kind that
+        never registered a handler still gets its own value back.
+        """
+        kind = (
+            spec.kind if spec.kind != "auto" else KindFactory.infer_kind(spec.default)
+        )
+        handler = _KindFactoryInternal._HANDLERS.get(kind)
+        if handler is None or handler.literal is None:
+            return value
+        return handler.literal(value)
+
+    @staticmethod
+    def affix_parts(value: Any, *, default: str = "prefix") -> Tuple[str, str]:
+        """``(prefix, suffix)`` for an ``affix``-kind value.
+
+        The bridge-side counterpart to
+        :meth:`uitk.widgets.optionBox.utils.OptionBoxManager.resolve_affix`:
+        that one reads a live widget, this one reads a *collected* value (a
+        send's params dict, a restored preset), so a consumer never has to
+        reach back through the panel to find out which side the affix lands on.
+
+        Parameters:
+            value: An ``affix`` value (``{"text", "mode"}``) or a bare string
+                (read as mode ``auto``).
+            default: Fallback side when the mode is ``auto`` and the spelling
+                carries no boundary delimiter -- see
+                :func:`pythontk.StrUtils.split_affix`.
+
+        Returns:
+            ``(prefix, suffix)`` -- at most one is non-empty; an empty
+            spelling returns ``("", "")``.
+        """
+        import pythontk as ptk
+
+        parts = _KindFactoryInternal._affix_value(value)
+        return ptk.StrUtils.split_affix(
+            parts["text"], mode=parts["mode"], default=default
+        )
+
+    @staticmethod
     def connect_changed(
         widget: QtWidgets.QWidget, callback: Callable[[Any], None]
     ) -> None:
@@ -895,5 +1205,15 @@ KindFactory.register_kind(
         _KindFactoryInternal._read_action,
         _KindFactoryInternal._write_action,
         connect=_KindFactoryInternal._connect_action,
+    ),
+)
+KindFactory.register_kind(
+    "affix",
+    KindHandler(
+        _KindFactoryInternal._build_affix,
+        _KindFactoryInternal._read_affix,
+        _KindFactoryInternal._write_affix,
+        connect=_KindFactoryInternal._connect_affix,
+        literal=_KindFactoryInternal._literal_affix,
     ),
 )

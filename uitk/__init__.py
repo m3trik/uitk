@@ -44,7 +44,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.3.95"
+__version__ = "1.3.96"
 
 
 DEFAULT_INCLUDE = {
@@ -99,6 +99,7 @@ DEFAULT_INCLUDE = {
     "widgets.expandableList": "ExpandableList",
     "widgets.header": "Header",
     "widgets.footer": ["Footer", "FooterStatusController"],
+    "widgets.formPanel": "FormPanel",
     "widgets.label": "Label",
     "widgets.lineEdit": "LineEdit",
     "widgets.mainWindow": "MainWindow",

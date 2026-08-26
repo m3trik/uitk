@@ -22,6 +22,7 @@ just works.
     sb.option_box.set_reset()                       # auto (window StateManager)
     sb.option_box.set_reset(reset=my_reset_func)    # explicit
 """
+
 from typing import Callable, Optional
 
 import pythontk as ptk

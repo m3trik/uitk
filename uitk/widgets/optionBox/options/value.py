@@ -17,6 +17,7 @@ Usage::
 
     sld.option_box.add_value(width=46, suffix="°")
 """
+
 from typing import Optional
 
 from qtpy import QtWidgets, QtCore

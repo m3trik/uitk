@@ -141,6 +141,18 @@ class BaseOption(QtCore.QObject, ABC, metaclass=QObjectABCMeta):
         """
         pass
 
+    def refresh(self) -> None:
+        """Re-pull anything this option DERIVES from a source outside itself.
+
+        Called on every show of the option box. No-op by default — an option
+        whose state is its own (a toggle, a mode flag) has nothing to re-read.
+        Override it when the option supplies a value the field displays and that
+        value can change behind the field's back: a session-state restore lands
+        AFTER the option was built, and a shared source can be edited in another
+        panel while this one is already up.
+        """
+        pass
+
     def set_wrapped_widget(self, widget):
         """Set or update the wrapped widget.
 

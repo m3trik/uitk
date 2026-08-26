@@ -35,6 +35,7 @@ every kind the registry knows about.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -911,11 +912,107 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         """
         return {}
 
+    def live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]:
+        """Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.
+
+        The composable counterpart to :meth:`live_param_tooltips`. That one owns
+        the WHOLE tooltip, which is right for a row whose static text is the
+        thing going stale -- and wrong for an ``action`` row, whose buttons each
+        carry their own per-choice description. Replacing three specific answers
+        ("what does Clear do?") with one general one is a bad trade, and the
+        buttons are exactly where the user is standing when they wonder what the
+        row currently holds.
+
+        A block provider returns only the live part, so every hover target on
+        the row -- label, control, and each action button -- keeps its own text
+        and gains the current contents underneath it.
+
+        Register a key in ONE of the two hooks: binding replaces a widget's
+        provider rather than stacking, and blocks are installed second, so a
+        key in both silently loses its whole-tooltip provider on the label and
+        the control while the buttons keep only the block.
+
+        Returns:
+            (dict) Param key -> zero-argument callable returning the live HTML
+            block (see
+            :meth:`uitk.widgets.mixins.tooltip_mixin.TooltipFormat.stored_items`).
+            Unknown keys are ignored.
+        """
+        return {}
+
     def _bind_live_param_tooltips(self) -> None:
-        """Install every :meth:`live_param_tooltips` provider on its row."""
+        """Install every live tooltip provider on its row."""
         for key, provider in (self.live_param_tooltips() or {}).items():
             targets = [self._param_widgets.get(key), self._param_labels.get(key)]
             self.sb.tooltip.bind([t for t in targets if t is not None], provider)
+        for key, provider in (self.live_param_tooltip_blocks() or {}).items():
+            self._bind_live_param_block(key, provider)
+
+    def _bind_live_param_block(self, key: str, provider) -> None:
+        """Append *provider*'s live block to every hover target of row *key*.
+
+        The composed providers are plain closures, so the tooltip surface stores
+        them directly rather than through its bound-method weakref. That keeps
+        this slot alive exactly as long as the widgets it bound -- which the
+        panel owns and destroys together -- rather than beyond them.
+        """
+        params = getattr(self.params_module, "PARAMS", {}) or {}
+        spec = params.get(key)
+        if spec is None:
+            return
+        widget = self._param_widgets.get(key)
+        static = self.format_param_tooltip(spec)
+        targets = [
+            (t, static) for t in (widget, self._param_labels.get(key)) if t is not None
+        ]
+        # An action row's buttons: each keeps its own per-choice description,
+        # promoted to HTML first (see :meth:`_as_tooltip_html`).
+        for button in (getattr(widget, "_action_buttons", None) or {}).values():
+            own = self._pristine_tooltip(button)
+            targets.append((button, self._as_tooltip_html(own) if own else static))
+        for target, base in targets:
+            self.sb.tooltip.bind(target, lambda _base=base, _p=provider: _base + _p())
+
+    #: Dynamic property holding a widget's own tooltip, captured before any
+    #: live provider could overwrite it (see :meth:`_pristine_tooltip`).
+    _STATIC_TOOLTIP_PROP = "_bridge_static_tooltip"
+
+    @classmethod
+    def _pristine_tooltip(cls, widget) -> str:
+        """The widget's OWN tooltip, from before a live provider rewrote it.
+
+        The tooltip surface writes each computed string back onto the widget as
+        it renders, so ``toolTip()`` stops being the widget's own text after the
+        first hover. Reading it again on a later bind would fold the previous
+        live block into the new base and stack a second copy on every rebind
+        (measured: two hovers, two lists). The first read is stashed as a Qt
+        dynamic property and reused from then on, so binding is idempotent.
+        """
+        stored = widget.property(cls._STATIC_TOOLTIP_PROP)
+        if stored is None:
+            stored = widget.toolTip()
+            widget.setProperty(cls._STATIC_TOOLTIP_PROP, stored)
+        return stored
+
+    #: An opening tag, as opposed to a bare ``<`` used as a less-than sign.
+    _HTML_TAG_RE = re.compile(r"<[a-zA-Z/!]")
+
+    @classmethod
+    def _as_tooltip_html(cls, text: str) -> str:
+        """Promote a plain-text tooltip to HTML, preserving its line breaks.
+
+        Qt renders a tooltip as rich text the moment it contains a tag, so
+        appending a live HTML block to a plain-text base silently collapses
+        every newline that base was relying on. Already-rich text passes
+        through untouched -- detected by an opening TAG rather than a bare
+        ``<``, so a tip that merely says ``width < height`` is still escaped
+        instead of having the comparison swallowed as markup.
+        """
+        if not text or cls._HTML_TAG_RE.search(text):
+            return text
+        from html import escape
+
+        return "<p style='margin:0'>" + escape(text).replace("\n", "<br>") + "</p>"
 
     def _wire_action_params(self) -> None:
         """Connect ``action``-kind param buttons to same-named slot methods.
