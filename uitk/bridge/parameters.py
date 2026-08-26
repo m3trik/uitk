@@ -25,7 +25,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable, Dict, Set
 
-from uitk.bridge.spec import AttributeSpec
+from uitk.bridge.spec import AttributeSpec, KindFactory
 from uitk.bridge.formatters import Formatters
 
 
@@ -197,6 +197,17 @@ class Parameters(_ParametersInternal):
         return {key: spec.default for key, spec in params.items()}
 
     @staticmethod
+    def affix_parts(value: Any, *, default: str = "prefix"):
+        """``(prefix, suffix)`` for a collected ``affix``-kind parameter value.
+
+        Re-exported here (it delegates to :meth:`KindFactory.affix_parts`) so a
+        bridge engine reads an affix param through the same ``parameters``
+        module it reads everything else through, instead of importing the
+        widget factory into a headless code path.
+        """
+        return KindFactory.affix_parts(value, default=default)
+
+    @staticmethod
     def render_context(
         values: Dict[str, Any],
         params: Dict[str, AttributeSpec],
@@ -213,5 +224,11 @@ class Parameters(_ParametersInternal):
         out: Dict[str, str] = {}
         for key, val in values.items():
             spec = params.get(key)
-            out[key] = formatter(spec, val) if spec else str(val)
+            if spec is None:
+                out[key] = str(val)
+                continue
+            # A composite kind (``affix``) collapses to its scalar stand-in
+            # first, so a token never renders as a dict repr; scalars are
+            # returned unchanged by ``to_literal``.
+            out[key] = formatter(spec, KindFactory.to_literal(spec, val))
         return out

@@ -62,6 +62,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/embeddedMenu.py`](#widgets--embeddedMenu) — Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to it.
 - [`widgets/expandableList.py`](#widgets--expandableList)
 - [`widgets/footer.py`](#widgets--footer)
+- [`widgets/formPanel.py`](#widgets--formPanel) — Themed form window: Header → labelled rows → output log → Footer.
 - [`widgets/header.py`](#widgets--header)
 - [`widgets/label.py`](#widgets--label)
 - [`widgets/lineEdit.py`](#widgets--lineEdit)
@@ -163,6 +164,7 @@ Registry helpers for bridge parameter dicts.
   - `Parameters.carrier_spec(default: str = 'fbx', section: str = '') -> AttributeSpec` *(static)* — The shared **Format** parameter: which interchange carrier the payload
   - `Parameters.referenced_keys(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]` *(static)* — Return registry keys whose ``__KEY__`` token appears in *script_text*.
   - `Parameters.defaults(params: Dict[str, AttributeSpec]) -> Dict[str, Any]` *(static)* — Return ``{key: default}`` for every registered parameter.
+  - `Parameters.affix_parts(value: Any, *, default: str = 'prefix')` *(static)* — ``(prefix, suffix)`` for a collected ``affix``-kind parameter value.
   - `Parameters.render_context(values: Dict[str, Any], params: Dict[str, AttributeSpec], formatter: Callable[[AttributeSpec, Any], str] = Formatters.python_literal) -> Dict[str, str]` *(static)* — Format *values* through *formatter* for ``StrUtils.replace_delimited``.
 
 <a id="bridge--slots"></a>
@@ -170,7 +172,7 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L108)** — Base class for DCC-bridge slot panels.
+- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L109)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
@@ -195,6 +197,7 @@ Generic DCC-bridge slot base class.
   - `BridgeSlotsBase.resolved_output_dir(self) -> str` — Return the current Output Dir text trimmed of whitespace.
   - `BridgeSlotsBase.require_output_dir(self, mode: Optional[str] = None) -> Optional[str]` — Return the Output Dir for a run in *mode*, or log an error on empty.
   - `BridgeSlotsBase.live_param_tooltips(self) -> Dict[str, Callable[[], str]]` — Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.
+  - `BridgeSlotsBase.live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]` — Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.
   - `BridgeSlotsBase.set_param_enabled(self, key: str, enabled: bool, reason: str = '') -> None` — Grey out (or re-enable) one parameter row, with *reason* as its tooltip.
   - `BridgeSlotsBase.param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]` — The ``(trigger, governed, reason)`` triples in effect for this panel.
   - `BridgeSlotsBase.collect_param_values(self) -> Dict[str, Any]` — Snapshot every widget's current value, regardless of visibility.
@@ -216,8 +219,8 @@ Attribute spec + kind-handler registry for parameterised forms.
 - **[`class AttributeSpec`](uitk/uitk/bridge/spec.py#L55)** — Description of one editable attribute / bridge parameter.
   - `AttributeSpec.from_value(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'` *(class)* — Build a minimal spec from a Python value (AttributeWindow style).
   - `AttributeSpec.display_label(self) -> str` *(property)*
-- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L137)** — Bundle of callables that build / read / write a widget kind.
-- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L679)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
+- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L141)** — Bundle of callables that build / read / write a widget kind.
+- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L938)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
   - `KindFactory.infer_kind(value: Any) -> str` *(static)* — Map a Python value to one of the built-in kinds.
   - `KindFactory.register_kind(name: str, handler: KindHandler) -> None` *(static)* — Register a new kind (or override an existing one).
   - `KindFactory.get_handler(kind: str) -> KindHandler` *(static)* — Return the handler for *kind* (raises KeyError if unregistered).
@@ -226,6 +229,8 @@ Attribute spec + kind-handler registry for parameterised forms.
   - `KindFactory.read_value(widget: QtWidgets.QWidget) -> Any` *(static)* — Return the current value of a factory-built widget.
   - `KindFactory.set_value(widget: QtWidgets.QWidget, value: Any) -> None` *(static)* — Set the value of a factory-built widget.
   - `KindFactory.set_choices(widget: QtWidgets.QWidget, choices: ChoicesSeq) -> None` *(static)* — Repopulate a choice-driven widget's entries after it was built.
+  - `KindFactory.to_literal(spec: AttributeSpec, value: Any) -> Any` *(static)* — The scalar stand-in *value* substitutes as, for a composite kind.
+  - `KindFactory.affix_parts(value: Any, *, default: str = 'prefix') -> Tuple[str, str]` *(static)* — ``(prefix, suffix)`` for an ``affix``-kind value.
   - `KindFactory.connect_changed(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None` *(static)* — Wire the widget's value-change signal to ``callback(new_value)``.
 
 <a id="bridge--tooltip"></a>
@@ -233,7 +238,7 @@ Attribute spec + kind-handler registry for parameterised forms.
 
 Rich-text tooltip + template-description helpers for bridge panels.
 
-- **[`class Tooltip(_TooltipInternal)`](uitk/uitk/bridge/tooltip.py#L56)** — Rich-text tooltip + template-description builders for bridge panels.
+- **[`class Tooltip(_TooltipInternal)`](uitk/uitk/bridge/tooltip.py#L88)** — Rich-text tooltip + template-description builders for bridge panels.
   - `Tooltip.format_param_tooltip(spec: AttributeSpec) -> str` *(static)* — Build a rich-text tooltip for one :class:`AttributeSpec`.
   - `Tooltip.template_description(template_path: Path) -> Optional[str]` *(static)* — Return *template_path*'s leading docstring / comment block, or *None*.
 
@@ -708,7 +713,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 <a id="switchboard--utils"></a>
 ### `switchboard/utils.py`
 
-- **[`class OverrideCursorGuard(QtCore.QObject)`](uitk/uitk/switchboard/utils.py#L21)** — Owns one application override cursor and guarantees its removal.
+- **[`class OverrideCursorGuard(QtCore.QObject)`](uitk/uitk/switchboard/utils.py#L20)** — Owns one application override cursor and guarantees its removal.
   - `OverrideCursorGuard.shape(self)` *(property)* — The cursor shape this guard owns.
   - `OverrideCursorGuard.holding(self) -> bool` *(property)* — True while this guard holds an application override cursor.
   - `OverrideCursorGuard.apply(self) -> None` — Push the override (idempotent) and start the watchdog.
@@ -717,7 +722,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `OverrideCursorGuard.is_stale(cls, cursor) -> bool` *(class)* — True if ``cursor`` is a guard-owned shape that no guard holds —
   - `OverrideCursorGuard.notify_stack_drained(cls) -> None` *(class)* — Drop every guard's ownership because the whole stack was dropped
   - `OverrideCursorGuard.reconcile(cls) -> None` *(class)* — Drop every orphaned guard cursor from the application stack,
-- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L198)** — Utility methods for widget positioning, centering, and screen geometry.
+- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L197)** — Utility methods for widget positioning, centering, and screen geometry.
   - `SwitchboardUtilsMixin.pop_override_cursor_stack(app)` *(static)* — Pop the whole application override-cursor stack.
   - `SwitchboardUtilsMixin.push_override_cursor_stack(app, saved)` *(static)* — Re-push cursors captured by :meth:`pop_override_cursor_stack`,
   - `SwitchboardUtilsMixin.get_cursor_offset_from_center(widget)` *(static)* — Get the relative position of the cursor with respect to the center of a given widget.
@@ -746,6 +751,8 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardUtilsMixin.save_file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]` *(static)* — Open a save-file dialog to choose a destination path.
   - `SwitchboardUtilsMixin.input_dialog(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str` *(static)* — Show a modal text-input dialog and return the entered string.
   - `SwitchboardUtilsMixin.list_input_dialog(items, title: str = 'Select', label: str = 'Select item(s):', parent: QtWidgets.QWidget = None, multi: bool = True, selected=None) -> list` *(static)* — Show a modal list picker and return the chosen entries.
+  - `SwitchboardUtilsMixin.form_dialog(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', validate: Callable = None, message: str = '') -> Optional[dict]` *(static)* — Show a modal form of labelled rows and return ``{name: value}``.
+  - `SwitchboardUtilsMixin.form_panel(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', cancel_text: str = None, validate: Callable = None, message: str = '', help_text: str = '', on_run: Callable = None, apply_text: str = 'Apply', output: bool = True, min_width: int = 560, settings=None, settings_key: str = 'window_geometry')` *(static)* — Build a :class:`~uitk.widgets.formPanel.FormPanel` — the modeless twin.
   - `SwitchboardUtilsMixin.simulate_key_press(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)` *(static)* — Simulate a key press event for the given UI and optionally release the keyboard.
   - `SwitchboardUtilsMixin.defer_with_timer(self, func: callable, *args, ms: int = 300, **kwargs) -> None` — Defer execution of any callable with arguments after a delay.
   - `SwitchboardUtilsMixin.gc_protect(self, obj=None, clear=False)` — Protect the given object(s) from garbage collection by holding a strong reference.
@@ -1163,6 +1170,32 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `FooterStatusController.set_resolver(self, resolver: Callable[[], str]) -> None`
   - `FooterStatusController.set_truncation(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None` — Configure truncation behavior for footer updates via StrUtils.truncate kwargs.
   - `FooterStatusController.update(self) -> None`
+
+<a id="widgets--formPanel"></a>
+### `widgets/formPanel.py`
+
+Themed form window: Header → labelled rows → output log → Footer.
+
+- **[`class FormPanel(WindowPanel)`](uitk/uitk/widgets/formPanel.py#L45)** — Themed form window over a list of field specs.
+  - `FormPanel.add(self, x, label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), enabled_by: Optional[str] = None, **kwargs)` — :meth:`WindowPanel.add`, and the widget becomes a FIELD when it can.
+  - `FormPanel.clear_rows(self) -> None` — The base's, plus the field registries — they point at those rows.
+  - `FormPanel.set_fields(self, fields) -> None` — (Re)build the rows from *fields* — each spec is one :meth:`add`.
+  - `FormPanel.revalidate(self, *_args) -> str` — Re-run the validator, retitle the accept button, show the reason.
+  - `FormPanel.values(self) -> dict` — ``{name: value}`` for every field, including disabled ones.
+  - `FormPanel.set_values(self, values: dict) -> None` — Write *values* back into the matching fields (unknown names ignored).
+  - `FormPanel.editor(self, name: str)` — The field widget named *name*, or None (``panel.<name>`` is the same).
+  - `FormPanel.logger(self)` *(property)* — Per-instance logger whose records land in the output pane.
+  - `FormPanel.clear_output(self) -> None`
+  - `FormPanel.set_status(self, text: str, level: Optional[str] = None) -> None` — Footer status line.
+  - `FormPanel.run(self, values: dict = None) -> None` — Run the handler in place with the panel still open.
+  - `FormPanel.apply_pending(self) -> None` — Commit the plan the last preview armed, reported like any other run.
+  - `FormPanel.pending_commit(self)` *(property)* — The call the armed Apply button would make, or None.
+  - `FormPanel.arm_apply(self, commit: Callable, note: str = None) -> None` — Hold *commit* — the identical live call — behind an Apply button.
+  - `FormPanel.disarm_apply(self) -> None` — Drop any armed plan and hide the Apply button.
+  - `FormPanel.exec_panel(self) -> bool` — Show modally, block, and return whether the form was accepted.
+  - `FormPanel.hideEvent(self, event)`
+  - `FormPanel.closeEvent(self, event)`
+  - `FormPanel.keyPressEvent(self, event)`
 
 <a id="widgets--header"></a>
 ### `widgets/header.py`
@@ -1663,7 +1696,7 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
   - `OptionBoxContainer.changeEvent(self, event)`
   - `OptionBoxContainer.showEvent(self, event)` — Re-fit to content when shown without a managing parent layout.
   - `OptionBoxContainer.eventFilter(self, obj, event)` — Watch the wrapped widget for enabled/visibility and height changes.
-- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L296)** — Plugin-based option manager that wraps widgets with action buttons.
+- **[`class OptionBox`](uitk/uitk/widgets/optionBox/_optionBox.py#L335)** — Plugin-based option manager that wraps widgets with action buttons.
   - `OptionBox.add_option(self, option)` — Add an option plugin instance.
   - `OptionBox.remove_option(self, option)` — Remove an option plugin instance.
   - `OptionBox.get_options(self)` — Get all registered option plugins.
@@ -1685,13 +1718,14 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
   - `BaseOption.on_wrap(self, option_box, container)` — Called when the option is added to a wrapped widget.
   - `BaseOption.sibling_options(self)` — The other options sharing this field's OptionBox (never ``self``).
   - `BaseOption.restore_default(self) -> None` — Return this option's *own* state to its as-constructed default.
+  - `BaseOption.refresh(self) -> None` — Re-pull anything this option DERIVES from a source outside itself.
   - `BaseOption.set_wrapped_widget(self, widget)` — Set or update the wrapped widget.
-- **[`class ButtonOption(BaseOption)`](uitk/uitk/widgets/optionBox/options/_options.py#L153)** — Base class for button-based options.
+- **[`class ButtonOption(BaseOption)`](uitk/uitk/widgets/optionBox/options/_options.py#L165)** — Base class for button-based options.
   - `ButtonOption.create_widget(self)` — Create a QPushButton widget.
   - `ButtonOption.setup_widget(self)` — Setup button connections.
   - `ButtonOption.block_next_click(self)` — Block the next click event (used when popup closes to prevent immediate reopen).
   - `ButtonOption.set_checked(self, checked)` — Set the checked state of the button.
-- **[`class GatingMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L368)** — Reusable *gating button* capability for option plugins.
+- **[`class GatingMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L380)** — Reusable *gating button* capability for option plugins.
 
 <a id="widgets--optionBox--options--_persistence"></a>
 ### `widgets/optionBox/options/_persistence.py`
@@ -1721,12 +1755,20 @@ Action option for OptionBox - provides customizable action buttons.
 
 Affix-mode picker option for OptionBox.
 
-- **[`class AffixOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/affix.py#L40)** — Tri-state affix-mode cycle button (Auto / Suffix / Prefix) for a text widget.
+- **[`class AffixMode`](uitk/uitk/widgets/optionBox/options/affix.py#L65)** — One selectable state of the picker.
+  - `AffixMode.resolve(self, text: str, default: str = 'prefix') -> Tuple[str, str]` — ``(prefix, suffix)`` for *text* under this mode.
+  - `AffixMode.text(self) -> Optional[str]` — The text this mode supplies, or ``None`` when the user's own stands.
+  - `AffixMode.convention(cls, convention_key: str, *, key: str = 'convention', label: str = 'Scene', icon: str = 'link', description: str = '') -> 'AffixMode'` *(class)* — A mode bound to ``pythontk.NamingConvention`` for *convention_key*.
+- **[`class AffixOption(PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/affix.py#L200)** — Cycling affix-mode picker for a text widget.
+  - `AffixOption.modes(self) -> List[str]` *(property)* — The mode keys in cycle order.
+  - `AffixOption.mode_spec(self, key: Optional[str] = None) -> AffixMode` — The :class:`AffixMode` for *key* (the current mode by default).
   - `AffixOption.is_compatible(cls, widget) -> bool` *(class)* — Attach only to text-bearing hosts (``resolve`` reads ``text()``).
   - `AffixOption.create_widget(self)` — Create the standard option button, seeded with the current mode's glyph.
-  - `AffixOption.setup_widget(self)` — Wire the cycle click and show the current mode's tooltip.
-  - `AffixOption.mode(self) -> str` *(property)* — Current mode string — ``"auto"`` / ``"suffix"`` / ``"prefix"``.
-  - `AffixOption.set_mode(self, mode: str) -> None` — Select *mode* if it is a known value (else no-op).
+  - `AffixOption.setup_widget(self)` — Wire the cycle click, show the tooltip, apply the mode's field effects.
+  - `AffixOption.mode(self) -> str` *(property)* — Current mode key.
+  - `AffixOption.set_mode(self, mode: str) -> None` — Select *mode* if it is one of :attr:`modes` (else no-op).
+  - `AffixOption.restore_default(self) -> None` — Return the picker to its constructed ``default`` mode.
+  - `AffixOption.refresh(self) -> None` — Re-pull a text-supplying mode's value into the field.
   - `AffixOption.resolve(self, text: Optional[str] = None, *, default: str = 'prefix') -> Tuple[str, str]` — Return ``(prefix, suffix)`` for *text* under the current mode.
 
 <a id="widgets--optionBox--options--browse"></a>
@@ -1848,7 +1890,7 @@ Recent Values option for OptionBox — shows a selectable history list.
 
 Reset option for OptionBox — one-click reset-to-default, with a modifier-gated
 
-- **[`class ResetOption(ButtonOption, ptk.LoggingMixin)`](uitk/uitk/widgets/optionBox/options/reset.py#L41)** — Reset-to-default button with a modifier-gated *bypass* toggle.
+- **[`class ResetOption(ButtonOption, ptk.LoggingMixin)`](uitk/uitk/widgets/optionBox/options/reset.py#L42)** — Reset-to-default button with a modifier-gated *bypass* toggle.
   - `ResetOption.is_bypassed(self) -> bool` *(property)* — ``True`` while the parameter is bypassed (held at its default).
   - `ResetOption.reset(self) -> None` — Reset the wrapped widget to its default (one-shot, persisted).
   - `ResetOption.set_bypassed(self, value: bool, *, emit: bool = True) -> None` — Bypass (``True``) or restore (``False``) the widget.
@@ -1871,7 +1913,7 @@ Toggle option for OptionBox — a persisted binary on/off button.
 
 Inline editable value readout for OptionBox.
 
-- **[`class ValueOption(BaseOption)`](uitk/uitk/widgets/optionBox/options/value.py#L27)** — Inline, editable numeric field mirroring the wrapped widget's value.
+- **[`class ValueOption(BaseOption)`](uitk/uitk/widgets/optionBox/options/value.py#L28)** — Inline, editable numeric field mirroring the wrapped widget's value.
   - `ValueOption.create_widget(self)` — Create the compact, button-less spin box field.
   - `ValueOption.setup_widget(self)` — Mirror the wrapped widget into the field and wire field -> widget.
   - `ValueOption.on_wrap(self, option_box, container)`
@@ -1896,7 +1938,7 @@ Utilities and helper functions for OptionBox.
   - `OptionBoxManager.set_disable(self, *, icon: str = 'ban', tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, gate_wrapped: bool = True, gated_widgets=(), suppress_value: bool = True, disabled_color: Optional[str] = None, active_color: Optional[str] = None, settings_key=None, replace: bool = True, on_toggled=None)` — Add a universal *disable* button (fluent interface).
   - `OptionBoxManager.add_disable(self, **kwargs)` — Add a disable button without replacing existing ones.
   - `OptionBoxManager.add_value(self, *, width: int = 46, decimals=None, suffix: str = '', order=None, replace: bool = True)` — Add an inline editable value field that mirrors the wrapped widget.
-  - `OptionBoxManager.set_affix(self, *, default: str = 'auto', on_change=None, tooltip: Optional[str] = None, order=None, replace: bool = True)` — Add an inline affix-mode picker (Auto / Suffix / Prefix) — fluent.
+  - `OptionBoxManager.set_affix(self, *, default: str = 'auto', modes=None, convention_key: Optional[str] = None, on_change=None, tooltip: Optional[str] = None, settings_key=None, order=None, replace: bool = True)` — Add an inline affix-mode picker — fluent.
   - `OptionBoxManager.affix_mode(self) -> str` *(property)* — Current affix mode (``"auto"`` when no AffixOption is present).
   - `OptionBoxManager.resolve_affix(self, text: Optional[str] = None, *, default: str = 'prefix')` — Return ``(prefix, suffix)`` for the wrapped field under its mode.
   - `OptionBoxManager.set_reset(self, *, reset=None, icon: str = 'undo', tooltip: str = 'Reset to default.    Alt/Ctrl+click: hold at default (bypass).', tooltip_bypassed: str = 'Held at default (bypassed). Click to restore your value.', disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)` — Add a per-widget *reset-to-default* button (fluent).
@@ -2518,7 +2560,7 @@ Scrollable rich-text viewer window.
 
 Themed top-level uitk window: Header → body → Footer.
 
-- **[`class WindowPanel(QtWidgets.QWidget)`](uitk/uitk/widgets/windowPanel.py#L27)** — Themed top-level window with a Header / body / Footer layout.
+- **[`class WindowPanel(QtWidgets.QWidget, AttributesMixin)`](uitk/uitk/widgets/windowPanel.py#L42)** — Themed top-level window with a Header / body / Footer layout.
   - `WindowPanel.style(self) -> 'StyleSheet'` *(property)* — Lazy :class:`StyleSheet` bound to this panel.
   - `WindowPanel.showEvent(self, event)`
   - `WindowPanel.persist_geometry(self, settings, key: str = 'window_geometry') -> None` — Enable saving / restoring this window's geometry via *settings*.
@@ -2534,5 +2576,8 @@ Themed top-level uitk window: Header → body → Footer.
   - `WindowPanel.header(self)` *(property)* — The :class:`Header` widget at the top.
   - `WindowPanel.footer(self)` *(property)* — The :class:`Footer` widget at the bottom.
   - `WindowPanel.body_layout(self)` *(property)* — ``QVBoxLayout`` for panel content.
+  - `WindowPanel.rows_layout(self) -> QtWidgets.QFormLayout` *(property)* — The ``QFormLayout`` :meth:`add` places rows in.
+  - `WindowPanel.add(self, x: Union[str, QtWidgets.QWidget, type, list, tuple], label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), **kwargs) -> Union[QtWidgets.QWidget, list]` — Add a widget to the body the way ``Menu.add`` adds an item.
+  - `WindowPanel.clear_rows(self) -> None` — Drop every row :meth:`add` placed, and the attributes exposing them.
   - `WindowPanel.tighten_sublayouts(self, spacing: int = 1) -> None` — Set every nested sub-layout inside ``body_layout`` to *spacing*.
   - `WindowPanel.icon_button(icon_name: str = '', size: int = 24, tooltip: str = '', icon_size=None) -> QtWidgets.QPushButton` *(static)* — Build a square, flat, icon-only button for table cells / toolbars.

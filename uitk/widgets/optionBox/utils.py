@@ -538,27 +538,47 @@ class OptionBoxManager(ptk.LoggingMixin):
         self,
         *,
         default: str = "auto",
+        modes=None,
+        convention_key: Optional[str] = None,
         on_change=None,
         tooltip: Optional[str] = None,
+        settings_key=None,
         order=None,
         replace: bool = True,
     ):
-        """Add an inline affix-mode picker (Auto / Suffix / Prefix) — fluent.
+        """Add an inline affix-mode picker — fluent.
 
-        Turns the wrapped text field into an affix entry with a tri-state icon
-        button beside it declaring how the field's text applies to a base name
-        (clicking cycles Auto → Suffix → Prefix). The parsing lives in
+        Turns the wrapped text field into an affix entry with a cycling icon
+        button beside it declaring how the field's text applies to a base name.
+        The cycle is the three built-in modes (Auto → Suffix → Prefix) unless
+        *modes* or *convention_key* says otherwise. The manual parsing lives in
         ``pythontk.StrUtils.split_affix``; read the selection back with
         :attr:`affix_mode` / :meth:`resolve_affix`. Requires a text-bearing
         host (skipped + warned otherwise — see
         :meth:`AffixOption.is_compatible`).
 
         Args:
-            default: Initial mode — ``"auto"``, ``"suffix"`` or ``"prefix"``.
+            default: Initial mode key. A mode persisted by a previous session
+                overrides it.
+            modes: The cycle, as built-in keys and/or ``AffixMode`` instances.
+                ``None`` uses the three built-ins. Pass e.g.
+                ``("suffix", "prefix")`` for a two-state picker, or include a
+                custom ``AffixMode`` for a state of your own.
+            convention_key: Shorthand for appending a fourth, *custom* state
+                bound to ``pythontk.NamingConvention`` for that type key — the
+                field then shows the shared convention's affix and goes
+                read-only (still enabled, so the value reads) while selected.
+                Ignored when *modes* is given explicitly.
             on_change: Optional callable invoked with the new mode string
-                whenever the user changes the picker.
+                whenever the user changes the picker. It does NOT fire for the
+                restore of a persisted mode (nothing the user just did) — read
+                :attr:`affix_mode` once after this call to sync anything the
+                mode drives (a placeholder, a dependent label).
             tooltip: Static tooltip override (defaults to a per-state tooltip
                 naming the current mode).
+            settings_key: Persistence namespace for the selected mode. ``None``
+                auto-derives from the field's ``objectName`` — pass an explicit
+                string for a generic name (``txt000``), ``False`` to opt out.
             order: Explicit sort position. See :class:`BaseOption`.
             replace: When ``True`` (default), removes any existing AffixOption
                 first.
@@ -580,7 +600,10 @@ class OptionBoxManager(ptk.LoggingMixin):
             AffixOption(
                 wrapped_widget=self._widget,
                 default=default,
+                modes=modes,
+                convention_key=convention_key,
                 on_change=on_change,
+                settings_key=settings_key,
                 order=order,
                 **extra,
             )
@@ -599,8 +622,9 @@ class OptionBoxManager(ptk.LoggingMixin):
         """Return ``(prefix, suffix)`` for the wrapped field under its mode.
 
         Reads the wrapped widget's text and the AffixOption's mode (``"auto"``
-        when no picker was added) and splits via
-        ``pythontk.StrUtils.split_affix``. *text* overrides the widget's text —
+        when no picker was added) and splits via that mode — for the three
+        built-ins, ``pythontk.StrUtils.split_affix``; a custom mode answers from
+        its own source. *text* overrides the widget's text —
         e.g. to fall back to the field's ``placeholderText()`` when it is empty.
         *default* is the fallback mode used when Auto is selected but the text
         has no boundary delimiter.

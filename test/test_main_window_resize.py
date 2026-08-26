@@ -181,6 +181,92 @@ class TestFitHeightToContent(QtBaseTestCase):
         )
 
 
+class _RecordingLayout(QtWidgets.QVBoxLayout):
+    """A QVBoxLayout that appends its label to a shared list on activate()."""
+
+    def __init__(self, label, log, parent=None):
+        super().__init__(parent)
+        self._label = label
+        self._log = log
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(0)
+
+    def activate(self):
+        self._log.append(self._label)
+        return super().activate()
+
+
+class TestLayoutActivationIsLeavesUp(QtBaseTestCase):
+    """``_activate_descendant_layouts`` must activate children before parents.
+
+    Both resize entry points read the window's own ``minimumSizeHint`` in the
+    SAME call frame that activates the layouts, so a parent recomputed from
+    not-yet-refreshed child hints hands them the PREVIOUS content's height.
+    Measured on the substance bridge panel: switching to a template with
+    fewer parameter rows left the window at 341px for content needing 265,
+    every time, in both directions -- the panel simply stopped resizing.
+
+    Pinned as the ordering invariant rather than as a pixel assertion: the
+    depth at which it goes wrong depends on the panel, but 'every layout is
+    activated after everything nested inside it' is the property that makes
+    a single pass sufficient for any of them.
+    """
+
+    def _nested_window(self, depth=4):
+        """A window with *depth* nested layouts, each labelled by its level."""
+        log = []
+        central = QtWidgets.QWidget()
+        central.setLayout(_RecordingLayout("level0", log))
+        host = central
+        for level in range(1, depth):
+            nested = QtWidgets.QWidget(host)
+            nested.setLayout(_RecordingLayout(f"level{level}", log))
+            host.layout().addWidget(nested)
+            host = nested
+        leaf = QtWidgets.QLabel("leaf", host)
+        leaf.setFixedHeight(20)
+        host.layout().addWidget(leaf)
+        return self.track_widget(_build_window(central)), log
+
+    def test_deeper_layouts_activate_first(self):
+        win, log = self._nested_window()
+        _show_and_settle(win)
+        log.clear()
+        win._activate_descendant_layouts()
+
+        levels = [entry for entry in log if entry.startswith("level")]
+        self.assertTrue(levels, "no descendant layout was activated at all")
+        first_seen = {}
+        for index, name in enumerate(levels):
+            first_seen.setdefault(name, index)
+        ordered = [name for name, _ in sorted(first_seen.items(),
+                                              key=lambda kv: kv[1])]
+        self.assertEqual(
+            ordered,
+            sorted(ordered, reverse=True),
+            f"layouts activated parent-first: {ordered}",
+        )
+
+    def test_layout_depth_counts_widgets_up_to_the_window(self):
+        win, _log = self._nested_window(depth=3)
+        central = win.centralWidget()
+        self.assertEqual(win._layout_depth(central.layout()), 1)
+        inner = central.findChild(QtWidgets.QWidget)
+        self.assertGreater(
+            win._layout_depth(inner.layout()),
+            win._layout_depth(central.layout()),
+        )
+
+    def test_a_single_activation_settles_the_window_hint(self):
+        """A second pass must find nothing left to change -- that is the point."""
+        win, _log = self._nested_window()
+        _show_and_settle(win)
+        win._activate_descendant_layouts()
+        once = win.minimumSizeHint().height()
+        win._activate_descendant_layouts()
+        twice = win.minimumSizeHint().height()
+        self.assertEqual(once, twice)
+
 class TestCollapsableGroupDelegatesToMainWindow(QtBaseTestCase):
     """CollapsableGroup must hand the resize off to MainWindow.adjust_height_by."""
 

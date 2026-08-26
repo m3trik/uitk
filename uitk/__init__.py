@@ -99,6 +99,7 @@ DEFAULT_INCLUDE = {
     "widgets.expandableList": "ExpandableList",
     "widgets.header": "Header",
     "widgets.footer": ["Footer", "FooterStatusController"],
+    "widgets.formPanel": "FormPanel",
     "widgets.label": "Label",
     "widgets.lineEdit": "LineEdit",
     "widgets.mainWindow": "MainWindow",

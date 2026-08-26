@@ -145,6 +145,7 @@ class OptionBoxContainer(QtWidgets.QWidget):
         now-correct hint and keep the container centered where it was placed.
         """
         super().showEvent(event)
+        self._refresh_options()
         parent = self.parentWidget()
         if parent is not None and parent.layout() is not None:
             return  # layout-managed — sizing is the parent's responsibility
@@ -266,6 +267,44 @@ class OptionBoxContainer(QtWidgets.QWidget):
                 if mgr is not None:
                     mgr._update_sizing()
         return super().eventFilter(obj, event)
+
+    def _refresh_options(self):
+        """Let each option re-pull anything it DERIVES, on every show.
+
+        An option whose state is its own (a toggle, a mode flag) no-ops; one
+        that SUPPLIES the field's text from a shared source re-reads it. Two
+        things leave such text stale and both land after the option was built:
+        ``StateManager`` restores a registered field's saved text, and the
+        shared source can be edited in another panel while this one is up.
+
+        Reached through the cached ``_option_box_manager``, like
+        ``StateManager._restore_option_defaults`` -- the ``option_box`` property
+        CREATES a manager on first access, so touching it here would spin one up
+        for every wrapped widget. Duck-typed: a container built outside
+        ``wrap()`` simply has nothing to refresh.
+        """
+        layout = self.layout()
+        if not layout or not layout.count():
+            return
+        wrapped = layout.itemAt(0).widget()
+        mgr = getattr(wrapped, "_option_box_manager", None)
+        get_options = getattr(mgr, "get_options", None)
+        if not callable(get_options):
+            return
+        for option in get_options():
+            refresh = getattr(option, "refresh", None)
+            if not callable(refresh):
+                continue
+            try:
+                refresh()
+            except Exception as e:  # noqa: BLE001
+                # One bad option must not keep the box from showing (the field
+                # still holds whatever value it had) -- but a refresh that
+                # always fails is a field silently showing stale data, so say so
+                # rather than swallowing it.
+                logger = getattr(mgr, "logger", None)
+                if logger is not None:
+                    logger.debug(f"option refresh failed on {option!r}: {e}")
 
     def _sync_option_buttons_enabled(self):
         """Sync option button enabled state with the wrapped widget."""

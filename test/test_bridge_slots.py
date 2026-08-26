@@ -29,7 +29,13 @@ import pythontk as ptk  # noqa: E402
 from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from uitk.switchboard import Switchboard  # noqa: E402
 from uitk.bridge.slots import BridgeSlotsBase  # noqa: E402
-from uitk.bridge.spec import AttributeSpec, KindFactory  # noqa: E402
+from uitk.bridge.spec import (  # noqa: E402
+    AttributeSpec,
+    KindFactory,
+    _KindFactoryInternal,
+)
+from uitk.bridge.formatters import Formatters  # noqa: E402
+from uitk.bridge.parameters import Parameters  # noqa: E402
 from uitk.managers.preset_manager import PresetManager  # noqa: E402
 from uitk.managers.optional_package_manager import (  # noqa: E402
     OptionalPackageManager,
@@ -572,6 +578,11 @@ class TestKindWidgetPresetRoundTrip(BaseTestCase):
         ("scale", dict(kind="float", default=1.0), 2.5),
         ("clear", dict(kind="bool", default=False), True),
         ("shader", dict(kind="choice", choices=["x", "y"], default="x"), "y"),
+        (
+            "affix",
+            dict(kind="affix", default={"text": "", "mode": "auto"}),
+            {"text": "_hero", "mode": "suffix"},
+        ),
     )
 
     def _round_trip(self, key, spec_kw, value, empty):
@@ -603,6 +614,7 @@ class TestKindWidgetPresetRoundTrip(BaseTestCase):
             "float": 0.0,
             "bool": False,
             "choice": "x",
+            "affix": {"text": "", "mode": "auto"},
         }
         for key, spec_kw, value in self.CASES:
             with self.subTest(kind=spec_kw["kind"]):
@@ -667,6 +679,190 @@ class TestActionKind(BaseTestCase):
             ),
         }
         self.assertEqual(slot.collect_param_values(), {"depth": 3})
+
+
+class TestActionKindIconButtons(BaseTestCase):
+    """A 4th ``choices`` element turns a secondary action into an icon button.
+
+    It rides the PRIMARY action's option box rather than taking a second
+    full-width label, and stays addressable through ``_action_buttons`` so
+    neither the wiring nor the disable path has to know which shape it got.
+    """
+
+    CHOICES = [
+        ("Set From Selection", "do_set", "primary tip"),
+        ("Select", "do_select", "select tip", "select"),
+        ("Clear", "do_clear", "clear tip", "clear"),
+    ]
+
+    def _widget(self):
+        return KindFactory.make_widget(
+            AttributeSpec(key="acts", kind="action", choices=self.CHOICES)
+        )
+
+    def test_icon_entries_render_as_icons_and_text_entries_do_not(self):
+        w = self._widget()
+        buttons = w._action_buttons
+        self.assertEqual(sorted(buttons), ["do_clear", "do_select", "do_set"])
+        self.assertEqual(buttons["do_set"].text(), "Set From Selection")
+        self.assertTrue(buttons["do_set"].icon().isNull())
+        for key in ("do_select", "do_clear"):
+            with self.subTest(action=key):
+                self.assertEqual(buttons[key].text(), "")
+                self.assertFalse(buttons[key].icon().isNull())
+                self.assertEqual(buttons[key].toolTip(), f"{key.split(chr(95))[1]} tip")
+
+    def test_icon_actions_wire_and_disable_like_text_ones(self):
+        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        w = self._widget()
+        slot._param_widgets = {"acts": w}
+        calls = []
+        slot.do_set = lambda *a: calls.append("set")
+        slot.do_select = lambda *a: calls.append("select")
+        # 'do_clear' left absent -- its icon button must disable, not fail.
+        slot._wire_action_params()
+        w._action_buttons["do_set"].click()
+        w._action_buttons["do_select"].click()
+        self.assertEqual(calls, ["set", "select"])
+        self.assertTrue(w._action_buttons["do_select"].isEnabled())
+        self.assertFalse(w._action_buttons["do_clear"].isEnabled())
+        self.assertIn("do_clear", w._action_buttons["do_clear"].toolTip())
+
+    def test_greying_the_row_widget_takes_the_icon_buttons_with_it(self):
+        """``set_param_enabled`` greys the ROW, and the icons live inside it.
+
+        An icon that stayed live would act on a row the panel has just
+        declared inert -- the same trap the affix picker fell into by being
+        wrapped OUTSIDE its row.
+        """
+        widget = self._widget()
+        widget.setEnabled(False)
+        for key, button in widget._action_buttons.items():
+            with self.subTest(action=key):
+                self.assertFalse(button.isEnabled())
+    def test_a_leading_icon_entry_still_gets_a_labelled_primary(self):
+        """An all-icon row would have no option-box host and no label."""
+        w = KindFactory.make_widget(
+            AttributeSpec(
+                key="acts",
+                kind="action",
+                choices=[("Only", "do_only", "tip", "select")],
+            )
+        )
+        self.assertEqual(w._action_buttons["do_only"].text(), "Only")
+
+    def test_action_rows_still_carry_no_value(self):
+        self.assertIsNone(KindFactory.read_value(self._widget()))
+
+
+class TestAffixKind(BaseTestCase):
+    """The ``affix`` kind -- a text field plus uitk's tri-state mode picker.
+
+    Its value is composite (``{"text", "mode"}``) so a preset restores which
+    SIDE the affix lands on, not just its spelling; ``affix_parts`` is how a
+    headless consumer turns one into the pair it applies.
+    """
+
+    def _widget(self, default=None):
+        return KindFactory.make_widget(
+            AttributeSpec(key="affix", kind="affix", default=default)
+        )
+
+    def test_reads_text_and_mode(self):
+        w = self._widget({"text": "hero_", "mode": "prefix"})
+        self.assertEqual(
+            KindFactory.read_value(w), {"text": "hero_", "mode": "prefix"}
+        )
+
+    def test_write_accepts_a_bare_string_as_auto(self):
+        """A preset written before this kind existed carries a plain str."""
+        w = self._widget()
+        KindFactory.set_value(w, "_hero")
+        self.assertEqual(
+            KindFactory.read_value(w), {"text": "_hero", "mode": "auto"}
+        )
+
+    def test_an_unknown_mode_falls_back_to_auto(self):
+        w = self._widget()
+        KindFactory.set_value(w, {"text": "x", "mode": "sideways"})
+        self.assertEqual(KindFactory.read_value(w)["mode"], "auto")
+
+    def test_change_fires_for_both_the_text_and_the_mode(self):
+        w = self._widget()
+        seen = []
+        KindFactory.connect_changed(w, seen.append)
+        KindFactory.set_value(w, {"text": "hero_", "mode": "auto"})
+        self.assertTrue(seen, "typing did not fire the change wirer")
+        before = len(seen)
+        option = _KindFactoryInternal._affix_option(w._line_edit)
+        option._cycle()
+        self.assertGreater(
+            len(seen), before, "cycling the mode did not fire the change wirer"
+        )
+        self.assertEqual(seen[-1]["mode"], option.mode)
+
+    def test_affix_parts_splits_by_the_declared_mode(self):
+        cases = [
+            ({"text": "hero_", "mode": "prefix"}, ("hero_", "")),
+            ({"text": "hero_", "mode": "suffix"}, ("", "hero_")),
+            ({"text": "_hero", "mode": "auto"}, ("", "_hero")),
+            ({"text": "hero_", "mode": "auto"}, ("hero_", "")),
+            ({"text": "", "mode": "prefix"}, ("", "")),
+            ("hero_", ("hero_", "")),
+            (None, ("", "")),
+        ]
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(KindFactory.affix_parts(value), expected)
+
+    def test_renders_as_its_spelling_not_a_dict_repr(self):
+        """A template substituting ``__KEY__`` must not see ``{'text': ...}``."""
+        spec = AttributeSpec(key="affix", kind="affix", default="")
+        rendered = Parameters.render_context(
+            {"affix": {"text": "hero_", "mode": "prefix"}},
+            {"affix": spec},
+            formatter=Formatters.cli_raw,
+        )
+        self.assertEqual(rendered["affix"], "hero_")
+
+    def test_the_picker_lands_INSIDE_the_row_not_floating_over_it(self):
+        """The option box replaces the field in its PARENT layout.
+
+        Built as a bare QLineEdit, the wrap ran while the field was still
+        outside any layout (the row builder adds it afterwards), so the
+        container floated over the row and every row-level operation missed
+        it -- greying the row left the mode and clear icons live beside a
+        disabled value. Composite, like ``path``, the field is laid out
+        before the wrap.
+        """
+        row = QtWidgets.QWidget()
+        QtWidgets.QHBoxLayout(row)
+        widget = self._widget()
+        row.layout().addWidget(widget)
+
+        buttons = widget.findChildren(QtWidgets.QPushButton)
+        self.assertTrue(buttons, "the affix picker built no buttons")
+        for button in buttons:
+            with self.subTest(button=button.objectName()):
+                self.assertTrue(
+                    widget.isAncestorOf(button),
+                    "the option box floated outside the kind widget",
+                )
+
+    def test_disabling_the_row_widget_takes_the_picker_with_it(self):
+        """What ``set_param_enabled`` walks is the row; the icons ride along."""
+        widget = self._widget()
+        widget.setEnabled(False)
+        for button in widget.findChildren(QtWidgets.QPushButton):
+            with self.subTest(button=button.objectName()):
+                self.assertFalse(button.isEnabled())
+
+    def test_the_value_bearing_child_is_named_for_preset_capture(self):
+        """A widget with an empty objectName is skipped by preset capture."""
+        self.assertEqual(self._widget()._line_edit.objectName(), "affix")
+    def test_a_scalar_kind_is_unchanged_by_the_literal_hook(self):
+        spec = AttributeSpec(key="n", kind="int", default=0)
+        self.assertEqual(KindFactory.to_literal(spec, 7), 7)
 
 
 class _ShowableUi(QtCore.QObject):
@@ -896,8 +1092,11 @@ class TestLiveParamTooltips(BaseTestCase):
         self.assertEqual(widget.toolTip(), "stored: 2")
 
     def test_the_row_label_is_a_hover_target_too(self):
-        """The caption is the row's identity -- and on an ``action`` row it is
-        the only target left, since the buttons carry their own tips."""
+        """The caption is the row's identity, so it answers for the row.
+
+        (An ``action`` row's buttons keep their own per-choice tips; they
+        pick up live state through ``live_param_tooltip_blocks`` instead.)
+        """
         slot = self._built({"SET": lambda: "live"})
         label = slot._param_labels["SET"]
         self._hover(label)
@@ -915,6 +1114,128 @@ class TestLiveParamTooltips(BaseTestCase):
         self._hover(widget)
         self.assertEqual(widget.toolTip(), before)
 
+
+class TestLiveParamTooltipBlocks(BaseTestCase):
+    """``live_param_tooltip_blocks`` -- live state APPENDED to a row's own tips.
+
+    The whole-tooltip hook is wrong for an ``action`` row: replacing three
+    per-choice descriptions ("what does Clear do?") with one row-level string
+    is a bad trade, and the buttons are exactly where the user is standing
+    when they wonder what the row currently holds.
+    """
+
+    CHOICES = [
+        # A multi-line tip: the base has line breaks the appended block
+        # would collapse if it were not promoted to HTML first.
+        ("Set From Selection", "do_set", "capture the selection\nfrom the viewport"),
+        ("Clear", "do_clear", "forget it", "clear"),
+    ]
+
+    def _built(self, providers, kind="action"):
+        params = {
+            "SET": AttributeSpec(
+                key="SET",
+                label="Bake Source",
+                kind=kind,
+                tooltip="the scene set",
+                choices=self.CHOICES if kind == "action" else None,
+            )
+        }
+        slot = _bare_slot(type("_Registry", (), {"PARAMS": params}))
+        slot._param_widgets, slot._param_rows = {}, {}
+        slot._param_labels = {}
+        slot._param_section, slot._section_separators = {}, {}
+        slot.sb = Switchboard()
+        slot.live_param_tooltip_blocks = lambda: providers
+
+        slot.ui = QtWidgets.QWidget()
+        slot.ui.grp_process = QtWidgets.QGroupBox(slot.ui)
+        QtWidgets.QVBoxLayout(slot.ui.grp_process)
+        slot.ui.b000 = QtWidgets.QPushButton(slot.ui.grp_process)
+        slot.ui.grp_process.layout().addWidget(slot.ui.b000)
+
+        slot._build_param_widgets()
+        slot._bind_live_param_tooltips()
+        return slot
+
+    def test_every_hover_target_gains_the_block(self):
+        slot = self._built({"SET": lambda: "<i>2 stored</i>"})
+        widget = slot._param_widgets["SET"]
+        targets = [
+            widget,
+            slot._param_labels["SET"],
+            *widget._action_buttons.values(),
+        ]
+        for target in targets:
+            with self.subTest(target=type(target).__name__):
+                TestLiveParamTooltips._hover(target)
+                self.assertIn("2 stored", target.toolTip())
+
+    def test_each_button_keeps_its_own_description(self):
+        """The block is appended -- it does not replace what the click does."""
+        slot = self._built({"SET": lambda: "<i>live</i>"})
+        buttons = slot._param_widgets["SET"]._action_buttons
+        TestLiveParamTooltips._hover(buttons["do_set"])
+        TestLiveParamTooltips._hover(buttons["do_clear"])
+        self.assertIn("capture the selection", buttons["do_set"].toolTip())
+        self.assertIn("forget it", buttons["do_clear"].toolTip())
+        self.assertNotIn("forget it", buttons["do_set"].toolTip())
+
+    def test_a_plain_text_button_tip_keeps_its_line_breaks(self):
+        """Qt renders a tooltip as rich text once it holds a tag, so a plain
+        base would silently lose every newline the appended block gave it."""
+        slot = self._built({"SET": lambda: "<i>live</i>"})
+        button = slot._param_widgets["SET"]._action_buttons["do_set"]
+        TestLiveParamTooltips._hover(button)
+        self.assertIn(
+            "capture the selection<br>from the viewport", button.toolTip()
+        )
+
+    def test_rebinding_does_not_stack_the_block(self):
+        """The tooltip surface writes its computed text back onto the widget.
+
+        So a second bind that read ``toolTip()`` for its base would fold the
+        previous live block in and render two copies -- and grow one more per
+        rebind. Measured before the fix: two hovers, two lists.
+        """
+        slot = self._built({"SET": lambda: "<i>LIVE</i>"})
+        button = slot._param_widgets["SET"]._action_buttons["do_set"]
+        TestLiveParamTooltips._hover(button)
+        self.assertEqual(button.toolTip().count("LIVE"), 1)
+        slot._bind_live_param_tooltips()
+        TestLiveParamTooltips._hover(button)
+        self.assertEqual(button.toolTip().count("LIVE"), 1)
+        self.assertIn("capture the selection", button.toolTip())
+
+    def test_a_less_than_sign_is_not_mistaken_for_markup(self):
+        """``"<" in text`` would pass a comparison through unescaped, and Qt
+        would swallow everything after it as an unclosed tag."""
+        slot = self._built({"SET": lambda: "<i>LIVE</i>"})
+        self.assertEqual(
+            slot._as_tooltip_html("width < height"),
+            "<p style='margin:0'>width &lt; height</p>",
+        )
+        self.assertEqual(
+            slot._as_tooltip_html("<b>already rich</b>"), "<b>already rich</b>"
+        )
+    def test_a_value_row_gets_the_block_under_its_formatted_help(self):
+        slot = self._built({"SET": lambda: "<i>live</i>"}, kind="str")
+        widget = slot._param_widgets["SET"]
+        TestLiveParamTooltips._hover(widget)
+        text = widget.toolTip()
+        self.assertIn("the scene set", text)
+        self.assertLess(text.index("the scene set"), text.index("live"))
+
+    def test_unknown_keys_are_ignored(self):
+        slot = self._built({"NOT_A_PARAM": lambda: "x"})  # must not raise
+        self.assertNotIn("NOT_A_PARAM", slot._param_widgets)
+
+    def test_default_hook_is_empty(self):
+        slot = self._built({})
+        button = slot._param_widgets["SET"]._action_buttons["do_set"]
+        before = button.toolTip()
+        TestLiveParamTooltips._hover(button)
+        self.assertEqual(button.toolTip(), before)
 
 class TestInlineParamRows(BaseTestCase):
     """``AttributeSpec.inline`` -- a compact modifier beside the value it governs.

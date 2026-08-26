@@ -12,18 +12,18 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `bridge/parameters.py` — Registry helpers for bridge parameter dicts.
 - `class Parameters(_ParametersInternal)`
-  - methods: scope_spec, shader_type_spec, carrier_spec, referenced_keys, defaults, render_context
+  - methods: scope_spec, shader_type_spec, carrier_spec, referenced_keys, defaults, affix_parts, render_context
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
 - `class BridgeSlotsBase(_BridgeSlotsInternal)`
-  - methods: params_module, template_dir, make_bridge, optional_packages, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, live_param_tooltips, set_param_enabled, param_supersessions, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, docs_url, header_init, reveal_folder, open_templates_folder, clear_log
+  - methods: params_module, template_dir, make_bridge, optional_packages, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, live_param_tooltips, live_param_tooltip_blocks, set_param_enabled, param_supersessions, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, docs_url, header_init, reveal_folder, open_templates_folder, clear_log
 
 ### `bridge/spec.py` — Attribute spec + kind-handler registry for parameterised forms.
 - `class AttributeSpec`
   - methods: from_value, display_label
 - `class KindHandler`
 - `class KindFactory(_KindFactoryInternal)`
-  - methods: infer_kind, register_kind, get_handler, make_widget, kind_of, read_value, set_value, set_choices, connect_changed
+  - methods: infer_kind, register_kind, get_handler, make_widget, kind_of, read_value, set_value, set_choices, to_literal, affix_parts, connect_changed
 
 ### `bridge/tooltip.py` — Rich-text tooltip + template-description helpers for bridge panels.
 - `class Tooltip(_TooltipInternal)`
@@ -164,7 +164,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class OverrideCursorGuard(QtCore.QObject)`
   - methods: shape, holding, apply, clear, holds, is_stale, notify_stack_drained, reconcile
 - `class SwitchboardUtilsMixin`
-  - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, text_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, simulate_key_press, defer_with_timer, gc_protect, modal_menu
+  - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, text_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
@@ -275,6 +275,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class FooterProgressContext`
 - `class FooterStatusController`
   - methods: set_resolver, set_truncation, update
+
+### `widgets/formPanel.py` — Themed form window: Header → labelled rows → output log → Footer.
+- `class FormPanel(WindowPanel)`
+  - methods: add, clear_rows, set_fields, revalidate, values, set_values, editor, logger, clear_output, set_status, run, apply_pending, pending_commit, arm_apply, disarm_apply, exec_panel, hideEvent, closeEvent, keyPressEvent
 
 ### `widgets/header.py`
 - `class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`
@@ -413,7 +417,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class OptionButton(QtWidgets.QPushButton, AttributesMixin)`
 - `class QObjectABCMeta(type(QtCore.QObject), ABCMeta)`
 - `class BaseOption(QtCore.QObject, ABC)`
-  - methods: is_compatible, widget, create_widget, setup_widget, on_wrap, sibling_options, restore_default, set_wrapped_widget
+  - methods: is_compatible, widget, create_widget, setup_widget, on_wrap, sibling_options, restore_default, refresh, set_wrapped_widget
 - `class ButtonOption(BaseOption)`
   - methods: create_widget, setup_widget, block_next_click, set_checked
 - `class GatingMixin`
@@ -429,8 +433,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: set_menu, set_wrapped_widget
 
 ### `widgets/optionBox/options/affix.py` — Affix-mode picker option for OptionBox.
-- `class AffixOption(ButtonOption)`
-  - methods: is_compatible, create_widget, setup_widget, mode, set_mode, resolve
+- `class AffixMode`
+  - methods: resolve, text, convention
+- `class AffixOption(PersistedOption, ButtonOption)`
+  - methods: modes, mode_spec, is_compatible, create_widget, setup_widget, mode, set_mode, restore_default, refresh, resolve
 
 ### `widgets/optionBox/options/browse.py` — Browse option for OptionBox - provides file/folder browsing buttons.
 - `class BrowseOption(ButtonOption)`
@@ -633,5 +639,5 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: setItemText, addWidgetItem, addWidgetAction, widgetAt, takeWidgetAt, currentWidget, item_spacing, actions, action_columns, action_icon_only, show_action_separator, showPopup, hidePopup, arrow_direction, arrow_icon, arrow_alpha, paintEvent, eventFilter, add, add_defaults_button, clear
 
 ### `widgets/windowPanel.py` — Themed top-level uitk window: Header → body → Footer.
-- `class WindowPanel(QtWidgets.QWidget)`
-  - methods: style, showEvent, persist_geometry, save_window_geometry, restore_window_geometry, clear_saved_geometry, resizeEvent, moveEvent, hideEvent, closeEvent, present, is_in_popup_context, header, footer, body_layout, tighten_sublayouts, icon_button
+- `class WindowPanel(QtWidgets.QWidget, AttributesMixin)`
+  - methods: style, showEvent, persist_geometry, save_window_geometry, restore_window_geometry, clear_saved_geometry, resizeEvent, moveEvent, hideEvent, closeEvent, present, is_in_popup_context, header, footer, body_layout, rows_layout, add, clear_rows, tighten_sublayouts, icon_button
