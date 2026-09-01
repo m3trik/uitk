@@ -21,6 +21,7 @@ from uitk.widgets.sequencer._data import (
 )
 from uitk.widgets.sequencer._clip import ClipItem
 from uitk.widgets.sequencer._overlays import (
+    _SnapGuideItem,
     _StaticRangeOverlay,
     _GapOverlayItem,
     RangeHighlightItem,
@@ -799,7 +800,9 @@ class TimelineView(QtWidgets.QGraphicsView):
                 item.sync()
             elif isinstance(item, RangeHighlightItem):
                 item.sync()
-            elif isinstance(item, (_StaticRangeOverlay, _GapOverlayItem)):
+            elif isinstance(
+                item, (_StaticRangeOverlay, _GapOverlayItem, _SnapGuideItem)
+            ):
                 item.prepareGeometryChange()
                 item.update()
         self._sync_ruler_pos()

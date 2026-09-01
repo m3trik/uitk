@@ -108,7 +108,8 @@ INIT_SUFFIX = "_init"
 | `toggle_multi(ui, trigger=None, signal=None, apply_now=True, **kwargs)` | Batch-set boolean properties on named widgets; with `trigger`, re-apply an `on_<state>` mapping on its change signal (and once at wire time) |
 | `enable_when(ui, targets, trigger, condition=True, signal=None, value=None, invert=False)` | Keep `targets` enabled exactly while `trigger`'s value satisfies `condition` (callable / value / set / truthiness); multi-trigger, order-independent, idempotent |
 | `text_from(ui, target, sources, formatter, signal=None, value=None)` | Keep `target`'s text derived from `sources` — the button names its own outcome instead of hiding it behind a gear icon; re-applies on a blocked-signal preset load like `enable_when` |
-| `refresh_dependencies(ui)` | Re-apply every declarative rule — `enable_when`'s and `text_from`'s — after a bulk blocked-signal change (a preset load) |
+| `value_from(ui, targets, sources, resolver, signal=None, value=None)` | Keep `targets`' **value** derived from `sources` — a preset combo that reads *Custom* the moment a dial it filled is overridden; writes by the inverse of the reader table (combo: data → label → row), a `None` resolver result declines |
+| `refresh_dependencies(ui)` | Re-apply every declarative rule — `enable_when`'s, `text_from`'s and `value_from`'s — after a bulk blocked-signal change (a preset load) |
 | `connect_multi(ui, widgets, signals, slots)` | Batch signal-slot connection |
 | `create_button_groups(ui, *args, allow_deselect=False, allow_multiple=False) -> list[QButtonGroup]` | Radio groups from ranges like `"chk_001-3"` |
 | `unpack_names(name_string) -> list[str]` | Class method — expand `"chk021-23,25,tb001"` into individual names |
@@ -205,7 +206,8 @@ MainWindow(
 | `register_children(root_widget=None)` | Walk the tree and register anything with an `objectName` |
 | `has_tags(tags=None) -> bool` | Check if any provided tag is present (empty → check for any tags) |
 | `edit_tags(target=None, add=None, remove=None, clear=False, reset=False)` | Mutate tags |
-| `request_hide() -> bool` | Pin-aware hide — returns True if hidden, False if blocked by pin |
+| `request_hide() -> bool` | Pin-aware hide — returns True if hidden, False if blocked by pin (or claimed as a tap, see `Header.pin_on_tap`) |
+| `visible_duration_ms() -> int` | Milliseconds since the window last became visible on screen (`-1` if never shown) |
 | `set_pinned(value: bool)` | Method form of the `pinned` setter |
 | `save_window_geometry()` | Persist size/pos to settings |
 | `restore_window_geometry()` | Restore from settings |
@@ -283,6 +285,7 @@ DEFAULTS = {
     "remember_size":      True,
     "style":              DEFAULT_STYLE,
     "pin_click_hides":    True,       # pin-button click dismisses
+    "pin_on_tap":         False,      # tap the activation key to pin open
     "window_persistence": "context",  # "context" | "sticky" | "transient"
 }
 

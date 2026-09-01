@@ -31,6 +31,7 @@ from uitk.widgets.sequencer import (
     _COMMON_ATTRIBUTES,
     PatternRegistry,
 )
+from uitk.widgets.sequencer._clip import ClipItem
 
 
 class TestSequencerWidget(BaseTestCase):
@@ -4332,6 +4333,869 @@ class TestZoneMenuEnabledAPI(BaseTestCase):
         with patch.object(QtWidgets.QMenu, "exec_", return_value=None):
             tl.contextMenuEvent(ev)
         self.assertEqual(received, [], "disabled zone menu must not emit")
+
+
+
+# =========================================================================
+# Rebuilding from inside an item's own event must not destroy that item
+# =========================================================================
+
+
+class TestItemRetirement(BaseTestCase):
+    """A consumer typically rebuilds the whole widget from a drag-release or
+    a context-menu action.  The rebuild removes every graphics item from the
+    scene while Qt is still inside that item's event handler; dropping the
+    last Python reference there destroys the C++ object underneath Qt, which
+    crashes the host.  Removals go through ``ItemRetirement.retire``, which keeps the
+    object alive for one more event-loop pass."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _release(self, item, scene_x):
+        from qtpy import QtCore, QtWidgets
+
+        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseRelease)
+        ev.setButton(QtCore.Qt.LeftButton)
+        ev.setScenePos(QtCore.QPointF(scene_x, 0))
+        item.mouseReleaseEvent(ev)
+
+    def test_clip_survives_a_rebuild_driven_from_its_own_release(self):
+        from qtpy import QtCore, QtWidgets
+
+        cid = self.w.add_clip(self.tid, 10, 20)
+        item = self.w._clip_items[cid]
+
+        press = QtWidgets.QGraphicsSceneMouseEvent(
+            QtCore.QEvent.GraphicsSceneMousePress
+        )
+        press.setButton(QtCore.Qt.LeftButton)
+        press.setScenePos(QtCore.QPointF(item.rect().center().x(), 0))
+        press.setPos(item.rect().center())
+        item.mousePressEvent(press)
+
+        move = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseMove)
+        move.setScenePos(QtCore.QPointF(item.rect().center().x() + 60, 0))
+        item.mouseMoveEvent(move)
+
+        # The consumer's handler clears the widget mid-release.
+        self.w.clip_moved.connect(lambda *_a: self.w.clear())
+        self._release(item, item.rect().center().x() + 60)
+
+        # The item is out of the scene but still a live Python/C++ object:
+        # touching it after the handler returns is exactly what Qt does.
+        self.assertIsNone(item.scene())
+        self.assertIsInstance(item.clip_data.start, float)
+        self.assertEqual(self.w.clips(), [])
+
+    def test_retired_items_are_released_on_the_next_event_loop_pass(self):
+        from qtpy import QtWidgets
+        from uitk.widgets.sequencer._draggable import ItemRetirement
+
+        ItemRetirement._retired.clear()  # another test's pending drain must not decide this
+        cid = self.w.add_clip(self.tid, 0, 5)
+        self.w.remove_clip(cid)
+        self.assertTrue(
+            ItemRetirement._retired, "removal must park the item, not free it"
+        )
+        QtWidgets.QApplication.processEvents()
+        self.assertFalse(
+            ItemRetirement._retired, "the park list must drain on the next pass"
+        )
+
+
+# =========================================================================
+# One key drag == one payload (so a consumer can make it one undo step)
+# =========================================================================
+
+
+class TestKeyBatchMoved(BaseTestCase):
+    """Dragging a key selection that spans several clips used to emit
+    ``keys_moved`` once per clip, so a consumer opening an undo chunk per
+    signal made the single gesture cost N undos to reverse."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _sub_clip(self, sub_row, keys):
+        cid = self.w.add_clip(
+            self.tid,
+            0,
+            20,
+            sub_row=sub_row,
+            curve_preview={"keys": keys, "segments": [], "val_min": 0.0, "val_max": 1.0},
+        )
+        return cid, self.w._clip_items[cid]
+
+    def _drag(self, lead, delta_px):
+        from qtpy import QtCore, QtWidgets
+
+        press = QtWidgets.QGraphicsSceneMouseEvent(
+            QtCore.QEvent.GraphicsSceneMousePress
+        )
+        press.setButton(QtCore.Qt.LeftButton)
+        press.setScenePos(QtCore.QPointF(lead.pos().x(), lead.pos().y()))
+        lead.mousePressEvent(press)
+
+        move = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseMove)
+        move.setScenePos(QtCore.QPointF(lead.pos().x() + delta_px, lead.pos().y()))
+        lead.mouseMoveEvent(move)
+
+        rel = QtWidgets.QGraphicsSceneMouseEvent(
+            QtCore.QEvent.GraphicsSceneMouseRelease
+        )
+        rel.setButton(QtCore.Qt.LeftButton)
+        rel.setScenePos(QtCore.QPointF(lead.pos().x(), lead.pos().y()))
+        lead.mouseReleaseEvent(rel)
+
+    def test_multi_clip_drag_emits_one_batch_not_n_singles(self):
+        _, a = self._sub_clip("translateX", [(5.0, 0.0), (15.0, 1.0)])
+        _, b = self._sub_clip("translateY", [(5.0, 0.0), (15.0, 1.0)])
+        ka = [k for k in a._keyframe_items if abs(k._time - 5.0) < 1e-6][0]
+        kb = [k for k in b._keyframe_items if abs(k._time - 5.0) < 1e-6][0]
+        ka.setSelected(True)
+        kb.setSelected(True)
+
+        singles, batches = [], []
+        self.w.keys_moved.connect(lambda cid, ch: singles.append((cid, ch)))
+        self.w.keys_batch_moved.connect(lambda groups: batches.append(groups))
+
+        self._drag(ka, 40)
+
+        self.assertEqual(singles, [], "a multi-clip drag must not emit per-clip")
+        self.assertEqual(len(batches), 1, "the gesture must arrive as one payload")
+        self.assertEqual(
+            {cid for cid, _ in batches[0]},
+            {a._data.clip_id, b._data.clip_id},
+            "both clips' key changes must ride the one payload",
+        )
+
+    def test_single_clip_drag_still_emits_keys_moved(self):
+        _, a = self._sub_clip("translateX", [(5.0, 0.0), (15.0, 1.0)])
+        ka = [k for k in a._keyframe_items if abs(k._time - 5.0) < 1e-6][0]
+        ka.setSelected(True)
+
+        singles, batches = [], []
+        self.w.keys_moved.connect(lambda cid, ch: singles.append((cid, ch)))
+        self.w.keys_batch_moved.connect(lambda groups: batches.append(groups))
+
+        self._drag(ka, 40)
+
+        self.assertEqual(len(singles), 1, "one clip keeps the existing signal")
+        self.assertEqual(batches, [])
+
+
+# =========================================================================
+# Tail gap handle — the last shot's end
+# =========================================================================
+
+
+class TestTailGapOverlay(BaseTestCase):
+    """The last shot has no following shot, so the between-shots gap loop
+    leaves it with no drag handle at its end.  A zero-width ``tail`` overlay
+    supplies one, and it must expose ONLY the left edge (its right edge and
+    body have no shot to act on)."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_tail_overlay_is_all_left_zone(self):
+        from qtpy import QtCore
+
+        self.w.add_gap_overlay(100, 100, tail=True)
+        gap = self.w._gap_overlays[0]
+        r = gap._rect()
+        for x in (r.left(), r.center().x(), r.right()):
+            self.assertEqual(
+                gap._hit_zone(QtCore.QPointF(x, r.center().y())),
+                "left",
+                "every press on a tail handle drags the preceding shot's end",
+            )
+
+    def test_tail_overlay_left_drag_emits_gap_left_resized(self):
+        from qtpy import QtCore, QtWidgets
+
+        self.w.add_gap_overlay(100, 100, tail=True)
+        gap = self.w._gap_overlays[0]
+        r = gap._rect()
+        emitted = []
+        self.w.gap_left_resized.connect(lambda a, b: emitted.append((a, b)))
+
+        press = QtWidgets.QGraphicsSceneMouseEvent(
+            QtCore.QEvent.GraphicsSceneMousePress
+        )
+        press.setButton(QtCore.Qt.LeftButton)
+        press.setPos(QtCore.QPointF(r.center().x(), r.center().y()))
+        press.setScenePos(QtCore.QPointF(r.center().x(), r.center().y()))
+        gap.mousePressEvent(press)
+        self.assertEqual(gap._drag_mode, "left")
+
+        move = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseMove)
+        move.setScenePos(QtCore.QPointF(r.center().x() + 40, r.center().y()))
+        gap.mouseMoveEvent(move)
+
+        rel = QtWidgets.QGraphicsSceneMouseEvent(
+            QtCore.QEvent.GraphicsSceneMouseRelease
+        )
+        rel.setButton(QtCore.Qt.LeftButton)
+        gap.mouseReleaseEvent(rel)
+
+        self.assertEqual(len(emitted), 1)
+        self.assertAlmostEqual(emitted[0][0], 100.0)
+        self.assertGreater(emitted[0][1], 100.0)
+
+    def test_regular_gap_still_exposes_all_three_zones(self):
+        from qtpy import QtCore
+
+        self.w._timeline._pixels_per_unit = 4.0
+        self.w.add_gap_overlay(50, 90)
+        gap = self.w._gap_overlays[0]
+        r = gap._rect()
+        y = r.center().y()
+        self.assertEqual(gap._hit_zone(QtCore.QPointF(r.left() + 1, y)), "left")
+        self.assertEqual(gap._hit_zone(QtCore.QPointF(r.center().x(), y)), "body")
+        self.assertEqual(gap._hit_zone(QtCore.QPointF(r.right() - 1, y)), "right")
+
+
+# =========================================================================
+# A programmatic rebuild is not the user deselecting
+# =========================================================================
+
+
+class TestSelectionSuppressedOnRebuild(BaseTestCase):
+    """Tearing items out of the scene fires selectionChanged.  Forwarding it
+    makes consumers mirror an empty selection into the host app, which is the
+    "I can't keep anything selected" symptom whenever something refreshes the
+    panel repeatedly."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_clear_does_not_forward_selection(self):
+        cid = self.w.add_clip(self.tid, 0, 10)
+        self.w._clip_items[cid].setSelected(True)
+        seen = []
+        self.w.selection_changed.connect(seen.append)
+        keys = []
+        self.w.key_selection_changed.connect(keys.append)
+        self.w.clear()
+        self.assertEqual(seen, [], "a rebuild must not report a deselection")
+        self.assertEqual(keys, [])
+
+    def test_user_selection_still_forwarded(self):
+        cid = self.w.add_clip(self.tid, 0, 10)
+        seen = []
+        self.w.selection_changed.connect(seen.append)
+        self.w._clip_items[cid].setSelected(True)
+        self.assertEqual(seen, [[cid]])
+
+
+# =========================================================================
+# Key-alignment guides (visual) + opt-in snap
+# =========================================================================
+
+
+class TestAlignmentGuides(BaseTestCase):
+    """While dragging, a frame that already carries keys is highlighted so
+    the user can see the alignment.  Snapping onto it is opt-in."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_alignment_times_exclude_the_dragged_clip(self):
+        a = self.w.add_clip(self.tid, 10, 20)
+        self.w.add_clip(self.tid, 50, 10)  # the clip a should be able to align to
+        times = self.w.alignment_times(exclude_clip_ids=[a])
+        self.assertIn(50.0, times)
+        self.assertIn(60.0, times)
+        self.assertNotIn(10.0, times, "a clip must not align to itself")
+        self.assertNotIn(30.0, times)
+
+    def test_alignment_times_include_sub_row_keys(self):
+        self.w.add_clip(
+            self.tid,
+            0,
+            20,
+            sub_row="translateX",
+            curve_preview={"keys": [(3.0, 0.0), (17.0, 1.0)], "segments": []},
+        )
+        times = self.w.alignment_times()
+        self.assertIn(3.0, times)
+        self.assertIn(17.0, times)
+
+    def test_nearest_alignment_respects_the_pixel_radius(self):
+        self.w._timeline._pixels_per_unit = 1.0  # 1 frame == 1 px
+        cands = [40.0]
+        self.assertEqual(self.w.nearest_alignment(43.0, cands), 40.0)
+        self.assertIsNone(self.w.nearest_alignment(60.0, cands))
+
+    def test_guides_are_created_and_emptied(self):
+        self.w.set_snap_guides([12.0, 30.0])
+        self.assertIsNotNone(self.w._snap_guide)
+        self.assertEqual(self.w._snap_guide._times, [12.0, 30.0])
+        # Emptied, not destroyed: this runs on every mouse-move of a drag.
+        self.w.set_snap_guides([])
+        self.assertEqual(self.w._snap_guide._times, [])
+
+    def test_clear_snap_guides_frees_the_item(self):
+        self.w.set_snap_guides([12.0])
+        self.w.clear_snap_guides()
+        self.assertIsNone(self.w._snap_guide)
+
+    def test_widget_clear_frees_the_guide(self):
+        self.w.set_snap_guides([12.0])
+        self.w.clear()
+        self.assertIsNone(self.w._snap_guide)
+
+    def test_guides_can_be_disabled(self):
+        self.w.snap_guides_enabled = False
+        self.w.set_snap_guides([12.0])
+        self.assertIsNone(self.w._snap_guide, "disabled guides draw nothing")
+
+    def test_snap_to_keys_is_off_by_default(self):
+        self.assertFalse(self.w.snap_to_keys)
+
+
+
+
+# =========================================================================
+# Audit regressions
+# =========================================================================
+
+
+class TestKeyDragShiftFlag(BaseTestCase):
+    """A key drag must RECORD the Shift modifier — nothing wrote the widget
+    flag from KeyframeItem, so key drags ran under whatever the last
+    clip/gap gesture left there (a prior Shift-retime silently disabled the
+    boundary-expansion for every later key drag)."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+        self.cid = self.w.add_clip(
+            self.tid,
+            0,
+            20,
+            sub_row="translateX",
+            curve_preview={"keys": [(5.0, 0.0), (15.0, 1.0)], "segments": []},
+        )
+        self.item = self.w._clip_items[self.cid]
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _press(self, key_item, modifiers):
+        from qtpy import QtCore, QtWidgets
+
+        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMousePress)
+        ev.setButton(QtCore.Qt.LeftButton)
+        ev.setModifiers(modifiers)
+        ev.setScenePos(key_item.pos())
+        key_item.mousePressEvent(ev)
+
+    def test_plain_key_press_clears_a_stale_shift_flag(self):
+        from qtpy import QtCore
+
+        self.w.shift_held_at_press = True  # left behind by a prior gesture
+        ki = self.item._keyframe_items[0]
+        self._press(ki, QtCore.Qt.NoModifier)
+        self.assertFalse(self.w.shift_held_at_press)
+
+    def test_shift_key_press_sets_the_flag(self):
+        from qtpy import QtCore
+
+        self.w.shift_held_at_press = False
+        ki = self.item._keyframe_items[0]
+        self._press(ki, QtCore.Qt.ShiftModifier)
+        self.assertTrue(self.w.shift_held_at_press)
+
+    def test_unselected_grabbed_key_joins_its_own_drag(self):
+        """Ctrl-click defers selection to release — the grabbed key must
+        still ride (and lead) its own drag."""
+        from qtpy import QtCore
+
+        ki = self.item._keyframe_items[0]
+        ki.setSelected(False)
+        self._press(ki, QtCore.Qt.ControlModifier)
+        self.assertTrue(
+            any(p is ki for p, _ in ki._drag_peers),
+            "the grabbed key must be in its own peer set",
+        )
+
+
+class TestTailLockImmunity(BaseTestCase):
+    """A tail handle is a shot-end handle, not a gap: locking it (any path)
+    would leave the LAST shot with no way to resize."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_lock_all_gaps_skips_the_tail(self):
+        self.w.add_gap_overlay(50, 70)
+        self.w.add_gap_overlay(100, 100, tail=True)
+        self.w.set_all_gap_overlays_locked(True)
+        gap, tail = self.w._gap_overlays
+        self.assertTrue(gap._locked)
+        self.assertFalse(tail._locked, "lock-all must never brick the tail handle")
+
+    def test_constructing_a_locked_tail_is_refused(self):
+        self.w.add_gap_overlay(100, 100, tail=True, locked=True)
+        self.assertFalse(self.w._gap_overlays[0]._locked)
+
+
+class TestTransportRangeFnRepoint(BaseTestCase):
+    """A consumer adopting an existing transport row across a controller
+    re-init must be able to repoint range_fn — the constructor binding kept
+    reading (and kept alive) the retired controller."""
+
+    def test_set_range_fn(self):
+        from uitk.widgets.sequencer import TransportControls
+
+        w = SequencerWidget()
+        try:
+            tc = TransportControls(sequencer=w, range_fn=lambda: (1.0, 10.0))
+            tc.set_range_fn(lambda: (5.0, 50.0))
+            self.assertEqual(tc._range_fn(), (5.0, 50.0))
+        finally:
+            w.close()
+            w.deleteLater()
+
+
+class TestAlignmentSelfExclusion(BaseTestCase):
+    """A drag must not align to a stale alias of its own content: the DCC
+    panels represent one object's animation as a merged bar PLUS sub-row
+    key dots, so clip-id exclusion alone left the other representation
+    behind as a magnet at the origin."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_exclude_spans_drops_same_track_aliases_only(self):
+        bar = self.w.add_clip(self.tid, 10, 20)  # the merged segment bar
+        self.w.add_clip(
+            self.tid,
+            10,
+            20,
+            sub_row="translateX",
+            curve_preview={"keys": [(13.0, 0.0), (28.0, 1.0)], "segments": []},
+        )
+        other_tid = self.w.add_track("B")
+        self.w.add_clip(other_tid, 12, 5)  # overlapping frames, DIFFERENT track
+
+        times = self.w.alignment_times(
+            exclude_clip_ids=[bar], exclude_spans=[(self.tid, 10.0, 30.0)]
+        )
+        # Same-track aliases inside the span are gone (the sub-row's key
+        # dots and the excluded bar's edges)…
+        self.assertNotIn(13.0, times)
+        self.assertNotIn(28.0, times)
+        self.assertNotIn(10.0, times)
+        # …but the other track's frames inside the same span survive.
+        self.assertIn(12.0, times)
+        self.assertIn(17.0, times)
+
+    def test_exclude_times_drops_origin_frames(self):
+        self.w.add_clip(
+            self.tid,
+            0,
+            30,
+            sub_row="translateX",
+            curve_preview={"keys": [(5.0, 0.0), (25.0, 1.0)], "segments": []},
+        )
+        times = self.w.alignment_times(exclude_times=[5.0])
+        self.assertNotIn(5.0, times)
+        self.assertIn(25.0, times)
+
+
+class TestMoveModeEndEdgeSnap(BaseTestCase):
+    """With snap_to_keys on, a body drag must capture on WHICHEVER edge is
+    closer — the guides probed both edges but the snap only pulled the
+    start, so the gold readout promised an end-alignment the release never
+    delivered."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.snap_to_keys = True
+        self.w._timeline._pixels_per_unit = 1.0  # 1 frame == 1 px capture
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _dragging_clip(self, start, duration, candidates):
+        cid = self.w.add_clip(self.tid, start, duration)
+        item = self.w._clip_items[cid]
+        item._drag_mode = "move"
+        item._align_times = list(candidates)
+        return item
+
+    def test_end_edge_captures_when_closer(self):
+        item = self._dragging_clip(0, 20, [63.0])
+        # value=45 → end=65, 2 frames from the candidate; start is 18 away.
+        self.assertAlmostEqual(item._align(45.0), 43.0)
+
+    def test_start_edge_still_captures_when_closer(self):
+        item = self._dragging_clip(0, 20, [44.0])
+        self.assertAlmostEqual(item._align(45.0), 44.0)
+
+    def test_guides_report_only_the_captured_edge_while_snapping(self):
+        item = self._dragging_clip(0, 20, [63.0])
+        item._data.start = item._align(45.0)  # snapped: end sits at 63
+        hits = item._aligned_edges()
+        self.assertEqual(hits, [63.0], "only the edge the snap took may draw")
+
+
+class TestClearDecorationsSuppression(BaseTestCase):
+    """clear_decorations retires selectable markers — a decoration-only
+    refresh must not read as the user deselecting (the sibling clear()
+    already carried this guard)."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_marker_teardown_is_not_forwarded_as_deselection(self):
+        mid = self.w.add_marker(10.0)
+        self.w._marker_items[mid].setSelected(True)
+        seen = []
+        self.w.selection_changed.connect(seen.append)
+        keys = []
+        self.w.key_selection_changed.connect(keys.append)
+        self.w.clear_decorations()
+        self.assertEqual(seen, [])
+        self.assertEqual(keys, [])
+
+
+class TestKeyframeTeardownRetires(BaseTestCase):
+    """_sync_keyframe_items' rebuild branch must retire its children (not
+    destroy them synchronously) and must not forward the teardown of a
+    selected key dot as a user deselection."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_selected_key_dot_teardown_is_suppressed(self):
+        cid = self.w.add_clip(
+            self.tid,
+            0,
+            20,
+            sub_row="translateX",
+            curve_preview={"keys": [(5.0, 0.0), (15.0, 1.0)], "segments": []},
+        )
+        item = self.w._clip_items[cid]
+        item._keyframe_items[0].setSelected(True)
+        seen = []
+        self.w.selection_changed.connect(seen.append)
+        # Change the preview fingerprint → rebuild branch tears down dots.
+        item._data.data["curve_preview"] = {
+            "keys": [(6.0, 0.0), (15.0, 1.0)],
+            "segments": [],
+        }
+        item._sync_keyframe_items()
+        self.assertEqual(seen, [], "a preview rebuild is not a user deselection")
+
+
+class TestClipClickSelection(BaseTestCase):
+    """Clicking a clip selects it, and the modifiers behave like an NLE.
+
+    A plain click used to leave the clip UNSELECTED: ``ClipItem`` takes the
+    press for its own drag and never called ``QGraphicsItem``'s handler, so
+    the only way to select a clip at all was a rubber band -- which is why
+    "no selection indicator" and "Delete does nothing" were the same bug.
+    """
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.t1 = self.w.add_track("A")
+        self.t2 = self.w.add_track("B")
+        self.c0 = self.w.add_clip(self.t1, start=10, duration=20)
+        self.c1 = self.w.add_clip(self.t1, start=50, duration=20)
+        self.c2 = self.w.add_clip(self.t2, start=10, duration=20)
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _click(self, cid, modifiers=None):
+        from qtpy import QtCore
+
+        item = self.w._clip_items[cid]
+        pos = item.rect().center()
+        item.mousePressEvent(
+            _scene_mouse_event(
+                QtCore.QEvent.GraphicsSceneMousePress, pos, modifiers=modifiers
+            )
+        )
+        item.mouseReleaseEvent(
+            _scene_mouse_event(
+                QtCore.QEvent.GraphicsSceneMouseRelease, pos, modifiers=modifiers
+            )
+        )
+
+    def _selected(self):
+        return sorted(
+            it._data.clip_id
+            for it in self.w._timeline._scene.selectedItems()
+            if isinstance(it, ClipItem)
+        )
+
+    def test_plain_click_selects_only_that_clip(self):
+        self._click(self.c0)
+        self.assertEqual(self._selected(), [self.c0])
+        self._click(self.c1)
+        self.assertEqual(self._selected(), [self.c1], "a plain click replaces")
+
+    def test_shift_click_adds_to_the_selection(self):
+        from qtpy import QtCore
+
+        self._click(self.c0)
+        self._click(self.c1, QtCore.Qt.ShiftModifier)
+        self._click(self.c2, QtCore.Qt.ShiftModifier)
+        self.assertEqual(self._selected(), sorted([self.c0, self.c1, self.c2]))
+
+    def test_shift_click_on_a_selected_clip_keeps_it_selected(self):
+        """Shift is "add", not "toggle" -- it must never subtract."""
+        from qtpy import QtCore
+
+        self._click(self.c0)
+        self._click(self.c1, QtCore.Qt.ShiftModifier)
+        self._click(self.c1, QtCore.Qt.ShiftModifier)
+        self.assertEqual(self._selected(), sorted([self.c0, self.c1]))
+
+    def test_ctrl_click_removes_from_the_selection(self):
+        from qtpy import QtCore
+
+        self._click(self.c0)
+        self._click(self.c1, QtCore.Qt.ShiftModifier)
+        self._click(self.c2, QtCore.Qt.ShiftModifier)
+        self._click(self.c1, QtCore.Qt.ControlModifier)
+        self.assertEqual(self._selected(), sorted([self.c0, self.c2]))
+
+    def test_a_click_forwards_exactly_one_selection_change(self):
+        """``clearSelection()`` + ``setSelected()`` fire the scene's signal
+        separately, and consumers do real work on each -- the Maya adapter
+        mirrors the selection into the scene and reopens the Graph Editor."""
+        self._click(self.c0)
+        seen = []
+        self.w.selection_changed.connect(seen.append)
+        self._click(self.c1)
+        self.assertEqual(len(seen), 1, f"one forwarded change, got {seen}")
+        self.assertEqual(seen[0], [self.c1])
+
+    def test_collapsing_a_group_on_click_also_forwards_once(self):
+        from qtpy import QtCore
+
+        self._click(self.c0)
+        self._click(self.c1, QtCore.Qt.ShiftModifier)
+        seen = []
+        self.w.selection_changed.connect(seen.append)
+        self._click(self.c0)
+        self.assertEqual(len(seen), 1, f"one forwarded change, got {seen}")
+        self.assertEqual(seen[0], [self.c0])
+
+    def test_a_group_survives_the_press_that_starts_its_drag(self):
+        """Collapsing on press would make a multi-selection undraggable."""
+        from qtpy import QtCore
+
+        self._click(self.c0)
+        self._click(self.c1, QtCore.Qt.ShiftModifier)
+        item = self.w._clip_items[self.c0]
+        item.mousePressEvent(
+            _scene_mouse_event(
+                QtCore.QEvent.GraphicsSceneMousePress, item.rect().center()
+            )
+        )
+        self.assertEqual(self._selected(), sorted([self.c0, self.c1]))
+        self.assertTrue(item._drag_peers, "the peer must be captured for the drag")
+
+
+class TestGroupDragKeepsItsShape(BaseTestCase):
+    """A multi-clip drag is a rigid translation, and its payload has to be
+    committable one clip at a time."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _drag(self, lead_cid, peers, dx_time):
+        """Drag *lead_cid* by *dx_time*, carrying *peers*; returns the payload."""
+        from qtpy import QtCore
+
+        item = self.w._clip_items[lead_cid]
+        for cid in peers:
+            self.w._clip_items[cid].setSelected(True)
+        item.setSelected(True)
+        ppu = self.w._timeline._pixels_per_unit
+        start_pos = item.rect().center()
+        item.mousePressEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMousePress, start_pos)
+        )
+        end = QtCore.QPointF(start_pos.x() + dx_time * ppu, start_pos.y())
+        item.mouseMoveEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMouseMove, end)
+        )
+        got = []
+        self.w.clips_batch_moved.connect(got.append)
+        item.mouseReleaseEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMouseRelease, end)
+        )
+        return got[0] if got else []
+
+    def test_a_left_drag_reports_the_earliest_clip_first(self):
+        """A consumer commits by time RANGE, so the clip that frees space has
+        to go first; otherwise its neighbour's commit re-grabs the arrival."""
+        a = self.w.add_clip(self.tid, start=100, duration=10)
+        b = self.w.add_clip(self.tid, start=130, duration=10)
+        payload = self._drag(b, [a], -25)
+        self.assertEqual([cid for cid, _ in payload], [a, b])
+
+    def test_a_right_drag_reports_the_latest_clip_first(self):
+        a = self.w.add_clip(self.tid, start=100, duration=10)
+        b = self.w.add_clip(self.tid, start=130, duration=10)
+        payload = self._drag(a, [b], 25)
+        self.assertEqual([cid for cid, _ in payload], [b, a])
+
+    def test_every_member_moves_by_the_same_delta(self):
+        a = self.w.add_clip(self.tid, start=100, duration=10)
+        b = self.w.add_clip(self.tid, start=130, duration=10)
+        c = self.w.add_clip(self.tid, start=200, duration=10)
+        payload = dict(self._drag(b, [a, c], -25))
+        self.assertEqual(payload[a], 75.0)
+        self.assertEqual(payload[b], 105.0)
+        self.assertEqual(payload[c], 175.0)
+
+    def test_frame_zero_clamps_the_group_not_the_member(self):
+        """Clamping each peer on its own silently deforms the selection: the
+        earliest member stops at 0 while the rest keep going."""
+        a = self.w.add_clip(self.tid, start=10, duration=10)
+        b = self.w.add_clip(self.tid, start=100, duration=10)
+        payload = dict(self._drag(b, [a], -50))
+        self.assertEqual(payload[a], 0.0, "the earliest member decides the floor")
+        self.assertEqual(payload[b], 90.0, "and the rest keep their offsets from it")
+
+
+class TestFooterCenterSide(BaseTestCase):
+    """``Footer.add_widget(side="center")`` centres a widget horizontally."""
+
+    def setUp(self):
+        from uitk.widgets.footer import Footer
+
+        self.footer = Footer()
+        self.footer.resize(600, 24)
+
+    def tearDown(self):
+        self.footer.close()
+        self.footer.deleteLater()
+
+    def test_center_lands_between_the_status_stack_and_the_grip(self):
+        from qtpy import QtWidgets
+
+        btn = QtWidgets.QPushButton("x")
+        self.footer.add_widget(btn, side="center")
+        layout = self.footer.main_layout
+        stack_idx = layout.indexOf(self.footer._stacked_widget)
+        self.assertGreater(layout.indexOf(btn), stack_idx)
+
+    def test_the_two_stretches_match_so_the_widget_sits_on_the_midline(self):
+        """An expanding spacer left at stretch 0 loses every spare pixel to a
+        stretch-1 neighbour -- which parks the widget on the right again."""
+        from qtpy import QtWidgets
+
+        btn = QtWidgets.QPushButton("x")
+        self.footer.add_widget(btn, side="center")
+        layout = self.footer.main_layout
+        stack_idx = layout.indexOf(self.footer._stacked_widget)
+        btn_idx = layout.indexOf(btn)
+        after = [
+            layout.stretch(i)
+            for i in range(btn_idx + 1, layout.count())
+            if layout.itemAt(i).spacerItem() is not None
+        ]
+        self.assertIn(layout.stretch(stack_idx), after)
+        self.assertEqual(layout.stretch(stack_idx), 1)
+
+    def test_an_unknown_side_is_rejected(self):
+        from qtpy import QtWidgets
+
+        with self.assertRaises(ValueError):
+            self.footer.add_widget(QtWidgets.QPushButton("x"), side="middle")
+
+
+class TestSelectedClipIsVisiblyMarked(BaseTestCase):
+    """Selection has to read on the clip colours a real scene produces."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_white_clips_still_change_colour_when_selected(self):
+        """``lighter(130)`` is a no-op on white -- and white is exactly what a
+        mixed-attribute ('consolidated') clip resolves to, i.e. most clips."""
+        from qtpy import QtGui
+        from uitk.widgets.sequencer._clip import ClipItem as _ClipItem
+
+        base = QtGui.QColor("#FFFFFF")
+        self.assertEqual(
+            base.lighter(130).name(), base.name(), "premise: lighter() cannot help"
+        )
+        self.assertNotEqual(_ClipItem._selected_fill(base).name(), base.name())
+
+    def test_the_accent_is_the_one_the_ruler_marks_the_shot_with(self):
+        from uitk.widgets.sequencer._data import SELECTED_ACCENT
+        from uitk.widgets.sequencer._ruler import _SELECTED_ACCENT
+
+        self.assertEqual(SELECTED_ACCENT, _SELECTED_ACCENT)
 
 
 if __name__ == "__main__":

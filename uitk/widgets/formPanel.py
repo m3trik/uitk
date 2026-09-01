@@ -233,6 +233,7 @@ class FormPanel(WindowPanel):
         hint: Optional[str] = None,
         tooltip: Optional[str] = None,
         companions=(),
+        label_align=None,
         enabled_by: Optional[str] = None,
         **kwargs,
     ):
@@ -263,13 +264,20 @@ class FormPanel(WindowPanel):
                     hint=hint,
                     tooltip=tooltip,
                     companions=companions,
+                    label_align=label_align,
                     enabled_by=enabled_by,
                     **kwargs,
                 )
                 for item in x
             ]
         widget = super().add(
-            x, label=label, hint=hint, tooltip=tooltip, companions=companions, **kwargs
+            x,
+            label=label,
+            hint=hint,
+            tooltip=tooltip,
+            companions=companions,
+            label_align=label_align,
+            **kwargs,
         )
         self._register_field(widget, enabled_by)
         return widget
@@ -327,9 +335,14 @@ class FormPanel(WindowPanel):
           (``panel.source_dir``).
         - ``label`` — bold caption to the LEFT of the editor. Defaults to
           ``name``.
+        - ``label_align`` — where that caption's TEXT sits in the column its
+          plate fills: ``"left"`` (default), ``"right"``, ``"center"``. Right
+          reads as a lead-in to the control beside it (``"Operation:"``);
+          left keeps a leading marker lined up down the column.
         - ``kind`` — ``"text"`` (default), ``"dir"`` / ``"file"`` (line edit
-          + *Browse…*), ``"choice"`` (combo over ``items``), ``"check"``
-          (checkbox whose ``label`` is its own text).
+          carrying its own inline browse button), ``"choice"`` (combo over
+          ``items``), ``"check"`` (checkbox whose ``label`` is its own
+          text).
         - ``value`` — initial value; for ``"choice"``, the selected entry.
         - ``placeholder`` — greyed text shown in an empty ``"text"``/``"dir"``/
           ``"file"`` editor. What LEAVING IT EMPTY does, said where the empty
@@ -346,6 +359,14 @@ class FormPanel(WindowPanel):
         - ``enabled_by`` — see :meth:`add`.
         - ``start_dir`` — where a ``"dir"``/``"file"`` browse opens; defaults
           to the row's current value.
+        - ``inline`` — field specs (same keys) placed in this row's cell, to
+          the RIGHT of its editor, instead of rows of their own. For the
+          second answer that belongs WITH the first — a dry-run tick beside
+          the operation it previews — where a row of its own would put a
+          caption on a question the row beside it already asked. Each is a
+          field in full: read by :meth:`values`, re-validating on change,
+          exposed as ``panel.<name>``. It shares the host row's enabled
+          state, since the row greys as one.
 
         This method OWNS the form region: a re-seed clears it, including
         anything :meth:`add` placed there directly since the last one.
@@ -380,60 +401,130 @@ class FormPanel(WindowPanel):
         self.set_status("")
 
     def _add_field(self, spec) -> QtWidgets.QWidget:
-        """One spec → one :meth:`add`.
+        """One spec → one :meth:`add`, plus any field riding the same row.
 
         The widget is built and SEEDED before it is added: ``add`` connects
         the change signal on registration, and a value set after that would
-        validate a form that is still half-built.
+        validate a form that is still half-built. The browse button is
+        attached AFTER — it wraps the editor in place, so the editor has to
+        be in the layout first.
+        """
+        inline_specs = [dict(sub) for sub in (spec.get("inline") or [])]
+        for sub in inline_specs:
+            if not sub.get("name"):
+                raise ValueError(f"Every inline field needs a 'name': {sub!r}")
+        widget = self._build_field_widget(spec)
+        inline_widgets = [self._build_field_widget(sub) for sub in inline_specs]
+
+        # A checkbox's label IS its box text, so no caption: a heading over a
+        # checkbox reads as a second control.
+        label = (
+            None
+            if spec.get("kind") == "check"
+            else str(spec.get("label") or spec["name"])
+        )
+        self.add(
+            widget,
+            label=label,
+            hint=spec.get("hint"),
+            tooltip=spec.get("tooltip"),
+            companions=inline_widgets,
+            label_align=spec.get("label_align"),
+            enabled_by=spec.get("enabled_by"),
+        )
+        for sub, sub_widget in zip(inline_specs, inline_widgets):
+            self._register_inline_field(sub, sub_widget)
+        self._share_row_width(widget, inline_widgets)
+        for sub, sub_widget in ((spec, widget), *zip(inline_specs, inline_widgets)):
+            if sub.get("kind") in ("dir", "file"):
+                self._attach_browse(sub, sub_widget)
+        return widget
+
+    def _build_field_widget(self, spec) -> QtWidgets.QWidget:
+        """One spec → its configured widget, not yet placed in a row.
+
+        Split out from :meth:`_add_field` because an ``inline`` spec is the
+        same field built the same way — it is only PLACED differently (in
+        its host's cell rather than a row of its own).
         """
         name = spec["name"]
         kind = spec.get("kind", "text")
         label = str(spec.get("label") or name)
-        common = dict(
-            setObjectName=name,
-            setEnabled=bool(spec.get("enabled", True)),
-            hint=spec.get("hint"),
-            tooltip=spec.get("tooltip"),
-            enabled_by=spec.get("enabled_by"),
-        )
         if kind == "check":
-            # The label IS the box text, so no caption: a heading over a
-            # checkbox reads as a second control.
-            return self.add(
-                "CheckBox", setText=label, setChecked=bool(spec.get("value")), **common
-            )
-        if kind == "choice":
-            combo = self._build_widget("ComboBox")
-            combo.addItems([str(i) for i in (spec.get("items") or [])])
+            widget = self._build_widget("CheckBox")
+            widget.setText(label)
+            widget.setChecked(bool(spec.get("value")))
+        elif kind == "choice":
+            widget = self._build_widget("ComboBox")
+            widget.addItems([str(i) for i in (spec.get("items") or [])])
             if spec.get("value") is not None:
-                index = combo.findText(str(spec["value"]))
+                index = widget.findText(str(spec["value"]))
                 if index >= 0:
-                    combo.setCurrentIndex(index)
-            return self.add(combo, label=label, **common)
+                    widget.setCurrentIndex(index)
+        else:
+            widget = self._build_widget("LineEdit")
+            widget.setText(str(spec.get("value") or ""))
+            if spec.get("placeholder"):
+                widget.setPlaceholderText(str(spec["placeholder"]))
+        widget.setObjectName(name)
+        widget.setEnabled(bool(spec.get("enabled", True)))
+        return widget
 
-        editor = self._build_widget("LineEdit")
-        editor.setText(str(spec.get("value") or ""))
-        if spec.get("placeholder"):
-            editor.setPlaceholderText(str(spec["placeholder"]))
-        companions = ()
-        if kind in ("dir", "file"):
-            companions = (self._build_browse_button(spec, editor),)
-        return self.add(editor, label=label, companions=companions, **common)
+    def _share_row_width(self, widget, inline_widgets) -> None:
+        """Split the cell evenly between the field and the fields inline with it.
 
-    def _build_browse_button(self, spec, editor) -> QtWidgets.QPushButton:
-        """The *Browse…* beside a path field.
-
-        The native picker survives as a subordinate of a labelled field, so
-        its caption is no longer the only signal for what it is picking.
+        A companion BUTTON rides at its own hint — it is a control on the
+        field, and the width belongs to the field. An inline FIELD is not:
+        it is a second answer, and a row where one answer is a full-width
+        control and the next is jammed against the margin reads as one
+        control with a label stuck to it. Equal stretch gives them equal
+        width, so the pair reads as the pair it is.
         """
-        browse = self._build_widget("PushButton")
-        browse.setText("Browse…")
-        # Default-button suppression: without it Return in a line edit fires
-        # the FIRST push button in the panel (a Browse), so committing the
-        # form with the keyboard opens a file picker instead.
-        browse.setAutoDefault(False)
-        browse.clicked.connect(lambda _=False, s=spec, e=editor: self._browse(s, e))
-        return browse
+        if not inline_widgets:
+            return
+        cell = self._rows_layout.itemAt(
+            self._rows_layout.rowCount() - 1, QtWidgets.QFormLayout.FieldRole
+        ).layout()
+        if cell is None:  # no companions -> the widget stands in the cell alone
+            return
+        for target in (widget, *inline_widgets):
+            cell.setStretchFactor(target, 1)
+
+    def _register_inline_field(self, spec, widget) -> None:
+        """Make a companion widget a FIELD in its own right.
+
+        It shares its host's cell, so it also shares the host's enabled
+        state (:meth:`WindowPanel._add_row` greys a row whole) — but its
+        VALUE is its own: it is read by :meth:`values`, re-validates on
+        change, and answers to ``panel.<name>`` like any other field.
+
+        Its tooltip is re-stated here because the row's went onto every
+        widget in the cell: an inline field names something the host row
+        does not, so the hint under the pointer has to be its own.
+        """
+        tip = self._row_tooltip(
+            spec.get("label") or spec["name"], spec.get("hint"), spec.get("tooltip")
+        )
+        if tip:
+            widget.setToolTip(tip)
+        self._register_field(widget, spec.get("enabled_by"))
+        self._expose_as_attribute(widget)
+
+    def _attach_browse(self, spec, editor) -> None:
+        """The picker for a path field, as the editor's own option button.
+
+        An inline option-box button rather than a *Browse…* beside the
+        field: the button is the width of its icon instead of its caption,
+        and every pixel it gives back goes to the one thing on the row that
+        is never wide enough — the path. It still reads as subordinate to
+        the labelled field (it sits INSIDE it), which is what kept the
+        native picker legible when it was a button.
+        """
+        editor.option_box.add_action(
+            icon="folder",
+            tooltip=f"Browse for a {'file' if spec.get('kind') == 'file' else 'folder'}…",
+            callback=lambda s=spec, e=editor: self._browse(s, e),
+        )
 
     def _browse(self, spec, line) -> None:
         start = spec.get("start_dir") or line.text() or ""

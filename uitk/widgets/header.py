@@ -27,6 +27,9 @@ class Header(
       the background turns red, and while unpinned the icon swaps to the close
       glyph, so the button reads as the hide button it acts as.
 
+    A separate opt-in, :attr:`pin_on_tap`, decides what an *auto-hide* request
+    means for a window that just appeared — see :meth:`claim_hide_as_tap`.
+
     Signals:
         toggled(bool): Emitted when the pin state is toggled.
         refresh_requested(): Emitted when the refresh button is clicked.
@@ -60,6 +63,19 @@ class Header(
     # visuals on next show (see ``showEvent``).
     _pin_on_drag_only_default = False
 
+    # Process-wide default for tap-to-pin (see ``pin_on_tap``). Off by default:
+    # the shipped behavior is that a transient window dismisses on every
+    # auto-hide request. ``UiHandler.pin_on_tap`` owns this the same way
+    # ``pin_click_hides`` owns the mode default above.
+    _pin_on_tap_default = False
+
+    # Tap-to-pin window, in milliseconds. An auto-hide request that lands
+    # within this long of the window becoming visible reads as a *tap* of the
+    # activation key rather than a *hold* — see ``claim_hide_as_tap``. Sized
+    # for the natural gap between clicking a marking-menu item and letting the
+    # key go (~150-300ms), well under a deliberate peek (~1s+).
+    PIN_ON_TAP_MS = 500
+
     # Define button properties with icon paths and callbacks
     button_definitions = {
         "refresh": ("refresh.svg", "trigger_refresh"),
@@ -78,6 +94,7 @@ class Header(
         parent=None,
         config_buttons=None,
         pin_on_drag_only=None,
+        pin_on_tap=None,
         auto_hide_with_os_frame=True,
         **kwargs,
     ):
@@ -97,6 +114,13 @@ class Header(
                 (:meth:`set_default_pin_on_drag_only` — driven by
                 ``UiHandler.pin_click_hides``). Settable after construction —
                 see :attr:`pin_on_drag_only`.
+            pin_on_tap (bool, optional): If True, an auto-hide request that
+                arrives within :attr:`PIN_ON_TAP_MS` of the window becoming
+                visible pins the window open instead of dismissing it — the
+                user tapped the activation key rather than holding it. If None
+                (default), the header follows the process-wide default
+                (:meth:`set_default_pin_on_tap` — driven by
+                ``UiHandler.pin_on_tap``). See :meth:`claim_hide_as_tap`.
             auto_hide_with_os_frame (bool, optional): If True (default), the
                 header hides itself when its top-level window has a native
                 OS title bar (i.e. is not frameless), so the two title bars
@@ -109,10 +133,20 @@ class Header(
         self._pin_on_drag_only = (
             None if pin_on_drag_only is None else bool(pin_on_drag_only)
         )
+        # None = follow the class-level default (see _pin_on_tap_default)
+        self._pin_on_tap = None if pin_on_tap is None else bool(pin_on_tap)
         self._pin_hovered = False
         self._auto_hide_with_os_frame = auto_hide_with_os_frame
         self._auto_hide_checked = False
         self._collapsed = False
+        # Re-entrancy guard for the collapsed-state re-assert in eventFilter:
+        # re-hiding a sibling posts the very LayoutRequest that triggered it.
+        self._reasserting_collapse = False
+        # The container being watched while collapsed. Held rather than
+        # re-derived from parent(), so the expand removes the filter from the
+        # object it was installed on even if the header was reparented in
+        # between (re-deriving would strand the filter on the old container).
+        self._collapse_watch = None
         self._minimized = False
         self._saved_size = None
         self._saved_min_size = None
@@ -192,6 +226,74 @@ class Header(
         cls._pin_on_drag_only_default = bool(value)
 
     @property
+    def pin_on_tap(self) -> bool:
+        """Whether a just-shown window pins itself instead of auto-hiding.
+
+        The user-facing choice between the two ways an activation key can
+        behave (see :meth:`claim_hide_as_tap`): hold-to-peek only (``False``,
+        the shipped behavior) or hold-to-peek *and* tap-to-keep (``True``).
+        Resolves to the process-wide default while unset — the common case,
+        so ``UiHandler.pin_on_tap`` governs every generic header through
+        :meth:`set_default_pin_on_tap`. Assigning a bool pins THIS header to a
+        behavior; assigning ``None`` re-follows the default.
+        """
+        if self._pin_on_tap is None:
+            return type(self)._pin_on_tap_default
+        return self._pin_on_tap
+
+    @pin_on_tap.setter
+    def pin_on_tap(self, value) -> None:
+        self._pin_on_tap = None if value is None else bool(value)
+
+    @classmethod
+    def set_default_pin_on_tap(cls, value: bool) -> None:
+        """Set the process-wide tap-to-pin behavior for default-following headers.
+
+        Owned by ``UiHandler.pin_on_tap``. Nothing visual depends on it (the
+        pin button looks and acts the same either way), so unlike
+        :meth:`set_default_pin_on_drag_only` there is no affordance to re-sync
+        — the behavior resolves at hide-request time.
+        """
+        cls._pin_on_tap_default = bool(value)
+
+    def claim_hide_as_tap(self, elapsed_ms) -> bool:
+        """Pin the window open instead of letting an auto-hide request through.
+
+        This is the tap-vs-hold split, and *elapsed_ms* — how long the window
+        has been visible when the hide request lands — is the whole signal.
+        The activation key itself is not observable from here (the marking
+        menu's key state is on the far side of ``MainWindow.request_hide``),
+        but it doesn't need to be: an auto-hide fires on key *release*, so the
+        gap between the window appearing and the request arriving IS how long
+        the key was held after the window came up.
+
+        * Released almost immediately (< :attr:`PIN_ON_TAP_MS`) — the user
+          opened the tool to use it. Pin it open like a standard window.
+        * Held longer — the user was peeking. Let the hide through.
+
+        Off unless :attr:`pin_on_tap` is set, so the default behavior is
+        unchanged: every auto-hide request dismisses. A header with no pin
+        button never claims either: it has no way to show the pinned state or
+        to let the user undo it, and a pinned window refuses ``hide()``
+        outright (``MainWindow.setVisible``) — so pinning one would strand it
+        on screen. That's the same ``"pin" in self.buttons`` precondition
+        :meth:`toggle_collapse` applies before auto-pinning.
+
+        Parameters:
+            elapsed_ms (int): Milliseconds the window has been visible, or a
+                negative value if it has never been shown (never a tap).
+
+        Returns:
+            bool: True if the request was consumed by pinning instead.
+        """
+        if self.pinned or not self.pin_on_tap or "pin" not in self.buttons:
+            return False
+        if elapsed_ms is None or elapsed_ms < 0 or elapsed_ms >= self.PIN_ON_TAP_MS:
+            return False
+        self._set_pin_state(True)
+        return True
+
+    @property
     def menu(self):
         try:
             return self._menu
@@ -264,9 +366,7 @@ class Header(
         icon swap through this helper so toggle states stay consistent
         with the initial render.
         """
-        IconManager.fit_icon(
-            button, icon_name, self.height(), margin=self._ICON_MARGIN
-        )
+        IconManager.fit_icon(button, icon_name, self.height(), margin=self._ICON_MARGIN)
 
     def has_buttons(self, button_type=None):
         """Check if the header has a specific button type or any button.
@@ -428,7 +528,7 @@ class Header(
         title = self._full_title or ""
         if self._version:
             return (
-                f"{title} <span style=\"font-weight:normal\">v{self._version}</span>"
+                f'{title} <span style="font-weight:normal">v{self._version}</span>'
             ).strip()
         return title
 
@@ -490,7 +590,7 @@ class Header(
             title_available = max(0, available - version_width)
             elided_title = fm.elidedText(title, QtCore.Qt.ElideRight, title_available)
             displayed = (
-                f"{elided_title} <span style=\"font-weight:normal\">v{version}</span>"
+                f'{elided_title} <span style="font-weight:normal">v{version}</span>'
             )
         else:
             displayed = fm.elidedText(title, QtCore.Qt.ElideRight, available)
@@ -777,7 +877,22 @@ class Header(
                 self._set_pin_state(True)
 
     def _set_siblings_visibility(self, visible):
-        """Recursively toggle visibility of all siblings in the parent layout."""
+        """Recursively toggle visibility of all siblings in the parent layout.
+
+        Hiding is gated on ``isHidden()``, NOT ``isVisible()``. The two differ
+        exactly when the window itself is off screen: ``isVisible()`` is False
+        for every child of an unshown window, so the old gate hid *nothing*
+        when a collapse ran before the first show (or while the window was
+        hidden) — the window was then pinned to the header's height with all
+        its content still shown, which draws the content up inside the header
+        strip. ``isHidden()`` reports the widget's OWN state, so it stays True
+        only for a widget something else deliberately hid — which must survive
+        the round trip untouched, since ``expand_window`` restores only what
+        carries ``header_hidden_state``.
+
+        Re-entrant by design: calling it again while collapsed re-hides any
+        sibling that has since been shown (see :meth:`eventFilter`).
+        """
         parent = self.parent()
         if not parent or not parent.layout():
             return
@@ -789,8 +904,8 @@ class Header(
                     widget = item.widget()
                     if widget is not self:
                         if not visible:
-                            # Only hide if currently visible
-                            if widget.isVisible():
+                            # Only hide what isn't already hidden
+                            if not widget.isHidden():
                                 widget.setProperty("header_hidden_state", True)
                                 widget.hide()
                         else:
@@ -820,8 +935,13 @@ class Header(
         self._saved_min_size = window.minimumSize()
         self._saved_max_size = window.maximumSize()
 
-        # Hide all visible siblings recursively
+        # Hide all visible siblings recursively, then watch the container so
+        # anything shown later while collapsed is hidden again (see
+        # :meth:`eventFilter`). ``installEventFilter`` de-dupes.
         self._set_siblings_visibility(False)
+        self._collapse_watch = self.parent()
+        if self._collapse_watch is not None:
+            self._collapse_watch.installEventFilter(self)
 
         # Walk up hierarchy to window, saving and nuking minimum heights
         # (and minimum widths when collapsing to a fixed_width)
@@ -882,6 +1002,15 @@ class Header(
         # NOW, since the user may have dragged it while collapsed (restoring
         # the collapse-time position would teleport it back).
         collapsed_width = window.width()
+
+        # Stop re-asserting the collapse before restoring anything, or the
+        # watch would immediately re-hide what the restore shows.
+        if self._collapse_watch is not None:
+            try:
+                self._collapse_watch.removeEventFilter(self)
+            except RuntimeError:  # container already deleted
+                pass
+            self._collapse_watch = None
 
         # Restore visibility of siblings
         self._set_siblings_visibility(True)
@@ -1057,7 +1186,7 @@ class Header(
             button.setToolTip("Pin the window open.")
 
     def eventFilter(self, watched, event):
-        """Track hover on the pin button to drive its click-to-hide visuals."""
+        """Track pin-button hover, and keep a collapsed window's content hidden."""
         if watched is self.buttons.get("pin"):
             event_type = event.type()
             if event_type == QtCore.QEvent.Enter:
@@ -1066,6 +1195,26 @@ class Header(
             elif event_type == QtCore.QEvent.Leave:
                 self._pin_hovered = False
                 self._sync_pin_affordance()
+        elif (
+            self._collapsed
+            and not self._reasserting_collapse
+            and watched is self._collapse_watch
+            and event.type() == QtCore.QEvent.LayoutRequest
+        ):
+            # A collapsed window is only as tall as its header, so ANY content
+            # that becomes visible again while collapsed is laid out inside the
+            # header strip and paints over it — the "layout moves up into the
+            # header" symptom. Content comes back on its own all the time (a
+            # table repopulating on a selection change, a status row appearing,
+            # a group expanding), and each such show posts a LayoutRequest to
+            # the container, so that is where the collapse invariant is
+            # re-asserted. Re-hiding posts another LayoutRequest, hence the
+            # guard.
+            self._reasserting_collapse = True
+            try:
+                self._set_siblings_visibility(False)
+            finally:
+                self._reasserting_collapse = False
         return super().eventFilter(watched, event)
 
     def mousePressEvent(self, event):

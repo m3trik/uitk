@@ -195,6 +195,16 @@ class TransportControls(QtWidgets.QWidget):
     def play_controller(self) -> PlayController:
         return self._play_controller
 
+    def set_range_fn(self, fn: Optional[Callable[[], tuple]]) -> None:
+        """Repoint the go-to-start/end range provider.
+
+        A consumer that adopts an existing row across a controller re-init
+        must repoint this alongside :meth:`set_play_controller` — the
+        constructor binding would otherwise keep reading (and keep alive)
+        the retired controller.
+        """
+        self._range_fn = fn
+
     def set_play_controller(self, pc: PlayController) -> None:
         self._play_controller = pc
 
@@ -456,14 +466,26 @@ class TransportControls(QtWidgets.QWidget):
 
     # ----------------------------------------------------------- integration
 
-    def attach_to_footer(self, footer, side: str = "right") -> None:
-        """Insert this row into *footer*'s main layout on the given side."""
+    def attach_to_footer(self, footer, side: str = "center") -> None:
+        """Insert this row into *footer*'s main layout on the given side.
+
+        ``"center"`` (the default) puts the transport on the footer's midline,
+        where a viewer's eye already goes for playback controls and where it
+        cannot be crowded by the status text growing from the left or a size
+        grip on the right.  ``"left"`` / ``"right"`` pin it to an edge.
+        """
         attach = getattr(footer, "add_widget", None)
         if callable(attach):
             attach(self, side=side)
             return
-        # Fallback: raw insert into main_layout.
+        # Fallback: raw insert into main_layout, for a host footer that
+        # predates add_widget (it has no centre concept, so centre reads as
+        # "after the status area", the nearest thing available).
         if side == "left":
             footer.main_layout.insertWidget(0, self)
+        elif side == "center":
+            footer.main_layout.insertWidget(
+                max(0, footer.main_layout.count() - 1), self
+            )
         else:
             footer.main_layout.addWidget(self)

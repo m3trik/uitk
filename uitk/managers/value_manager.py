@@ -164,6 +164,13 @@ class ValueManager:
     def is_supported_widget(widget):
         """Check if a widget type is supported for value operations.
 
+        Answers for :meth:`get_value` / :meth:`set_value` as they actually
+        behave. It used to name four leaf types where those two dispatch on a
+        BASE — so it denied a checkable ``QGroupBox`` (which
+        ``test_checkable_qgroupbox`` proves round-trips), a ``QDial`` /
+        ``QScrollBar``, and a ``QToolButton``, and a caller gating on it would
+        have refused writes that work.
+
         Parameters:
             widget: Qt widget to check
 
@@ -177,10 +184,9 @@ class ValueManager:
             QtWidgets.QSpinBox,
             QtWidgets.QDoubleSpinBox,
             QtWidgets.QComboBox,
-            QtWidgets.QCheckBox,
-            QtWidgets.QRadioButton,
-            QtWidgets.QSlider,
-            QtWidgets.QPushButton,  # If it has isChecked
+            QtWidgets.QAbstractButton,  # check / radio / push / tool
+            QtWidgets.QAbstractSlider,  # slider / dial / scroll bar
+            QtWidgets.QGroupBox,  # checkable groups
         )
         return isinstance(widget, supported_types)
 
@@ -203,7 +209,9 @@ class ValueManager:
             "textChanged": lambda w: (
                 w.text()
                 if hasattr(w, "text")
-                else w.toPlainText() if hasattr(w, "toPlainText") else None
+                else w.toPlainText()
+                if hasattr(w, "toPlainText")
+                else None
             ),
             "valueChanged": lambda w: w.value() if hasattr(w, "value") else None,
             "currentIndexChanged": lambda w: (
@@ -241,7 +249,9 @@ class ValueManager:
                 "textChanged": lambda w, v: (
                     w.setPlainText(str(v))
                     if hasattr(w, "setPlainText")
-                    else w.setText(str(v)) if hasattr(w, "setText") else None
+                    else w.setText(str(v))
+                    if hasattr(w, "setText")
+                    else None
                 ),
                 "valueChanged": lambda w, v: (
                     ValueManager._set_numeric_value(w, v)

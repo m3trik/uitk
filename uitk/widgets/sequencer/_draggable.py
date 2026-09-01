@@ -4,12 +4,73 @@
 
 Provides:
 - :meth:`DraggableItemMixin.snap_time` — unified time-snap helper (Ctrl = per-frame).
+- :meth:`ItemRetirement.retire` — remove a scene item without destroying it mid-event.
 - :class:`DraggableItemMixin` — template for ``cancel_drag()`` support.
 """
 
 from __future__ import annotations
 
 from qtpy import QtWidgets, QtCore
+
+
+class ItemRetirement:
+    """Deferred destruction for scene items removed mid-event.
+
+    A class rather than two module functions over two module globals: the
+    parked-item list and the drain flag ARE this behaviour's state, and the
+    ecosystem keeps implementation on a class namespace rather than flat in a
+    module (root ``CLAUDE.md``, "Encapsulate").  The state stays class-level,
+    not per-instance -- see :attr:`_retired`.
+    """
+
+    #: Items removed from a scene but not yet destroyed.  CLASS-level (not
+    #: per-widget) so the drain survives the widget itself being torn down.
+    _retired: list = []
+    #: Whether a drain is already queued, so N retirements cost one timer.
+    _drain_scheduled: bool = False
+
+    @classmethod
+    def retire(cls, item) -> None:
+        """Take *item* out of its scene, destroying it one event-loop pass later.
+
+        Removing a QGraphicsItem drops the scene's ownership, so releasing the
+        last Python reference destroys the C++ object then and there.  That is
+        fatal when the removal happens INSIDE that item's own event handler —
+        a consumer rebuilding the widget from ``mouseReleaseEvent``, or from a
+        context-menu action while ``contextMenuEvent`` is still on the stack.
+        Qt goes on to touch the item after the handler returns (mouse-grabber
+        release, hover recalculation, the handler's own trailing statements),
+        and the freed object takes the host application down with it.
+
+        Parking the reference until the next event-loop pass lets Qt finish
+        with the item first.  The item is already out of the scene, so it
+        neither paints nor receives events in the meantime.
+        """
+        if item is None:
+            return
+        scene = item.scene()
+        if scene is not None:
+            scene.removeItem(item)
+        if QtWidgets.QApplication.instance() is None:
+            return  # no event loop to come back on, and no dispatch to survive
+        cls._retired.append(item)
+        if not cls._drain_scheduled:
+            cls._drain_scheduled = True
+            QtCore.QTimer.singleShot(0, cls._drain)
+
+    @classmethod
+    def _drain(cls) -> None:
+        # A QMenu popup spins a nested event loop that services timers, so this
+        # drain can fire while an item's contextMenuEvent is still on the C++
+        # stack — releasing a parked parent there would destroy its children
+        # mid-event, the exact crash class this module exists to prevent.  Defer
+        # until no popup is live.  (Deliberately NOT deferred on modal dialogs:
+        # a sequencer hosted inside one would then never drain at all.)
+        if QtWidgets.QApplication.activePopupWidget() is not None:
+            QtCore.QTimer.singleShot(50, cls._drain)
+            return
+        cls._drain_scheduled = False
+        cls._retired.clear()
 
 
 class DraggableItemMixin:
@@ -41,6 +102,33 @@ class DraggableItemMixin:
 
     def _restore_drag_state(self) -> None:
         raise NotImplementedError
+
+    def _drag_sequencer(self):
+        """Host SequencerWidget — override where the timeline lives elsewhere."""
+        tl = getattr(self, "_timeline", None)
+        return tl.parent_sequencer if tl is not None else None
+
+    def sceneEvent(self, event):
+        """Cancel the drag when the mouse grab is stolen mid-gesture.
+
+        A popup or a grab handoff (routine in this codebase's marking-menu
+        environment) takes the grab without ever delivering a release, so
+        the drag state — guides, tooltip, the lazily-captured undo
+        snapshot — would persist until the next gesture.  Qt delivers
+        ``UngrabMouse`` in both cases, and also after a normal release,
+        where the drag state is already cleared and this no-ops.
+        """
+        if event.type() == QtCore.QEvent.UngrabMouse and self._is_drag_active():
+            captured = self._undo_captured
+            if self.cancel_drag() and captured:
+                # The snapshot recorded a gesture that never committed —
+                # leaving it would burn an undo step (mirrors
+                # SequencerWidget._cancel_active_drag).
+                self._undo_captured = False
+                sq = self._drag_sequencer()
+                if sq is not None and sq._undo_stack:
+                    sq._undo_stack.pop()
+        return super().sceneEvent(event)
 
     def cancel_drag(self) -> bool:
         if not self._is_drag_active():

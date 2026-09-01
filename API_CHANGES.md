@@ -1,50 +1,39 @@
 # uitk — API Changes
 
-_Diff vs the last release (origin/main @ f8148d3)._
+_Diff vs the last release (origin/main @ b5d5d32)._
 
-## Added (38)
+## Added (18)
 
-- `bridge/parameters.py::Parameters.affix_parts(value: Any, *, default: str = 'prefix')`
-- `bridge/slots.py::BridgeSlotsBase.live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]`
-- `bridge/spec.py::KindFactory.affix_parts(value: Any, *, default: str = 'prefix') -> Tuple[str, str]`
-- `bridge/spec.py::KindFactory.to_literal(spec: AttributeSpec, value: Any) -> Any`
-- `switchboard/utils.py::SwitchboardUtilsMixin.form_dialog(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', validate: Callable = None, message: str = '') -> Optional[dict]`
-- `switchboard/utils.py::SwitchboardUtilsMixin.form_panel(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', cancel_text: str = None, validate: Callable = None, message: str = '', help_text: str = '', on_run: Callable = None, apply_text: str = 'Apply', output: bool = True, min_width: int = 560, settings=None, settings_key: str = 'window_geometry')`
-- `widgets/formPanel.py::FormPanel(class)`
-- `widgets/formPanel.py::FormPanel.add(self, x, label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), enabled_by: Optional[str] = None, **kwargs)`
-- `widgets/formPanel.py::FormPanel.apply_pending(self) -> None`
-- `widgets/formPanel.py::FormPanel.arm_apply(self, commit: Callable, note: str = None) -> None`
-- `widgets/formPanel.py::FormPanel.clear_output(self) -> None`
-- `widgets/formPanel.py::FormPanel.clear_rows(self) -> None`
-- `widgets/formPanel.py::FormPanel.closeEvent(self, event)`
-- `widgets/formPanel.py::FormPanel.disarm_apply(self) -> None`
-- `widgets/formPanel.py::FormPanel.editor(self, name: str)`
-- `widgets/formPanel.py::FormPanel.exec_panel(self) -> bool`
-- `widgets/formPanel.py::FormPanel.hideEvent(self, event)`
-- `widgets/formPanel.py::FormPanel.keyPressEvent(self, event)`
-- `widgets/formPanel.py::FormPanel.logger(self)`
-- `widgets/formPanel.py::FormPanel.pending_commit(self)`
-- `widgets/formPanel.py::FormPanel.revalidate(self, *_args) -> str`
-- `widgets/formPanel.py::FormPanel.run(self, values: dict = None) -> None`
-- `widgets/formPanel.py::FormPanel.set_fields(self, fields) -> None`
-- `widgets/formPanel.py::FormPanel.set_status(self, text: str, level: Optional[str] = None) -> None`
-- `widgets/formPanel.py::FormPanel.set_values(self, values: dict) -> None`
-- `widgets/formPanel.py::FormPanel.values(self) -> dict`
-- `widgets/optionBox/options/_options.py::BaseOption.refresh(self) -> None`
-- `widgets/optionBox/options/affix.py::AffixMode(class)`
-- `widgets/optionBox/options/affix.py::AffixMode.convention(cls, convention_key: str, *, key: str = 'convention', label: str = 'Scene', icon: str = 'link', description: str = '') -> 'AffixMode'`
-- `widgets/optionBox/options/affix.py::AffixMode.resolve(self, text: str, default: str = 'prefix') -> Tuple[str, str]`
-- `widgets/optionBox/options/affix.py::AffixMode.text(self) -> Optional[str]`
-- `widgets/optionBox/options/affix.py::AffixOption.mode_spec(self, key: Optional[str] = None) -> AffixMode`
-- `widgets/optionBox/options/affix.py::AffixOption.modes(self) -> List[str]`
-- `widgets/optionBox/options/affix.py::AffixOption.refresh(self) -> None`
-- `widgets/optionBox/options/affix.py::AffixOption.restore_default(self) -> None`
-- `widgets/windowPanel.py::WindowPanel.add(self, x: Union[str, QtWidgets.QWidget, type, list, tuple], label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), **kwargs) -> Union[QtWidgets.QWidget, list]`
-- `widgets/windowPanel.py::WindowPanel.clear_rows(self) -> None`
-- `widgets/windowPanel.py::WindowPanel.rows_layout(self) -> QtWidgets.QFormLayout`
+- `handlers/ui_handler.py::UiHandler.pin_on_tap(self) -> bool`
+- `switchboard/utils.py::SwitchboardUtilsMixin.value_from(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], resolver: Callable[..., Any], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]`
+- `widgets/header.py::Header.claim_hide_as_tap(self, elapsed_ms) -> bool`
+- `widgets/header.py::Header.pin_on_tap(self) -> bool`
+- `widgets/header.py::Header.set_default_pin_on_tap(cls, value: bool) -> None`
+- `widgets/mainWindow.py::MainWindow.visible_duration_ms(self) -> int`
+- `widgets/sequencer/_draggable.py::DraggableItemMixin.sceneEvent(self, event)`
+- `widgets/sequencer/_draggable.py::ItemRetirement(class)`
+- `widgets/sequencer/_draggable.py::ItemRetirement.retire(cls, item) -> None`
+- `widgets/sequencer/_ruler.py::RulerItem.selected_block(self) -> Optional[dict]`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.alignment_times(self, exclude_clip_ids=(), exclude_times=(), exclude_spans=()) -> List[float]`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.clear_snap_guides(self) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.nearest_alignment(self, time: float, candidates, tolerance: Optional[float] = None) -> Optional[float]`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.selected_shot(self) -> Optional[dict]`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.set_snap_guides(self, times) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.snap_guides_enabled(self) -> bool`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.snap_to_keys(self) -> bool`
+- `widgets/sequencer/_transport_controls.py::TransportControls.set_range_fn(self, fn: Optional[Callable[[], tuple]]) -> None`
 
-## Signature changed (1)
+## Signature changed (4)
 
-- `widgets/optionBox/utils.py::OptionBoxManager.set_affix`
-  - was: `(self, *, default: str = 'auto', on_change=None, tooltip: Optional[str] = None, order=None, replace: bool = True)`
-  - now: `(self, *, default: str = 'auto', modes=None, convention_key: Optional[str] = None, on_change=None, tooltip: Optional[str] = None, settings_key=None, order=None, replace: bool = True)`
+- `widgets/formPanel.py::FormPanel.add`
+  - was: `(self, x, label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), enabled_by: Optional[str] = None, **kwargs)`
+  - now: `(self, x, label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), label_align=None, enabled_by: Optional[str] = None, **kwargs)`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.add_gap_overlay`
+  - was: `(self, start: float, end: float, color: str = '#555555', alpha: int = 120, locked: bool = False)`
+  - now: `(self, start: float, end: float, color: str = '#555555', alpha: int = 120, locked: bool = False, tail: bool = False)`
+- `widgets/sequencer/_transport_controls.py::TransportControls.attach_to_footer`
+  - was: `(self, footer, side: str = 'right') -> None`
+  - now: `(self, footer, side: str = 'center') -> None`
+- `widgets/windowPanel.py::WindowPanel.add`
+  - was: `(self, x: Union[str, QtWidgets.QWidget, type, list, tuple], label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), **kwargs) -> Union[QtWidgets.QWidget, list]`
+  - now: `(self, x: Union[str, QtWidgets.QWidget, type, list, tuple], label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), label_align=None, **kwargs) -> Union[QtWidgets.QWidget, list]`

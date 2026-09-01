@@ -38,6 +38,25 @@ def _enter_event():
     return QtGui.QEnterEvent(pos, pos, pos)
 
 
+def _pin_header(case, show=False, **kwargs):
+    """A frameless window whose header carries a pin button.
+
+    The fixture every pin-behavior class needs: the button has to exist for
+    the pin paths to run at all, and the frameless flag keeps the header from
+    auto-hiding behind an OS title bar. Pass ``show=True`` when the test reads
+    a shown-only outcome (hover styling, ``isVisible`` after a dismissal).
+    """
+    window = case.track_widget(QtWidgets.QWidget())
+    window.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
+    layout = QtWidgets.QVBoxLayout(window)
+    header = Header(parent=window, config_buttons=["pin"], **kwargs)
+    layout.addWidget(header)
+    if show:
+        window.show()
+        QtWidgets.QApplication.processEvents()
+    return window, header
+
+
 class TestHeaderCreation(QtBaseTestCase):
     """Tests for Header creation and initialization."""
 
@@ -221,15 +240,7 @@ class TestHeaderPinClickHides(QtBaseTestCase):
     """
 
     def _window(self, **kwargs):
-        """A shown frameless window whose header carries a pin button."""
-        window = self.track_widget(QtWidgets.QWidget())
-        window.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
-        layout = QtWidgets.QVBoxLayout(window)
-        header = Header(parent=window, config_buttons=["pin"], **kwargs)
-        layout.addWidget(header)
-        window.show()
-        QtWidgets.QApplication.processEvents()
-        return window, header
+        return _pin_header(self, show=True, **kwargs)
 
     @staticmethod
     def _icon_name(button):
@@ -267,6 +278,7 @@ class TestHeaderPinClickHides(QtBaseTestCase):
     def test_drag_still_pins(self):
         """Dragging the header is the way to pin in click-to-hide mode."""
         window, header = self._window(pin_on_drag_only=True)
+
         # The 6-arg form (local + global/screen point) is the one both
         # bindings accept AND the only one that carries a global position —
         # the header's drag math reads globalPos(). Build and deliver one
@@ -361,12 +373,7 @@ class TestHeaderPinClickDefault(QtBaseTestCase):
         super().tearDown()
 
     def _pin_header(self, **kwargs):
-        window = self.track_widget(QtWidgets.QWidget())
-        window.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
-        layout = QtWidgets.QVBoxLayout(window)
-        header = Header(parent=window, config_buttons=["pin"], **kwargs)
-        layout.addWidget(header)
-        return window, header
+        return _pin_header(self, **kwargs)
 
     def test_unconfigured_header_follows_class_default(self):
         Header.set_default_pin_on_drag_only(True)
@@ -755,9 +762,11 @@ class TestHeaderHelpButton(QtBaseTestCase):
         header.set_help_text("Sample help")
         captured = []
         original = QtWidgets.QToolTip.showText
+
         def _capture(*args, **kwargs):
             captured.append(args)
             return original(*args, **kwargs)
+
         with patch.object(QtWidgets.QToolTip, "showText", side_effect=_capture):
             header.buttons["help"].click()
         self.assertEqual(len(captured), 1)
@@ -782,6 +791,7 @@ class TestApplyStylesWithHelpButton(QtBaseTestCase):
         """Drive ``UiHandler.apply_styles``'s header-button branch directly."""
         from uitk.handlers.ui_handler import UiHandler
         from uitk import Switchboard
+
         sb = Switchboard()
         handler = UiHandler(switchboard=sb)
         # Stand-in for ``ui`` — apply_styles only reads ``ui.header`` and the
@@ -916,7 +926,9 @@ class TestHeaderWindowActions(QtBaseTestCase):
         ]
         # Each window should be further right than the previous
         for i in range(1, len(xs)):
-            self.assertGreater(xs[i], xs[i - 1], f"win{i} not to the right of win{i-1}")
+            self.assertGreater(
+                xs[i], xs[i - 1], f"win{i} not to the right of win{i - 1}"
+            )
 
     def test_horizontal_stacking_same_y(self):
         """Horizontally stacked windows should share the same y coordinate."""
@@ -983,7 +995,7 @@ class TestHeaderWindowActions(QtBaseTestCase):
         ]
         # Each window should be higher (smaller y) than the previous
         for i in range(1, len(ys)):
-            self.assertLess(ys[i], ys[i - 1], f"win{i} not above win{i-1}")
+            self.assertLess(ys[i], ys[i - 1], f"win{i} not above win{i - 1}")
 
     def test_vertical_stacking_same_x(self):
         """Vertically stacked windows should share the same x coordinate."""
@@ -1175,13 +1187,148 @@ class TestHeaderWindowActions(QtBaseTestCase):
         self.assertFalse(window.isVisible())
 
 
+class TestHeaderCollapseKeepsContentHidden(QtBaseTestCase):
+    """A collapsed window is only as tall as its header, so nothing else may show.
+
+    Both regressions here rendered as content drawn up inside the header strip:
+    the window is pinned to the header's height while a sibling is still
+    visible, so the layout puts that sibling over the header.
+    """
+
+    def _make(self):
+        window = self.track_widget(QtWidgets.QWidget())
+        window.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
+        layout = QtWidgets.QVBoxLayout(window)
+        layout.setContentsMargins(0, 0, 0, 0)
+        header = Header(parent=window, config_buttons=["collapse"])
+        layout.addWidget(header)
+        body = QtWidgets.QLabel("body", parent=window)
+        layout.addWidget(body)
+        return window, header, body
+
+    def test_content_shown_while_collapsed_is_hidden_again(self):
+        """The live symptom: a repopulating table climbed into the header strip.
+
+        Content comes back on its own constantly — a table refilling on a
+        selection change, a status row appearing, a group expanding — and the
+        collapse had no way to notice.
+        """
+        window, header, body = self._make()
+        window.show()
+        window.resize(400, 300)
+        app.processEvents()
+
+        header.collapse_window()
+        app.processEvents()
+        self.assertFalse(body.isVisible())
+
+        body.show()  # whatever a refresh would do
+        app.processEvents()
+        self.assertFalse(
+            body.isVisible(),
+            "content shown while collapsed must be re-hidden, not left to "
+            "paint over the header",
+        )
+        self.assertLessEqual(header.y() + header.height(), window.height())
+
+    def test_expand_still_restores_content_after_a_reassert(self):
+        """The re-assert must not strand content hidden once expanded."""
+        window, header, body = self._make()
+        window.show()
+        window.resize(400, 300)
+        app.processEvents()
+
+        header.collapse_window()
+        app.processEvents()
+        body.show()
+        app.processEvents()
+
+        header.expand_window()
+        app.processEvents()
+        self.assertTrue(body.isVisible())
+        self.assertIsNone(body.property("header_hidden_state"))
+
+    def test_collapse_before_first_show_still_hides_content(self):
+        """``isVisible()`` is False for every child of an unshown window.
+
+        Gating the hide on it meant a collapse that ran before the first show
+        hid nothing at all, then pinned the window to the header's height with
+        all its content still shown.
+        """
+        window, header, body = self._make()
+        header.collapse_window()
+
+        self.assertTrue(body.isHidden())
+        self.assertTrue(body.property("header_hidden_state"))
+
+    def test_content_in_a_nested_layout_is_reasserted_too(self):
+        """The real shape of the affected panels — a filter row inside an HBox.
+
+        ``LayoutRequest`` is posted to the nearest parent WIDGET, not to the
+        nested layout, so the watch has to reach content nested any number of
+        layouts deep rather than only direct children of the container.
+        """
+        window, header, body = self._make()
+        row = QtWidgets.QHBoxLayout()
+        window.layout().addLayout(row)
+        combo = QtWidgets.QComboBox(window)
+        row.addWidget(combo)
+        window.show()
+        window.resize(400, 300)
+        app.processEvents()
+
+        header.collapse_window()
+        app.processEvents()
+        self.assertFalse(combo.isVisible())
+
+        combo.show()
+        app.processEvents()
+        self.assertFalse(combo.isVisible())
+
+        header.expand_window()
+        app.processEvents()
+        self.assertTrue(combo.isVisible())
+
+    def test_expand_unwatches_the_container_it_watched(self):
+        """The removal must target the watched object, not ``parent()`` again.
+
+        A header reparented while collapsed would otherwise strand the filter
+        on the old container forever.
+        """
+        window, header, body = self._make()
+        window.show()
+        window.resize(400, 300)
+        app.processEvents()
+
+        header.collapse_window()
+        self.assertIs(header._collapse_watch, window)
+        header.expand_window()
+        self.assertIsNone(header._collapse_watch)
+
+    def test_a_deliberately_hidden_sibling_is_not_restored_by_expand(self):
+        """Only what the collapse hid may come back — the state gate's whole job."""
+        window, header, body = self._make()
+        window.show()
+        window.resize(400, 300)
+        app.processEvents()
+
+        body.hide()  # hidden by the tool, not by the collapse
+        app.processEvents()
+        header.collapse_window()
+        app.processEvents()
+        header.expand_window()
+        app.processEvents()
+
+        self.assertFalse(body.isVisible())
+
+
 class TestHeaderAttachTo(QtBaseTestCase):
     """Tests for Header attach_to method."""
 
     def test_attach_to_widget_with_layout(self):
         """Should attach header to widget with layout."""
         widget = self.track_widget(QtWidgets.QWidget())
-        layout = QtWidgets.QVBoxLayout(widget)
+        QtWidgets.QVBoxLayout(widget)
         header = self.track_widget(Header())
         header.attach_to(widget)
         self.assertEqual(widget.header, header)
@@ -1197,7 +1344,7 @@ class TestHeaderAttachTo(QtBaseTestCase):
         """Should attach to central widget of QMainWindow."""
         window = self.track_widget(QtWidgets.QMainWindow())
         central = QtWidgets.QWidget()
-        central_layout = QtWidgets.QVBoxLayout(central)
+        QtWidgets.QVBoxLayout(central)
         window.setCentralWidget(central)
         header = self.track_widget(Header())
         header.attach_to(window)
@@ -1206,7 +1353,7 @@ class TestHeaderAttachTo(QtBaseTestCase):
     def test_attach_to_avoids_double_attachment(self):
         """Should not attach twice to same widget."""
         widget = self.track_widget(QtWidgets.QWidget())
-        layout = QtWidgets.QVBoxLayout(widget)
+        QtWidgets.QVBoxLayout(widget)
         header = self.track_widget(Header())
         header.attach_to(widget)
         header.attach_to(widget)  # Second attach should be ignored
@@ -1407,6 +1554,123 @@ class TestAutoHideReclaimsHeight(QtBaseTestCase):
             tall,
             "auto-hiding the header must reclaim its row, not leave a dead band",
         )
+
+
+class TestHeaderPinOnTap(QtBaseTestCase):
+    """``pin_on_tap`` / ``claim_hide_as_tap``: tap the activation key to keep
+    the window, hold it to peek.
+
+    The header can't see the key — the marking menu's key state sits on the
+    far side of ``MainWindow.request_hide`` — so the decision is made from the
+    only thing that does cross: how long the window had been visible when the
+    hide request arrived. An auto-hide fires on key release, so that gap IS
+    how long the key was held after the window came up.
+    Added: 2026-08-27
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._saved_default = Header._pin_on_tap_default
+
+    def tearDown(self):
+        Header.set_default_pin_on_tap(self._saved_default)
+        super().tearDown()
+
+    def _pin_header(self, **kwargs):
+        return _pin_header(self, **kwargs)
+
+    # ── The decision ──────────────────────────────────────────────────────
+
+    def test_quick_request_pins(self):
+        _, header = self._pin_header(pin_on_tap=True)
+        self.assertTrue(header.claim_hide_as_tap(0))
+        self.assertTrue(header.pinned)
+
+    def test_late_request_is_not_claimed(self):
+        _, header = self._pin_header(pin_on_tap=True)
+        self.assertFalse(header.claim_hide_as_tap(Header.PIN_ON_TAP_MS))
+        self.assertFalse(header.pinned)
+
+    def test_never_shown_is_not_claimed(self):
+        """``visible_duration_ms`` reports -1 for a window never on screen."""
+        _, header = self._pin_header(pin_on_tap=True)
+        self.assertFalse(header.claim_hide_as_tap(-1))
+        self.assertFalse(header.claim_hide_as_tap(None))
+
+    def test_header_without_a_pin_button_never_claims(self):
+        """Sticky chrome has no pin button, so it can neither show the pinned
+        state nor let the user undo it — and a pinned window refuses hide().
+        Claiming there would strand the window on screen."""
+        window = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(parent=window, config_buttons=["hide"], pin_on_tap=True)
+        layout.addWidget(header)
+        self.assertFalse(header.claim_hide_as_tap(0))
+        self.assertFalse(header.pinned)
+
+    def test_opted_out_header_never_claims(self):
+        _, header = self._pin_header(pin_on_tap=False)
+        self.assertFalse(header.claim_hide_as_tap(0))
+        self.assertFalse(header.pinned)
+
+    def test_already_pinned_header_does_not_reclaim(self):
+        """A pinned window refuses hide requests on its own; claiming again
+        would re-emit ``toggled`` for a state that never changed."""
+        _, header = self._pin_header(pin_on_tap=True)
+        header._set_pin_state(True)
+        emitted = []
+        header.toggled.connect(emitted.append)
+        self.assertFalse(header.claim_hide_as_tap(0))
+        self.assertEqual(emitted, [])
+
+    def test_claim_syncs_the_window(self):
+        """The claim must land on the window too — that's what makes the
+        follow-up request (both auto-hide paths fire) a no-op."""
+
+        class _Win(QtWidgets.QWidget):
+            on_pinned_changed = QtCore.Signal(bool)
+
+            def __init__(self):
+                super().__init__()
+                self.pinned = False
+
+            def set_pinned(self, value):
+                self.pinned = bool(value)
+                self.on_pinned_changed.emit(self.pinned)
+
+        window = self.track_widget(_Win())
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(parent=window, config_buttons=["pin"], pin_on_tap=True)
+        layout.addWidget(header)
+        self.assertTrue(header.claim_hide_as_tap(0))
+        self.assertTrue(window.pinned)
+
+    # ── Default following (the UiHandler.pin_on_tap channel) ──────────────
+
+    def test_unconfigured_header_follows_class_default(self):
+        Header.set_default_pin_on_tap(True)
+        _, header = self._pin_header()
+        self.assertTrue(header.pin_on_tap)
+        Header.set_default_pin_on_tap(False)
+        self.assertFalse(header.pin_on_tap)
+
+    def test_explicit_choice_wins_over_default(self):
+        Header.set_default_pin_on_tap(True)
+        _, header = self._pin_header(pin_on_tap=False)
+        self.assertFalse(header.pin_on_tap)
+
+    def test_assigning_none_refollows_default(self):
+        Header.set_default_pin_on_tap(True)
+        _, header = self._pin_header(pin_on_tap=False)
+        header.pin_on_tap = None
+        self.assertTrue(header.pin_on_tap)
+
+    def test_independent_of_pin_click_mode(self):
+        """The two pin preferences are orthogonal: one is what a *click*
+        does, the other what an *auto-hide request* means."""
+        _, header = self._pin_header(pin_on_drag_only=True, pin_on_tap=False)
+        self.assertTrue(header.pin_on_drag_only)
+        self.assertFalse(header.pin_on_tap)
 
 
 # -----------------------------------------------------------------------------

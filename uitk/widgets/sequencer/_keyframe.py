@@ -57,6 +57,8 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         self._drag_origin_scene_x = 0.0
         self._drag_peers: List[Tuple["KeyframeItem", float]] = []
         self._drag_tooltip = FrameTooltip()
+        self._align_times = None  # alignment candidates, resolved on first move
+        self._align_hit: bool = False  # drag currently sits on a key frame
 
         self.setAcceptHoverEvents(True)
         self.setFlags(
@@ -125,6 +127,13 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
             super().mousePressEvent(event)
             return
 
+        # Record the modifier for the consumers' Shift gate (mirrors the
+        # clip/gap writers) — without this a key drag inherits whatever the
+        # LAST clip/gap gesture left in the widget-level flag.
+        self._parent_clip._timeline.parent_sequencer.shift_held_at_press = bool(
+            event.modifiers() & QtCore.Qt.ShiftModifier
+        )
+
         # Let Qt handle selection toggling (Shift/Ctrl modifiers).
         super().mousePressEvent(event)
 
@@ -139,10 +148,21 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
             for item in scene.selectedItems():
                 if isinstance(item, KeyframeItem):
                     self._drag_peers.append((item, item._time))
+        # Ctrl-click defers selection toggling to release, so the grabbed
+        # key may not be in selectedItems() yet — without it the alignment
+        # lead would be a key that never moves, its clip would escape the
+        # exclusion set, and the emitted changes would omit the grabbed key.
+        if not any(p is self for p, _ in self._drag_peers):
+            self._drag_peers.append((self, self._time))
 
         # Mark all affected parent clips as having a key drag in progress.
         for peer, _ in self._drag_peers:
             peer._parent_clip._keys_dragging = True
+
+        # Alignment candidates are resolved lazily on the first real move:
+        # the set can't change mid-gesture, but resolving it here would make
+        # every plain key click walk each clip and key for nothing.
+        self._align_times = None
 
         # No widget-level undo snapshot for key drags: the snapshot only
         # records clip bounds (not key times), so it could never restore
@@ -164,6 +184,29 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
 
         # Snap the delta so all peers shift by the same snapped amount.
         snapped_delta = self._parent_clip._snap(dx_time)
+
+        # Alignment is measured on the grabbed key, then applied to the whole
+        # selection as one delta — otherwise peers would drift apart.
+        sq = self._parent_clip._timeline.parent_sequencer
+        if self._align_times is None:
+            moving = {p._parent_clip._data.clip_id for p, _ in self._drag_peers}
+            self._align_times = sq.alignment_times(
+                exclude_clip_ids=moving,
+                # The dragged keys' origin frames alias into the top-level
+                # segment bar's edges and sibling sub-row keys — without
+                # this the drag magnets to where it started.
+                exclude_times=[origin for _, origin in self._drag_peers],
+            )
+        lead_origin = next((o for p, o in self._drag_peers if p is self), self._time)
+        hit = (
+            sq.nearest_alignment(lead_origin + snapped_delta, self._align_times)
+            if self._align_times
+            else None
+        )
+        if hit is not None and sq.snap_to_keys:
+            snapped_delta = hit - lead_origin
+        self._align_hit = hit is not None
+        sq.set_snap_guides([hit] if hit is not None else [])
 
         # Collect unique parent clips and notify them that their
         # bounding rect will change before we move any keys.
@@ -194,6 +237,9 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
 
     def _is_drag_active(self) -> bool:
         return self._dragging
+
+    def _drag_sequencer(self):
+        return self._parent_clip._timeline.parent_sequencer
 
     def _restore_drag_state(self) -> None:
         # Mirror the move-path order: capture the EXPANDED bounds and
@@ -227,6 +273,9 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
                 clip.update()
         self._dragging = False
         self._drag_peers = []
+        self._align_hit = False
+        self._align_times = None
+        self._parent_clip._timeline.parent_sequencer.clear_snap_guides()
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton and self._dragging:
@@ -254,9 +303,19 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
 
             self._hide_drag_tooltip()
 
+            sq = self._parent_clip._timeline.parent_sequencer
+            sq.clear_snap_guides()
+            self._align_hit = False
+            self._align_times = None
+
             if by_clip:
-                sq = self._parent_clip._timeline.parent_sequencer
-                for clip_id, changes in by_clip.items():
+                # ONE gesture must reach the consumer as ONE payload: a
+                # per-clip emit made each clip its own undo step, so a drag
+                # over three attribute rows took three Ctrl+Z to reverse.
+                if len(by_clip) > 1:
+                    sq.keys_batch_moved.emit(list(by_clip.items()))
+                else:
+                    clip_id, changes = next(iter(by_clip.items()))
                     sq.keys_moved.emit(clip_id, changes)
 
             event.accept()
@@ -265,18 +324,26 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
 
     # -- drag tooltip -------------------------------------------------------
 
+    def _drag_tooltip_color(self) -> str:
+        """Readout colour — the guide colour while the drag is aligned."""
+        sq = self._parent_clip._timeline.parent_sequencer
+        if self._align_hit and sq.snap_guides_enabled:
+            return sq.SNAP_GUIDE_COLOR
+        return self._parent_clip._resolve_color().lighter(160).name()
+
     def _show_drag_tooltip(self, scene_pos):
-        color = self._parent_clip._resolve_color().lighter(160).name()
         self._drag_tooltip.show(
             self.scene(),
             scene_pos,
             label=FrameTooltip.format_frame(self._time),
-            color=color,
+            color=self._drag_tooltip_color(),
         )
 
     def _update_drag_tooltip(self, scene_pos):
         self._drag_tooltip.update(
-            scene_pos, label=FrameTooltip.format_frame(self._time)
+            scene_pos,
+            label=FrameTooltip.format_frame(self._time),
+            color=self._drag_tooltip_color(),
         )
 
     def _hide_drag_tooltip(self):

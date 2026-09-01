@@ -13,6 +13,7 @@ Covers:
 - Browser is not added to switchboard registry/loaded_ui (self-exclusion)
 - Launch button label switches between Launch and Focus based on visibility
 """
+
 import os
 import tempfile
 import unittest
@@ -102,9 +103,7 @@ class BrowserBase(QtBaseTestCase):
         self.browser.deleteLater()
         self.sb.deleteLater()
         for _ in range(3):
-            QtWidgets.QApplication.processEvents(
-                QtCore.QEventLoop.AllEvents, 50
-            )
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
         self.tmp.cleanup()
         super().tearDown()
 
@@ -116,14 +115,10 @@ class BrowserBase(QtBaseTestCase):
 class ModelListsRegistry(BrowserBase):
     def test_lists_all_entries(self):
         self.assertEqual(self.browser._model.rowCount(), 3)
-        self.assertEqual(
-            sorted(self.browser._model._names), ["alpha", "beta", "gamma"]
-        )
+        self.assertEqual(sorted(self.browser._model._names), ["alpha", "beta", "gamma"])
 
     def test_tags_without_loading(self):
-        self.assertEqual(
-            self.browser._model._all_tags_for("alpha"), {"anim", "rig"}
-        )
+        self.assertEqual(self.browser._model._all_tags_for("alpha"), {"anim", "rig"})
         self.assertEqual(self.browser._model._all_tags_for("beta"), {"anim"})
         self.assertEqual(self.browser._model._all_tags_for("gamma"), set())
         # None of the UIs should be loaded just because the model listed them
@@ -256,9 +251,7 @@ class LiveSignalUpdates(BrowserBase):
             filename="alpha", return_field="filepath"
         )
         self.sb.save_ui_tags(path, ["fresh"])
-        self.assertEqual(
-            self.browser._model._all_tags_for("alpha"), {"fresh"}
-        )
+        self.assertEqual(self.browser._model._all_tags_for("alpha"), {"fresh"})
 
     def test_chip_set_updates_on_tag_change(self):
         # Add a brand-new tag to a UI; the chip filter row must surface it.
@@ -284,9 +277,7 @@ class LiveSignalUpdates(BrowserBase):
 
 class SelfExclusion(BrowserBase):
     def test_browser_not_in_loaded_ui(self):
-        self.assertNotIn(
-            "switchboard_browser", list(self.sb.loaded_ui.keys())
-        )
+        self.assertNotIn("switchboard_browser", list(self.sb.loaded_ui.keys()))
 
     def test_browser_not_in_registry(self):
         names = self.sb.registry.ui_registry.get("filename") or []
@@ -309,9 +300,7 @@ class FilterEnableToggle(BrowserBase):
     def test_filter_enabled_persists(self):
         self.browser._search_filter.set_on(False)
         self.assertFalse(
-            self.sb.settings.branch("ui_browser").value(
-                "search.filter_enabled", True
-            )
+            self.sb.settings.branch("ui_browser").value("search.filter_enabled", True)
         )
 
     def test_disabling_filter_ignores_inline_exclusion(self):
@@ -422,30 +411,35 @@ class DoubleClickLaunch(BrowserBase):
 
 class TableLayout(BrowserBase):
     def test_model_has_four_columns(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
-        self.assertEqual(self.browser._model.columnCount(), SwitchboardBrowserModel.COLUMN_COUNT)
+        self.assertEqual(
+            self.browser._model.columnCount(), SwitchboardBrowserModel.COLUMN_COUNT
+        )
         self.assertEqual(self.browser._model.columnCount(), 4)
 
     def test_tags_column_is_editable(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         idx = self.browser._model.index(0, SwitchboardBrowserModel.COL_TAGS)
         self.assertTrue(bool(self.browser._model.flags(idx) & QtCore.Qt.ItemIsEditable))
 
     def test_name_column_is_not_editable(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         idx = self.browser._model.index(0, SwitchboardBrowserModel.COL_NAME)
-        self.assertFalse(bool(self.browser._model.flags(idx) & QtCore.Qt.ItemIsEditable))
+        self.assertFalse(
+            bool(self.browser._model.flags(idx) & QtCore.Qt.ItemIsEditable)
+        )
 
 
 class InlineTagEdit(BrowserBase):
     def test_set_data_writes_tags_to_ui_file(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         # alpha had file tags {"foo"}; rewrite via setData on the tags column
         idx = self.browser._model.index(0, SwitchboardBrowserModel.COL_TAGS)
-        self.assertTrue(self.browser._model.setData(idx, "alpha_tag, beta_tag", QtCore.Qt.EditRole))
+        self.assertTrue(
+            self.browser._model.setData(idx, "alpha_tag, beta_tag", QtCore.Qt.EditRole)
+        )
         # File should now contain those tags
-        path = self.sb.registry.ui_registry.get(filename="alpha", return_field="filepath")
+        path = self.sb.registry.ui_registry.get(
+            filename="alpha", return_field="filepath"
+        )
         from xml.etree import ElementTree as _ET
+
         widget = _ET.parse(path).getroot().find("widget")
         prop = next(
             p for p in widget.findall("property") if p.get("name") == "uitk_tags"
@@ -454,9 +448,10 @@ class InlineTagEdit(BrowserBase):
         self.assertEqual(tags, {"alpha_tag", "beta_tag"})
 
     def test_set_data_rejects_non_tags_columns(self):
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         idx = self.browser._model.index(0, SwitchboardBrowserModel.COL_NAME)
-        self.assertFalse(self.browser._model.setData(idx, "renamed", QtCore.Qt.EditRole))
+        self.assertFalse(
+            self.browser._model.setData(idx, "renamed", QtCore.Qt.EditRole)
+        )
 
 
 class ConfigureLaunchedHeader(QtBaseTestCase):
@@ -487,9 +482,7 @@ class ConfigureLaunchedHeader(QtBaseTestCase):
         ui = QtWidgets.QWidget()
         ui.header = Header(parent=ui, config_buttons=[])  # empty
         UiHandler._write_header_buttons(ui.header, UiHandler.STICKY_HEADER)
-        self.assertEqual(
-            set(ui.header.buttons.keys()), {"menu", "collapse", "hide"}
-        )
+        self.assertEqual(set(ui.header.buttons.keys()), {"menu", "collapse", "hide"})
 
     def test_falls_back_to_findChild(self):
         from uitk.handlers.ui_handler import UiHandler
@@ -503,9 +496,7 @@ class ConfigureLaunchedHeader(QtBaseTestCase):
         UiHandler._write_header_buttons(
             UiHandler._ui_header(ui), UiHandler.STICKY_HEADER
         )
-        self.assertEqual(
-            set(h.buttons.keys()), {"menu", "collapse", "hide"}
-        )
+        self.assertEqual(set(h.buttons.keys()), {"menu", "collapse", "hide"})
 
 
 class CloseButton(BrowserBase):
@@ -530,7 +521,6 @@ class CloseButton(BrowserBase):
 class TagsRenderingHtml(BrowserBase):
     def test_inherited_tags_rendered_italic(self):
         # Register a directory with a source-tag that becomes inherited
-        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
         # alpha's existing tags are file-only ("foo"); we add a source tag.
         self.sb.register(ui_location=self.dir, tags={"src_tag"})
         QtWidgets.QApplication.processEvents()
@@ -615,6 +605,31 @@ class HeaderMenuAndPresets(BrowserBase):
         self.assertTrue(self.browser._cb_on_top.isChecked())
         self.assertFalse(self.browser._cb_frameless.isChecked())
 
+    def test_pin_on_tap_round_trips_through_the_handler(self):
+        """A handler-owned preference takes a different route than the launch
+        checkboxes beside it: the export reads the HANDLER, and the import's
+        ``setChecked`` reaches it only through the toggled handler. Off by
+        default, so the round trip has to carry a flip to prove anything.
+        Added: 2026-08-27
+        """
+        handler = self.browser._ui_handler()
+        self.assertIsNotNone(handler, "the browser needs a UI handler to own it")
+        original = handler.pin_on_tap
+        try:
+            self.browser._cb_pin_on_tap.setChecked(True)
+            self.assertTrue(handler.pin_on_tap)
+            snapshot = self.browser._export_preset_data()
+            self.assertTrue(snapshot["launch"]["pin_on_tap"])
+
+            self.browser._cb_pin_on_tap.setChecked(False)
+            self.assertFalse(handler.pin_on_tap)
+
+            self.browser._import_preset_data(snapshot)
+            self.assertTrue(self.browser._cb_pin_on_tap.isChecked())
+            self.assertTrue(handler.pin_on_tap, "the import must reach the handler")
+        finally:
+            handler.pin_on_tap = original
+
     def test_import_preset_data_tolerates_missing_keys(self):
         # Sparse preset (only the search.text field) should not raise.
         self.browser._import_preset_data({"search": {"text": "expo"}})
@@ -666,12 +681,8 @@ class HeaderMenuAndPresets(BrowserBase):
 class ColumnLayout(BrowserBase):
     def test_action_columns_match_button_width(self):
         view = self.browser._view
-        self.assertEqual(
-            view.columnWidth(SwitchboardBrowserModel.COL_ACTION), 22
-        )
-        self.assertEqual(
-            view.columnWidth(SwitchboardBrowserModel.COL_CLOSE), 22
-        )
+        self.assertEqual(view.columnWidth(SwitchboardBrowserModel.COL_ACTION), 22)
+        self.assertEqual(view.columnWidth(SwitchboardBrowserModel.COL_CLOSE), 22)
 
     def test_show_combobox_lists_all_modes(self):
         # The show combo lives in the header menu now; verify the items.
@@ -866,8 +877,10 @@ class RowFollowsVisibilityFromAnyShowPath(BrowserBase):
 
     def _action_tooltip(self, name: str) -> str:
         row = next(
-            i for i in range(self.browser._model.rowCount())
-            if self.browser._model.index(i, 0).data(SwitchboardBrowserModel.NameRole) == name
+            i
+            for i in range(self.browser._model.rowCount())
+            if self.browser._model.index(i, 0).data(SwitchboardBrowserModel.NameRole)
+            == name
         )
         src = self.browser._model.index(row, SwitchboardBrowserModel.COL_ACTION)
         proxy = self.browser._proxy.mapFromSource(src)
@@ -912,6 +925,7 @@ class TagCellRenderingAndPerf(BrowserBase):
 
     def test_tag_doc_has_nowrap(self):
         from qtpy import QtGui
+
         wrap = self.browser._row_delegate._doc.defaultTextOption().wrapMode()
         self.assertEqual(wrap, QtGui.QTextOption.NoWrap)
 
@@ -923,11 +937,15 @@ class TagCellRenderingAndPerf(BrowserBase):
         cell color coding — guard against its return."""
         ss = self.browser._view.styleSheet()
         self.assertIn("padding: 0", ss)
-        self.assertNotIn("background", ss,
-                         "Background should come from the theme, not inline QSS.")
-        self.assertNotIn("selected", ss,
-                         "Selection styling should come from the global QSS "
-                         "(QAbstractItemView::item:selected), not inline.")
+        self.assertNotIn(
+            "background", ss, "Background should come from the theme, not inline QSS."
+        )
+        self.assertNotIn(
+            "selected",
+            ss,
+            "Selection styling should come from the global QSS "
+            "(QAbstractItemView::item:selected), not inline.",
+        )
 
     def test_delegate_does_not_strip_selection_state(self):
         """The browser delegate must let the global QSS ``:selected``
@@ -938,8 +956,10 @@ class TagCellRenderingAndPerf(BrowserBase):
         Locked in to catch a future re-inheritance.
         """
         from uitk.widgets.delegates.row_selection import RowSelectionBorderDelegate
+
         self.assertNotIsInstance(
-            self.browser._row_delegate, RowSelectionBorderDelegate,
+            self.browser._row_delegate,
+            RowSelectionBorderDelegate,
             "Browser delegate must NOT inherit RowSelectionBorderDelegate "
             "— the browser uses the standard blue-fill selection from QSS, "
             "not the transparent-with-border opt-in for colour-cell editors.",
@@ -980,7 +1000,8 @@ class TagCellRenderingAndPerf(BrowserBase):
         for _ in range(5):
             QtWidgets.QApplication.processEvents()
         self.assertEqual(
-            len(calls), 0,
+            len(calls),
+            0,
             "While hidden, the browser must not run full-refresh work.",
         )
         self.assertTrue(self.browser._dirty_while_hidden)
@@ -1000,10 +1021,10 @@ class HideInheritedTagsToggle(BrowserBase):
 
     def _alpha_tags_html(self) -> str:
         row = next(
-            i for i in range(self.browser._model.rowCount())
-            if self.browser._model.index(i, 0).data(
-                SwitchboardBrowserModel.NameRole
-            ) == "alpha"
+            i
+            for i in range(self.browser._model.rowCount())
+            if self.browser._model.index(i, 0).data(SwitchboardBrowserModel.NameRole)
+            == "alpha"
         )
         idx = self.browser._model.index(row, SwitchboardBrowserModel.COL_TAGS)
         return self.browser._row_delegate._tags_html(idx)
@@ -1050,8 +1071,10 @@ class TagEditorEscape(BrowserBase):
         self.browser.show()
         QtWidgets.QApplication.processEvents()
         row = next(
-            i for i in range(self.browser._model.rowCount())
-            if self.browser._model.index(i, 0).data(SwitchboardBrowserModel.NameRole) == "alpha"
+            i
+            for i in range(self.browser._model.rowCount())
+            if self.browser._model.index(i, 0).data(SwitchboardBrowserModel.NameRole)
+            == "alpha"
         )
         src = self.browser._model.index(row, SwitchboardBrowserModel.COL_TAGS)
         proxy = self.browser._proxy.mapFromSource(src)
@@ -1062,6 +1085,7 @@ class TagEditorEscape(BrowserBase):
 
     def _send_escape(self, editor):
         from qtpy import QtGui
+
         ev = QtGui.QKeyEvent(
             QtCore.QEvent.KeyPress, QtCore.Qt.Key_Escape, QtCore.Qt.NoModifier
         )
@@ -1106,6 +1130,7 @@ class InlineTagEditingIsTheOnlyPath(BrowserBase):
 
     def test_tag_edit_dialog_class_removed(self):
         import uitk.widgets.editors.switchboard_browser as mod
+
         self.assertFalse(
             hasattr(mod, "TagEditDialog"),
             "TagEditDialog must stay deleted — inline edit is the only path.",
@@ -1483,9 +1508,7 @@ class PersistenceOverride(BrowserBase):
         # makes it govern marking-menu windows too.
         self.assertEqual(self.handler.window_persistence, PERSISTENCE_STICKY)
         self.assertEqual(self.browser._global_persistence(), PERSISTENCE_STICKY)
-        self.assertEqual(
-            self.browser.launch_options().persistence, PERSISTENCE_STICKY
-        )
+        self.assertEqual(self.browser.launch_options().persistence, PERSISTENCE_STICKY)
 
     def test_resolve_prefers_entry_override(self):
         self.handler.window_persistence = PERSISTENCE_TRANSIENT
@@ -1511,9 +1534,7 @@ class PersistenceOverride(BrowserBase):
         self.browser._set_entry_persistence("alpha", None)
         self.assertIsNone(self.browser._entry_persistence_override("alpha"))
         # Cleared -> follows the global default (sticky here).
-        self.assertEqual(
-            self.browser._resolve_persistence("alpha"), PERSISTENCE_STICKY
-        )
+        self.assertEqual(self.browser._resolve_persistence("alpha"), PERSISTENCE_STICKY)
 
     def test_persistence_key_is_host_namespaced(self):
         key = self.handler._persistence_key("alpha")
@@ -1569,9 +1590,7 @@ class PersistenceOverride(BrowserBase):
         self.browser._migrate_browser_persistence()
 
         self.assertEqual(self.handler.window_persistence, PERSISTENCE_TRANSIENT)
-        self.assertEqual(
-            self.handler.persistence_override("alpha"), PERSISTENCE_STICKY
-        )
+        self.assertEqual(self.handler.persistence_override("alpha"), PERSISTENCE_STICKY)
         # Originals dropped so the migration is one-shot.
         self.assertIsNone(self.browser._settings.value("opt_persistence", None))
         self.assertIsNone(self.browser._settings.value(legacy_key, None))

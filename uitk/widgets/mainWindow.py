@@ -134,6 +134,11 @@ class MainWindow(
         # Pin state - when True, window resists hide requests
         self._pinned = False
 
+        # Stamped each time the window becomes visible on screen; read by
+        # request_hide to tell a tapped activation key from a held one
+        # (see Header.claim_hide_as_tap). Invalid until the first real show.
+        self._visible_since = QtCore.QElapsedTimer()
+
         # Debounce timer for geometry saves on resize/move
         self._geometry_save_timer = QtCore.QTimer(self)
         self._geometry_save_timer.setSingleShot(True)
@@ -292,6 +297,16 @@ class MainWindow(
             return "pin" in getattr(header, "buttons", {})
         return False
 
+    def visible_duration_ms(self) -> int:
+        """Milliseconds since this window last became visible on screen.
+
+        ``-1`` while it has never been shown for real (a warm-up show under
+        ``WA_DontShowOnScreen`` doesn't count — nothing was on screen to see).
+        """
+        if not self._visible_since.isValid():
+            return -1
+        return int(self._visible_since.elapsed())
+
     def request_hide(self) -> bool:
         """Request to hide, respecting pin state.
 
@@ -299,12 +314,21 @@ class MainWindow(
         and will refuse auto-hide requests. Only the user clicking the
         explicit hide/close button should dismiss them.
 
+        A header opted into ``pin_on_tap`` gets first refusal: a request that
+        arrives on the heels of the show means the activation key was tapped,
+        not held, so the window pins open instead of being dismissed (see
+        ``Header.claim_hide_as_tap``).
+
         Returns:
             bool: True if hidden, False if blocked
         """
         if self._pinned:
             return False
         if not self._has_pin_button:
+            return False
+        header = getattr(self, "header", None)
+        claim = getattr(header, "claim_hide_as_tap", None)
+        if callable(claim) and claim(self.visible_duration_ms()):
             return False
         self.hide()
         return True
@@ -1180,6 +1204,11 @@ class MainWindow(
         # at startup-idle.
         if not self.window().testAttribute(QtCore.Qt.WA_DontShowOnScreen):
             self.activateWindow()
+            # Same guard, same reason: only a show the user can actually see
+            # starts the tap-vs-hold clock request_hide reads. Stamped here,
+            # after the first-show work above, so a slow geometry restore
+            # doesn't spend the tap budget before the window is even up.
+            self._visible_since.restart()
 
         super().showEvent(event)
         if not self.is_initialized:

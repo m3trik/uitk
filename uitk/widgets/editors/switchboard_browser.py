@@ -639,11 +639,11 @@ class _BrowserState:
 
     We capture each menu widget's initial value at construction time and apply
     it back through the widget's type-appropriate setter on reset. Dispatching
-    by widget type (rather than delegating to ``ValueManager.set_value``)
-    avoids a known footgun: ``ValueManager`` checks ``setText`` before
-    ``setChecked``, so a ``QCheckBox`` — which inherits ``setText`` from
-    ``QAbstractButton`` — gets its visible label clobbered with ``"True"``
-    / ``"False"`` instead of toggling its checked state.
+    by widget type rather than delegating to ``ValueManager.set_value`` is about
+    the COMBO branch below, not about buttons: ``set_value`` tests
+    ``isinstance(widget, QAbstractButton)`` ahead of every text branch, so a
+    ``QCheckBox`` is toggled and keeps its label (measured 2026-08-29 — the
+    earlier note here claimed the opposite and was stale).
 
     Calling the semantic setter (``setChecked`` / ``setCurrentIndex`` /
     ``setText``) also fires the widget's normal change signals, which is what
@@ -1202,6 +1202,28 @@ class SwitchboardBrowser(EditorPanel):
             bool(getattr(self._ui_handler(), "PIN_CLICK_HIDES_DEFAULT", True)),
         )
 
+        # Tap-to-pin. Handler-owned for the same reason as the checkbox above:
+        # the behavior belongs to every transient window, not just the ones
+        # this browser launched.
+        self._cb_pin_on_tap = menu.add(
+            "QCheckBox",
+            setObjectName="cb_pin_on_tap",
+            setText="Tap opens, hold peeks",
+            setToolTip=(
+                "Let the marking-menu key do both. Let go of it right after a "
+                "window opens and the window stays, pinned, like a normal "
+                "window. Keep holding it and letting go still dismisses the "
+                "window — a glance costs nothing.\n\n"
+                "Off: letting go of the key always dismisses the window."
+            ),
+            setChecked=self._pin_on_tap(),
+        )
+        self._cb_pin_on_tap.toggled.connect(self._on_pin_on_tap_toggled)
+        self.state.capture(
+            self._cb_pin_on_tap,
+            bool(getattr(self._ui_handler(), "PIN_ON_TAP_DEFAULT", False)),
+        )
+
         # Theme: pulled through the switchboard's ``style`` proxy so any
         # theme added to ``StyleSheet`` shows up here automatically.
         theme_names = list(self.sb.style.themes.keys()) or ["dark", "light"]
@@ -1260,6 +1282,7 @@ class SwitchboardBrowser(EditorPanel):
                 "theme": self._cmb_theme.currentText(),
                 "persistence": self._global_persistence(),
                 "pin_click_hides": self._pin_click_hides(),
+                "pin_on_tap": self._pin_on_tap(),
             },
         }
 
@@ -1341,6 +1364,7 @@ class SwitchboardBrowser(EditorPanel):
             ("restore_geometry", self._cb_restore),
             ("on_top", self._cb_on_top),
             ("pin_click_hides", self._cb_pin_click_hides),
+            ("pin_on_tap", self._cb_pin_on_tap),
         ]:
             if key in launch:
                 cb.setChecked(bool(launch[key]))
@@ -1528,14 +1552,26 @@ class SwitchboardBrowser(EditorPanel):
         except AttributeError:  # handler predates the preference
             pass
 
+    def _pin_on_tap(self) -> bool:
+        """Whether tapping the activation key currently pins a window open."""
+        return bool(getattr(self._ui_handler(), "pin_on_tap", False))
+
+    def _on_pin_on_tap_toggled(self, checked: bool) -> None:
+        """Persist + live-apply the tap-to-pin behavior via the UI handler."""
+        handler = self._ui_handler()
+        if handler is None:
+            return
+        try:
+            handler.pin_on_tap = bool(checked)
+        except AttributeError:  # handler predates the preference
+            pass
+
     # ── Window persistence (context/sticky/transient) resolution ─────────────
 
     @staticmethod
     def _persistence_label(value: str) -> str:
         """Combo label for a stored persistence value (falls back to Default)."""
-        return dict(PERSISTENCE_CHOICES).get(
-            value, PERSISTENCE_CHOICES[0][1]
-        )
+        return dict(PERSISTENCE_CHOICES).get(value, PERSISTENCE_CHOICES[0][1])
 
     @staticmethod
     def _persistence_value(label: str) -> str:

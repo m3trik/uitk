@@ -1,15 +1,21 @@
 # !/usr/bin/python
 # coding=utf-8
-"""``SwitchboardUtilsMixin.toggle_multi`` (trigger mode) and ``enable_when``.
+"""``SwitchboardUtilsMixin.toggle_multi`` (trigger mode) and the rule family.
 
-Pins the 2026-08-17 refactor: both share one widget value / signal table,
+Pins the 2026-08-17 refactor: everything shares one widget value / signal table,
 ``toggle_multi`` applies the trigger's CURRENT state at wire time, and
 ``enable_when`` is the declarative "keep X enabled while Y says so" rule —
 order-independent (a target registered later is picked up), multi-trigger,
 invertible, idempotent, and re-appliable in bulk via ``refresh_dependencies``.
 
+``text_from`` ("say what this will do") and ``value_from`` ("say WHICH preset
+you are on") are its siblings; all three run on the one ``_wire_rule``
+machinery, so the order-independence / idempotence / bulk-refresh cases below
+are as much a test of that shared core as of any one rule.
+
 Run standalone: python -m test.test_switchboard_toggle
 """
+
 import os
 import sys
 import unittest
@@ -172,9 +178,7 @@ class TestEnableWhen(_Base):
 
         self.assertTrue(out.isEnabled(), "both triggers on fbx -> enabled")
         b.setCurrentIndex(1)  # cmb_b leaves the allowed set
-        self.assertFalse(
-            out.isEnabled(), "second trigger must be able to veto"
-        )
+        self.assertFalse(out.isEnabled(), "second trigger must be able to veto")
         b.setCurrentIndex(0)
         self.assertTrue(out.isEnabled())
         a.setCurrentIndex(1)  # first trigger leaves it
@@ -573,6 +577,253 @@ class TestTextFromOnAnOptionBoxMenu(_Base):
         self.assertIsNone(getattr(btn.menu, "chk024", None))
         self.assertEqual(
             self.sb.get_widgets_by_string_pattern(btn.menu, "chk024-26"), []
+        )
+
+
+class TestValueFrom(_Base):
+    """``value_from`` — the family's third rule: derive a widget's VALUE.
+
+    The shape it exists for is the lightmap baker's Quality combo: it fills
+    Resolution / Samples, the user may then move either dial, and the combo has
+    to stop claiming a tier the bake is no longer using.
+    """
+
+    def _quality_panel(self, samples=4):
+        """A Quality combo over two dials — the lightmap baker's Quality group."""
+        cmb = self._add(QtWidgets.QComboBox, "cmb000")
+        cmb.addItems(["preview", "quest", "desktop", "Custom"])
+        res = self._add(QtWidgets.QComboBox, "cmb_resolution")
+        for value in (256, 1024, 2048):
+            res.addItem(f"Resolution:\t{value}", value)
+        res.setCurrentIndex(1)  # 1024
+        spn = self._add(QtWidgets.QSpinBox, "spn_samples", setMaximum=4096)
+        spn.setValue(samples)
+        return cmb, res, spn
+
+    @staticmethod
+    def _preset_for_dials(resolution, samples):
+        return {(256, 2): "preview", (1024, 4): "quest", (2048, 8): "desktop"}.get(
+            (int(resolution), int(samples)), "Custom"
+        )
+
+    def test_names_the_matching_preset_at_wire_time_and_custom_once_a_dial_moves(self):
+        cmb, res, spn = self._quality_panel()
+        cmb.setCurrentIndex(0)  # "preview" — deliberately wrong for 1024/4
+        self.sb.value_from(
+            self.ui, "cmb000", ["cmb_resolution", "spn_samples"], self._preset_for_dials
+        )
+        # Applied at WIRE TIME: a rule that is only connected would leave the
+        # stale "preview" standing until the user touched a dial.
+        self.assertEqual(cmb.currentText(), "quest")
+        spn.setValue(9)
+        self.assertEqual(cmb.currentText(), "Custom")
+        spn.setValue(8)
+        res.setCurrentIndex(2)  # 2048
+        self.assertEqual(cmb.currentText(), "desktop")
+
+    def test_the_write_reaches_the_targets_own_slot(self):
+        """Not signal-blocked by design: a derived value is a real change, and a
+        preset combo's own handler is what re-applies the rest of that preset."""
+        cmb, _res, spn = self._quality_panel()
+        seen = []
+        cmb.currentIndexChanged.connect(lambda i: seen.append(cmb.itemText(i)))
+        self.sb.value_from(
+            self.ui, "cmb000", ["cmb_resolution", "spn_samples"], self._preset_for_dials
+        )
+        self.assertEqual(seen, ["quest"])
+        spn.setValue(9)
+        self.assertEqual(seen, ["quest", "Custom"])
+
+    def test_a_uitk_combo_is_written_by_index_not_setCurrentText(self):
+        """uitk's ``ComboBox.setCurrentText`` is ``@Signals.blockSignals``-
+        decorated, so writing through it would move the display without telling
+        anything downstream — the bug that made *Restore Defaults* silent."""
+        from uitk.widgets.comboBox import ComboBox
+
+        cmb = self._add(ComboBox, "cmb000")
+        cmb.addItems(["preview", "quest", "Custom"])
+        chk = self._add(QtWidgets.QCheckBox, "chk_hq", setChecked=False)
+        seen = []
+        cmb.currentIndexChanged.connect(seen.append)
+        self.sb.value_from(
+            self.ui, "cmb000", "chk_hq", lambda on: "quest" if on else "preview"
+        )
+        self.assertEqual(cmb.currentText(), "preview")
+        chk.setChecked(True)
+        self.assertEqual(cmb.currentText(), "quest")
+        self.assertTrue(seen, "the write must fire the combo's change signal")
+
+    def test_a_resolver_returning_none_declines(self):
+        """ "No opinion about this combination" needs no sentinel value."""
+        cmb, _res, spn = self._quality_panel()
+        cmb.setCurrentIndex(2)  # "desktop"
+        self.sb.value_from(
+            self.ui,
+            "cmb000",
+            "spn_samples",
+            lambda s: "quest" if s == 4 else None,
+        )
+        self.assertEqual(cmb.currentText(), "quest")
+        spn.setValue(99)
+        self.assertEqual(cmb.currentText(), "quest", "None must leave the target be")
+
+    def test_a_value_no_target_can_hold_is_reported_not_coerced(self):
+        """Never fall back to row 0 the way ``setAsCurrent`` does — a derived rule
+        rewriting the user's selection to something nobody asked for is worse
+        than doing nothing."""
+        cmb, _res, spn = self._quality_panel()
+        cmb.setCurrentIndex(1)  # "quest"
+        with self.assertLogs(self.sb.logger, level="WARNING") as caught:
+            self.sb.value_from(self.ui, "cmb000", "spn_samples", lambda s: "nonesuch")
+        self.assertTrue(
+            any("no item for" in line for line in caught.output), caught.output
+        )
+        self.assertEqual(cmb.currentText(), "quest")
+        self.assertEqual(spn.value(), 4, "the sources must be untouched too")
+
+    def test_writes_are_the_readers_inverse_across_widget_types(self):
+        """Spin box, checkable button, line edit and a DATA-backed combo — each
+        written the way ``_WIDGET_VALUE_READERS`` would read it back.
+
+        Everything but the combo is delegated to ``ValueManager.set_value``, so
+        this also pins that the delegation never reaches a button's LABEL."""
+        master = self._add(QtWidgets.QSpinBox, "s_master", setMaximum=100)
+        spin = self._add(QtWidgets.QSpinBox, "s_out", setMaximum=100)
+        check = self._add(QtWidgets.QCheckBox, "chk_out", setText="label")
+        field = self._add(QtWidgets.QLineEdit, "txt_out")
+        combo = self._add(QtWidgets.QComboBox, "cmb_out")
+        combo.addItem("Low", 1)
+        combo.addItem("High", 9)
+
+        self.sb.value_from(self.ui, "s_out", "s_master", lambda v: v * 2)
+        self.sb.value_from(self.ui, "chk_out", "s_master", lambda v: v > 5)
+        self.sb.value_from(self.ui, "txt_out", "s_master", lambda v: f"n={v}")
+        self.sb.value_from(self.ui, "cmb_out", "s_master", lambda v: 9 if v > 5 else 1)
+
+        master.setValue(7)
+        self.assertEqual(spin.value(), 14)
+        self.assertTrue(check.isChecked())
+        self.assertEqual(
+            check.text(), "label", "a button's LABEL must never take the value"
+        )
+        self.assertEqual(field.text(), "n=7")
+        # Written by item DATA, which is also how the reader reports it.
+        self.assertEqual(combo.currentText(), "High")
+        self.assertEqual(self.sb._combo_value(combo), 9)
+
+    def test_a_bool_never_lands_on_a_combo_row(self):
+        """``isinstance(True, int)`` is True, so an unguarded row-index fallback
+        would silently select row 0 for a resolver that returns False."""
+        chk = self._add(QtWidgets.QCheckBox, "chk_src", setChecked=True)
+        cmb = self._add(QtWidgets.QComboBox, "cmb_out")
+        cmb.addItems(["alpha", "beta"])
+        cmb.setCurrentIndex(1)
+
+        with self.assertLogs(self.sb.logger, level="WARNING"):
+            self.sb.value_from(self.ui, "cmb_out", "chk_src", lambda on: on)
+        self.assertEqual(cmb.currentText(), "beta", "row 0 must not be guessed")
+        chk.setChecked(False)
+        self.assertEqual(cmb.currentText(), "beta")
+
+    def test_a_target_outside_the_writable_set_is_reported(self):
+        """A QLabel holds no *value* the readers know — say so, do not guess."""
+        spin = self._add(QtWidgets.QSpinBox, "s_master", setMaximum=100)
+        label = self._add(QtWidgets.QLabel, "lbl_out")
+        label.setText("untouched")
+
+        with self.assertLogs(self.sb.logger, level="WARNING") as caught:
+            self.sb.value_from(self.ui, "lbl_out", "s_master", lambda v: f"n={v}")
+        self.assertTrue(
+            any("no value setter" in line for line in caught.output), caught.output
+        )
+        self.assertEqual(label.text(), "untouched")
+        spin.setValue(3)
+        self.assertEqual(label.text(), "untouched")
+
+    def test_the_delegation_coerces_where_that_is_unambiguous(self):
+        """``ValueManager.set_value`` parses a numeric string into a spin box —
+        pinned because ``value_from`` now advertises that behaviour."""
+        master = self._add(QtWidgets.QSpinBox, "s_master", setMaximum=100)
+        out = self._add(QtWidgets.QSpinBox, "s_out", setMaximum=100)
+        self.sb.value_from(self.ui, "s_out", "s_master", lambda v: str(v * 2))
+        master.setValue(6)
+        self.assertEqual(out.value(), 12)
+
+    def test_several_targets_share_one_derived_value(self):
+        master = self._add(QtWidgets.QSpinBox, "s_master", setMaximum=100)
+        spins = [
+            self._add(QtWidgets.QSpinBox, f"s00{i}", setMaximum=100) for i in range(3)
+        ]
+        self.sb.value_from(self.ui, "s000-2", "s_master", lambda v: v + 1)
+        master.setValue(5)
+        self.assertEqual([s.value() for s in spins], [6, 6, 6])
+
+    def test_a_target_that_is_also_a_source_does_not_recurse(self):
+        """``setValue`` emits ``valueChanged``, which would re-enter apply forever.
+        A hang is the one failure mode a UI helper must not have."""
+        spin = self._add(QtWidgets.QSpinBox, "s000", setMaximum=100)
+        spin.setValue(3)
+        seen = []
+
+        def snap(value):
+            seen.append(value)
+            return value - (value % 5)
+
+        self.sb.value_from(self.ui, "s000", "s000", snap)
+        self.assertEqual(spin.value(), 0)
+        self.assertEqual(seen, [3], "the write-back must not re-enter the rule")
+
+    def test_a_raising_resolver_leaves_the_value_alone(self):
+        spin = self._add(QtWidgets.QSpinBox, "s_master", setMaximum=100)
+        out = self._add(QtWidgets.QSpinBox, "s_out", setMaximum=100)
+        out.setValue(42)
+
+        def boom(_value):
+            raise ValueError("not ready")
+
+        self.sb.value_from(self.ui, "s_out", "s_master", boom)
+        self.assertEqual(out.value(), 42)
+        spin.setValue(5)
+        self.assertEqual(out.value(), 42)
+
+    def test_a_source_registered_later_is_picked_up(self):
+        out = self._add(QtWidgets.QSpinBox, "s_out", setMaximum=100)
+        out.setValue(1)
+        self.sb.value_from(self.ui, "s_out", "s_late", lambda v: v * 3)
+        self.assertEqual(out.value(), 1, "an unresolved exact name holds the rule")
+        late = self._add(QtWidgets.QSpinBox, "s_late", setMaximum=100)
+        late.setValue(4)
+        self._drain()
+        self.assertEqual(out.value(), 12)
+
+    def test_same_rule_twice_is_a_noop_and_refresh_reapplies(self):
+        master = self._add(QtWidgets.QSpinBox, "s_master", setMaximum=100)
+        master.setValue(2)
+        out = self._add(QtWidgets.QSpinBox, "s_out", setMaximum=100)
+        first = self.sb.value_from(self.ui, "s_out", "s_master", lambda v: v * 10)
+        second = self.sb.value_from(self.ui, "s_out", "s_master", lambda v: v * 10)
+        self.assertIs(first, second, "an _init that re-runs must not stack rules")
+        self.assertEqual(out.value(), 20)
+        # A change made with signals blocked (a preset load) is not announced…
+        master.blockSignals(True)
+        master.setValue(5)
+        master.blockSignals(False)
+        self.assertEqual(out.value(), 20)
+        # …until the bulk re-apply, which must reach value rules too.
+        self.sb.refresh_dependencies(self.ui)
+        self.assertEqual(out.value(), 50)
+
+    def test_a_rule_that_can_never_fire_says_so(self):
+        from uitk.widgets.pushButton import PushButton
+
+        btn = PushButton()
+        btn.setObjectName("tb003")
+        self.track_widget(btn)
+        btn.option_box.menu.add("QCheckBox", setObjectName="chk024", setText="A")
+        with self.assertLogs(self.sb.logger, level="WARNING") as caught:
+            self.sb.value_from(btn.menu, "chk024", "chk025", str)
+        self.assertTrue(
+            any("can never fire" in line for line in caught.output), caught.output
         )
 
 

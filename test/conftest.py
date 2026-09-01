@@ -341,6 +341,27 @@ class QtBaseTestCase(BaseTestCase):
         """Set up test fixtures with widget tracking."""
         super().setUp()
         self._widgets_to_cleanup = []
+        self._qt_torn_down = False
+        # Registered as a CLEANUP as well as running from tearDown, so the
+        # flush cannot be skipped. unittest calls cleanups even where it
+        # does NOT call tearDown -- a subclass setUp that raises after this
+        # line -- and even when tearDown itself dies partway, which would
+        # otherwise strand the DeferredDelete drain at the end of it.
+        #
+        # This is a GUARD, not a repair of a live defect: measured on this
+        # suite, 89 subclasses override tearDown and all 89 chain via
+        # ``super()``, and none override setUp without chaining. So nothing
+        # bypasses the flush today; this keeps that true without anyone
+        # having to remember, and test_conftest_teardown_backstop.py fails
+        # if the registration is removed.
+        #
+        # Latched, so the flush still runs exactly ONCE per test: from
+        # tearDown where the chain is intact (unchanged ordering for every
+        # class that exists today), from here where it is not. Draining
+        # twice would be correct but not free -- each pass is a bounded
+        # ``processEvents`` slice, so a busy queue would pay 50ms x3 for the
+        # redundant round on every one of ~4k tests.
+        self.addCleanup(self._qt_teardown)
 
     # Drain the Qt event queue between tests so DeferredDelete events fire
     # inside tearDown instead of piling up across tests. Without this drain,
@@ -362,9 +383,22 @@ class QtBaseTestCase(BaseTestCase):
 
     def tearDown(self):
         """Clean up widgets created during the test."""
+        super().tearDown()
+        self._qt_teardown()
+
+    def _qt_teardown(self):
+        """Release grabs, destroy tracked widgets, drain the event queue.
+
+        Runs from BOTH :meth:`tearDown` and the cleanup registered in
+        :meth:`setUp`, and latches so the work happens once: whichever
+        fires first does it. A subclass that chains to ``super().tearDown()``
+        therefore behaves exactly as before this backstop existed.
+        """
+        if getattr(self, "_qt_torn_down", False):
+            return
+        self._qt_torn_down = True
         from qtpy import QtWidgets
 
-        super().tearDown()
         # Release any lingering mouse grab so it can't leak into the next test.
         # A test (or production code under test) that grabs the mouse and is
         # torn down without releasing leaves a dangling grabber — frequently on

@@ -61,10 +61,13 @@ class FormPanelTestCase(QtBaseTestCase):
 
     @staticmethod
     def _browse_buttons(panel):
+        """The pickers — one option button inside each path editor, row order."""
+        from uitk.widgets.optionBox._optionBox import OptionBoxContainer
+
         return [
             b
-            for b in panel.findChildren(QtWidgets.QPushButton)
-            if b.text() == "Browse…"
+            for b in panel.findChildren(QtWidgets.QAbstractButton)
+            if isinstance(b.parent(), OptionBoxContainer)
         ]
 
 
@@ -175,11 +178,17 @@ class TestFormPanelHints(FormPanelTestCase):
         self.assertIn("<b>Search in</b>", tip, "the label must title the tooltip")
 
     def test_the_whole_row_carries_the_same_tooltip(self):
-        """Reachable from wherever the pointer already is — label, field, Browse."""
+        """Reachable from wherever the pointer already is — label and field."""
         panel = self._hinted()
         tip = panel.editor("src").toolTip()
         for widget in panel._companions["src"]:
             self.assertEqual(widget.toolTip(), tip)
+
+    def test_the_picker_says_what_IT_does(self):
+        """It is a button inside the field, not the field: the row's hint
+        under it would name the wrong thing to click."""
+        panel = self._hinted()
+        self.assertIn("Browse", self._browse_buttons(panel)[0].toolTip())
 
     def test_an_explicit_tooltip_is_used_verbatim(self):
         panel = self._panel(
@@ -249,13 +258,27 @@ class TestFormPanelLayout(FormPanelTestCase):
 
     @staticmethod
     def _field_widgets(form, row):
-        """The widgets in *row*'s field cell — one control, or a control plus
-        the companions that share its cell (a Browse button)."""
+        """The controls in *row*'s field cell.
+
+        A path editor stands in its cell as its option-box container (the
+        picker rides inside it), so a container is opened rather than
+        counted: what the row OFFERS is the editor and its buttons.
+        """
+        from uitk.widgets.optionBox._optionBox import OptionBoxContainer
+
         item = form.itemAt(row, QtWidgets.QFormLayout.FieldRole)
         if item.widget() is not None:
-            return [item.widget()]
-        cell = item.layout()
-        return [cell.itemAt(i).widget() for i in range(cell.count())]
+            cells = [item.widget()]
+        else:
+            cell = item.layout()
+            cells = [cell.itemAt(i).widget() for i in range(cell.count())]
+        out = []
+        for widget in cells:
+            if isinstance(widget, OptionBoxContainer):
+                out.extend(widget.findChildren(QtWidgets.QWidget))
+            else:
+                out.append(widget)
+        return out
 
     def test_rows_are_a_form_not_a_stack(self):
         panel = self._panel()
@@ -303,6 +326,138 @@ class TestFormPanelLayout(FormPanelTestCase):
             form.itemAt(1, QtWidgets.QFormLayout.LabelRole).widget(),
             panel._companions["src"][0],
         )
+
+
+class TestFormPanelInlineFields(FormPanelTestCase):
+    """A second answer that belongs WITH the first, in the same cell."""
+
+    INLINE = [
+        {
+            "name": "mode",
+            "kind": "choice",
+            "label": "Operation",
+            "items": ["Copy", "Move"],
+            "value": "Copy",
+            "inline": [
+                {
+                    "name": "dry_run",
+                    "kind": "check",
+                    "label": "Dry run",
+                    "hint": "Report it, write nothing.",
+                }
+            ],
+        },
+        {"name": "dest", "kind": "dir", "label": "Copy into", "value": "C:/to"},
+    ]
+
+    def test_an_inline_field_is_read_like_any_other(self):
+        panel = self._panel(self.INLINE)
+        self.assertEqual(
+            panel.values(), {"mode": "Copy", "dry_run": False, "dest": "C:/to"}
+        )
+
+    def test_an_inline_field_shares_its_host_s_row(self):
+        """The point of it: no caption of its own, no row of its own."""
+        panel = self._panel(self.INLINE)
+        form = panel._rows_layout
+        self.assertEqual(form.rowCount(), 2, "the inline field took a row of its own")
+        cell = form.itemAt(0, QtWidgets.QFormLayout.FieldRole).layout()
+        self.assertEqual(
+            [cell.itemAt(i).widget() for i in range(cell.count())],
+            [panel.editor("mode"), panel.editor("dry_run")],
+        )
+
+    def test_an_inline_field_revalidates_the_form(self):
+        seen = []
+        panel = self._panel(self.INLINE, validate=lambda v: seen.append(v) or "")
+        panel.editor("dry_run").setChecked(True)
+        self.assertTrue(seen[-1]["dry_run"])
+
+    def test_an_inline_field_carries_its_own_hint(self):
+        """It names something the row it rides does not."""
+        panel = self._panel(self.INLINE)
+        self.assertIn("Report it", panel.editor("dry_run").toolTip())
+        self.assertNotIn("Report it", panel.editor("mode").toolTip())
+
+    def test_an_inline_field_gets_the_same_width_as_its_host(self):
+        """Two answers, one row: a full-width control beside a tick jammed
+        into the margin reads as one control with a label stuck to it."""
+        panel = self._panel(self.INLINE)
+        panel.show()
+        app.processEvents()
+        self.assertEqual(panel.editor("mode").width(), panel.editor("dry_run").width())
+
+    def test_a_companion_button_still_rides_at_its_own_width(self):
+        """Only inline FIELDS split the row — a picker is a control ON the
+        field, so the width stays with the path."""
+        panel = self._panel(self.INLINE)
+        panel.show()
+        app.processEvents()
+        editor = panel.editor("dest")
+        self.assertGreater(editor.width(), self._browse_buttons(panel)[0].width() * 4)
+
+    def test_an_inline_field_is_exposed_by_name(self):
+        panel = self._panel(self.INLINE)
+        self.assertIs(panel.dry_run, panel.editor("dry_run"))
+
+    def test_an_unnamed_inline_field_is_refused(self):
+        with self.assertRaises(ValueError):
+            self._panel(
+                [{"name": "mode", "kind": "check", "inline": [{"kind": "check"}]}]
+            )
+
+
+class TestFormPanelCaptionAlignment(FormPanelTestCase):
+    """Where the caption's text sits in the plate that fills the column."""
+
+    def _caption(self, panel, name):
+        return panel._companions[name][0]
+
+    def test_a_caption_reads_from_the_left_by_default(self):
+        panel = self._panel()
+        self.assertTrue(
+            self._caption(panel, "src").alignment() & QtCore.Qt.AlignLeft,
+            "a leading marker must line up down the column",
+        )
+
+    def test_a_caption_can_lead_into_the_control_beside_it(self):
+        panel = self._panel([dict(self.FIELDS[0], label_align="right")])
+        alignment = self._caption(panel, "src").alignment()
+        self.assertTrue(alignment & QtCore.Qt.AlignRight)
+        self.assertTrue(
+            alignment & QtCore.Qt.AlignVCenter, "captions centre on the row"
+        )
+
+    def test_an_unknown_alignment_is_refused(self):
+        """Silently left-aligning a typo is a layout bug found by eye."""
+        with self.assertRaises(ValueError):
+            self._panel([dict(self.FIELDS[0], label_align="middle")])
+
+
+class TestFormPanelCaptionColumn(FormPanelTestCase):
+    """The captions are a COLUMN — each carries an opaque plate, so a short
+    one left at its text width ends the plate in mid-air."""
+
+    WIDE = [
+        {"name": "src", "kind": "dir", "label": "Search in a much longer caption"},
+        {"name": "dest", "kind": "dir", "label": "Copy into"},
+    ]
+
+    def test_every_caption_fills_the_label_column(self):
+        panel = self._panel(self.WIDE)
+        panel.show()
+        app.processEvents()
+        widths = {panel._companions[n][0].width() for n in ("src", "dest")}
+        self.assertEqual(len(widths), 1, f"ragged caption plates: {widths}")
+
+    def test_the_column_is_the_widest_caption_not_more(self):
+        """Filling the column must not WIDEN it — the field column pays for
+        every pixel the captions take."""
+        panel = self._panel(self.WIDE)
+        panel.show()
+        app.processEvents()
+        widest = panel._companions["src"][0]
+        self.assertEqual(widest.minimumWidth(), widest.sizeHint().width())
 
 
 class TestFormPanelChrome(FormPanelTestCase):
@@ -421,12 +576,13 @@ class TestFormPanelEnabledBy(FormPanelTestCase):
         self.assertFalse(panel.editor("src").isEnabled())
 
     def test_the_whole_row_greys_out_together(self):
-        """Label and Browse follow the editor, or the row reads as live."""
+        """Label and picker follow the editor, or the row reads as live."""
         panel = self._dependent()
-        for widget in panel._companions["src"]:
+        row = [*panel._companions["src"], self._browse_buttons(panel)[0]]
+        for widget in row:
             self.assertFalse(widget.isEnabled())
         panel.editor("widen").setChecked(True)
-        for widget in panel._companions["src"]:
+        for widget in row:
             self.assertTrue(widget.isEnabled())
 
     def test_a_statically_enabled_row_ignores_the_driver(self):
@@ -507,8 +663,22 @@ class TestFormPanelValidation(FormPanelTestCase):
 
 
 class TestFormPanelBrowse(FormPanelTestCase):
+    def test_the_picker_rides_inside_the_field_it_fills(self):
+        """A *Browse…* beside the field spends the row's width on a caption;
+        an option button spends an icon's worth, and the path keeps the
+        rest — which is the one thing on the row never wide enough."""
+        panel = self._panel()
+        editor = panel.editor("src")
+        self.assertIs(self._browse_buttons(panel)[0].parent(), editor.parent())
+        titled = [
+            b
+            for b in panel._rows_host.findChildren(QtWidgets.QAbstractButton)
+            if b.text()
+        ]
+        self.assertEqual(titled, [], "a titled button in the form is a Browse… again")
+
     def test_browse_writes_the_picked_folder_into_its_own_row(self):
-        """The native picker survives as a Browse button — it is subordinate
+        """The native picker survives as an option button — it is subordinate
         to a labelled field now, so its caption is no longer the only signal.
         """
         panel = self._panel()
@@ -796,15 +966,24 @@ class TestFormPanelKeys(FormPanelTestCase):
         self.assertEqual(len(ran), 1)
 
     def test_return_over_a_focused_button_is_left_alone(self):
-        """Return on a Browse must browse, not commit — accepting here can
-        move files, so it never fires on a guess about what has focus."""
+        """Return on Cancel must cancel and on Apply must apply — accepting
+        here can move files, so it never fires on a guess about what has
+        focus."""
         ran = []
-        panel = self._panel(on_run=ran.append)
+        panel = self._panel(on_run=ran.append, cancel_text="Cancel")
         panel.show()
-        self._browse_buttons(panel)[0].setFocus()
+        panel._cancel_btn.setFocus()
         app.processEvents()
         self._press(panel, QtCore.Qt.Key_Return)
         self.assertEqual(ran, [])
+
+    def test_the_picker_never_takes_the_focus_return_would_reach(self):
+        """It sits INSIDE the editor: tabbing into it would leave the caret
+        nowhere, and Return would open a dialog over a form ready to run."""
+        panel = self._panel(on_run=lambda values: None)
+        panel.show()
+        for button in self._browse_buttons(panel):
+            self.assertEqual(button.focusPolicy(), QtCore.Qt.NoFocus)
 
     def test_return_does_nothing_while_the_form_is_invalid(self):
         ran = []

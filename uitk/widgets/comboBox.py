@@ -435,6 +435,11 @@ class _PopupItemClickCommitter(QtCore.QObject):
         return None
 
 
+#: Marks 'no item data was supplied' in :meth:`ComboBox.add`, which None cannot:
+#: None is a legitimate data value (an explicit 'no choice' row).
+_UNSET = object()
+
+
 class ComboBox(
     AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay
 ):
@@ -1006,19 +1011,40 @@ class ComboBox(
         else:
             self.has_header = False
 
-        def process_and_add(label, item_data):
-            """Helper to process item before adding."""
+        def process_and_add(label, item_data=_UNSET):
+            """Helper to process item before adding.
+
+            ``item_data`` defaults to a SENTINEL, not to None. Under ``prefix``
+            the convenience form -- ``add(["ease_in", ...], prefix=...)``, where
+            the caller supplies labels only -- wants the raw token both
+            title-cased for display AND kept as the item's data. Both of those
+            correct a value the caller did NOT provide, so they must key off
+            "data was omitted", never off "data is None":
+
+            * ``("Keep Current Type", None)`` is an explicit "no choice" row, and
+              rewriting its data to the LABEL hands a caller that tests for None
+              a fake choice instead (measured: ``currentData()`` returned the
+              string, so a "leave it alone" row acted like a real selection).
+            * ``.title()`` on a label the caller wrote is equally presumptuous --
+              it mangles anything not already Title Case ("Stingray PBS" ->
+              "Stingray Pbs", "q95" -> "Q95", "R (inv)" -> "R (Inv)").
+
+            Both corrections now apply only to the omitted-data form, which is
+            the only one that asked for them.
+            """
             display_text = str(label)
-            stored_data = item_data
+            supplied = item_data is not _UNSET
+            # Omitted data stays None WITHOUT a prefix, exactly as before: the
+            # label-as-data substitution has always been part of the prefix
+            # convenience form, and widening it here would change what
+            # `currentData()` returns for every plain `add([...])` caller.
+            stored_data = item_data if supplied else None
 
             if prefix:
-                # When prefix is active, we auto-format the label and ensure data is stored
-                formatted_label = display_text.replace("_", " ").title()
-                display_text = f"{prefix}\t{formatted_label}"
-
-                # If no specific data was provided, use the original label as data
-                if stored_data is None:
+                if not supplied:
+                    display_text = display_text.replace("_", " ").title()
                     stored_data = label
+                display_text = f"{prefix}\t{display_text}"
 
             self.add_single(display_text, stored_data, ascending)
 
@@ -1034,7 +1060,9 @@ class ComboBox(
         elif isinstance(x, dict):
             [process_and_add(k, v) for k, v in x.items()]
         elif isinstance(x, (list, tuple, set)):
-            [process_and_add(item, data) for item in x]
+            # An omitted `data` is what MARKS the convenience form, so it has to
+            # reach `process_and_add` as the sentinel, not as None.
+            [process_and_add(item, _UNSET if data is None else data) for item in x]
         elif isinstance(x, (zip, map)):
             [process_and_add(i, d) for i, d in x]
         elif isinstance(x, str):

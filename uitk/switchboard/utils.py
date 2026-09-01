@@ -7,6 +7,8 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
+from uitk.managers.value_manager import ValueManager
+
 
 # Lock-toggle tints used by :meth:`SwitchboardUtilsMixin.link_spinboxes`, taken
 # from the channel-box lock column so every lock in the ecosystem reads the
@@ -601,6 +603,22 @@ class SwitchboardUtilsMixin:
         (QtWidgets.QTextEdit, "toPlainText"),
     )
 
+    #: What :meth:`value_from` may WRITE — DERIVED from the reader table above,
+    #: so the pair cannot drift: a rule can always write back what
+    #: :meth:`enable_when` / :meth:`text_from` read. The setters themselves are
+    #: NOT restated here — ``ValueManager.set_value`` already owns "how do I set
+    #: this widget's value" for every one of these types (and coerces sensibly:
+    #: ``"8"`` into a spin box, a truthy value into a checkable button, never a
+    #: button's LABEL). Only combos are written locally, and for a reason that
+    #: is combo-specific rather than a flaw in the manager — see
+    #: :meth:`_set_combo_value`.
+    #:
+    #: Deriving it, rather than gating on ``ValueManager.is_supported_widget``,
+    #: is what makes reader/writer symmetry STRUCTURAL: the two agree today
+    #: (that list was corrected in the same pass), but only the derivation
+    #: keeps them agreeing when a type is added to the reader table.
+    _WIDGET_VALUE_WRITABLE = tuple(t for t, _ in _WIDGET_VALUE_READERS)
+
     #: Change signals for types the Switchboard's ``default_signals`` table
     #: (the slot-wiring SSoT) doesn't name, or names with a click-only signal
     #: (``QPushButton: clicked`` never fires on a programmatic ``setChecked``,
@@ -626,6 +644,73 @@ class SwitchboardUtilsMixin:
                 if getter.startswith("_"):
                     return getattr(self, getter)
                 return lambda w, g=getter: getattr(w, g)()
+        return None
+
+    def _set_combo_value(self, combo, value) -> None:
+        """Select the item *value* names — the inverse of :meth:`_combo_value`.
+
+        Resolution mirrors how a combo's value is READ: item data first (the
+        payload a data-backed combo reports), then the display label, then a
+        plain row index. uitk's ``ComboBox`` can display RICH text, which Qt's
+        ``findText`` (DisplayRole only) misses, so its own matcher gets the last
+        word before the write is abandoned.
+
+        Two deliberate departures from the combo API next door:
+
+          * a value matching NOTHING leaves the combo untouched (and says so)
+            rather than falling back to row 0 the way ``setAsCurrent`` does — a
+            derived rule must never silently rewrite the user's selection to
+            something its resolver did not ask for;
+          * the write goes through ``setCurrentIndex``, not ``setCurrentText``,
+            which is ``@Signals.blockSignals``-decorated on uitk's ``ComboBox``
+            and would move the display without telling anything downstream.
+        """
+        # ``findData(None)`` matches the first data-less item, so a None value
+        # would silently select row 0 -- and None is a non-answer, not a choice.
+        if value is None:
+            return
+        text = str(value)
+        index = combo.findData(value)
+        if index < 0:
+            index = combo.findText(text)
+        if index < 0:
+            matcher = getattr(combo, "_index_of_text", None)  # uitk rich text
+            if callable(matcher):
+                match = matcher(text)
+                index = -1 if match is None else match
+        # ``isinstance(True, int)`` is True, so without the bool guard a
+        # resolver returning False would land on ROW 0 — a silent wrong
+        # selection. A bool is an answer about a checkbox, never a row.
+        if (
+            index < 0
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+            and 0 <= value < combo.count()
+        ):
+            index = value  # symmetric with _combo_value's index reading
+        if index < 0:
+            self.logger.warning(
+                f"[value_from] {combo.objectName()!r} has no item for {value!r}; "
+                f"selection left unchanged"
+            )
+            return
+        combo.setCurrentIndex(index)
+
+    def _widget_value_writer(self, widget):
+        """``setter(widget, value)`` for *widget*, or ``None`` if unwritable.
+
+        A combo is written here — :meth:`_set_combo_value` matches by item DATA
+        the way :meth:`_combo_value` READS it, and goes through
+        ``setCurrentIndex`` because uitk's ``ComboBox.setCurrentText`` is
+        ``@Signals.blockSignals``-decorated. Everything else delegates to
+        ``ValueManager.set_value``, the ecosystem's one answer to "set this
+        widget's value"; the combo family is the ONLY place a uitk widget
+        silences a setter, so nothing else can be surprised that way.
+        """
+        if isinstance(widget, QtWidgets.QComboBox):
+            return self._set_combo_value
+        if isinstance(widget, self._WIDGET_VALUE_WRITABLE):
+            return ValueManager.set_value
         return None
 
     def _value_change_signal(self, widget):
@@ -849,6 +934,139 @@ class SwitchboardUtilsMixin:
                     f"(widget.menu vs widget.option_box.menu)?"
                 )
 
+    def _rule_value_reader(self, value):
+        """``read(widget) -> value`` for a declarative rule, honouring *value*.
+
+        Shared by :meth:`enable_when`, :meth:`text_from` and :meth:`value_from`
+        so "what does this control's value mean" keeps ONE answer: the
+        ``_WIDGET_VALUE_READERS`` table, overridable per rule with a callable
+        (applied to every source) or a ``{objectName: callable}`` mapping (for a
+        mixed set — unlisted sources keep the default reader).
+        """
+
+        def read(widget):
+            reader = (
+                value.get(widget.objectName()) if isinstance(value, dict) else value
+            )
+            if callable(reader):
+                return reader(widget)
+            getter = self._widget_value_reader(widget)
+            return getter(widget) if getter is not None else None
+
+        return read
+
+    def _rule_source_resolver(self, ui, refs, unpack: bool):
+        """``resolve() -> [widget] | None`` for a rule's source references.
+
+        Widget instances pass through; a string resolves against *ui*. An exact
+        name that has not been registered yet returns ``None`` — the whole rule
+        HOLDS rather than deciding on a partial reading — and so does a
+        reference that is neither a widget nor a name.
+
+        *unpack* decides what a pattern (``'chk024-26'``) means: one value per
+        matched widget (:meth:`text_from`, :meth:`value_from`, whose sources
+        feed a callable positionally), or a single lookup that simply will not
+        resolve (:meth:`enable_when`, whose triggers are one-ref-one-value).
+        """
+
+        def resolve():
+            out = []
+            for ref in refs:
+                if isinstance(ref, QtWidgets.QWidget):
+                    out.append(ref)
+                elif isinstance(ref, str) and unpack and self._is_name_pattern(ref):
+                    out.extend(self.get_widgets_by_string_pattern(ui, ref))
+                elif isinstance(ref, str):
+                    widget = self._resolve_ui_widget(ui, ref)
+                    if widget is None:
+                        return None
+                    out.append(widget)
+                else:
+                    return None
+            return out
+
+        return resolve
+
+    def _wire_rule(
+        self,
+        ui,
+        rule: str,
+        registry: str,
+        key,
+        resolve_sources: Callable[[], Optional[list]],
+        resolve_targets: Callable[[], list],
+        apply: Callable[..., None],
+        signal: Optional[str] = None,
+        role: str = "sources",
+    ):
+        """Connect *apply* to its sources, keep it order-independent, register it.
+
+        The machinery every declarative rule shares. :meth:`enable_when`,
+        :meth:`text_from` and :meth:`value_from` differ only in what ``apply``
+        READS its verdict from and what it WRITES; the wiring around that is
+        identical, and lives here once:
+
+          * connect each source's natural change signal (or *signal*, for a
+            single source) to ``apply``, then apply immediately — a rule that is
+            only connected leaves whatever the ``.ui`` shipped standing until the
+            user touches something, which is already wrong for a source that
+            starts non-default or was restored from session state;
+          * re-connect and re-apply when ``ui.on_child_registered`` announces a
+            watched name, plus once more after the current event (registration
+            restores session state with signals blocked, so the first read can be
+            pre-restore);
+          * report a rule that can never fire (:meth:`_warn_if_rule_is_dead`);
+          * store it in *registry* so :meth:`refresh_dependencies` re-applies it
+            for bulk changes no signal announced.
+
+        *role* names the sources in that report ("triggers" for
+        :meth:`enable_when`), so the warning reads in the caller's own vocabulary.
+
+        Returns:
+            The rule's ``apply`` callable.
+        """
+        connected = set()
+
+        def connect_sources():
+            widgets = resolve_sources()
+            if widgets is None:
+                return
+            for widget in widgets:
+                if id(widget) in connected:
+                    continue
+                name = signal if (signal and len(widgets) == 1) else None
+                name = name or self._value_change_signal(widget)
+                sig = getattr(widget, name, None) if name else None
+                if sig is None or not callable(getattr(sig, "connect", None)):
+                    self.logger.warning(
+                        f"[{rule}] no change signal for {widget.objectName()!r}"
+                    )
+                    continue
+                sig.connect(apply)
+                connected.add(id(widget))
+            apply()
+
+        # Pattern refs ('b000-3') can't be matched by exact name — unpack them.
+        watched = self._watched_rule_names(*key)
+
+        def on_registered(widget):
+            if widget.objectName() not in watched:
+                return
+            connect_sources()
+            apply()
+            QtCore.QTimer.singleShot(0, apply)
+
+        connect_sources()
+        on_reg = self._registration_signal(ui)
+        if on_reg is not None:
+            on_reg.connect(on_registered)
+        self._warn_if_rule_is_dead(
+            ui, rule, **{role: resolve_sources(), "targets": resolve_targets()}
+        )
+
+        ui.__dict__.setdefault(registry, {})[key] = apply
+        return apply
+
     def enable_when(
         self,
         ui,
@@ -892,9 +1110,11 @@ class SwitchboardUtilsMixin:
                 where any-of lives.
             signal: Change signal name (single trigger). Default: the widget's
                 natural signal from the value table.
-            value: Optional callable ``(widget) -> value`` overriding the
-                default reader (combos read ``currentData`` when items carry
-                data, else ``currentIndex``; buttons ``isChecked``; …).
+            value: Reader override — a callable ``(widget) -> value`` used for
+                every trigger, or a ``{objectName: callable}`` mapping for a
+                mixed set (unlisted triggers keep the default reader, which
+                reads a combo's ``currentData`` when items carry data, else
+                ``currentIndex``; buttons ``isChecked``; …).
             invert: Enable when the condition is NOT met.
 
         A rule that resolves nothing against a container that HAS no
@@ -962,18 +1182,12 @@ class SwitchboardUtilsMixin:
         else:
             predicate = lambda *vals: all(v == condition for v in vals)  # noqa: E731
 
-        def resolve_triggers():
-            widgets = [self._resolve_ui_widget(ui, r) for r in trigger_refs]
-            return widgets if all(w is not None for w in widgets) else None
+        resolve_triggers = self._rule_source_resolver(ui, trigger_refs, unpack=False)
 
         def resolve_targets():
             return self._resolve_rule_refs(ui, target_refs)
 
-        def read(widget):
-            if value is not None:
-                return value(widget)
-            getter = self._widget_value_reader(widget)
-            return getter(widget) if getter is not None else None
+        read = self._rule_value_reader(value)
 
         def apply(*_):
             triggers = resolve_triggers()
@@ -989,50 +1203,20 @@ class SwitchboardUtilsMixin:
             for w in resolve_targets():
                 w.setEnabled(on)
 
-        connected = set()
-
-        def connect_triggers():
-            triggers = resolve_triggers()
-            if triggers is None:
-                return
-            for w in triggers:
-                if id(w) in connected:
-                    continue
-                name = signal if (signal and len(triggers) == 1) else None
-                name = name or self._value_change_signal(w)
-                sig = getattr(w, name, None) if name else None
-                if sig is None or not callable(getattr(sig, "connect", None)):
-                    self.logger.warning(
-                        f"[enable_when] no change signal for {w.objectName()!r}"
-                    )
-                    continue
-                sig.connect(apply)
-                connected.add(id(w))
-            apply()
-
-        # Pattern refs ('b000-3') can't be matched by exact name — unpack them.
-        watched = self._watched_rule_names(*key)
-
-        def on_registered(widget):
-            if widget.objectName() not in watched:
-                return
-            connect_triggers()
-            apply()
-            QtCore.QTimer.singleShot(0, apply)
-
-        connect_triggers()
-        on_reg = self._registration_signal(ui)
-        if on_reg is not None:
-            on_reg.connect(on_registered)
-        self._warn_if_rule_is_dead(
-            ui, "enable_when", triggers=resolve_triggers(), targets=resolve_targets()
-        )
-
         # Carried so a later conflicting wire-up can be named rather than
         # dropped in silence (see the duplicate-key branch above).
         apply._enable_when_spec = (condition, invert)
-        rules[key] = apply
-        return apply
+        return self._wire_rule(
+            ui,
+            "enable_when",
+            "_enable_when_rules",
+            key,
+            resolve_triggers,
+            resolve_targets,
+            apply,
+            signal,
+            role="triggers",
+        )
 
     def text_from(
         self,
@@ -1117,33 +1301,12 @@ class SwitchboardUtilsMixin:
             # never provable and the check could only cry wolf.
             return rules[key]
 
-        def resolve_sources():
-            """Every source widget in declared order, or None while one is missing."""
-            out = []
-            for ref in source_refs:
-                if isinstance(ref, QtWidgets.QWidget):
-                    out.append(ref)
-                elif isinstance(ref, str):
-                    if self._is_name_pattern(ref):
-                        out.extend(self.get_widgets_by_string_pattern(ui, ref))
-                    else:
-                        widget = self._resolve_ui_widget(ui, ref)
-                        if widget is None:
-                            return None
-                        out.append(widget)
-            return out
+        resolve_sources = self._rule_source_resolver(ui, source_refs, unpack=True)
 
         def resolve_targets():
             return self._resolve_rule_refs(ui, target_refs)
 
-        def read(widget):
-            reader = (
-                value.get(widget.objectName()) if isinstance(value, dict) else value
-            )
-            if callable(reader):
-                return reader(widget)
-            getter = self._widget_value_reader(widget)
-            return getter(widget) if getter is not None else None
+        read = self._rule_value_reader(value)
 
         # A target that is ALSO a source (a line edit that reformats itself) would
         # have setText re-enter apply through textChanged and never stop. A hang is
@@ -1174,54 +1337,169 @@ class SwitchboardUtilsMixin:
             finally:
                 writing.clear()
 
-        connected = set()
-
-        def connect_sources():
-            widgets = resolve_sources()
-            if widgets is None:
-                return
-            for widget in widgets:
-                if id(widget) in connected:
-                    continue
-                name = signal if (signal and len(widgets) == 1) else None
-                name = name or self._value_change_signal(widget)
-                sig = getattr(widget, name, None) if name else None
-                if sig is None or not callable(getattr(sig, "connect", None)):
-                    self.logger.warning(
-                        f"[text_from] no change signal for {widget.objectName()!r}"
-                    )
-                    continue
-                sig.connect(apply)
-                connected.add(id(widget))
-            apply()
-
-        watched = self._watched_rule_names(*key)
-
-        def on_registered(widget):
-            if widget.objectName() not in watched:
-                return
-            connect_sources()
-            apply()
-            QtCore.QTimer.singleShot(0, apply)
-
-        connect_sources()
-        on_reg = self._registration_signal(ui)
-        if on_reg is not None:
-            on_reg.connect(on_registered)
-        self._warn_if_rule_is_dead(
-            ui, "text_from", sources=resolve_sources(), targets=resolve_targets()
+        return self._wire_rule(
+            ui,
+            "text_from",
+            "_text_from_rules",
+            key,
+            resolve_sources,
+            resolve_targets,
+            apply,
+            signal,
         )
 
-        rules[key] = apply
-        return apply
+    def value_from(
+        self,
+        ui,
+        targets: Union[str, Any, List[Any]],
+        sources: Union[str, Any, List[Any]],
+        resolver: Callable[..., Any],
+        signal: Optional[str] = None,
+        value: Optional[
+            Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]
+        ] = None,
+    ) -> Callable[[], None]:
+        """Keep *targets*' VALUE derived from *sources* — a control that follows
+        the dials it stands for, wired once.
+
+        The third of the declarative family: :meth:`enable_when` answers "grey
+        this out when it can't apply", :meth:`text_from` "say what this will
+        do", and this one "say WHICH of my presets you are on". The case it
+        exists for is a summary control the user can also drive around: a
+        Quality combo that fills Resolution / Samples has to fall back to
+        *Custom* the moment either dial stops matching a preset, or it keeps
+        naming a tier the bake is no longer using::
+
+            sb.value_from(ui, "cmb000", ["cmb_resolution", "spn_samples"],
+                          self._preset_for_dials)      # -> "quest" | "Custom"
+
+            sb.value_from(m, "cmb_mode", "chk_advanced",
+                          lambda on: "advanced" if on else "basic")
+
+        Hand-wiring this is the same four steps as :meth:`text_from` — read,
+        resolve, write, and apply at WIRE TIME — plus a fifth that only bites
+        here: a naive write-back re-enters through the target's own change
+        signal. The write is fenced, so a target may be its own source.
+
+        Parameters:
+            ui: The loaded UI, or whatever the names resolve against — an option
+                box's ``menu`` is the common one.
+            targets: Widget(s) to drive — an objectName pattern string
+                (``'cmb000'``, ``'s004-7'``), a widget, or a list of either.
+                Every resolved target gets the same value.
+            sources: The widget(s) the value is derived from — objectName /
+                pattern / widget, or a list of those. Patterns UNPACK (as in
+                :meth:`text_from`), so ``'chk024-26'`` feeds three values.
+            resolver: ``callable(*values) -> value``, one value per resolved
+                source in order. Returning ``None`` DECLINES — the target is
+                left exactly as the user left it — so "I have no opinion about
+                this combination" needs no sentinel.
+            signal: Change signal name (single source). Default: the widget's
+                natural signal from the value table.
+            value: Reader override for the SOURCES — a callable ``(widget) ->
+                value`` for every one, or a ``{objectName: callable}`` mapping
+                for a mixed set. (Writes are dispatched by widget type; see
+                :meth:`_widget_value_writer`.)
+
+        The write is the mirror of the read: a combo takes the item whose DATA,
+        then whose LABEL, then whose ROW matches (a value matching none of the
+        three is reported and skipped, never coerced to row 0); every other type
+        goes to ``ValueManager.set_value``, which coerces where that is
+        unambiguous (``"8"`` into a spin box) and leaves the widget alone where
+        it is not. Writes are NOT signal-blocked — a derived value is a real
+        change and the target's own slot is entitled to see it (that is what
+        lets a preset combo re-apply the rest of its preset).
+
+        Order-independent, idempotent and bulk-refreshable exactly as
+        :meth:`enable_when` and :meth:`text_from` — they share the machinery
+        (:meth:`_wire_rule`) and the notes there apply, including the report
+        when a rule can never fire.
+
+        Returns:
+            The rule's ``apply`` callable (handy as an ``on_loaded`` hook).
+        """
+        source_refs = list(sources) if isinstance(sources, (list, tuple)) else [sources]
+        target_refs = list(targets) if isinstance(targets, (list, tuple)) else [targets]
+
+        key = (
+            tuple(map(self._rule_ref_name, source_refs)),
+            tuple(map(self._rule_ref_name, target_refs)),
+        )
+        rules = ui.__dict__.setdefault("_value_from_rules", {})
+        if key in rules:
+            # Re-wiring the same pair is a deliberate no-op so an ``_init`` slot
+            # that re-runs cannot stack rules (no conflict warning, for the same
+            # reason as text_from's: a resolver is a fresh callable every run).
+            return rules[key]
+
+        resolve_sources = self._rule_source_resolver(ui, source_refs, unpack=True)
+
+        def resolve_targets():
+            return self._resolve_rule_refs(ui, target_refs)
+
+        read = self._rule_value_reader(value)
+
+        # A target is very often ALSO the thing whose change re-enters here (a
+        # preset combo that writes its dials back), and writes are deliberately
+        # not signal-blocked — so the fence, not silence, is what bounds it.
+        writing = []
+
+        def apply(*_):
+            if writing:
+                return
+            widgets = resolve_sources()
+            if not widgets:
+                return
+            try:
+                derived = resolver(*[read(w) for w in widgets])
+            except Exception as e:  # a half-built source; retry on the next signal
+                self.logger.debug(f"[value_from] resolver raised: {e}")
+                return
+            if derived is None:  # the resolver declined — leave the target alone
+                return
+            writing.append(True)
+            try:
+                for widget in resolve_targets():
+                    writer = self._widget_value_writer(widget)
+                    if writer is None:
+                        self.logger.warning(
+                            f"[value_from] no value setter for "
+                            f"{widget.objectName()!r} ({type(widget).__name__})"
+                        )
+                        continue
+                    try:
+                        writer(widget, derived)
+                    except Exception as e:
+                        self.logger.warning(
+                            f"[value_from] {widget.objectName()!r} rejected "
+                            f"{derived!r}: {e}"
+                        )
+            finally:
+                writing.clear()
+
+        return self._wire_rule(
+            ui,
+            "value_from",
+            "_value_from_rules",
+            key,
+            resolve_sources,
+            resolve_targets,
+            apply,
+            signal,
+        )
 
     #: The declarative-rule registries :meth:`refresh_dependencies` re-applies.
-    _DEPENDENCY_REGISTRIES = ("_enable_when_rules", "_text_from_rules")
+    _DEPENDENCY_REGISTRIES = (
+        "_enable_when_rules",
+        "_text_from_rules",
+        "_value_from_rules",
+    )
 
     def refresh_dependencies(self, ui) -> None:
-        """Re-apply every declarative rule on *ui* — :meth:`enable_when`'s and
-        :meth:`text_from`'s — for bulk value changes made with signals blocked
-        (a preset load, a programmatic restore) that no trigger signal announced."""
+        """Re-apply every declarative rule on *ui* — :meth:`enable_when`'s,
+        :meth:`text_from`'s and :meth:`value_from`'s — for bulk value changes
+        made with signals blocked (a preset load, a programmatic restore) that
+        no trigger signal announced."""
         for registry in self._DEPENDENCY_REGISTRIES:
             for apply in list(ui.__dict__.get(registry, {}).values()):
                 apply()
