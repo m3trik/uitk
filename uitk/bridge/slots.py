@@ -130,6 +130,8 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
       user leaves the Output Dir field blank.
     * :attr:`REQUIRE_OUTPUT_DIR` -- set False for bridges with no
       user-visible output (e.g. rizom's in-place UV roundtrip).
+    * :attr:`OUTPUT_DIR_PERSISTS` -- set False so the Output Dir starts blank
+      each session instead of restoring the previous one.
     * :attr:`TEMPLATE_EXTENSION` -- ``.py`` (default), ``.lua``, etc.
     """
 
@@ -174,6 +176,18 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     # that removes the artifacts when the run is over. A value the user typed
     # still wins: naming a folder is a decision to keep what lands in it.
     TRANSIENT_OUTPUT_MODES: Tuple[str, ...] = ()
+
+    # Whether the Output Dir field's text is saved to QSettings and restored on
+    # the next session (the ``restore_state`` default every registered widget
+    # gets). True for bridges whose Output Dir is durable project config -- a
+    # Unity project root, a photogrammetry job folder -- where retyping it every
+    # session is the annoyance. Set False for a hand-off bridge whose blank field
+    # is the *useful* default (``default_output_dir`` / the temp fallback resolve
+    # it per run): there, a path persisted from a prior scene silently outranks
+    # the scene the user actually has open, and the artifacts land beside it. The
+    # recent-values history is persisted either way, so last session's path stays
+    # one click away.
+    OUTPUT_DIR_PERSISTS: bool = True
 
     # ------------------ Cosmetics -------------------------------------
 
@@ -600,6 +614,10 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         edit.setMinimumHeight(19)
         edit.setMaximumHeight(19)
         edit.setToolTip(self.OUTPUT_DIR_TOOLTIP)
+        # Set before the row is registered: ``register_widget`` only defaults
+        # ``restore_state`` to True when the attribute is ABSENT, so this is what
+        # decides whether the field is saved/restored across sessions at all.
+        edit.restore_state = self.OUTPUT_DIR_PERSISTS
         self._output_dir_edit = edit
 
         hbox.addWidget(label)

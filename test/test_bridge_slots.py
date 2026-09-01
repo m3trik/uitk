@@ -1864,5 +1864,74 @@ class TestSharedSpecs(BaseTestCase):
         self.assertEqual(Parameters.carrier_spec(section="Export").section, "Export")
 
 
+class TestOutputDirRowPersistence(BaseTestCase):
+    """The Output Dir row's persistence + clear-button opt-ins.
+
+    ``OUTPUT_DIR_PERSISTS`` decides whether the field is saved to QSettings and
+    restored next session. It must be stamped onto the edit BEFORE the window
+    registers it -- ``register_widget`` only defaults ``restore_state`` to True
+    when the attribute is absent, so a knob applied later would be ignored.
+
+    The clear button is a separate, per-panel opt-in through the existing
+    ``_configure_output_dir_options`` hook (Substance turns it on; a field whose
+    value only ever arrives from a file dialog leaves it off).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Switchboard does this at construction; these tests build the row
+        # standalone, and the option-box calls need the QLineEdit property.
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        OptionBoxManager.patch_common_widgets()
+
+    def _build(self, cls):
+        """Run ``_build_output_dir_row`` on *cls* against a stub ``ui`` and
+        return the line edit it created."""
+        group = QtWidgets.QGroupBox()
+        QtWidgets.QVBoxLayout(group)
+        combo = QtWidgets.QComboBox(group)
+        group.layout().addWidget(combo)
+
+        class _Ui:
+            pass
+
+        slots = object.__new__(cls)
+        slots.ui = _Ui()
+        slots.ui.grp_process = group
+        slots.ui.cmb000 = combo
+        slots._build_output_dir_row()
+        self.addCleanup(group.deleteLater)
+        return slots._output_dir_edit
+
+    def test_default_persists(self):
+        self.assertTrue(BridgeSlotsBase.OUTPUT_DIR_PERSISTS)
+        self.assertTrue(self._build(BridgeSlotsBase).restore_state)
+
+    def test_opt_out_marks_the_edit_non_restoring(self):
+        class _Transient(BridgeSlotsBase):
+            LOG_TAG = "transient_bridge"
+            OUTPUT_DIR_PERSISTS = False
+
+        self.assertFalse(self._build(_Transient).restore_state)
+
+    def test_clear_button_opt_in_through_the_options_hook(self):
+        from uitk.widgets.optionBox.options.clear import ClearOption
+
+        class _Clearable(BridgeSlotsBase):
+            LOG_TAG = "clearable_bridge"
+
+            def _configure_output_dir_options(self, edit):
+                super()._configure_output_dir_options(edit)
+                edit.option_box.clear_option = True
+
+        plain = self._build(BridgeSlotsBase).option_box.get_options()
+        self.assertFalse([o for o in plain if isinstance(o, ClearOption)])
+
+        opted_in = self._build(_Clearable).option_box.get_options()
+        self.assertTrue([o for o in opted_in if isinstance(o, ClearOption)])
+
+
 if __name__ == "__main__":
     unittest.main()

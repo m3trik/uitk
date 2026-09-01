@@ -73,6 +73,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._default_status_text = ""
         self._status_level = None
         self._size_grip = None
+        self._center_spacer_added = False
 
         # Hold-to-cancel relay: ProgressBar emits holdStarted/holdEnded;
         # we swap the status text and restore it on release.
@@ -205,6 +206,41 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         addition = f"border-radius: {radius}; {cls._ROUNDED_QSS_MARKER}"
         widget.setStyleSheet((existing + "\n" if existing else "") + addition)
 
+    # ── Centering ────────────────────────────────────────────────
+
+    def _center_index(self) -> int:
+        """Index a centred widget goes at: right after the status stack.
+
+        Centred widgets sit between the status text and whatever was added on
+        the right, in the order they were added.
+        """
+        idx = self.main_layout.indexOf(self._stacked_widget)
+        return (idx + 1) if idx >= 0 else 0
+
+    def _center_stretch(self) -> None:
+        """Balance the space either side of the centred widgets.
+
+        The status stack occupies everything left of centre, so all that is
+        missing is an EQUAL stretch on the far side: two matching stretches
+        put whatever sits between them on the footer's midline, and both
+        collapse to nothing when the footer is too narrow to honour it (the
+        centred widget then simply follows the status text, never clipped by
+        it -- the status label's size policy is ``Ignored``).
+
+        Both factors have to be set explicitly.  An expanding spacer left at
+        the default stretch of 0 loses every spare pixel to a stretch-1
+        neighbour, which would silently park the widget on the right again.
+        Created once; a later centred add just re-applies the factors.
+        """
+        if not self._center_spacer_added:
+            if self._size_grip:
+                idx = self.main_layout.indexOf(self._grip_spacer)
+            else:
+                idx = self.main_layout.count()
+            self.main_layout.insertStretch(idx, 1)
+            self._center_spacer_added = True
+        self.main_layout.setStretchFactor(self._stacked_widget, 1)
+
     # ── Action buttons ───────────────────────────────────────────
 
     def add_widget(
@@ -218,7 +254,9 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
         ``side="right"`` places the widget on the right, before the size
         grip (if present).  ``side="left"`` places it at the left edge,
-        before the status/progress stack.  Returns *widget* for chaining.
+        before the status/progress stack.  ``side="center"`` centres it
+        horizontally (see :meth:`_center_stretch`).  Returns *widget* for
+        chaining.
 
         ``background=False`` (default) makes the widget transparent so it
         blends with the footer; set to ``True`` for normal styled background.
@@ -227,8 +265,8 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         corners via the ``footerRounded`` style property; set ``False``
         for hard square edges.
         """
-        if side not in ("left", "right"):
-            raise ValueError(f"side must be 'left' or 'right', got {side!r}")
+        if side not in ("left", "right", "center"):
+            raise ValueError(f"side must be 'left', 'right' or 'center', got {side!r}")
 
         widget.setProperty("footerWidget", not background)
         widget.setProperty("footerRounded", bool(rounded))
@@ -241,6 +279,9 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._apply_rounded_style(widget, rounded)
         if side == "left":
             self.main_layout.insertWidget(0, widget)
+        elif side == "center":
+            self.main_layout.insertWidget(self._center_index(), widget)
+            self._center_stretch()
         else:
             if self._size_grip:
                 idx = self.main_layout.indexOf(self._grip_spacer)

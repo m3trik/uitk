@@ -10,6 +10,7 @@ precede the ``setChecked`` branch. The uitk ``CheckBox`` made this worse: it
 overrides ``setText`` with a rich-text setter, so ``set_value(chk, True)``
 wrote the string ``"True"`` into the label and left the box unchecked.
 """
+
 import os
 import sys
 import unittest
@@ -76,6 +77,27 @@ class TestSetValueCheckableButtons(QtBaseTestCase):
             chk.setChecked(True)
             ValueManager.set_value(chk, s)
             self.assertFalse(chk.isChecked(), f"set_value({s!r}) should uncheck")
+
+    def test_is_supported_widget_agrees_with_what_set_value_handles(self):
+        """It named leaf types where get/set dispatch on a BASE, so it denied a
+        checkable QGroupBox that the very next test round-trips."""
+        for cls in (
+            QtWidgets.QLineEdit,
+            QtWidgets.QPlainTextEdit,
+            QtWidgets.QSpinBox,
+            QtWidgets.QDoubleSpinBox,
+            QtWidgets.QComboBox,
+            QtWidgets.QCheckBox,
+            QtWidgets.QRadioButton,
+            QtWidgets.QToolButton,
+            QtWidgets.QSlider,
+            QtWidgets.QDial,
+            QtWidgets.QGroupBox,
+        ):
+            with self.subTest(widget=cls.__name__):
+                self.assertTrue(ValueManager.is_supported_widget(cls()))
+        # A widget with no value to speak of still reports False.
+        self.assertFalse(ValueManager.is_supported_widget(QtWidgets.QLabel()))
 
     def test_checkable_qgroupbox(self):
         # QGroupBox is not a QAbstractButton (no setText to shadow it); it must
@@ -164,9 +186,7 @@ class TestTextChangedOnTextEdit(QtBaseTestCase):
     def test_lineedit_path_unchanged(self):
         le = self.track_widget(QtWidgets.QLineEdit())
         ValueManager.set_value_by_signal(le, "abc", "textChanged")
-        self.assertEqual(
-            ValueManager.get_value_by_signal(le, "textChanged"), "abc"
-        )
+        self.assertEqual(ValueManager.get_value_by_signal(le, "textChanged"), "abc")
 
 
 class TestStateManagerPersistence(QtBaseTestCase):

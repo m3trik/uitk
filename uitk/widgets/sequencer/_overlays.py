@@ -59,6 +59,61 @@ class _StaticRangeOverlay(QtWidgets.QGraphicsItem):
 
 
 # ---------------------------------------------------------------------------
+#  _SnapGuideItem
+# ---------------------------------------------------------------------------
+
+
+class _SnapGuideItem(QtWidgets.QGraphicsItem):
+    """Vertical guides marking frames a live drag is aligned with.
+
+    Purely an affordance: the guides say "the value you are dragging sits
+    on a frame that already carries keys" without altering the drag.  A
+    consumer that also wants the drag pulled onto those frames turns on
+    :attr:`SequencerWidget.snap_to_keys`.
+    """
+
+    _WIDTH = 1.0
+
+    def __init__(self, timeline, color: str = "#FFD24A"):
+        super().__init__()
+        self._timeline = timeline
+        self._times: list = []
+        self._color = QtGui.QColor(color)
+        self.setZValue(9)  # above clips/overlays, below the ruler (10)
+        self.setAcceptedMouseButtons(QtCore.Qt.NoButton)
+
+    def set_times(self, times) -> None:
+        self.prepareGeometryChange()
+        self._times = list(times)
+        self.update()
+
+    def _span(self) -> tuple:
+        sq = self._timeline.parent_sequencer
+        top = sq._content_top
+        h = max(sq._total_row_height(), self._timeline.viewport().height() - top)
+        return top, h
+
+    def boundingRect(self) -> QtCore.QRectF:
+        top, h = self._span()
+        if not self._times:
+            return QtCore.QRectF(0, top, 0, h)
+        xs = [self._timeline.time_to_x(t) for t in self._times]
+        pad = self._WIDTH + 1
+        return QtCore.QRectF(min(xs) - pad, top, (max(xs) - min(xs)) + 2 * pad, h)
+
+    def paint(self, painter: QtGui.QPainter, option, widget=None):
+        if not self._times:
+            return
+        top, h = self._span()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        pen = QtGui.QPen(self._color, self._WIDTH)
+        painter.setPen(pen)
+        for t in self._times:
+            x = self._timeline.time_to_x(t)
+            painter.drawLine(QtCore.QPointF(x, top), QtCore.QPointF(x, top + h))
+
+
+# ---------------------------------------------------------------------------
 #  _GapOverlayItem
 # ---------------------------------------------------------------------------
 
@@ -72,6 +127,11 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     - **Left edge**: resize gap from the left (shifts the prev shot end).
     - **Center** (body drag): reposition the gap, keeping gap size constant.
       Automatically disabled when the gap is too narrow for a center zone.
+
+    ``tail=True`` marks the zero-width overlay a consumer can place after
+    the LAST shot, which has no following shot to form a real gap with.
+    It exposes only the left edge — i.e. that shot's ``end`` — so the final
+    shot gets the same drag handle every other shot already has.
     """
 
     _EDGE_WIDTH = 6  # px from each edge that triggers resize cursor
@@ -84,18 +144,23 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         color: str,
         alpha: int,
         locked: bool = False,
+        tail: bool = False,
     ):
         super().__init__()
         self._timeline = timeline
         self._start = start
         self._end = end
+        self._tail = tail
         self._base_alpha = alpha
         self._color = QtGui.QColor(color)
         self._color.setAlpha(alpha)
         self._line_color = QtGui.QColor(color)
         self._line_color.setAlpha(min(255, alpha + 40))
         self._hovered = False
-        self._locked = locked
+        # A tail handle is not a gap — it has no right-hand shot to key a
+        # lock on, and a locked tail would leave the LAST shot without its
+        # only end handle.  Locking is refused at the source.
+        self._locked = locked and not tail
         self._drag_mode: Optional[str] = None  # "left", "right", "move", or None
         self._drag_origin_x: float = 0.0
         self._drag_origin_start: float = 0.0
@@ -110,6 +175,14 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self._gap_frames = max(0, int(round(self._end - self._start)))
         lock_label = " [Locked]" if self._locked else ""
         mode = self._drag_mode
+        if self._tail:
+            frame = int(round(self._start))
+            self.setToolTip(
+                f"Shot end: frame {frame}{lock_label}"
+                "\nDrag to resize the last shot"
+                "\nRight-click for options"
+            )
+            return
         if mode == "left":
             frame = int(round(self._start))
             info = f"◀ Left edge → frame {frame}"
@@ -147,6 +220,11 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         return r.adjusted(-self._EDGE_WIDTH, 0, self._EDGE_WIDTH, 0)
 
     def _hit_zone(self, pos: QtCore.QPointF) -> str:
+        # A tail handle has no following shot, so "right" (move the next
+        # shot's start) and "body" (slide the whole gap) have no target --
+        # every press on it is a drag of the preceding shot's end.
+        if self._tail:
+            return "left"
         r = self._rect()
         local_x = pos.x() - r.left()
         if local_x <= self._EDGE_WIDTH:
@@ -244,7 +322,17 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             new_start = DraggableItemMixin.snap_time(
                 self._drag_origin_start + dt, self._timeline
             )
-            if new_start <= self._end:
+            if self._tail:
+                # A tail handle has no right edge to clamp against — it IS
+                # the end of the timeline.  Clamping it against ``_end``
+                # (which equals ``_start`` on a zero-width tail) would let
+                # the last shot shrink but never grow.  Drag both edges so
+                # the handle simply follows the cursor.
+                self.prepareGeometryChange()
+                self._start = self._end = new_start
+                self._update_tooltip()
+                self.update()
+            elif new_start <= self._end:
                 self.prepareGeometryChange()
                 self._start = new_start
                 self._update_tooltip()
@@ -295,6 +383,9 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     def mouseReleaseEvent(self, event):
         if self._drag_mode is not None:
             sq = self._timeline.parent_sequencer
+            # The consumer rebuilds from here, retiring this item while Qt
+            # is still inside the release -- safe because SequencerWidget
+            # routes removals through ``ItemRetirement.retire`` (see _draggable).
             if self._drag_mode == "right":
                 if abs(self._end - self._drag_origin_end) > 0.01:
                     sq.gap_resized.emit(self._drag_origin_end, self._end)
@@ -319,16 +410,28 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     def contextMenuEvent(self, event):
         menu = MenuUtils._styled_menu()
-        act_lock = menu.addAction("Unlock Gap" if self._locked else "Lock Gap")
-        menu.addSeparator()
-        act_lock_all = menu.addAction("Lock All Gaps")
-        act_unlock_all = menu.addAction("Unlock All Gaps")
+        act_lock = act_lock_all = act_unlock_all = None
+        if not self._tail:
+            # A tail handle exposes no lock actions — it is a shot-end
+            # handle, not a gap, and a "locked" tail would be an inert
+            # last-shot handle backed by no persistable store state.
+            act_lock = menu.addAction("Unlock Gap" if self._locked else "Lock Gap")
+            menu.addSeparator()
+            act_lock_all = menu.addAction("Lock All Gaps")
+            act_unlock_all = menu.addAction("Unlock All Gaps")
 
         # Extensibility hook — let consumers add domain-specific actions
         sq = self._timeline.parent_sequencer
         sq.gap_menu_requested.emit(menu, self._start, self._end)
+        if not menu.actions():
+            return
 
         chosen = menu.exec_(MenuUtils._menu_exec_pos(event))
+        if chosen is None or self.scene() is None:
+            # Dismissed, or a rebuild retired this overlay while the menu's
+            # nested event loop ran — a None==None match below would
+            # otherwise toggle the lock on dismissal of a tail menu.
+            return
         if chosen == act_lock:
             self._locked = not self._locked
             self._update_tooltip()
@@ -504,6 +607,15 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         painter.fillRect(
             QtCore.QRectF(r.right() - hw, r.top(), hw, r.height()), self._handle_color
         )
+        # A hairline around the whole span.  The fill alone is a 30-alpha wash
+        # that disappears against a busy track area; the outline is what makes
+        # the selected shot's extent legible without brightening the fill and
+        # drowning the clips inside it.
+        edge = QtGui.QColor(self._handle_color)
+        edge.setAlpha(min(255, max(90, self._color.alpha() * 5)))
+        painter.setPen(QtGui.QPen(edge, 1))
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawRect(r.adjusted(0, 0, -1, -1))
 
     # -- hit zone -----------------------------------------------------------
     def _hit_zone(self, pos: QtCore.QPointF) -> str:
@@ -519,7 +631,10 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     def hoverMoveEvent(self, event):
         zone = self._hit_zone(event.pos())
         if zone in ("left", "right"):
-            self.setCursor(QtCore.Qt.SizeHorCursor)
+            # SplitH (vs the gap overlay's SizeHor): this handle ripples the
+            # rest of the timeline, the gap's edge does not — the cursor is
+            # the affordance that tells the two apart.
+            self.setCursor(QtCore.Qt.SplitHCursor)
         elif event.modifiers() & QtCore.Qt.ShiftModifier:
             self.setCursor(QtCore.Qt.OpenHandCursor)
         else:
@@ -545,6 +660,19 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
         for item in self._timeline._scene.items(event.scenePos()):
             if isinstance(item, ClipItem) and item is not self:
+                event.ignore()
+                return
+        # Same deferral for an unlocked gap overlay's PAINTED rect: those
+        # pixels are drawn as the gap's edge handle, so they must deliver
+        # gap semantics (no ripple).  Without this, which of two overlapping
+        # handles answers a plain edge drag — this one ripples the timeline,
+        # the gap's does not — was decided by z-order and ~4px of cursor.
+        for item in self._timeline._scene.items(event.scenePos()):
+            if (
+                isinstance(item, _GapOverlayItem)
+                and not item._locked
+                and item._rect().contains(event.scenePos())
+            ):
                 event.ignore()
                 return
         self._drag_mode = zone

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 from uitk.widgets.sequencer._data import (
     ClipData,
+    SELECTED_ACCENT,
     _MIN_POINT_CLIP_WIDTH,
     _MIN_CLIP_DURATION,
     _HANDLE_WIDTH,
@@ -42,7 +43,10 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         self._waveform_pixmap: Optional[QtGui.QPixmap] = None
         self._waveform_pixmap_size: Optional[tuple] = None
         self._keyframe_items: list = []  # KeyframeItem children for sub-rows
+        self._align_times = None  # alignment candidates, resolved on first move
+        self._align_hit: bool = False  # drag currently sits on a key frame
         self._keys_dragging = False  # True while any child KeyframeItem is mid-drag
+        self._press_modifiers = QtCore.Qt.NoModifier  # chord of the live press
         self.setAcceptHoverEvents(True)
         self.setFlags(
             QtWidgets.QGraphicsItem.ItemSendsGeometryChanges
@@ -114,11 +118,20 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         old_fp = tuple((k._time, k._value) for k in self._keyframe_items)
 
         if new_fp != old_fp:
-            # Tear down old items
-            scene = self.scene()
-            for item in self._keyframe_items:
-                if scene:
-                    scene.removeItem(item)
+            # Tear down old items — through ItemRetirement.retire, because this runs
+            # from _sync_geometry which a consumer rebuild can reach while a
+            # child's own event is still on the stack; and under selection
+            # suppression, because removing a selected key dot fires
+            # selectionChanged which must not read as a user deselection.
+            from uitk.widgets.sequencer._draggable import ItemRetirement
+
+            sq = self._timeline.parent_sequencer
+            sq._selection_suppressed += 1
+            try:
+                for item in self._keyframe_items:
+                    ItemRetirement.retire(item)
+            finally:
+                sq._selection_suppressed -= 1
             self._keyframe_items.clear()
 
             # Create new items
@@ -234,14 +247,62 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         lum = 0.299 * color.redF() + 0.587 * color.greenF() + 0.114 * color.blueF()
         return QtGui.QColor("#1E1E1E") if lum > 0.55 else QtGui.QColor("#FFFFFF")
 
+    #: Alpha of the accent wash a selected clip's fill is tinted with.  Low
+    #: enough that the clip's own colour still identifies it, high enough that
+    #: the tint reads on the pale fills that dominate a real scene.
+    _SELECTED_TINT_ALPHA = 90
+
+    @staticmethod
+    def _selected_fill(color: QtGui.QColor) -> QtGui.QColor:
+        """*color* tinted toward the selection accent.
+
+        Selection used to be ``color.lighter(130)``, which is a NO-OP on white
+        -- and white is exactly what a mixed-attribute clip resolves to (the
+        'consolidated' colour), i.e. most clips in a real scene.  Blending
+        toward the accent instead is visible on every fill, including the ones
+        already at full brightness, and matches the blue the ruler marks the
+        selected shot in.
+
+        Deliberately not routed through ``StyleSheet._blend``: that one exists
+        to assemble QSS token STRINGS (it parses and re-formats ``rgb()`` /
+        ``#hex``), and round-tripping a ``QColor`` through text on every
+        repaint is the wrong shape for a paint path.  Same arithmetic,
+        different representation.
+        """
+        accent = QtGui.QColor(SELECTED_ACCENT)
+        a = ClipItem._SELECTED_TINT_ALPHA / 255.0
+        out = QtGui.QColor(color)
+        out.setRed(int(round(color.red() * (1 - a) + accent.red() * a)))
+        out.setGreen(int(round(color.green() * (1 - a) + accent.green() * a)))
+        out.setBlue(int(round(color.blue() * (1 - a) + accent.blue() * a)))
+        return out
+
+    def _paint_selection_outline(self, painter: QtGui.QPainter, rect) -> None:
+        """Ring a selected clip in the shared accent.
+
+        The outline carries the selection on its own, so the cue survives the
+        cases the fill tint cannot reach: a curve-preview sub-row (which paints
+        a graph, not a filled bar) and a clip narrow enough that its interior
+        is a few pixels wide.  Drawn INSIDE the rect so neighbouring clips
+        can't overdraw it.
+        """
+        pen = QtGui.QPen(QtGui.QColor(SELECTED_ACCENT), 2.0)
+        pen.setJoinStyle(QtCore.Qt.MiterJoin)
+        painter.save()
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawRect(QtCore.QRectF(rect).adjusted(1.0, 1.0, -1.0, -1.0))
+        painter.restore()
+
     # -- painting -----------------------------------------------------------
     def paint(self, painter: QtGui.QPainter, option, widget=None):
         rect = self.rect()
         color = self._resolve_color()
         if self._data.data.get("dimmed"):
             color = color.darker(250)
-        if self.isSelected():
-            color = color.lighter(130)
+        selected = self.isSelected()
+        if selected:
+            color = self._selected_fill(color)
 
         fg = self._foreground_for(color)
 
@@ -262,6 +323,8 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 and rect.height() > 10
             ):
                 self._paint_lock_icon(painter, rect, fg)
+            if selected:
+                self._paint_selection_outline(painter, rect)
             return
 
         painter.setBrush(color)
@@ -379,6 +442,11 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             and rect.height() > 10
         ):
             self._paint_lock_icon(painter, rect, fg)
+
+        # Last, so nothing painted above (pattern, status tint, waveform,
+        # label) can sit on top of the selection ring.
+        if selected:
+            self._paint_selection_outline(painter, rect)
 
     def _paint_lock_icon(self, painter, rect, fg=None):
         """Draw a small lock glyph at the right edge of the clip."""
@@ -560,9 +628,80 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         self.unsetCursor()
         super().hoverLeaveEvent(event)
 
+    # -- selection ----------------------------------------------------------
+    def _set_sole_selection(self) -> None:
+        """Make this the only selected item, emitting ONE ``selectionChanged``.
+
+        ``clearSelection()`` and ``setSelected()`` fire the scene's signal
+        separately, and every consumer does real work on each one -- the Maya
+        adapter mirrors the selection into the scene and reopens the Graph
+        Editor -- so the pair costs twice what it should on every click.
+        Block, then re-emit once: the idiom the marquee already uses.
+        """
+        scene = self.scene()
+        if scene is None:
+            self.setSelected(True)
+            return
+        was_blocked = scene.signalsBlocked()
+        scene.blockSignals(True)
+        try:
+            scene.clearSelection()
+            self.setSelected(True)
+        finally:
+            scene.blockSignals(was_blocked)
+        # A caller that had already blocked the scene wants silence, not one
+        # emission from us — restore its state and let it decide.
+        if not was_blocked:
+            scene.selectionChanged.emit()
+
+    def _press_selection(self, modifiers) -> None:
+        """Selection half of a left-press on this clip.
+
+        ``QGraphicsItem``'s own implementation never runs here (the drag needs
+        the press, so this class accepts the event itself), which is why a
+        plain click used to leave the clip UNSELECTED -- selection was
+        reachable only by rubber-band.  The modifiers follow the sequencer's
+        marquee, so the same chord means the same thing however the user picks
+        clips:
+
+        * ``Ctrl``  -- remove this clip from the selection;
+        * ``Shift`` -- add it (a no-op when it is already in);
+        * neither   -- make it the selection, UNLESS it is already part of a
+          multi-selection.  Collapsing on press would make a group impossible
+          to drag; the collapse happens on release instead, and only when the
+          press turned out to be a click rather than a drag (see
+          :meth:`_release_selection`).
+        """
+        if not (self.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable):
+            return
+        if modifiers & QtCore.Qt.ControlModifier:
+            self.setSelected(False)
+        elif modifiers & QtCore.Qt.ShiftModifier:
+            self.setSelected(True)
+        elif not self.isSelected():
+            self._set_sole_selection()
+
+    def _release_selection(self, modifiers, moved: bool) -> None:
+        """Collapse a multi-selection when an unmodified press was a CLICK.
+
+        Deferred from the press so a group drag keeps its members; once it is
+        clear the user did not drag, clicking one clip of a group means "just
+        this one", the same as it does in every NLE.
+        """
+        if moved or modifiers & (QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier):
+            return
+        if not (self.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable):
+            return
+        scene = self.scene()
+        if scene is None or len(scene.selectedItems()) <= 1:
+            return
+        self._set_sole_selection()
+
     # -- drag interaction ---------------------------------------------------
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
+            self._press_modifiers = event.modifiers()
+            self._press_selection(event.modifiers())
             if self._data.locked or self._data.sub_row:
                 # Sub-row keys are dragged by KeyframeItem children.
                 super().mousePressEvent(event)
@@ -588,6 +727,11 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                         item._drag_mode = "move"
                         item._drag_origin_start = item._data.start
                         item._drag_origin_duration = item._data.duration
+            # Alignment candidates are resolved lazily on the first real
+            # move (next to the undo capture below): the set can't change
+            # mid-gesture, but resolving it here would make every plain
+            # selection click walk each clip and key for nothing.
+            self._align_times = None
             # Undo snapshot is captured lazily on the first real move —
             # capturing on press meant every selection click pushed a
             # no-op undo entry and wiped the redo stack.
@@ -607,16 +751,49 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             self._undo_captured = True
             self._timeline.parent_sequencer._capture_undo()
 
+        if self._align_times is None:
+            sq = self._timeline.parent_sequencer
+            moving_ids = {self._data.clip_id}
+            moving_ids.update(p._data.clip_id for p, _ in self._drag_peers)
+            # Pre-drag spans of the moving content: the DCC panels represent
+            # one object's animation as a merged bar PLUS per-attribute
+            # sub-row clips, so excluding by clip id alone leaves the other
+            # representation behind as a stale magnet at the origin.
+            spans = [
+                (
+                    self._data.track_id,
+                    self._drag_origin_start,
+                    self._drag_origin_start + self._drag_origin_duration,
+                )
+            ]
+            spans.extend(
+                (p._data.track_id, origin, origin + p._data.duration)
+                for p, origin in self._drag_peers
+            )
+            self._align_times = sq.alignment_times(
+                exclude_clip_ids=moving_ids, exclude_spans=spans
+            )
+
         tl = self._timeline
         dx_time = tl.x_to_time(event.scenePos().x()) - tl.x_to_time(self._drag_origin_x)
 
         if self._drag_mode == "move":
-            new_start = self._snap(max(0.0, self._drag_origin_start + dx_time))
+            new_start = self._align(
+                self._snap(max(0.0, self._drag_origin_start + dx_time))
+            )
+            snapped_delta = new_start - self._drag_origin_start
+            # Clamp the GROUP, not each member: clamping a peer on its own
+            # (``max(0.0, ...)``) silently deforms the selection whenever a
+            # peer sits earlier than the grabbed clip and would cross frame 0.
+            # The earliest member decides how far the whole set may travel.
+            floor = min([self._drag_origin_start] + [o for _p, o in self._drag_peers])
+            if floor + snapped_delta < 0.0:
+                snapped_delta = -floor
+                new_start = self._drag_origin_start + snapped_delta
             self._data.start = new_start
             # Move peer clips by the same snapped delta
-            snapped_delta = new_start - self._drag_origin_start
             for peer, origin_start in self._drag_peers:
-                peer._data.start = max(0.0, origin_start + snapped_delta)
+                peer._data.start = origin_start + snapped_delta
                 peer._sync_geometry()
                 peer.update()
 
@@ -624,7 +801,9 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             # Snap FIRST, then clamp (mirrors resize_right) — snapping
             # after the min-duration clamp can push the start past it
             # and emit a zero- or negative-duration clip_resized.
-            new_start = self._snap(max(0.0, self._drag_origin_start + dx_time))
+            new_start = self._align(
+                self._snap(max(0.0, self._drag_origin_start + dx_time))
+            )
             new_start = min(
                 new_start,
                 self._drag_origin_start
@@ -637,19 +816,81 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
 
         elif self._drag_mode == "resize_right":
             raw_end = self._drag_origin_start + self._drag_origin_duration + dx_time
-            snapped_end = self._snap(raw_end)
+            snapped_end = self._align(self._snap(raw_end))
             new_dur = max(_MIN_CLIP_DURATION, snapped_end - self._data.start)
             self._data.duration = new_dur
 
         self._sync_geometry()
         self.update()
+        self._refresh_align_guides()
         self._update_clip_drag_tooltip(event.scenePos())
         event.accept()
+
+    # -- key alignment ------------------------------------------------------
+    def _align(self, value: float) -> float:
+        """Pull *value* onto a nearby key frame, when that is turned on.
+
+        Guides are drawn either way (see :meth:`_refresh_align_guides`);
+        only the pull itself is opt-in, so the default drag stays free.
+        """
+        sq = self._timeline.parent_sequencer
+        if not sq.snap_to_keys or not self._align_times:
+            return value
+        hit = sq.nearest_alignment(value, self._align_times)
+        best = None if hit is None else hit - value
+        # A body drag can align on EITHER edge; capture whichever is closer
+        # so the guides never promise an end-alignment the snap didn't take.
+        if self._drag_mode == "move" and self._data.duration > 0:
+            end = value + self._data.duration
+            end_hit = sq.nearest_alignment(end, self._align_times)
+            if end_hit is not None:
+                end_delta = end_hit - end
+                if best is None or abs(end_delta) < abs(best):
+                    best = end_delta
+        if best is None:
+            return value
+        # Re-clamp: an end-edge hit near frame 0 can pull the start negative,
+        # and move mode assigns this result directly.
+        return max(0.0, value + best)
+
+    def _aligned_edges(self) -> list:
+        """Frames of this drag that currently sit on an existing key."""
+        sq = self._timeline.parent_sequencer
+        if not self._align_times:
+            return []
+        if self._drag_mode == "resize_right":
+            probes = [self._data.start + self._data.duration]
+        elif self._drag_mode == "resize_left":
+            probes = [self._data.start]
+        else:  # a move aligns on either edge
+            probes = [self._data.start]
+            if self._data.duration > 0:
+                probes.append(self._data.start + self._data.duration)
+        hits = []
+        for t in probes:
+            hit = sq.nearest_alignment(t, self._align_times)
+            if hit is None:
+                continue
+            if sq.snap_to_keys and abs(hit - t) > 1e-6:
+                # Snapping is ON but this edge did not capture (the other
+                # edge won, or the clamp overrode it) — drawing a guide here
+                # would claim an alignment the release won't deliver.
+                continue
+            hits.append(hit)
+        return hits
+
+    def _refresh_align_guides(self) -> None:
+        hits = self._aligned_edges()
+        self._timeline.parent_sequencer.set_snap_guides(hits)
+        self._align_hit = bool(hits)
 
     def _is_drag_active(self) -> bool:
         return self._drag_mode is not None
 
     def _restore_drag_state(self) -> None:
+        self._timeline.parent_sequencer.clear_snap_guides()
+        self._align_hit = False
+        self._align_times = None
         self._data.start = self._drag_origin_start
         self._data.duration = self._drag_origin_duration
         for peer, origin_start in self._drag_peers:
@@ -662,7 +903,44 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         self._sync_geometry()
         self.unsetCursor()
 
+    @staticmethod
+    def _collision_free_order(landings: list) -> list:
+        """Order a group's landings so applying them ONE AT A TIME is safe.
+
+        ``landings`` is ``[(origin_start, clip_id, new_start), ...]``; the
+        return is the ``[(clip_id, new_start), ...]`` payload of
+        :signal:`clips_batch_moved`.
+
+        A consumer commits a batch clip by clip, and it addresses each clip's
+        content by the time range it USED to occupy -- that is the only handle
+        it has on "which keys belong to this clip".  So the order matters: if
+        one clip lands on a range a still-pending clip has not left yet, the
+        pending clip's own commit grabs the arrival too and drags it a second
+        time.  The group comes out of the gesture deformed -- clips stacked on
+        top of each other, keys at double the delta -- which is what a
+        multi-select drag looked like whenever the travel distance exceeded the
+        space between two of its clips.
+
+        The gesture is a rigid translation, so one rule is enough: move the
+        clip that vacates space FIRST.  Travelling left, that is the earliest;
+        travelling right, the latest.  Every landing then falls on timeline
+        the group has already left.  (Ordering alone fixes it -- no consumer
+        needs to know why, and both DCC adapters inherit the fix.)
+        """
+        if not landings:
+            return []
+        # One delta for the whole group, so any member's sign will do; take
+        # the largest to stay right if a consumer ever emits a mixed batch.
+        lead = max(landings, key=lambda x: abs(x[2] - x[0]))
+        forward = (lead[2] - lead[0]) > 0
+        ordered = sorted(landings, key=lambda x: x[0], reverse=forward)
+        return [(cid, new_start) for _origin, cid, new_start in ordered]
+
     def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton and not self._drag_mode:
+            # A press this item took but never dragged (locked clip, sub-row,
+            # or a plain click on the body) still has to finish its selection.
+            self._release_selection(self._press_modifiers, False)
         if event.button() == QtCore.Qt.LeftButton and self._drag_mode:
             mode = self._drag_mode
             peers = self._drag_peers
@@ -677,6 +955,9 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 peer._drag_mode = None
                 peer.update()
             widget = self._timeline.parent_sequencer
+            widget.clear_snap_guides()
+            self._align_hit = False
+            self._align_times = None
             # Only emit when something actually changed — an edge/body
             # click without movement otherwise fires clip_resized /
             # clip_moved with unchanged values and consumers pay a full
@@ -685,13 +966,31 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 abs(self._data.start - self._drag_origin_start) > 0.01
                 or abs(self._data.duration - self._drag_origin_duration) > 0.01
             )
+            # A press that never moved was a CLICK, so it gets the click's
+            # selection semantics; a real drag leaves the group intact.
+            self._release_selection(self._press_modifiers, moved=changed)
             if changed:
+                # The consumer typically rebuilds from here, which retires
+                # this very item while Qt is still inside the release --
+                # safe because SequencerWidget routes removals through
+                # ``ItemRetirement.retire`` (see _draggable), which keeps the object
+                # alive for one more event-loop pass.
                 if mode == "move":
                     if peers:
-                        moves = [(self._data.clip_id, self._data.start)]
-                        for peer, _ in peers:
-                            moves.append((peer._data.clip_id, peer._data.start))
-                        widget.clips_batch_moved.emit(moves)
+                        landings = [
+                            (
+                                self._drag_origin_start,
+                                self._data.clip_id,
+                                self._data.start,
+                            )
+                        ]
+                        landings.extend(
+                            (origin, peer._data.clip_id, peer._data.start)
+                            for peer, origin in peers
+                        )
+                        widget.clips_batch_moved.emit(
+                            self._collision_free_order(landings)
+                        )
                     else:
                         widget.clip_moved.emit(self._data.clip_id, self._data.start)
                 else:
@@ -742,6 +1041,12 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         widget.clip_menu_requested.emit(menu, self._data.clip_id)
 
         chosen = menu.exec_(MenuUtils._menu_exec_pos(event))
+        if self.scene() is None:
+            # A rebuild (keyframe debounce, store event, undo callback) ran
+            # inside the menu's nested event loop and retired this item —
+            # the ids below are stale and acting on them would no-op on the
+            # wrong clip or raise.
+            return
         if chosen == action_lock:
             new_locked = not all_locked
             # Apply visual lock state to every selected clip.
@@ -778,6 +1083,8 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
 
     def _start_inline_rename(self):
         """Spawn a QLineEdit proxy widget over the clip for inline renaming."""
+        if self.scene() is None:
+            return  # retired by a rebuild while the caller's menu was open
         rect = self.rect()
         edit = QtWidgets.QLineEdit()
         edit.setText(self._data.label)
@@ -817,18 +1124,26 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             return float(self._data.start + self._data.duration)
         return float(self._data.start)
 
+    def _drag_tooltip_color(self) -> str:
+        """Readout colour — the guide colour while the drag is aligned."""
+        sq = self._timeline.parent_sequencer
+        if self._align_hit and sq.snap_guides_enabled:
+            return sq.SNAP_GUIDE_COLOR
+        return self._resolve_color().lighter(160).name()
+
     def _show_clip_drag_tooltip(self, scene_pos):
-        color = self._resolve_color().lighter(160).name()
         self._drag_tooltip.show(
             self.scene(),
             scene_pos,
             label=FrameTooltip.format_frame(self._clip_drag_frame()),
-            color=color,
+            color=self._drag_tooltip_color(),
         )
 
     def _update_clip_drag_tooltip(self, scene_pos):
         self._drag_tooltip.update(
-            scene_pos, label=FrameTooltip.format_frame(self._clip_drag_frame())
+            scene_pos,
+            label=FrameTooltip.format_frame(self._clip_drag_frame()),
+            color=self._drag_tooltip_color(),
         )
 
     # -- utilities ----------------------------------------------------------

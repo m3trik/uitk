@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """Ruler item for the timeline header area."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
@@ -10,7 +11,11 @@ from qtpy import QtWidgets, QtGui, QtCore
 if TYPE_CHECKING:
     from uitk.widgets.sequencer._timeline import TimelineView
 
-from uitk.widgets.sequencer._data import _RULER_HEIGHT
+from uitk.widgets.sequencer._data import (
+    SELECTED_ACCENT as _SELECTED_ACCENT,
+    _RULER_HEIGHT,
+    _SHOT_LANE_HEIGHT,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +35,10 @@ class RulerItem(QtWidgets.QGraphicsItem):
     def __init__(self, timeline: "TimelineView"):
         super().__init__()
         self._timeline = timeline
-        self._shot_blocks: list = []  # [{name, start, end, active}, ...]
+        # [{name, start, end, active, id?}, ...] -- ``active`` marks the
+        # selected shot; an optional ``id`` is carried through untouched so a
+        # consumer can get its own identifier back.
+        self._shot_blocks: list = []
         # Horizontal extent the ruler paints across; kept in sync with the
         # scene width by the view's ``_update_scene_rect``.
         self._content_width = self._MIN_WIDTH
@@ -45,6 +53,13 @@ class RulerItem(QtWidgets.QGraphicsItem):
     def clear_shot_blocks(self) -> None:
         self._shot_blocks.clear()
         self.update()
+
+    def selected_block(self) -> Optional[dict]:
+        """The block marked ``active``, or ``None`` when nothing is selected."""
+        for blk in self._shot_blocks:
+            if blk.get("active"):
+                return blk
+        return None
 
     def shot_block_at(self, time: float) -> Optional[dict]:
         """Return the shot block containing *time*, or ``None``.
@@ -122,34 +137,72 @@ class RulerItem(QtWidgets.QGraphicsItem):
             )
             t += interval
 
-        # -- shot name labels at bottom of ruler ----------------------------
+        # -- shot lane at the bottom of the ruler ---------------------------
         if self._shot_blocks:
-            sorted_blocks = sorted(self._shot_blocks, key=lambda b: b["start"])
+            self._paint_shot_lane(painter, vis_left, vis_right)
 
-            label_font = QtGui.QFont(painter.font())
-            label_font.setPointSize(7)
-            label_font.setBold(True)
-            painter.setFont(label_font)
-            metrics = QtGui.QFontMetrics(label_font)
+    def _paint_shot_lane(self, painter, vis_left: float, vis_right: float) -> None:
+        """Draw one band per shot, with the selected one clearly marked.
 
-            for blk in sorted_blocks:
-                bx0 = tl.time_to_x(blk["start"])
-                bx1 = tl.time_to_x(blk["end"])
-                if bx1 < vis_left or bx0 > vis_right:
-                    continue
-                name = blk.get("name", "")
-                if not name:
-                    continue
-                s = round(blk["start"])
-                e = round(blk["end"])
-                label = f"{name}  {s}-{e}  {e - s}f"
-                avail = max(0, int(bx1 - bx0) - 6)
-                label = metrics.elidedText(label, QtCore.Qt.ElideRight, avail)
-                is_active = blk.get("active", False)
-                tc = QtGui.QColor("#FFFFFF" if is_active else "#CCCCCC")
-                tc.setAlpha(220 if is_active else 160)
-                painter.setPen(tc)
-                painter.drawText(QtCore.QPointF(bx0 + 3, _RULER_HEIGHT - 2), label)
+        Selection has to read at a glance without turning the ruler into a
+        second timeline, so it is carried by three quiet cues that agree with
+        each other: a tinted band, a solid rule along the top of the lane, and
+        bright ticks at the shot's two bounds.  Unselected shots get a flat
+        dim band and a hairline separator -- enough to show the layout and
+        nothing more.
+        """
+        tl = self._timeline
+        top = _RULER_HEIGHT - _SHOT_LANE_HEIGHT
+
+        label_font = QtGui.QFont(painter.font())
+        label_font.setPointSize(7)
+        label_font.setBold(True)
+        painter.setFont(label_font)
+        metrics = QtGui.QFontMetrics(label_font)
+
+        accent = QtGui.QColor(_SELECTED_ACCENT)
+        for blk in sorted(self._shot_blocks, key=lambda b: b["start"]):
+            bx0 = tl.time_to_x(blk["start"])
+            bx1 = tl.time_to_x(blk["end"])
+            if bx1 < vis_left or bx0 > vis_right:
+                continue
+            is_active = bool(blk.get("active", False))
+            band = QtCore.QRectF(bx0, top, max(1.0, bx1 - bx0), _SHOT_LANE_HEIGHT)
+
+            fill = QtGui.QColor(accent) if is_active else QtGui.QColor("#FFFFFF")
+            fill.setAlpha(70 if is_active else 12)
+            painter.fillRect(band, fill)
+
+            painter.setPen(QtCore.Qt.NoPen)
+            if is_active:
+                # The rule says WHICH lane is selected; the ticks say exactly
+                # where it starts and ends -- the band alone blurs at low zoom.
+                rule = QtGui.QColor(accent)
+                rule.setAlpha(230)
+                painter.fillRect(QtCore.QRectF(bx0, top, band.width(), 2.0), rule)
+                for x in (bx0, bx1 - 1.0):
+                    painter.fillRect(
+                        QtCore.QRectF(x, top, 1.0, _SHOT_LANE_HEIGHT), rule
+                    )
+            else:
+                sep = QtGui.QColor("#000000")
+                sep.setAlpha(90)
+                painter.fillRect(
+                    QtCore.QRectF(bx1 - 1.0, top, 1.0, _SHOT_LANE_HEIGHT), sep
+                )
+
+            name = blk.get("name", "")
+            if not name:
+                continue
+            s = round(blk["start"])
+            e = round(blk["end"])
+            label = f"{name}  {s}-{e}  {e - s}f"
+            avail = max(0, int(bx1 - bx0) - 6)
+            label = metrics.elidedText(label, QtCore.Qt.ElideRight, avail)
+            tc = QtGui.QColor("#FFFFFF" if is_active else "#CCCCCC")
+            tc.setAlpha(240 if is_active else 150)
+            painter.setPen(tc)
+            painter.drawText(QtCore.QPointF(bx0 + 3, _RULER_HEIGHT - 2), label)
 
     @staticmethod
     def _nice_interval(raw: float) -> int:

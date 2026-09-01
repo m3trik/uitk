@@ -185,6 +185,9 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         #: companions sharing its cell. What a subclass keeping rows in step
         #: (FormPanel's ``enabled_by``) reads.
         self._row_widgets: Dict[QtWidgets.QWidget, list] = {}
+        #: Every row caption, in add order -- the label column, which is
+        #: sized as one (see :meth:`_sync_caption_widths`).
+        self._captions: list = []
         #: objectNames :meth:`add` exposed as attributes — un-exposed by
         #: :meth:`clear_rows`, so a rebuilt panel holds no dead wrappers.
         self._exposed_names = set()
@@ -240,6 +243,12 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
             stylesheet_cls = type(self.style)
             if self not in stylesheet_cls._widget_configs:
                 self.style.set(theme="dark")
+
+        # Re-measured HERE as well as at add time: the theme lands on first
+        # show, and a caption measured before it is missing the plate's
+        # padding -- captions floored to that hint would stop just short of
+        # the column they are meant to fill.
+        self._sync_caption_widths()
 
         if not self._size_initialized:
             self._size_initialized = True
@@ -466,6 +475,7 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         hint: Optional[str] = None,
         tooltip: Optional[str] = None,
         companions=(),
+        label_align=None,
         **kwargs,
     ) -> Union[QtWidgets.QWidget, list]:
         """Add a widget to the body the way ``Menu.add`` adds an item.
@@ -489,6 +499,12 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
                 ``label``/``hint`` composition.
             companions: Widgets that share the field cell (a Browse button
                 beside a path field) and grey out with it.
+            label_align: Where the caption's TEXT sits inside the column its
+                plate fills — ``"left"`` (default), ``"right"``, ``"center"``,
+                or a Qt alignment. Right for a caption that reads as a
+                lead-in to the control beside it (``"Operation:"``); left
+                where the text itself lines up down the column (a leading
+                marker, an icon).
             **kwargs: Applied through :meth:`AttributesMixin.set_attributes`
                 — setter-style (``setText=``, ``setObjectName=``,
                 ``setEnabled=``) and any signal name to connect
@@ -515,6 +531,7 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
                     hint=hint,
                     tooltip=tooltip,
                     companions=companions,
+                    label_align=label_align,
                     **kwargs,
                 )
                 for item in x
@@ -522,7 +539,12 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         widget = self._build_widget(x)
         self.set_attributes(widget, **kwargs)
         self._add_row(
-            widget, label=label, hint=hint, tooltip=tooltip, companions=companions
+            widget,
+            label=label,
+            hint=hint,
+            tooltip=tooltip,
+            companions=companions,
+            label_align=label_align,
         )
         self._expose_as_attribute(widget)
         return widget
@@ -586,8 +608,41 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
             return ""
         return TooltipFormat.fmt(title=str(title) if title else None, body=str(hint))
 
+    #: ``label_align`` spellings — the caption's TEXT inside the plate that
+    #: fills the label column (see :meth:`_sync_caption_widths`). Vertical
+    #: centering is never optional: a caption is height-matched to the
+    #: control it names.
+    _LABEL_ALIGNMENTS = {
+        "left": QtCore.Qt.AlignLeft,
+        "right": QtCore.Qt.AlignRight,
+        "center": QtCore.Qt.AlignHCenter,
+    }
+
+    @classmethod
+    def _label_alignment(cls, align):
+        """*align* as a Qt alignment — a name, a flag, or None for the default."""
+        if align is None:
+            return QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
+        if isinstance(align, str):
+            try:
+                flag = cls._LABEL_ALIGNMENTS[align.lower()]
+            except KeyError:
+                raise ValueError(
+                    f"label_align must be one of {sorted(cls._LABEL_ALIGNMENTS)} "
+                    f"or a Qt alignment; got {align!r}"
+                ) from None
+        else:
+            flag = align
+        return flag | QtCore.Qt.AlignVCenter
+
     def _add_row(
-        self, widget, label=None, hint=None, tooltip=None, companions=()
+        self,
+        widget,
+        label=None,
+        hint=None,
+        tooltip=None,
+        companions=(),
+        label_align=None,
     ) -> Optional[QtWidgets.QLabel]:
         """Place *widget* as a form row; returns its caption label, if any.
 
@@ -605,6 +660,7 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         if label:
             caption = QtWidgets.QLabel(str(label))
             caption.setProperty("caption", True)
+            caption.setAlignment(self._label_alignment(label_align))
             font = caption.font()
             font.setBold(True)
             caption.setFont(font)
@@ -620,7 +676,12 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         if companions:
             cell = QtWidgets.QHBoxLayout()
             cell.setSpacing(2)
-            cell.addWidget(widget)
+            # The row's WIDTH belongs to the control it names: companions ride
+            # at their own hint (a button, a tick), and everything left over
+            # goes to the field. Without the stretch a companion carrying a
+            # long caption simply outbids the control -- a Copy/Move combo
+            # crushed to a few pixels by the tick box beside it.
+            cell.addWidget(widget, 1)
             for companion in companions:
                 cell.addWidget(companion)
             field = cell
@@ -632,7 +693,42 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         else:
             self._rows_layout.addRow(field)
         self._row_widgets[widget] = [w for w in (caption, *companions) if w is not None]
+        if caption is not None:
+            self._captions.append(caption)
+            self._sync_caption_widths()
         return caption
+
+    def _sync_caption_widths(self) -> None:
+        """Floor every caption at the widest one: the label column, filled.
+
+        QFormLayout sizes a label to its OWN hint and aligns it inside the
+        label column, so every caption but the widest stops short of the
+        control it names -- and a caption carries an opaque PLATE, so that
+        gap is not whitespace, it is a ragged edge down the middle of the
+        form. Flooring them all at the widest hint fills the column the
+        layout already reserved: the plates end on one line, flush against
+        the field column, and nothing moves (the floor is the column's own
+        width, so no field loses a pixel).
+
+        Stateless: each caption's floor is dropped before it is measured, so
+        a re-sync after the theme lands (or after a row is added) measures
+        the TEXT rather than the floor the last pass set.
+        """
+        hints = []
+        live = []
+        for caption in self._captions:
+            try:  # a row rebuilt behind us leaves a deleted C++ wrapper here
+                caption.setMinimumWidth(0)
+                hints.append(caption.sizeHint().width())
+            except RuntimeError:
+                continue
+            live.append(caption)
+        self._captions = live
+        if not live:
+            return
+        column = max(hints)
+        for caption in live:
+            caption.setMinimumWidth(column)
 
     def _expose_as_attribute(self, widget: QtWidgets.QWidget) -> None:
         """Expose a widget as ``self.<objectName>`` — Menu's rule, tightened.
@@ -672,6 +768,7 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
             self.__dict__.pop(name, None)
         self._exposed_names.clear()
         self._row_widgets.clear()
+        self._captions.clear()
         while self._rows_layout.count():
             item = self._rows_layout.takeAt(0)
             widget = item.widget()

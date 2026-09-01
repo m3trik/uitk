@@ -716,7 +716,8 @@ class TestMainWindowGeometry(QtBaseTestCase):
         # The deliberately-expanded height is NOT trimmed back to content.
         self.assertEqual(window2.width(), 500)
         self.assertEqual(
-            window2.height(), 600,
+            window2.height(),
+            600,
             f"Restored height must survive fit: height={window2.height()} "
             f"(content min={window2.minimumSizeHint().height()})",
         )
@@ -755,7 +756,8 @@ class TestMainWindowGeometry(QtBaseTestCase):
 
         self.assertEqual(window2.width(), 500)
         self.assertLessEqual(
-            window2.height(), 44,
+            window2.height(),
+            44,
             f"Fixed-height content must not restore into dead space: "
             f"height={window2.height()}",
         )
@@ -764,7 +766,8 @@ class TestMainWindowGeometry(QtBaseTestCase):
         # (the platform may honor layout hints a live WM ignores), so assert
         # the explicit constraint, which is what live Windows/DCCs obey.
         self.assertLess(
-            window2.maximumHeight(), 16777215,
+            window2.maximumHeight(),
+            16777215,
             "content-max lock must be applied on first show, not on grip press",
         )
 
@@ -791,7 +794,8 @@ class TestMainWindowGeometry(QtBaseTestCase):
 
         self.assertLess(window.height(), 600)
         self.assertLessEqual(
-            abs(window.height() - window.minimumSizeHint().height()), 2,
+            abs(window.height() - window.minimumSizeHint().height()),
+            2,
             f"Height should snap to content: height={window.height()}, "
             f"minHint={window.minimumSizeHint().height()}",
         )
@@ -842,11 +846,13 @@ class TestMainWindowGeometry(QtBaseTestCase):
         QtWidgets.QApplication.processEvents()
 
         self.assertGreaterEqual(
-            opted_out.width(), 400,
+            opted_out.width(),
+            400,
             f"opt-out window shrunk to saved geometry: {opted_out.width()}x{opted_out.height()}",
         )
         self.assertGreaterEqual(
-            opted_out.height(), 300,
+            opted_out.height(),
+            300,
             f"opt-out window shrunk to saved geometry: {opted_out.width()}x{opted_out.height()}",
         )
 
@@ -897,7 +903,8 @@ class TestMainWindowGeometry(QtBaseTestCase):
 
         after = opted_out.settings.getByteArray("window_geometry")
         self.assertEqual(
-            bytes(after), bytes(seeded),
+            bytes(after),
+            bytes(seeded),
             "restore_window_size=False window overwrote saved geometry on hide",
         )
 
@@ -978,7 +985,7 @@ class TestMainWindowFooter(QtBaseTestCase):
         from uitk.widgets.mainWindow import MainWindow
 
         central = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(central)
+        QtWidgets.QVBoxLayout(central)
         window = self.track_widget(
             MainWindow("TestWindow", self.sb, central_widget=central, add_footer=True)
         )
@@ -1875,6 +1882,105 @@ class TestRunWhenReady(QtBaseTestCase):
         self.assertEqual(
             calls, [1], "callback must run immediately once the UI is shown"
         )
+
+
+class TestRequestHideTapToPin(QtBaseTestCase):
+    """``request_hide`` gives an opted-in header first refusal on the request.
+
+    Feature: one activation key covers both intents. Keep holding it and the
+    release dismisses the window it opened (peek); let go right after the
+    window appears and the window pins open instead (open-to-use). The split
+    is timing only -- how long the window had been visible when the hide
+    request landed -- because the key state is not observable from the window.
+    Added: 2026-08-27
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+
+    def _window(self, **header_kwargs):
+        """A shown MainWindow whose header carries a pin button."""
+        from uitk.widgets.mainWindow import MainWindow
+        from uitk.widgets.header import Header
+
+        central = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(central)
+        header = Header(config_buttons=["pin"], **header_kwargs)
+        header.setObjectName("header")
+        layout.addWidget(header)
+
+        window = self.track_widget(
+            MainWindow("TapToPin", self.sb, central_widget=central)
+        )
+        window.show()
+        QtWidgets.QApplication.processEvents()
+        return window, header
+
+    def test_tap_pins_instead_of_hiding(self):
+        """The feature: a hide arriving on the heels of the show keeps the
+        window, pinned."""
+        window, header = self._window(pin_on_tap=True)
+        self.assertFalse(window.request_hide(), "the request must be refused")
+        self.assertTrue(window.pinned)
+        self.assertTrue(header.pinned, "the pin button must show the new state")
+        self.assertTrue(window.isVisible())
+
+    def test_hold_still_hides(self):
+        """Past the window, the same request dismisses as it always has."""
+        from qtpy.QtTest import QTest
+        from uitk.widgets.header import Header
+
+        window, _ = self._window(pin_on_tap=True)
+        QTest.qWait(Header.PIN_ON_TAP_MS + 50)
+        self.assertTrue(window.request_hide())
+        self.assertFalse(window.pinned)
+        self.assertFalse(window.isVisible())
+
+    def test_opt_out_hides_immediately(self):
+        """Off (the default): timing is irrelevant, every request dismisses."""
+        window, _ = self._window(pin_on_tap=False)
+        self.assertTrue(window.request_hide())
+        self.assertFalse(window.isVisible())
+
+    def test_second_request_is_a_no_op(self):
+        """Both auto-hide paths fire per key release (the lifecycle signal and
+        the marking menu's own sweep); the pin absorbs the follow-up."""
+        window, _ = self._window(pin_on_tap=True)
+        window.request_hide()
+        self.assertFalse(window.request_hide())
+        self.assertTrue(window.isVisible())
+
+    def test_never_shown_window_is_not_a_tap(self):
+        """No show, no clock -- a hide request must not pin a window that was
+        never on screen."""
+        from uitk.widgets.mainWindow import MainWindow
+        from uitk.widgets.header import Header
+
+        central = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(central)
+        header = Header(config_buttons=["pin"], pin_on_tap=True)
+        header.setObjectName("header")
+        layout.addWidget(header)
+        window = self.track_widget(
+            MainWindow("TapToPinUnshown", self.sb, central_widget=central)
+        )
+        self.assertEqual(window.visible_duration_ms(), -1)
+        self.assertFalse(header.claim_hide_as_tap(window.visible_duration_ms()))
+
+    def test_reshow_restarts_the_clock(self):
+        """A window hidden and re-shown gets a fresh tap window -- otherwise
+        only the first launch of a session could be kept."""
+        from qtpy.QtTest import QTest
+        from uitk.widgets.header import Header
+
+        window, _ = self._window(pin_on_tap=True)
+        QTest.qWait(Header.PIN_ON_TAP_MS + 50)
+        self.assertTrue(window.request_hide())
+        window.show()
+        QtWidgets.QApplication.processEvents()
+        self.assertFalse(window.request_hide())
+        self.assertTrue(window.pinned)
 
 
 # -----------------------------------------------------------------------------

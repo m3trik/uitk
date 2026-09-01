@@ -20,6 +20,7 @@ standalone-window setup, which would strip the owner's hosting invariants
 ``__init__`` is bypassed for the unit cases (it discovers slots/UIs); each
 test provides only the ``sb`` surface its method under test touches.
 """
+
 import os
 import tempfile
 import types
@@ -154,9 +155,7 @@ class TestUiHandlerLaunchDelegation(unittest.TestCase):
 
     def test_handlers_without_claim_surface_are_skipped(self):
         """Handlers lacking hosts_ui or show (the common case) never match."""
-        self.handler.sb.handlers.external = types.SimpleNamespace(
-            launch=lambda n: None
-        )
+        self.handler.sb.handlers.external = types.SimpleNamespace(launch=lambda n: None)
         self.assertIsNone(self.handler.hosting_handler("plain_tool"))
 
 
@@ -412,13 +411,86 @@ class TestPinClickMode(unittest.TestCase):
         from uitk.widgets.header import Header
 
         # Handler init (in setUp) seeded from the persisted preference.
-        self.assertEqual(
-            Header._pin_on_drag_only_default, self.handler.pin_click_hides
-        )
+        self.assertEqual(Header._pin_on_drag_only_default, self.handler.pin_click_hides)
         self.handler.pin_click_hides = False
         self.assertFalse(Header._pin_on_drag_only_default)
         self.handler.pin_click_hides = True
         self.assertTrue(Header._pin_on_drag_only_default)
+
+
+class TestUiHandlerPinOnTap(unittest.TestCase):
+    """``UiHandler.pin_on_tap`` — the tap-to-pin preference.
+
+    Sibling of the pin-click preference above, and the same one-channel
+    design: persisted under the handler's config branch and published as
+    ``Header``'s process-wide default, so it reaches every default-following
+    header without a registry of live ones. Off by default (the shipped
+    behavior is that every auto-hide request dismisses), and an explicitly
+    assigned ``Header.pin_on_tap`` outranks it.
+    Added: 2026-08-27
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from conftest import setup_qt_application
+
+        cls.app = setup_qt_application()
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        _write_ui(os.path.join(self.tmp.name, "tool.ui"), "tool")
+        from uitk.switchboard import Switchboard
+
+        self.sb = Switchboard(ui_source=self.tmp.name, log_level="WARNING")
+        self.handler = self.sb.handlers.ui
+
+    def tearDown(self):
+        from qtpy import QtCore, QtWidgets
+
+        # QSettings is process-wide (sandboxed, but shared across tests) —
+        # put the preference back so a flip here can't leak sideways.
+        self.handler.pin_on_tap = UiHandler.PIN_ON_TAP_DEFAULT
+        self.sb.deleteLater()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.tmp.cleanup()
+
+    def test_default_is_off(self):
+        """Opt-in: the shipped auto-hide behavior is unchanged until asked."""
+        self.assertFalse(self.handler.pin_on_tap)
+
+    def test_setter_persists_to_config(self):
+        self.handler.pin_on_tap = True
+        self.assertTrue(self.handler.pin_on_tap)
+        self.assertEqual(
+            self.sb.configurable.branch("ui").value(UiHandler.PIN_ON_TAP_KEY),
+            True,
+        )
+
+    def test_preference_seeds_header_class_default(self):
+        """The one channel: seeded at handler init, republished on flip."""
+        from uitk.widgets.header import Header
+
+        self.assertEqual(Header._pin_on_tap_default, self.handler.pin_on_tap)
+        self.handler.pin_on_tap = True
+        self.assertTrue(Header._pin_on_tap_default)
+        self.handler.pin_on_tap = False
+        self.assertFalse(Header._pin_on_tap_default)
+
+    def test_explicit_header_choice_wins_over_preference(self):
+        """A deliberate per-tool assignment survives a preference flip — the
+        preference is a default, not a mandate."""
+        from uitk.widgets.header import Header
+
+        header = Header(config_buttons=["pin"], pin_on_tap=False)
+        try:
+            self.handler.pin_on_tap = True
+            self.assertFalse(header.pin_on_tap)
+            header.pin_on_tap = None
+            self.assertTrue(header.pin_on_tap, "None re-follows the default")
+        finally:
+            header.deleteLater()
 
 
 class TestSetupLifecycleIdempotent(unittest.TestCase):
@@ -560,9 +632,7 @@ class TestPositionWindowScreen(unittest.TestCase):
         win = _FakePositionWin((200, 100))
 
         handler = object.__new__(UiHandler)
-        with mock.patch.object(
-            QtWidgets.QApplication, "primaryScreen", lambda: screen
-        ):
+        with mock.patch.object(QtWidgets.QApplication, "primaryScreen", lambda: screen):
             handler._position_window(win, "screen")
 
         expected = screen_geo.center() - win.rect().center()

@@ -103,6 +103,12 @@ _HANDLE_WIDTH = 5  # pixels from edge that activates resize cursor
 _MIN_CLIP_DURATION = 1.0
 _MIN_POINT_CLIP_WIDTH = 4  # minimum pixel width for zero-duration clips
 
+#: The one accent every "this is selected" cue is drawn in -- the shot band in
+#: the ruler, the range highlight over the tracks, and a selected clip's
+#: outline.  Kept here rather than in any one painter so the three agree: three
+#: separate blues would read as three unrelated decorations.
+SELECTED_ACCENT = "#5A8CDC"
+
 # Attribute color configuration
 _COMMON_ATTRIBUTES = [
     "translateX",

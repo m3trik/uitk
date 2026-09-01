@@ -44,7 +44,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.3.96"
+__version__ = "1.3.97"
 
 
 DEFAULT_INCLUDE = {
@@ -84,6 +84,15 @@ DEFAULT_INCLUDE = {
         "KindHandler",
         "KindFactory",
     ],
+    # The rest of the bridge surface a CONSUMER needs, mapped per module so the
+    # laziness ``uitk.bridge`` was built for survives the promotion: reaching
+    # ``Parameters`` must not charge the caller ``bridge.slots`` and its widget
+    # tree. Here rather than left to ``from uitk.bridge import ...`` because a
+    # tentacle slot module may not deep-import (``test_dcc_invariants``
+    # .TestSlotImportDiscipline) -- it reaches uitk through ``self.sb``, which
+    # resolves exactly this namespace.
+    "bridge.parameters": "Parameters",
+    "bridge.slots": "BridgeSlotsBase",
     "widgets.checkBox": "CheckBox",
     "widgets.collapsableGroup": "CollapsableGroup",
     "widgets.colorSwatch": "ColorSwatch",

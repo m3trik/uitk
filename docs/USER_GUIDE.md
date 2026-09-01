@@ -330,6 +330,19 @@ sb.enable_when(ui, "cmb_out", ["chk_a", "cmb_b"], lambda a, b: a or bool(b))
 
 Range shorthand (`"chk001-3"` → `chk001`–`chk003`) keeps only letters and digits — a `chk_001`-style underscore is dropped during expansion, so it only works for names without separators.
 
+Two siblings share the same machinery (order-independence, idempotence, `refresh_dependencies`) and differ only in what they write — `text_from` sets a widget's **text**, `value_from` its **value**:
+
+```python
+# say what this will do
+sb.text_from(menu, btn, "s003", "Crease {}".format)
+
+# say WHICH preset you are on — Custom once a dial leaves the tier
+sb.value_from(ui, "cmb_quality", ["cmb_resolution", "spn_samples"],
+              self._preset_for_dials)
+```
+
+A `value_from` resolver returning `None` declines (the target is left alone), and the write is re-entrancy-fenced, so a target may be its own source.
+
 ---
 
 ## 10. Persistent configuration

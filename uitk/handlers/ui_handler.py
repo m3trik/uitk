@@ -57,6 +57,17 @@ class UiHandler(BaseHandler):
     PIN_CLICK_HIDES_KEY = "pin_click_hides"
     PIN_CLICK_HIDES_DEFAULT = True
 
+    # Tap-to-pin for every transient window this handler styles:
+    #   True  → releasing the activation key right after the window appears
+    #           pins it open (``Header.claim_hide_as_tap``); keep holding and
+    #           the release still dismisses it, so ONE key covers both
+    #           "peek at this" and "open this".
+    #   False → every auto-hide request dismisses (the shipped behavior).
+    # Persisted alongside PIN_CLICK_HIDES_KEY; the UI Browser's "Tap opens,
+    # hold peeks" checkbox is the user-facing switch.
+    PIN_ON_TAP_KEY = "pin_on_tap"
+    PIN_ON_TAP_DEFAULT = False
+
     # Default styling configuration
     DEFAULT_STYLE: Dict[str, Any] = {
         "attributes": {"WA_TranslucentBackground": True},
@@ -73,6 +84,7 @@ class UiHandler(BaseHandler):
         "remember_size": True,
         "style": DEFAULT_STYLE,
         PIN_CLICK_HIDES_KEY: PIN_CLICK_HIDES_DEFAULT,
+        PIN_ON_TAP_KEY: PIN_ON_TAP_DEFAULT,
         WINDOW_PERSISTENCE_KEY: WINDOW_PERSISTENCE_DEFAULT,
     }
 
@@ -109,6 +121,7 @@ class UiHandler(BaseHandler):
         # handler never styles — Menu chrome (option-box menus, persistent
         # mode) and .ui-embedded headers all follow Header's class default.
         self._seed_pin_click_default()
+        self._seed_pin_on_tap_default()
 
         # 1. Register properties from the manual registry (Overrides)
         self._register_manual_overrides()
@@ -386,6 +399,38 @@ class UiHandler(BaseHandler):
         Header.set_default_pin_on_drag_only(
             self.pin_click_hides if value is None else value
         )
+
+    # ── Tap-to-pin ────────────────────────────────────────────────────────
+
+    @property
+    def pin_on_tap(self) -> bool:
+        """Whether tapping the activation key pins a window open (see the class
+        constants).
+
+        Persisted preference; reaches every header — including chrome this
+        handler never styles — through ``Header``'s process-wide default
+        (:meth:`_seed_pin_on_tap_default`).
+        """
+        return bool(self.config.value(self.PIN_ON_TAP_KEY, self.PIN_ON_TAP_DEFAULT))
+
+    @pin_on_tap.setter
+    def pin_on_tap(self, value) -> None:
+        value = bool(value)
+        self.config.setValue(self.PIN_ON_TAP_KEY, value)
+        # Live-apply, same contract as pin_click_hides: headers resolve the
+        # behavior at hide-request time, so open windows adopt the flip on
+        # their next auto-hide. A header with an explicitly assigned
+        # ``pin_on_tap`` keeps it — the preference must not clobber intent.
+        self._seed_pin_on_tap_default(value)
+
+    def _seed_pin_on_tap_default(self, value: Optional[bool] = None) -> None:
+        """Publish the preference as ``Header``'s process-wide default.
+
+        Lazy import keeps handler import free of widget modules.
+        """
+        from uitk.widgets.header import Header
+
+        Header.set_default_pin_on_tap(self.pin_on_tap if value is None else value)
 
     # ── Window persistence (pin vs hide chrome) ──────────────────────────
 

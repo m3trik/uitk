@@ -1141,5 +1141,62 @@ class EditCommitPersistsTypedText(QtBaseTestCase):
         self.assertEqual(fired, [])
 
 
+class PrefixOnlyFormatsWhatTheCallerOmitted(QtBaseTestCase):
+    """``add(..., prefix=)`` may correct data/labels it INVENTED, never supplied ones.
+
+    Two corrections ride on ``prefix``: the raw token is title-cased for display,
+    and it is stored as the item's data. Both exist for the convenience form
+    ``add(["ease_in", ...], prefix=...)``, where the caller gave labels only.
+    Keyed off ``data is None`` they also fired on explicit ``(label, None)``
+    pairs -- so a deliberate "no choice" row came back from ``currentData()`` as
+    its own label, and a caller testing for None acted on a fake selection.
+    """
+
+    def test_an_explicit_none_survives_the_prefix_form(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.add(
+            [("Keep Current Type", None), ("Stingray PBS", "StingrayPBS")],
+            prefix="Shader:",
+        )
+        self.assertIsNone(combo.itemData(0), "explicit None was rewritten to the label")
+        self.assertEqual(combo.itemData(1), "StingrayPBS")
+
+    def test_a_supplied_label_is_not_title_cased(self):
+        """The caller already chose the display text; ``.title()`` only mangles it."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.add([("Stingray PBS", 1), ("q95", 2), ("R (inv)", 3)], prefix="Fmt:")
+        shown = [combo.itemText(i).split("\t")[-1] for i in range(combo.count())]
+        self.assertEqual(shown, ["Stingray PBS", "q95", "R (inv)"])
+
+    def test_the_convenience_form_still_formats_and_stores_the_token(self):
+        """The behaviour the substitution exists for must be untouched."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.add(["ease_in", "ease_out"], prefix="Interpolation:")
+        self.assertEqual(
+            [combo.itemText(i) for i in range(combo.count())],
+            ["Interpolation:\tEase In", "Interpolation:\tEase Out"],
+        )
+        self.assertEqual(
+            [combo.itemData(i) for i in range(combo.count())], ["ease_in", "ease_out"]
+        )
+
+    def test_a_plain_list_without_prefix_still_stores_no_data(self):
+        """label-as-data belongs to the prefix form alone -- widening it would
+        change ``currentData()`` for every plain ``add([...])`` caller."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.add(["alpha", "beta"])
+        self.assertEqual(
+            [combo.itemData(i) for i in range(combo.count())], [None, None]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

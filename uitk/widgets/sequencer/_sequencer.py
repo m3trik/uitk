@@ -14,6 +14,7 @@ Example
 >>> w.add_clip(t, start=100, duration=50, label="Fade In/Out")
 >>> w.show()
 """
+
 from contextlib import contextmanager
 from typing import Dict, List, Optional
 
@@ -46,6 +47,7 @@ from uitk.widgets.sequencer._overlays import (
     RangeHighlightItem,
 )
 from uitk.widgets.sequencer._markers import MarkerItem
+from uitk.widgets.sequencer._draggable import ItemRetirement
 from uitk.widgets.sequencer._timeline import TrackHeaderWidget, TimelineView
 
 
@@ -154,7 +156,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     """
 
     clip_moved = QtCore.Signal(int, float)
-    clips_batch_moved = QtCore.Signal(list)  # [(clip_id, new_start), ...]
+    # [(clip_id, new_start), ...] -- ordered so a consumer can commit them one
+    # at a time without a landing overrunning a clip that has not moved yet
+    # (see ClipItem._collision_free_order); NOT the selection order.
+    clips_batch_moved = QtCore.Signal(list)
     clips_reordered = QtCore.Signal(int, int)  # (clip_id_a, clip_id_b) swap request
     clip_resized = QtCore.Signal(int, float, float)
     clip_selected = QtCore.Signal(int)
@@ -194,10 +199,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     gap_unlock_all_requested = QtCore.Signal()
     clip_menu_requested = QtCore.Signal(
         object, int
-    )  # (QMenu, clip_id) â€” add actions before exec
+    )  # (QMenu, clip_id) — add actions before exec
     gap_menu_requested = QtCore.Signal(
         object, float, float
-    )  # (QMenu, gap_start, gap_end) â€” add actions before exec
+    )  # (QMenu, gap_start, gap_end) — add actions before exec
     shot_switch_requested = QtCore.Signal(float)  # (time) Ctrl+Shift+Click
     zone_context_menu_requested = QtCore.Signal(
         str, float, QtCore.QPoint
@@ -206,6 +211,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         object
     )  # (QMenu) right-click on header background
     keys_moved = QtCore.Signal(int, list)  # (clip_id, [(old_t, new_t), ...])
+    # One drag that moved keys across SEVERAL clips arrives here as a single
+    # payload -- [(clip_id, [(old_t, new_t), ...]), ...] -- so a consumer can
+    # commit the whole gesture as one undoable operation.  ``keys_moved`` is
+    # still emitted (alone) when the drag touched exactly one clip.
+    keys_batch_moved = QtCore.Signal(list)
     keys_deleted = QtCore.Signal(int, list)  # (clip_id, [time, ...])
     key_selection_changed = QtCore.Signal(
         list
@@ -228,14 +238,23 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._marker_items: Dict[int, MarkerItem] = {}
         self._next_marker_id = 0
         self._attribute_colors: Dict[str, str] = dict(_DEFAULT_ATTRIBUTE_COLORS)
-        self._expanded_tracks: Dict[int, List[str]] = {}  # track_id â†’ sub-row names
+        self._expanded_tracks: Dict[int, List[str]] = {}  # track_id → sub-row names
         self._bulk_depth: int = 0  # >0 inside bulk_updates() — defer scene-rect
         self._sub_row_height: int = _SUB_ROW_HEIGHT
-        self._sub_row_provider = None  # callable(track_id, track_name) â†’ [(sub_name, [(start,dur,label,color), ...]), ...]
+        self._sub_row_provider = None  # callable(track_id, track_name) → [(sub_name, [(start,dur,label,color), ...]), ...]
         self._range_highlight: Optional[RangeHighlightItem] = None
         self._range_overlays: List[QtWidgets.QGraphicsItem] = []
         self._gap_overlays: List[QtWidgets.QGraphicsItem] = []
         self._shift_at_press: bool = False  # Shift held when last drag started
+        # >0 while the widget is being rebuilt programmatically: the scene's
+        # selectionChanged fires as items are torn down, and forwarding that
+        # empty selection makes consumers clear the host app's own selection
+        # on every refresh (see _on_scene_selection).
+        self._selection_suppressed: int = 0
+        self._snap_guide = None  # _SnapGuideItem, created lazily
+        self._snap_guides_enabled: bool = True  # draw alignment guides on drag
+        self._snap_to_keys: bool = False  # also SNAP the drag to those frames
+        self._align_capture_px: float = 6.0  # guide/snap capture radius, px
         self._show_range_overlays: bool = True  # toggle for shot range overlays
         self._show_gap_overlays: bool = True  # toggle for gap overlays
         self._show_range_highlight: bool = True  # toggle for active shot highlight
@@ -596,10 +615,12 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                 for ...: widget.add_clip(...)
         """
         self._bulk_depth += 1
+        self._selection_suppressed += 1
         try:
             yield
         finally:
             self._bulk_depth -= 1
+            self._selection_suppressed -= 1
             if self._bulk_depth == 0:
                 self._timeline._update_scene_rect()
 
@@ -660,9 +681,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         if clip_id not in self._clips:
             return
         cd = self._clips.pop(clip_id)
-        item = self._clip_items.pop(clip_id, None)
-        if item and item.scene():
-            item.scene().removeItem(item)
+        ItemRetirement.retire(self._clip_items.pop(clip_id, None))
         for td in self._tracks:
             if cd.clip_id in td.clips:
                 td.clips.remove(cd.clip_id)
@@ -838,28 +857,35 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             across the clear so that an in-progress drag is not
             interrupted by a content rebuild.
         """
-        for cid in list(self._clips):
-            item = self._clip_items.pop(cid, None)
-            if item and item.scene():
-                item.scene().removeItem(item)
-        self._clips.clear()
-        self._tracks.clear()
-        self._expanded_tracks.clear()
-        # Background curve previews are keyed by (track_id, sub_row);
-        # with _next_track_id reset below, a stale entry would attach to
-        # whatever track recycles that id and paint the wrong curve.
-        self._bg_curve_previews.clear()
-        self._header.clear_tracks()
-        self._next_track_id = 0
-        self._next_clip_id = 0
-        self._undo_stack.clear()
-        self._redo_stack.clear()
-        self.clear_markers()
-        if not keep_range_highlight:
-            self.clear_range_highlight()
-        self.clear_range_overlays()
-        self.clear_gap_overlays()
-        self.clear_shot_blocks()
+        # Tearing items out of the scene fires selectionChanged for every
+        # selectable item removed — clips, markers, the range highlight.  A
+        # rebuild must not be reported to consumers as the user deselecting,
+        # so the guard covers the whole teardown, not just the clip loop.
+        self._selection_suppressed += 1
+        try:
+            for cid in list(self._clips):
+                ItemRetirement.retire(self._clip_items.pop(cid, None))
+            self._clips.clear()
+            self._tracks.clear()
+            self._expanded_tracks.clear()
+            # Background curve previews are keyed by (track_id, sub_row);
+            # with _next_track_id reset below, a stale entry would attach to
+            # whatever track recycles that id and paint the wrong curve.
+            self._bg_curve_previews.clear()
+            self._header.clear_tracks()
+            self._next_track_id = 0
+            self._next_clip_id = 0
+            self._undo_stack.clear()
+            self._redo_stack.clear()
+            self.clear_markers()
+            if not keep_range_highlight:
+                self.clear_range_highlight()
+            self.clear_range_overlays()
+            self.clear_gap_overlays()
+            self.clear_shot_blocks()
+            self.clear_snap_guides()
+        finally:
+            self._selection_suppressed -= 1
         self._timeline._refresh_all()
 
     def clear_decorations(self, *, keep_range_highlight: bool = False):
@@ -870,12 +896,19 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         keep_range_highlight : bool
             If True the interactive range-highlight overlay is preserved.
         """
-        self.clear_markers()
-        if not keep_range_highlight:
-            self.clear_range_highlight()
-        self.clear_range_overlays()
-        self.clear_gap_overlays()
-        self.clear_shot_blocks()
+        # Markers and the range highlight are selectable; their teardown
+        # fires selectionChanged and must not read as a user deselection
+        # (same guard clear() carries, for the same reason).
+        self._selection_suppressed += 1
+        try:
+            self.clear_markers()
+            if not keep_range_highlight:
+                self.clear_range_highlight()
+            self.clear_range_overlays()
+            self.clear_gap_overlays()
+            self.clear_shot_blocks()
+        finally:
+            self._selection_suppressed -= 1
 
     # -- marker API ---------------------------------------------------------
 
@@ -926,9 +959,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """
         existed = marker_id in self._markers
         self._markers.pop(marker_id, None)
-        item = self._marker_items.pop(marker_id, None)
-        if item and item.scene():
-            item.scene().removeItem(item)
+        ItemRetirement.retire(self._marker_items.pop(marker_id, None))
         if existed:
             self.marker_removed.emit(marker_id)
 
@@ -943,9 +974,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def clear_markers(self):
         """Remove all markers."""
         for mid in list(self._markers):
-            item = self._marker_items.pop(mid, None)
-            if item and item.scene():
-                item.scene().removeItem(item)
+            ItemRetirement.retire(self._marker_items.pop(mid, None))
         self._markers.clear()
         self._next_marker_id = 0
 
@@ -984,8 +1013,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def clear_range_highlight(self):
         """Remove the range highlight from the timeline."""
         if self._range_highlight is not None:
-            if self._range_highlight.scene():
-                self._range_highlight.scene().removeItem(self._range_highlight)
+            ItemRetirement.retire(self._range_highlight)
             self._range_highlight = None
 
     def add_range_overlay(
@@ -1004,8 +1032,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def clear_range_overlays(self):
         """Remove all non-interactive range overlays."""
         for item in self._range_overlays:
-            if item.scene():
-                item.scene().removeItem(item)
+            ItemRetirement.retire(item)
         self._range_overlays.clear()
 
     def add_gap_overlay(
@@ -1015,9 +1042,17 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         color: str = "#555555",
         alpha: int = 120,
         locked: bool = False,
+        tail: bool = False,
     ):
-        """Add a diagonal-hatch overlay for a gap between shots."""
-        item = _GapOverlayItem(self._timeline, start, end, color, alpha, locked=locked)
+        """Add a diagonal-hatch overlay for a gap between shots.
+
+        ``tail=True`` places a left-edge-only handle (pass ``start == end``
+        at the last shot's end) so the final shot -- which has no following
+        shot to form a gap with -- still gets a drag handle.
+        """
+        item = _GapOverlayItem(
+            self._timeline, start, end, color, alpha, locked=locked, tail=tail
+        )
         item.setVisible(self._show_gap_overlays)
         self._timeline._scene.addItem(item)
         self._gap_overlays.append(item)
@@ -1025,13 +1060,18 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def clear_gap_overlays(self):
         """Remove all gap overlays."""
         for item in self._gap_overlays:
-            if item.scene():
-                item.scene().removeItem(item)
+            ItemRetirement.retire(item)
         self._gap_overlays.clear()
 
     def set_all_gap_overlays_locked(self, locked: bool):
-        """Set the locked state on every gap overlay."""
+        """Set the locked state on every gap overlay.
+
+        Tail handles are exempt: they are shot-end handles, not gaps, and a
+        locked tail would leave the LAST shot with no way to resize.
+        """
         for item in self._gap_overlays:
+            if item._tail:
+                continue
             item._locked = locked
             item._update_tooltip()
             item.update()
@@ -1050,8 +1090,20 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         ----------
         blocks : list of dict
             Each dict has ``name``, ``start``, ``end``, and ``active`` keys.
+            An optional ``id`` is carried through untouched, so a consumer can
+            get its own identifier back from :meth:`selected_shot`.
         """
         self._timeline._scene.ruler.set_shot_blocks(blocks)
+
+    def selected_shot(self) -> Optional[dict]:
+        """The shot block currently marked ``active``, or ``None``.
+
+        The widget does not own shot selection -- the consumer does, and says
+        so through :meth:`set_shot_blocks` -- but a shortcut or menu acting on
+        "the selected shot" needs to read it back without the consumer keeping
+        a parallel copy.
+        """
+        return self._timeline._scene.ruler.selected_block()
 
     def clear_shot_blocks(self) -> None:
         """Remove all shot-block indicators from the ruler."""
@@ -1139,9 +1191,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                     preview = cd.data.get("curve_preview") or {}
                     kf = preview.get("keys") or []
                 for entry in kf:
-                    times.add(
-                        entry[0] if isinstance(entry, (list, tuple)) else entry
-                    )
+                    times.add(entry[0] if isinstance(entry, (list, tuple)) else entry)
         return sorted(times)
 
     def go_to_next_key(self):
@@ -1283,6 +1333,137 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     @snap_interval.setter
     def snap_interval(self, value: float):
         self._snap_interval = max(0.0, value)
+
+    # -- key alignment (guides + optional snap) ------------------------------
+    @property
+    def snap_guides_enabled(self) -> bool:
+        """Draw a guide (and tint the drag readout) when a drag lands on a
+        frame that already carries a key -- visual only."""
+        return self._snap_guides_enabled
+
+    @snap_guides_enabled.setter
+    def snap_guides_enabled(self, value: bool):
+        self._snap_guides_enabled = bool(value)
+        if not value:
+            self.clear_snap_guides()
+
+    @property
+    def snap_to_keys(self) -> bool:
+        """Also pull a drag onto a nearby key frame, not just highlight it.
+
+        Off by default: the guides answer "am I aligned?" without taking
+        control of the drag away from the user.
+        """
+        return self._snap_to_keys
+
+    @snap_to_keys.setter
+    def snap_to_keys(self, value: bool):
+        self._snap_to_keys = bool(value)
+
+    #: Guide colour — deliberately distinct from every clip/attribute colour.
+    SNAP_GUIDE_COLOR = "#FFD24A"
+
+    def alignment_times(
+        self, exclude_clip_ids=(), exclude_times=(), exclude_spans=()
+    ) -> List[float]:
+        """Sorted, de-duplicated frames that a drag can align to.
+
+        Every clip's start/end plus every visible keyframe dot, minus what
+        the drag itself is moving.  Values are rounded to 3 decimals so
+        float drift can't produce two entries one microframe apart.
+
+        Parameters:
+            exclude_clip_ids: Clips being dragged — skipped entirely.
+            exclude_times: Absolute frames to drop (matched on the rounded
+                grain).  Key drags pass their keys' origin frames, which
+                alias into the merged segment bar's edges and sibling
+                sub-row keys.
+            exclude_spans: ``(track_id, start, end)`` pre-drag spans of the
+                moving content — a candidate from any clip on that track
+                falling inside the span is dropped, so a drag never aligns
+                to a stale alias of the very content it is moving.  Clips
+                and keys on the same track OUTSIDE the span stay valid
+                (end-to-start butting against neighbours still works).
+        """
+        exclude = set(exclude_clip_ids)
+        ex_times = {round(float(t), 3) for t in exclude_times}
+        spans = [(tid, lo - 1e-3, hi + 1e-3) for tid, lo, hi in exclude_spans]
+
+        def _dropped(track_id, t):
+            if t in ex_times:
+                return True
+            return any(tid == track_id and lo <= t <= hi for tid, lo, hi in spans)
+
+        times: set = set()
+        for cd in self._clips.values():
+            if cd.clip_id in exclude:
+                continue
+            for t in self._clip_candidate_times(cd):
+                if not _dropped(cd.track_id, t):
+                    times.add(t)
+        return sorted(times)
+
+    @staticmethod
+    def _clip_candidate_times(cd):
+        """Yield one clip's alignment candidates, rounded to the grain."""
+        yield round(cd.start, 3)
+        if cd.duration > 0:
+            yield round(cd.end, 3)
+        preview = cd.data.get("curve_preview") or {}
+        for entry in preview.get("keys") or ():
+            t = entry[0] if isinstance(entry, (list, tuple)) else entry
+            yield round(float(t), 3)
+
+    def nearest_alignment(
+        self, time: float, candidates, tolerance: Optional[float] = None
+    ) -> Optional[float]:
+        """Return the entry of *candidates* within *tolerance* of *time*.
+
+        *tolerance* defaults to the pixel capture radius converted to
+        frames at the current zoom, so the affordance keeps the same
+        on-screen feel however far the user has zoomed in or out.
+        """
+        if not candidates:
+            return None
+        if tolerance is None:
+            ppu = self._timeline.pixels_per_unit or 1.0
+            tolerance = self._align_capture_px / ppu
+        best = None
+        best_d = tolerance
+        for t in candidates:
+            d = abs(t - time)
+            if d <= best_d:
+                best, best_d = t, d
+        return best
+
+    def set_snap_guides(self, times) -> None:
+        """Show vertical alignment guides at *times* (empty hides them).
+
+        The item is kept and emptied rather than destroyed: this runs on
+        every mouse-move of a drag, and churning a QGraphicsItem per pixel
+        of travel is pure waste.  ``clear_snap_guides`` frees it.
+        """
+        if not self._snap_guides_enabled:
+            return
+        times = [float(t) for t in times]
+        if not times:
+            if self._snap_guide is not None:
+                self._snap_guide.set_times([])
+            return
+        if self._snap_guide is None:
+            from uitk.widgets.sequencer._overlays import _SnapGuideItem
+
+            self._snap_guide = _SnapGuideItem(
+                self._timeline, color=self.SNAP_GUIDE_COLOR
+            )
+            self._timeline._scene.addItem(self._snap_guide)
+        self._snap_guide.set_times(times)
+
+    def clear_snap_guides(self) -> None:
+        """Remove the alignment guides."""
+        if self._snap_guide is not None:
+            ItemRetirement.retire(self._snap_guide)
+            self._snap_guide = None
 
     # -- overlay visibility -------------------------------------------------
     @property
@@ -1557,8 +1738,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def _visual_rows(self) -> List[tuple]:
         """Return ``[(y, height, is_sub_row, track_id), ...]`` for background painting."""
         return [
-            (y, h, sr is not None, td.track_id)
-            for td, sr, y, h in self._iter_rows()
+            (y, h, sr is not None, td.track_id) for td, sr, y, h in self._iter_rows()
         ]
 
     def _track_index(self, track_id: int) -> Optional[int]:
@@ -1584,6 +1764,12 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
 
     # -- internal -----------------------------------------------------------
     def _on_scene_selection(self):
+        if self._selection_suppressed:
+            # Programmatic rebuild, not a user gesture.  Forwarding it would
+            # make consumers mirror an empty selection into the host app --
+            # the "I can't keep anything selected" symptom when something
+            # refreshes the panel repeatedly.
+            return
         sel = self.selected_clips()
         self.selection_changed.emit(sel)
         # Backwards-compat: also emit clip_selected for the first item

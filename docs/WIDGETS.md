@@ -395,6 +395,35 @@ An explicitly assigned `pin_on_drag_only` is a deliberate per-tool override
 and always wins over the preference. The user-facing switch is the **UI
 Browser → Browser Options → "Pin button hides (1-click)"** checkbox.
 
+### Tap to open, hold to peek
+
+`Header(pin_on_tap=...)` decides what an **auto-hide request** means for a
+window that just appeared. A transient window is dismissed when the marking
+menu's activation key is released (`request_hide`), so the gap between the
+window showing and the request arriving is exactly how long the key was held
+*after* the window came up:
+
+| `pin_on_tap` | Released within `Header.PIN_ON_TAP_MS` (500ms) | Held longer |
+|:---|:---|:---|
+| `False` (widget default) | window hides | window hides |
+| `True` | window **pins open** like a standard window | window hides (peek) |
+
+One key, both intents: hold it to glance at a tool and let it go, or let go
+right away to keep the tool up. The header can't read the key itself — the
+menu's key state sits on the far side of `MainWindow.request_hide` — so the
+decision is made from `MainWindow.visible_duration_ms()`, which
+`request_hide` passes to `Header.claim_hide_as_tap`; a claimed request pins
+instead of hiding and returns `False` (not hidden).
+
+Like `pin_on_drag_only`, the constructor default is `None` = *follow the
+process-wide default* (`Header.set_default_pin_on_tap`, initially `False`),
+owned by the **`UiHandler.pin_on_tap`** preference (default `False`) and
+resolved at hide-request time, so a flip reaches open windows immediately.
+An explicit per-header assignment always wins. The user-facing switch is the
+**UI Browser → Browser Options → "Tap opens, hold peeks"** checkbox. The two
+pin preferences are orthogonal: `pin_on_drag_only` is what a *click* does,
+`pin_on_tap` is what an *auto-hide request* means.
+
 ### Collapse auto-pins
 
 `toggle_collapse` (the `collapse` button) pins the window on the way *down*
