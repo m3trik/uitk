@@ -13,6 +13,7 @@ from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.table_actions import TableActions
+from uitk.managers.cursor_manager import CursorManager
 
 
 class HeaderMixin:
@@ -587,7 +588,9 @@ class TableWidget(
     # would miss them entirely). ``modifiers`` is captured from the wheel
     # event itself rather than polled, so receivers don't race against
     # ``QApplication.keyboardModifiers()``.
-    cellWheelScrolled = QtCore.Signal(int, int, int, object)  # (row, col, steps, modifiers)
+    cellWheelScrolled = QtCore.Signal(
+        int, int, int, object
+    )  # (row, col, steps, modifiers)
 
     def __init__(
         self,
@@ -636,7 +639,6 @@ class TableWidget(
         # ``_scrub_active`` tracks an in-flight drag.
         self._scrub_columns: set = set()
         self._scrub_active: Optional[Dict[str, Any]] = None
-        self._scrub_prev_cursor = None
 
         # Wheel-scroll value adjustment (opt-in via ``set_wheel_scrub_columns``).
         self._wheel_scrub_columns: set = set()
@@ -849,8 +851,7 @@ class TableWidget(
                 "col": index.column(),
                 "start": pos,
             }
-            self._scrub_prev_cursor = self.cursor()
-            self.setCursor(QtGui.QCursor(QtCore.Qt.SizeHorCursor))
+            CursorManager.push(self, QtCore.Qt.SizeHorCursor)
             self.cellScrubStarted.emit(index.row(), index.column())
             event.accept()
             return
@@ -912,18 +913,11 @@ class TableWidget(
     def mouseReleaseEvent(self, event):
         # Finish an active MMB scrub before falling through to the LMB
         # drag-select cleanup.
-        if (
-            event.button() == QtCore.Qt.MiddleButton
-            and self._scrub_active is not None
-        ):
+        if event.button() == QtCore.Qt.MiddleButton and self._scrub_active is not None:
             row = self._scrub_active["row"]
             col = self._scrub_active["col"]
             self._scrub_active = None
-            if self._scrub_prev_cursor is not None:
-                self.setCursor(self._scrub_prev_cursor)
-                self._scrub_prev_cursor = None
-            else:
-                self.unsetCursor()
+            CursorManager.pop(self)
             self.cellScrubFinished.emit(row, col)
             event.accept()
             return
@@ -1010,7 +1004,11 @@ class TableWidget(
         sync with the model.
         """
         if self._wheel_scrub_columns:
-            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            pos = (
+                event.position().toPoint()
+                if hasattr(event, "position")
+                else event.pos()
+            )
             index = self.indexAt(pos)
             if index.isValid() and index.column() in self._wheel_scrub_columns:
                 self._emit_wheel_scrub(index, event)

@@ -190,6 +190,10 @@ class GlobalShortcut(QtCore.QObject):
             # Force release if disabled while held
             self._on_release()
 
+    def isEnabled(self) -> bool:
+        """Whether the underlying QShortcut is armed (mirror of ``setEnabled``)."""
+        return self._shortcut.isEnabled()
+
     def setKey(self, key_sequence: Union[str, QtGui.QKeySequence]):
         self._key_sequence = (
             key_sequence

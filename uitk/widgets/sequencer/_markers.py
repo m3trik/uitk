@@ -18,6 +18,7 @@ from uitk.widgets.sequencer._data import (
 )
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
 from uitk.widgets.sequencer._draggable import DraggableItemMixin
+from uitk.managers.cursor_manager import CursorManager
 
 _MARKER_TRI_SIZE = 8  # size of the triangle pennant in pixels
 
@@ -30,6 +31,7 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self._data = marker_data
         self._timeline = timeline
         self._drag_active = False
+        self._grab_armed = False
         self._drag_origin_x = 0.0
         self._drag_origin_time = 0.0
         self._drag_tooltip = FrameTooltip()
@@ -177,17 +179,35 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton and self._data.draggable:
             self._drag_active = True
+            self._grab_armed = False
+            self._press_screen_pos = event.screenPos()
             self._drag_origin_x = event.scenePos().x()
             self._drag_origin_time = self._data.time
-            self.setCursor(QtCore.Qt.ClosedHandCursor)
-            self._show_drag_tooltip(event.scenePos())
             event.accept()
         else:
             super().mousePressEvent(event)
 
+    def _arm_grab(self, event) -> None:
+        """Show the grab, now that the gesture is one.
+
+        The closed hand and the floating frame label are what a DRAG looks
+        like, and a press is not one until the pointer clears Qt's drag
+        distance — advertising them at press made every plain click (and the
+        first half of every double-click) flicker through a grab it never
+        performed.  Same rule the clip body already keeps.
+        """
+        self._grab_armed = True
+        CursorManager.push(self, QtCore.Qt.ClosedHandCursor)
+        self._show_drag_tooltip(event.scenePos())
+
     def mouseMoveEvent(self, event):
         if not self._drag_active:
             return super().mouseMoveEvent(event)
+        if not self._grab_armed:
+            if not self._past_drag_threshold(event):
+                event.accept()  # still a click, as far as anyone can tell
+                return
+            self._arm_grab(event)
         tl = self._timeline
         dx_time = tl.x_to_time(event.scenePos().x()) - tl.x_to_time(self._drag_origin_x)
         new_time = max(
@@ -209,16 +229,19 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     def _restore_drag_state(self) -> None:
         self._data.time = self._drag_origin_time
         self._drag_active = False
+        self._grab_armed = False
         self.sync()
-        self.unsetCursor()
+        CursorManager.pop(self)  # no-op when the grab never armed
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton and self._drag_active:
+            armed = self._grab_armed
             self._drag_active = False
-            self.unsetCursor()
+            self._grab_armed = False
+            CursorManager.pop(self)  # no-op when the grab never armed
             self._hide_drag_tooltip()
             widget = self._timeline.parent_sequencer
-            if self._cursor_outside_window():
+            if armed and self._cursor_outside_window():
                 widget.remove_marker(self._data.marker_id)
                 event.accept()
                 return
@@ -326,6 +349,21 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         time_edit.returnPressed.connect(menu.close)
 
         chosen = menu.exec_(event.screenPos())
+        if self.scene() is None:
+            # A rebuild (keyframe debounce, store event, undo callback) ran
+            # inside the menu's nested event loop and retired this marker.
+            # ``marker_id`` is stale from here on: acting on it would edit or
+            # DELETE whatever marker now carries that id, on an item Qt is
+            # already finished with.  The clip and gap menus have always
+            # returned here; this one did not.
+            return
+        if chosen == remove_action:
+            # First, and alone: the inline edits below emit
+            # ``marker_changed`` / ``marker_moved`` for a marker that is
+            # about to stop existing, and consumers rebuild their store on
+            # each one.
+            widget.remove_marker(self._data.marker_id)
+            return
 
         # Apply edits regardless of which action closed the menu
         new_note = note_edit.text()
@@ -345,9 +383,7 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             self.update()
             widget.marker_moved.emit(self._data.marker_id, self._data.time)
 
-        if chosen == remove_action:
-            widget.remove_marker(self._data.marker_id)
-        elif chosen == color_action:
+        if chosen == color_action:
             c = QtWidgets.QColorDialog.getColor(
                 QtGui.QColor(self._data.color), None, "Marker Color"
             )

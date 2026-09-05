@@ -35,7 +35,7 @@ from uitk.widgets.sequencer._data import (
     _TRACK_HEIGHT,
     _SUB_ROW_HEIGHT,
     _TRACK_PADDING,
-    _RULER_HEIGHT,
+    _HEADER_HEIGHT,
     _DEFAULT_ATTRIBUTE_COLORS,
     _COMMON_ATTRIBUTES,
     _DISPLAY_COLORS,
@@ -49,6 +49,13 @@ from uitk.widgets.sequencer._overlays import (
 from uitk.widgets.sequencer._markers import MarkerItem
 from uitk.widgets.sequencer._draggable import ItemRetirement
 from uitk.widgets.sequencer._timeline import TrackHeaderWidget, TimelineView
+
+
+#: Pixels of margin :meth:`SequencerWidget.frame_shot` leaves on each side.
+_FRAME_PADDING = 40
+#: A viewport narrower than this is not laid out yet -- framing into it sets a
+#: zoom the user then has to undo, so the first-show framing waits for a resize.
+_MIN_FRAME_VIEWPORT_WIDTH = _FRAME_PADDING * 3
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +373,16 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._audio_fps: float = 24.0
         self.playhead_moved.connect(self._on_playhead_moved_for_audio)
 
+        # -- first-show framing ---------------------------------------------
+        #: Frame the active shot the first time the panel is shown.  Opening
+        #: onto frame 0 of a several-thousand-frame scene means every session
+        #: starts by hunting for the shot being worked on.
+        self.frame_on_first_show = True
+        # Armed only now: an event arriving mid-construction would reach a
+        # half-built widget, and nothing can be framed before there is a
+        # timeline to frame it in.
+        self._pending_first_frame = True
+
         # -- apply kwargs via AttributesMixin --------------------------------
         if kwargs:
             self.set_attributes(self, **kwargs)
@@ -418,6 +435,29 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             # Self-guards on same-window; after a reparent (Maya
             # dock/undock) this moves the filter to the new top-level.
             self._install_window_filter()
+        self._frame_first_show()
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        # A show can arrive before the final geometry does, and framing
+        # against a viewport a few pixels wide sets a zoom the user then has
+        # to undo -- the resize that settles the geometry is the retry.
+        self._frame_first_show()
+
+    def _frame_first_show(self) -> None:
+        """Frame the active shot once, as soon as there is something to frame."""
+        if not (self._pending_first_frame and self.frame_on_first_show):
+            return
+        if self._timeline.viewport().width() < _MIN_FRAME_VIEWPORT_WIDTH:
+            return
+        if (
+            self.range_highlight() is None
+            and self._active_range is None
+            and not self._clips
+        ):
+            return  # nothing to frame yet; a later show/resize retries
+        self._pending_first_frame = False
+        self.frame_shot()
 
     def _install_window_filter(self) -> None:
         win = self.window()
@@ -597,9 +637,18 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             color=color,
             text_color=text_color,
         )
+        self._refresh_extent()
+        return tid
+
+    def _refresh_extent(self) -> None:
+        """Recompute the scrollable extent unless a bulk rebuild is running.
+
+        Anything that changes HOW FAR the timeline reaches -- a clip, a shot
+        band, a range or gap overlay -- has to go through here, or the new
+        span is drawn but cannot be scrolled to.
+        """
         if not self._bulk_depth:
             self._timeline._update_scene_rect()
-        return tid
 
     @contextmanager
     def bulk_updates(self):
@@ -672,8 +721,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         item = ClipItem(cd, self._timeline)
         self._clip_items[cid] = item
         self._timeline._scene.addItem(item)
-        if not self._bulk_depth:
-            self._timeline._update_scene_rect()
+        self._refresh_extent()
         return cid
 
     def remove_clip(self, clip_id: int):
@@ -1009,6 +1057,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             self._range_highlight.color = c
         elif alpha != self._range_highlight.opacity_value:
             self._range_highlight.opacity_value = alpha
+        self._refresh_extent()
 
     def clear_range_highlight(self):
         """Remove the range highlight from the timeline."""
@@ -1028,6 +1077,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         item.setVisible(self._show_range_overlays)
         self._timeline._scene.addItem(item)
         self._range_overlays.append(item)
+        self._refresh_extent()
 
     def clear_range_overlays(self):
         """Remove all non-interactive range overlays."""
@@ -1056,6 +1106,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         item.setVisible(self._show_gap_overlays)
         self._timeline._scene.addItem(item)
         self._gap_overlays.append(item)
+        self._refresh_extent()
 
     def clear_gap_overlays(self):
         """Remove all gap overlays."""
@@ -1080,8 +1131,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
 
     @property
     def _content_top(self) -> float:
-        """Y coordinate where track rows begin (below ruler)."""
-        return _RULER_HEIGHT
+        """Y coordinate where track rows begin -- below the ruler AND the lane."""
+        return _HEADER_HEIGHT
 
     def set_shot_blocks(self, blocks: list) -> None:
         """Show coloured shot-block indicators on the ruler.
@@ -1094,6 +1145,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             get its own identifier back from :meth:`selected_shot`.
         """
         self._timeline._scene.ruler.set_shot_blocks(blocks)
+        self._refresh_extent()
 
     def selected_shot(self) -> Optional[dict]:
         """The shot block currently marked ``active``, or ``None``.
@@ -1123,6 +1175,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def set_active_range(self, start: float, end: float):
         """Set the active-shot time range painted as a column tint."""
         self._active_range = (start, end)
+        self._refresh_extent()
         self._timeline.viewport().update()
 
     def clear_active_range(self):
@@ -1167,7 +1220,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def step_backward(self):
         """Move the playhead back by one step (snap_interval or 1 frame)."""
         step = self._snap_interval if self._snap_interval > 0 else 1.0
-        self._move_playhead(max(0.0, self._timeline._scene.playhead.time - step))
+        # Floored at the timeline's own reach rather than 0 -- stepping back
+        # into a shot that lives before the origin is legitimate.
+        floor = min(0.0, self._timeline.content_time_bounds()[0])
+        self._move_playhead(max(floor, self._timeline._scene.playhead.time - step))
 
     def _key_times(self) -> list:
         """Return sorted unique visible key times.
@@ -1244,7 +1300,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         if span < 1.0:
             span = 1.0
         vp_w = self._timeline.viewport().width()
-        padding = 40  # pixels of margin on each side
+        padding = _FRAME_PADDING
         usable = max(vp_w - padding * 2, 1)
         self._timeline._pixels_per_unit = usable / span
         self._timeline._refresh_all()

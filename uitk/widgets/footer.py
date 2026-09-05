@@ -21,16 +21,19 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
     thin progress indicator across the bottom edge.
 
     Layout: a QStackedWidget hosts the visible page (extensible for
-    future modes like search/filter). Page 0 stacks the status label
-    above a slim QProgressBar (textless, hidden when idle). The status
-    label carries all human-readable text — including the "Hold Esc to
-    cancel…" hint relayed from the progress bar via signals. The
-    progress affordance stays minimal while the footer remains the
-    single source of truth for text.
+    future modes like search/filter). Page 0 stacks a text row -- an
+    optional busy spinner, then the status label -- above a slim
+    QProgressBar (textless, hidden when idle). The status label carries
+    all human-readable text — including the "Hold Esc to cancel…" hint
+    relayed from the progress bar via signals. The progress affordance
+    stays minimal while the footer remains the single source of truth
+    for text; the spinner (:meth:`set_busy`) is the one sign of life a
+    3px bar cannot give during a long synchronous step.
 
     Attributes:
         progress_bar (ProgressBar): The embedded progress bar widget
         status_label (QLabel): The status text label
+        busy_indicator (QLabel): The spinner shown beside the status text
     """
 
     # Qt Designer widget-box entry.
@@ -42,6 +45,13 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
     # Pixel height of the slim progress indicator at the bottom edge.
     PROGRESS_BAR_HEIGHT = 3
+
+    #: Busy indicator: a uitk icon rotated through BUSY_FRAMES steps, one
+    #: step per BUSY_FRAME_MS while the event loop is free and one per
+    #: ``update()`` tick while a synchronous slot holds it (see set_busy).
+    BUSY_ICON = "refresh"
+    BUSY_FRAME_MS = 80
+    BUSY_FRAMES = 12
 
     # Foreground colour per status severity, sourced from pythontk's
     # ``LOG_COLORS`` (via ``RichTextFormatter``) so the footer, message boxes,
@@ -100,13 +110,33 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
+        # Text row: an optional busy spinner, then the status label. The
+        # spinner is hidden when idle, so the row costs nothing until a task
+        # asks for it (see set_busy).
+        text_row = QtWidgets.QHBoxLayout()
+        text_row.setContentsMargins(0, 0, 0, 0)
+        text_row.setSpacing(0)
+
+        self._busy_indicator = QtWidgets.QLabel()
+        self._busy_indicator.setAlignment(QtCore.Qt.AlignCenter)
+        self._busy_indicator.setContentsMargins(6, 0, 0, 0)
+        self._busy_indicator.hide()
+        text_row.addWidget(self._busy_indicator)
+
         self._status_label = QtWidgets.QLabel()
         self._status_label.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
         self._status_label.setIndent(8)
         self._status_label.setSizePolicy(
             QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding
         )
-        content_layout.addWidget(self._status_label)
+        text_row.addWidget(self._status_label)
+        content_layout.addLayout(text_row)
+
+        self._busy_frames: list = []
+        self._busy_frame = 0
+        self._busy_timer = QtCore.QTimer(self)
+        self._busy_timer.setInterval(self.BUSY_FRAME_MS)
+        self._busy_timer.timeout.connect(self._advance_busy)
 
         self._progress_bar = ProgressBar(auto_hide=True)
         self._progress_bar.setTextVisible(False)
@@ -198,8 +228,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         if cls._ROUNDED_QSS_MARKER in existing:
             # Strip previous injection (everything from marker to end of line).
             lines = [
-                ln for ln in existing.splitlines()
-                if cls._ROUNDED_QSS_MARKER not in ln
+                ln for ln in existing.splitlines() if cls._ROUNDED_QSS_MARKER not in ln
             ]
             existing = "\n".join(lines).rstrip()
         radius = "3px" if rounded else "0"
@@ -366,9 +395,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             # fit_icon render above (the fitted size is preserved; a state
             # color is pinned so theme sweeps don't repaint it).
             btn.icon_states = IconStates(states, widget=btn)
-            btn.clicked.connect(
-                lambda *_: btn.icon_states.activate(fallback=callback)
-            )
+            btn.clicked.connect(lambda *_: btn.icon_states.activate(fallback=callback))
         elif callback:
             btn.clicked.connect(callback)
 
@@ -428,7 +455,9 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         """
         return self._status_label.text()
 
-    def setStatusText(self, text: str | None = None, level: Optional[str] = None) -> None:
+    def setStatusText(
+        self, text: str | None = None, level: Optional[str] = None
+    ) -> None:
         """Set the status text of the footer.
 
         Parameters:
@@ -517,6 +546,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self,
         total: Optional[int] = None,
         text: str = "",
+        busy: Optional[bool] = None,
     ) -> Callable[[Optional[int], Optional[str]], bool]:
         """Start showing progress in the footer.
 
@@ -529,6 +559,12 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
                 indeterminate / busy mode — the bar pulses and callers
                 tick it via ``update()`` without a value.
             text: Optional status text to show with the bar.
+            busy: Show the busy spinner beside the status text
+                (:meth:`set_busy`). ``None`` (default) shows it for
+                indeterminate work only — the 3px marquee is the only other
+                sign of life there — and hides it on a determinate bar.
+                ``True`` keeps it on a determinate bar whose single steps
+                are long (an export's file write); ``False`` never shows it.
 
         Returns:
             Callable: ``update(value=None, text=None) -> bool``. Returns
@@ -556,6 +592,9 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         # text="" keeps the label off the thin bar (the footer's status label
         # shows it); host_label still carries it into host-native progress UI.
         self._progress_bar.start_task(total, text="", show=True, host_label=text)
+        if busy is None:
+            busy = total is None or total <= 0
+        self.set_busy(bool(busy))
         return self.update_progress
 
     def update_progress(
@@ -584,16 +623,22 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             # Skip status updates during a hold; the held hint stays put,
             # and we restore the pre-hold text on release.
             self.setStatusText(text)
-        # ``ProgressBar.update_progress`` requires an int; in
-        # indeterminate mode the value is only used for the emitted
-        # signal, so 0 is a safe placeholder when the caller is just
-        # ticking the marquee. *text* is forwarded even though this bar
-        # draws none (``setTextVisible(False)``): the bar relays it to
-        # host-native progress UI, which would otherwise be stuck showing
-        # the label the task started with while the footer shows live text.
-        return self._progress_bar.update_progress(
-            value if value is not None else 0, text
-        )
+        # A tick is the one moment a synchronous slot hands the loop back,
+        # so it is also when the spinner gets its next frame (the timer
+        # only fires while the loop is free).
+        self._advance_busy()
+        # ``ProgressBar.update_progress`` requires an int. ``None`` is a
+        # text/pump-only tick, so hold the bar where it is: a determinate
+        # bar fed a 0 here snapped back to empty on every narration tick
+        # ("converting…") between real steps. In indeterminate mode the
+        # value only feeds the emitted signal. *text* is forwarded even
+        # though this bar draws none (``setTextVisible(False)``): the bar
+        # relays it to host-native progress UI, which would otherwise be
+        # stuck showing the label the task started with while the footer
+        # shows live text.
+        if value is None:
+            value = max(0, self._progress_bar.value())
+        return self._progress_bar.update_progress(value, text)
 
     def finish_progress(self, text: Optional[str] = None, delay_ms: int = 1000):
         """Finish the progress and hide the bar.
@@ -603,6 +648,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
                 footer label.
             delay_ms: Delay before hiding the bar (default 1000ms).
         """
+        self._stop_busy()
         if text:
             self.setStatusText(text)
         QtCore.QTimer.singleShot(delay_ms, self._on_progress_finished)
@@ -621,14 +667,18 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._progress_bar.set_total(total)
 
     def progress(
-        self, total: Optional[int] = None, text: str = ""
+        self,
+        total: Optional[int] = None,
+        text: str = "",
+        busy: Optional[bool] = None,
     ) -> "FooterProgressContext":
         """Context manager for cooperative progress / task feedback.
 
         Pass *total* for a determinate bar; omit it for an indeterminate
         "task indicator" marquee. Callers drive the bar by ticking
         ``update()`` between work chunks — see
-        :meth:`update_progress`.
+        :meth:`update_progress`. *busy* is :meth:`start_progress`'s: the
+        spinner beside the text, on by default for indeterminate work.
 
         Example (determinate)::
 
@@ -646,10 +696,11 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
                 step_two()
                 tick()
         """
-        return FooterProgressContext(self, total, text)
+        return FooterProgressContext(self, total, text, busy)
 
     def _on_progress_finished(self):
         """Hide and reset the bar when the task completes."""
+        self._stop_busy()
         self._progress_bar.hide()
         self._progress_bar.reset()
 
@@ -664,6 +715,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         point; hiding is all that belongs here.
         """
         self._progress_bar.hide()
+        self._stop_busy()
 
     def _on_hold_started(self, hold_ms: int):
         """Relay the bar's hold hint into the status label."""
@@ -678,6 +730,102 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         prior = self._status_before_hold
         self._status_before_hold = None
         self.setStatusText(prior)
+
+    # ── Busy indicator ───────────────────────────────────────────
+
+    @property
+    def busy_indicator(self) -> QtWidgets.QLabel:
+        """The spinner label shown beside the status text while busy."""
+        return self._busy_indicator
+
+    @property
+    def is_busy(self) -> bool:
+        """Whether the busy indicator is showing."""
+        return not self._busy_indicator.isHidden()
+
+    def set_busy(self, busy: bool) -> None:
+        """Show or hide the busy spinner beside the status text.
+
+        The spinner is what says "still working" when the bar cannot: a
+        determinate bar parked on one long step (a file write, an external
+        conversion) and a 3px indeterminate marquee both read as hung. It
+        turns on a timer while the event loop is free, and on every
+        :meth:`update_progress` tick while a synchronous slot holds the loop
+        -- the same tick that repaints the bar. Honest by construction: it
+        cannot move while nothing is pumping, so a frozen spinner means a
+        frozen host, never a decorative one.
+
+        Frames are rendered on each start, so a theme change between runs is
+        picked up; a missing icon renders nothing rather than a broken box.
+        ``start_progress(busy=...)`` is the usual entry point; this is for
+        toggling it mid-task.
+        """
+        if not busy:
+            self._stop_busy()
+            return
+        if self.is_busy:
+            return
+        self._busy_frames = self._render_busy_frames()
+        self._busy_frame = 0
+        if not self._busy_frames:
+            return
+        self._busy_indicator.setPixmap(self._busy_frames[0])
+        self._busy_indicator.show()
+        self._busy_timer.start()
+        self._elide_status_text()
+
+    def _stop_busy(self) -> None:
+        self._busy_timer.stop()
+        if not self._busy_indicator.isHidden():
+            self._busy_indicator.hide()
+            self._elide_status_text()
+
+    def _advance_busy(self) -> None:
+        """Show the next frame (no-op while hidden)."""
+        if not self._busy_frames or self._busy_indicator.isHidden():
+            return
+        self._busy_frame = (self._busy_frame + 1) % len(self._busy_frames)
+        self._busy_indicator.setPixmap(self._busy_frames[self._busy_frame])
+
+    def _busy_icon_size(self) -> int:
+        """Logical size of the spinner: the text row with 2px clearance top
+        and bottom -- 12px on the default 19px footer."""
+        row = self.height() - self.PROGRESS_BAR_HEIGHT
+        return max(8, row - 4)
+
+    def _render_busy_frames(self) -> list:
+        """Rotate :attr:`BUSY_ICON` into :attr:`BUSY_FRAMES` pixmaps.
+
+        Rendered at twice the logical size and tagged with a 2x device pixel
+        ratio, so the rotated raster stays crisp when the label paints it at
+        its logical size (a 12px icon rotated in place aliases badly).
+        """
+        from uitk.managers.icon_manager import IconManager
+
+        size = self._busy_icon_size()
+        base = IconManager.get(self.BUSY_ICON, size=(size * 2, size * 2)).pixmap(
+            size * 2, size * 2
+        )
+        if base.isNull():
+            return []
+        half = base.width() / 2.0
+        frames = []
+        for i in range(self.BUSY_FRAMES):
+            frame = QtGui.QPixmap(base.size())
+            frame.fill(QtCore.Qt.transparent)
+            painter = QtGui.QPainter(frame)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
+            painter.translate(half, half)
+            painter.rotate(360.0 * i / self.BUSY_FRAMES)
+            painter.translate(-half, -half)
+            painter.drawPixmap(0, 0, base)
+            painter.end()
+            frame.setDevicePixelRatio(2.0)
+            frames.append(frame)
+        margins = self._busy_indicator.contentsMargins()
+        self._busy_indicator.setFixedSize(size + margins.left() + margins.right(), size)
+        return frames
 
     def resizeEvent(self, event):
         """Debounce resize: restart timer on each event so we only
@@ -716,6 +864,8 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         margin = (indent if indent > 0 else 8) * 2
         if self._size_grip and not self._size_grip.isHidden():
             margin += self._size_grip.width()
+        if not self._busy_indicator.isHidden():
+            margin += self._busy_indicator.width()
         available = self._stacked_widget.width() - margin
 
         if available <= 0:
@@ -751,6 +901,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             "QStackedWidget { background: transparent; border: none; }"
         )
         self._status_label.setStyleSheet("background: transparent; border: none;")
+        self._busy_indicator.setStyleSheet("background: transparent; border: none;")
         self._progress_bar.setStyleSheet(bar_style)
 
     def status_controller(
@@ -794,14 +945,21 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 class FooterProgressContext:
     """Context manager for footer progress tracking."""
 
-    def __init__(self, footer: Footer, total: Optional[int], text: str):
+    def __init__(
+        self,
+        footer: Footer,
+        total: Optional[int],
+        text: str,
+        busy: Optional[bool] = None,
+    ):
         self._footer = footer
         self._total = total
         self._text = text
+        self._busy = busy
 
     def __enter__(self) -> Callable[[Optional[int], Optional[str]], bool]:
         """Start progress and return update callback."""
-        return self._footer.start_progress(self._total, self._text)
+        return self._footer.start_progress(self._total, self._text, self._busy)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Finish progress."""

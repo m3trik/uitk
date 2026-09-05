@@ -30,6 +30,7 @@ _EXPORT_SOURCES = {
         "_TRACK_PADDING",
         "_RULER_HEIGHT",
         "_SHOT_LANE_HEIGHT",
+        "_HEADER_HEIGHT",
         "_HANDLE_WIDTH",
         "_MIN_CLIP_DURATION",
         "_MIN_POINT_CLIP_WIDTH",

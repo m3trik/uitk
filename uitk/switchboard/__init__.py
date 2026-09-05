@@ -17,14 +17,15 @@ Switchboard class and all its dependencies):
     SlotWrapper   — slot invocation wrapper
     Shortcut      — slot keyboard-shortcut decorator
     Cancelable    — slot decorator enabling Esc-cancel + warning dialog
-    OverrideCursorGuard — leak-proof application override cursor
+    OverrideCursorGuard — compatibility alias (2026-09): the class lives in
+                          ``uitk.managers.cursor_manager`` and is published
+                          from the ``uitk`` root; this name goes in the
+                          release after
 
-``OverrideCursorGuard`` is published because this package owns the
-application override-cursor policy (``utils.py``: the stack primitives,
-the modal suspension, the drain) and widgets outside it — the marking
-menu's gesture cursor — must participate in that policy rather than push
-their own unmanaged override. Reach it from here, not from ``utils``:
-the submodules stay package-internal.
+Application override-cursor policy — the stack primitives, the busy scope
+with its modal suspension, the drain — lives in
+``uitk.managers.cursor_manager.CursorManager``. The slot dispatcher and the
+switchboard dialogs consume it; they do not own it.
 """
 
 __all__ = [
@@ -54,9 +55,7 @@ def __getattr__(name):
     try:
         module_suffix, attr = _LAZY[name]
     except KeyError as exc:
-        raise AttributeError(
-            f"module {__name__!r} has no attribute {name!r}"
-        ) from exc
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
     import importlib
 
     module = importlib.import_module(f"{__name__}.{module_suffix}")

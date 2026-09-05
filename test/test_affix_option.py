@@ -558,5 +558,103 @@ class TestAffixConventionMode(QtBaseTestCase):
         self.assertIn("convention", opt.modes)
 
 
+class TestDynamicConventionKey(QtBaseTestCase):
+    """The SAME Scene state, bound to a key resolved per read.
+
+    For a field whose target type is not fixed -- the locator rig's child is a
+    mesh or a camera depending on what is selected. Deliberately not a second
+    mode: "follow the shared convention" is one idea and must look, persist and
+    read back identically wherever it is offered.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import pythontk as ptk
+
+        self.NC = ptk.NamingConvention
+        self.NC.reload()
+        self.selected = {"key": "mesh"}
+
+    def _make(self, **kw):
+        le = self.track_widget(LineEdit())
+        kw.setdefault("settings_key", False)
+        opt = AffixOption(
+            wrapped_widget=le,
+            convention_key=lambda: self.selected["key"],
+            default="convention",
+            **kw,
+        )
+        opt.widget  # build, so setup_widget applies field effects
+        return le, opt
+
+    def test_it_is_the_same_state_as_a_fixed_key(self):
+        """Same key, same cycle position -- only the binding is dynamic."""
+        _le, opt = self._make()
+        self.assertEqual(opt.modes, ["auto", "suffix", "prefix", "convention"])
+        self.assertEqual(opt.mode, "convention")
+
+    def test_the_field_previews_the_current_target(self):
+        le, _opt = self._make()
+        self.assertEqual(le.text(), self.NC.affix("mesh"))
+        self.assertTrue(le.isReadOnly(), "typing must be refused")
+        self.assertTrue(le.isEnabled(), "but the value must still read")
+
+    def test_refresh_repulls_after_the_target_changes(self):
+        """What showing the option box does -- the selection may have moved."""
+        le, opt = self._make()
+        self.selected["key"] = "camera"
+        opt.refresh()
+        self.assertEqual(le.text(), self.NC.affix("camera"))
+
+    def test_resolve_follows_the_target_without_a_refresh(self):
+        """The slot reads through resolve, which never serves a stale preview."""
+        _le, opt = self._make()
+        self.assertEqual(opt.resolve(), self.NC.affix_parts("mesh"))
+        self.selected["key"] = "camera"
+        self.assertEqual(opt.resolve(), self.NC.affix_parts("camera"))
+
+    def test_leaving_the_mode_restores_the_users_text(self):
+        le, opt = self._make()
+        opt.set_mode("suffix")
+        le.setText("_MyOwn")
+        opt.set_mode("convention")
+        self.assertEqual(le.text(), self.NC.affix("mesh"))
+        opt.set_mode("suffix")
+        self.assertEqual(le.text(), "_MyOwn")
+        self.assertFalse(le.isReadOnly())
+
+    def test_a_panel_seeded_field_survives_a_supplying_default(self):
+        """A picker whose DEFAULT is a supplying mode must not eat the seed.
+
+        The field is taken over on BUILD rather than on a user's mode change,
+        so nothing was parked -- and leaving the mode then handed the slot an
+        empty field, or the convention's own affix as if the user had typed it.
+        """
+        le = self.track_widget(LineEdit())
+        le.setText("_MyOwn")  # what the panel seeded the field with
+        opt = AffixOption(
+            wrapped_widget=le,
+            convention_key="mesh",
+            default="convention",
+            settings_key=False,
+        )
+        opt.widget  # build
+        self.assertEqual(le.text(), self.NC.affix("mesh"))
+        opt.set_mode("suffix")
+        self.assertEqual(le.text(), "_MyOwn")
+
+    def test_a_callable_key_is_not_warned_about_as_unknown(self):
+        """The membership check cannot run on a key that answers per scene."""
+        _le, opt = self._make()
+        self.assertIn("convention", opt.modes)
+
+    def test_manager_forwards_a_callable_key(self):
+        le = self.track_widget(LineEdit())
+        le.option_box.set_affix(convention_key=lambda: "camera", settings_key=False)
+        opt = le.option_box.find_option(AffixOption)
+        opt.set_mode("convention")
+        self.assertEqual(le.text(), self.NC.affix("camera"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -108,6 +108,24 @@ button.setText('<b>Bold</b> and <i style="color:red;">Red</i>')
 icon = sb.get_icon("save")    # registered icon, colored by the theme default
 ```
 
+### Cursors
+Every cursor change goes through `CursorManager` (`uitk/managers/cursor_manager.py`); nothing calls `QApplication.setOverrideCursor` / `restoreOverrideCursor` directly. The raw pair pops the *top* of the override stack, not the caller's own entry, so a missed or misordered pop strands a cursor over the whole application.
+
+- `CursorManager.busy()` — application busy cursor for a `with` block. The slot dispatcher wraps every slot in one; `sb.busy_cursor()` reaches it from slot code that runs outside dispatch. Removes its own entry on exit wherever it sits, and yields to a native modal dialog while held.
+- `OverrideCursorGuard(shape, is_live)` — an interaction cursor with no bounded end (the marking menu's gesture cross); a watchdog removes it the moment `is_live()` turns false.
+- `CursorManager.suspend()` / `.drain()` — what a modal dialog / a non-modal viewer opened under a busy cursor uses to show natural cursors.
+- `CursorManager.push(target, shape)` / `.pop(target)` — a gesture cursor on a widget **or graphics item** (closed hand while dragging, horizontal arrow while scrubbing). `pop` restores exactly what was there, an explicit cursor or none; variations inside the gesture are plain `setCursor` calls between the two.
+- `CursorManager.heal_hover(widget, global_pos)` — from a `HoverMove`, re-runs Qt's enter dispatch when the widget is provably under the pointer yet `underMouse()` is False: the stale state in which per-widget cursors silently stop applying. `Header` and the size grip call it.
+
+```python
+with CursorManager.busy():                           # hourglass for the block; own entry removed after
+    do_heavy_work()
+
+CursorManager.push(self, QtCore.Qt.ClosedHandCursor)  # press
+...                                                   # drag
+CursorManager.pop(self)                               # release / cancel
+```
+
 ---
 
 ## The widget catalog
@@ -212,7 +230,7 @@ def txt_path(self, text, widget):
 
 Available keys: `valid`, `invalid`, `warning`, `info`, `inactive`. Colors come from the active theme palette (`ACTION_VALID_FG/BG`, etc.).
 
-`set_validator("file" | "dir" | "path" | callable)` wires a debounced `textChanged` → predicate → action-color pipeline and emits `validated(bool, str)`.
+`set_validator("file" | "dir" | "path" | "url" | "file_or_url" | callable)` wires a debounced `textChanged` → predicate → action-color pipeline and emits `validated(bool, str)`. The URL presets accept an `http(s)` address on shape and install the reachability probe below automatically (`ptk.RemoteFile.probe`, which also rewrites a Google Sheets share link and refuses a sign-in page); `invalid_tooltip` may be a callable `(message) -> str` to wrap the probe's reason in a rich tooltip. A check that needs a round trip (a URL probe) goes in `deferred=`: it runs on a worker thread after the predicate passes, the field shows `info` + `pending_tooltip` meanwhile, and the answer (`bool` or `(bool, message)`) sets the final color and emits `validated` again; a late answer for text since replaced is dropped. A commit handler that fetches or opens the value itself calls `validate_now(run_deferred=False)` so its own result stands.
 
 Combine with `option_box.enable_clear()` for a clear-on-right button.
 
@@ -328,7 +346,7 @@ menu.add("QPushButton", row=0, col=1)  # grid placement via add(row=…, col=…
 
 ## Header
 
-Draggable header bar for frameless windows. Provides standard window controls.
+Draggable header bar for frameless windows. Provides standard window controls. The open-hand cursor closes while the window is being dragged and reopens on release.
 
 ```python
 from uitk.widgets.mixins.tooltip_mixin import fmt, kbd
@@ -450,6 +468,20 @@ creation and cycle on click; sync to app-owned state via
 `btn.icon_states.current_state = i`. State colors are *pinned* — theme
 sweeps never repaint them (see
 [`IconStates`](../uitk/widgets/mixins/icon_states.py)).
+
+Progress rides the footer too. `with self.ui.footer.progress(total=N,
+text="…") as update:` drives the slim bar along the bottom edge —
+`update(i, "step text")` per step, `update(None, "text")` to narrate without
+moving it, Esc-hold cancels and `update()` then returns `False` — and
+`sb.progress_adapter(update)` adapts it to a downstream
+`progress_callback(current, total, message)`, syncing the bar's total from
+the callback's. `busy=True` adds the spinner beside the status text on a
+determinate bar whose single steps are long (a file write, an external
+conversion); it is on by default for indeterminate (`total=None`) work,
+where the 3px marquee is the only other sign of life. The spinner advances
+on a timer while the event loop is free and on every `update()` tick while
+a synchronous slot holds it, so a frozen spinner means a frozen host, never
+a decorative one.
 
 ## CollapsableGroup
 
@@ -638,8 +670,8 @@ Capabilities, with the key `SequencerWidget` API:
 
 - **Tracks & clips** — `add_track`, `remove_track`, `add_clip`, `remove_clip`, `swap_clips`, `get_clip` / `get_track`, `tracks()` / `clips()`, `selected_clips()`; clip lock/rename via `set_clip_locked` / `set_clip_label`. Data records are the `ClipData` / `TrackData` / `MarkerData` dataclass-style types in [`_data.py`](../uitk/widgets/sequencer/_data.py).
 - **Keyframes & expanded tracks** — `expand_track` / `collapse_track` / `toggle_track_expanded` show per-attribute sub-rows (`sub_row_provider` supplies them); key edits emit `keys_moved`, `keys_deleted`, `key_selection_changed`.
-- **Playhead & navigation** — `set_playhead`, `step_forward` / `step_backward`, `go_to_next_key` / `go_to_prev_key`, `go_to_start` / `go_to_end`, `frame_shot`; `snap_interval` property.
-- **Markers & shot lane** — `add_marker`, `add_marker_at_playhead`, `remove_marker`, `markers()`; `set_shot_blocks(blocks)` draws the shot lane (`shot_switch_requested`; right-click surfaces via `zone_context_menu_requested` with the `"shot_lane"` zone).
+- **Playhead & navigation** — `set_playhead`, `step_forward` / `step_backward`, `go_to_next_key` / `go_to_prev_key`, `go_to_start` / `go_to_end`, `frame_shot`; `snap_interval` property. `frame_on_first_show` (default `True`) frames the active shot once, the first time the widget is shown at a usable size.
+- **Markers & shot lane** — `add_marker`, `add_marker_at_playhead`, `remove_marker`, `markers()`; `set_shot_blocks(blocks)` draws the shot lane (`shot_switch_requested`; right-click surfaces via `zone_context_menu_requested` with the `"shot_lane"` zone). The lane is its own strip BETWEEN the ruler and the tracks: the ruler scrubs at every height, the lane carries the shot bands and the grabs that move and resize them, and `_content_top` clears both.
 - **Range / gap overlays** — `set_range_highlight`, `add_range_overlay`, `add_gap_overlay`, `set_active_range`, plus `show_*` toggle properties; gap edits emit `gap_resized` / `gap_moved` / `gap_lock_changed`.
 - **Undo/redo** — `undo()` / `redo()` restore internal snapshots; `undo_requested` / `redo_requested` let a host DCC own history instead.
 - **Audio scrub** — `set_audio_source(path, fps)` routes playhead drags through `ScrubPlayer` ([`_scrub_player.py`](../uitk/widgets/sequencer/_scrub_player.py)), a seek-and-grain audio player.

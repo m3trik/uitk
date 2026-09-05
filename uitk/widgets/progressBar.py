@@ -250,7 +250,15 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         Drops the scope reference rather than clearing the scope itself: the
         scope may be owned by an enclosing ``@Cancelable`` slot, and wiping a
         cancel the user already requested would restart work they stopped.
+
+        Also releases the app-wide Esc shortcut ``start_task`` armed. A
+        container that ends a task through ``reset()`` rather than
+        ``finish_task`` (:class:`~uitk.widgets.footer.Footer` does) otherwise
+        left it listening, and a later Esc-hold anywhere in the host fired
+        ``cancel()`` on a task that was long over. ``start_task`` re-arms it
+        right after resetting.
         """
+        self._disable_cancel_shortcut()
         self._scope = None
         self._task_text = ""
         self.setValue(0)
@@ -282,9 +290,7 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
         # owns the format until release, when ``_on_escape_released``
         # restores ``_format_before_hold``. We update the saved format
         # instead so release reflects the new total.
-        determinate_format = (
-            f"{self._task_text} - %p%" if self._task_text else "%p%"
-        )
+        determinate_format = f"{self._task_text} - %p%" if self._task_text else "%p%"
         if self._escape_held:
             self._format_before_hold = determinate_format
         else:
@@ -319,8 +325,10 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
                 window closes.
         """
         self.reset()
-        self._scope = scope or ptk.CancelScope.current() or CancelManager.new_scope(
-            text or host_label or "task"
+        self._scope = (
+            scope
+            or ptk.CancelScope.current()
+            or CancelManager.new_scope(text or host_label or "task")
         )
         self._host_label = host_label if host_label is not None else text
         self._task_text = text

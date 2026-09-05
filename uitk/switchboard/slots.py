@@ -6,10 +6,10 @@ import traceback
 import weakref
 from functools import wraps
 from typing import Optional, Union, Type, Callable
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 from uitk.managers.cancel_manager import CancelManager
-from uitk.switchboard.utils import SwitchboardUtilsMixin
+from uitk.managers.cursor_manager import CursorManager
 
 
 class Signals:
@@ -193,70 +193,6 @@ class _ThreadSafeLogProxy(QtCore.QObject):
 
     def critical(self, message):
         self._record.emit("critical", str(message))
-
-
-class _ModalBusyCursorFilter(QtCore.QObject):
-    """Suspend the slot busy-cursor while a modal dialog blocks the app.
-
-    Installed on the ``QApplication`` for a slot's duration whenever the
-    dispatcher holds a :data:`Qt.WaitCursor` override (see
-    :meth:`SlotWrapper._invoke`). That override is application-wide and
-    beats *every* widget cursor, so a **native** modal dialog a slot
-    spawns — Maya's ``cmds.fileDialog2`` / ``promptDialog``, a host file
-    picker, an OS dialog — would show the busy hourglass over its own
-    buttons and fields while waiting for the user. uitk's own dialog
-    helpers suspend the override themselves, but a native DCC dialog is
-    not a Qt widget we wrap, so the dispatcher can't bracket it.
-
-    Qt posts :data:`QEvent.WindowBlocked` to a window when a modal blocks
-    it and :data:`QEvent.WindowUnblocked` when it's released — which fires
-    for native Qt-backed dialogs too. This filter pops the whole override
-    stack (preserving order) on the first block and restores it on the
-    matching unblock, so the dialog shows natural per-widget cursors and
-    the hourglass resumes automatically for any blocking work the slot
-    does *after* the dialog closes. Nesting is depth-counted so only the
-    outermost block/unblock pair touches the cursor.
-    """
-
-    def __init__(self, app):
-        super().__init__()
-        self._app = app
-        self._depth = 0
-        self._saved = []
-
-    def _restore_all(self):
-        SwitchboardUtilsMixin.push_override_cursor_stack(self._app, self._saved)
-        self._saved = []
-
-    def eventFilter(self, obj, event):
-        try:
-            etype = event.type()
-            if etype == QtCore.QEvent.WindowBlocked:
-                if self._depth == 0:
-                    self._saved = SwitchboardUtilsMixin.pop_override_cursor_stack(
-                        self._app
-                    )
-                self._depth += 1
-            elif etype == QtCore.QEvent.WindowUnblocked:
-                if self._depth > 0:
-                    self._depth -= 1
-                    if self._depth == 0:
-                        self._restore_all()
-        except Exception:
-            pass
-        return False  # never consume — purely observational
-
-    def cleanup(self):
-        """Re-balance the stack if a block had no matching unblock.
-
-        A modal blocks the slot synchronously, so the unblock normally
-        arrives before the slot returns. Defensive: if we exit still
-        suspended, put the saved overrides back so the dispatcher's
-        ``finally`` pops a balanced stack.
-        """
-        if self._depth > 0:
-            self._restore_all()
-        self._depth = 0
 
 
 class SlotWrapper:
@@ -447,53 +383,24 @@ class SlotWrapper:
             self._last_invocation_args = args
             self._last_invocation_kwargs = kwargs
 
-        # Wait cursor for the slot's duration. setOverrideCursor pushes
-        # onto Qt's cursor stack; the matching restore in ``finally``
-        # pops it. The cursor is OS-driven so it animates even when
-        # Maya's cmds.* holds the Qt event loop — the dispatcher-side
-        # affordance that previously tried to drive a footer marquee
-        # could not, because Qt animations need the event loop to tick.
-        # Wrapped defensively: a cursor failure must never block slot
-        # dispatch.
-        cursor_set = False
-        modal_filter = None
-        if not SlotWrapper._slot_busy_opt_out(self.widget, self.sb):
-            try:
-                QtWidgets.QApplication.setOverrideCursor(
-                    QtGui.QCursor(QtCore.Qt.WaitCursor)
-                )
-                cursor_set = True
-                # Auto-suspend the busy cursor over any native modal dialog
-                # the slot opens (Maya fileDialog2, OS pickers): they're
-                # interactive, so the hourglass would be wrong over them.
-                app = QtWidgets.QApplication.instance()
-                if app is not None:
-                    modal_filter = _ModalBusyCursorFilter(app)
-                    app.installEventFilter(modal_filter)
-            except Exception:
-                pass
+        # Wait cursor for the slot's duration — ``CursorManager.busy``: an
+        # owned entry on Qt's override stack, removed on exit wherever it
+        # sits (never the top of the stack blind), and suspended while a
+        # native modal dialog blocks the app (Maya fileDialog2, OS pickers —
+        # interactive, so the hourglass would be wrong over them). The cursor
+        # is OS-driven so it animates even when Maya's cmds.* holds the Qt
+        # event loop. A cursor failure never blocks dispatch: the scope
+        # swallows its own errors.
+        if SlotWrapper._slot_busy_opt_out(self.widget, self.sb):
+            busy = contextlib.nullcontext()
+        else:
+            busy = CursorManager.busy()
 
-        try:
-            # Execution Strategy
+        with busy:
             timeout = self._get_timeout()
             if timeout and timeout > 0:
                 return self._invoke_cancelable(timeout, *args, **kwargs)
-            else:
-                return self.slot(*args, **kwargs)
-        finally:
-            if modal_filter is not None:
-                try:
-                    app = QtWidgets.QApplication.instance()
-                    if app is not None:
-                        app.removeEventFilter(modal_filter)
-                    modal_filter.cleanup()
-                except Exception:
-                    pass
-            if cursor_set:
-                try:
-                    QtWidgets.QApplication.restoreOverrideCursor()
-                except Exception:
-                    pass
+            return self.slot(*args, **kwargs)
 
     def _invoke_cancelable(self, timeout, *args, **kwargs):
         """Run a ``@Cancelable`` slot inside a scope, monitor and transaction.
@@ -581,9 +488,7 @@ class SlotWrapper:
             except Exception as e:
                 self.sb.logger.error(f"Cancel provider failed to close cleanly: {e}")
             if was_cancelled:
-                self.sb.logger.warning(
-                    f"'{label}' cancelled by user ({scope.reason})."
-                )
+                self.sb.logger.warning(f"'{label}' cancelled by user ({scope.reason}).")
                 self._report_cancelled(label)
             elif scope.cancelled and ran_to_completion:
                 # Requested but never consumed, and the slot returned normally:

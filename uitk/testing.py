@@ -20,8 +20,16 @@ copy is a copy that drifts. Downstream use is one line::
 
 Call it **before the first ``QSettings`` is constructed** — at import time of a conftest or a test
 runner, not from a fixture — since the redirect works by replacing the ``QSettings`` class.
+
+The Qt-free half — refusing real browser launches, routing the process temp dir into one throwaway
+root — is :class:`pythontk.TestSandbox`, which this extends: ``activate()`` runs those guards first
+(so the stores below nest inside that root) and then the two Qt-side redirects. Same name on
+purpose: downstream suites call ONE sandbox and get every guard the stack has.
 """
+
 import os
+
+import pythontk as ptk
 
 
 class _TestSandboxInternal:
@@ -48,8 +56,12 @@ class _TestSandboxInternal:
         return ptk.TempArtifacts(f"uitk_test_{name}", policy="session").dir_path()
 
 
-class TestSandbox(_TestSandboxInternal):
-    """Point this process's user-state stores at throwaway temp dirs. Idempotent."""
+class TestSandbox(_TestSandboxInternal, ptk.TestSandbox):
+    """Point this process's user-state stores at throwaway temp dirs. Idempotent.
+
+    Plus everything :class:`pythontk.TestSandbox` guards (no real browser, one throwaway temp
+    root) — see :meth:`activate`.
+    """
 
     @classmethod
     def qsettings(cls):
@@ -127,23 +139,26 @@ class TestSandbox(_TestSandboxInternal):
 
     @classmethod
     def activate(cls):
-        """Redirect both stores; returns ``(qsettings_dir, presets_dir)``.
+        """Every guard; returns ``(qsettings_dir, presets_dir)``.
 
-        What a suite wants unless it has a reason to isolate only one. Safe to call more than once
-        — a second call returns the dirs the first created rather than re-redirecting (which would
-        strand state already written to the first pair).
+        pythontk's process-level guards first (browser refusal, the throwaway temp root — so the
+        two stores below land inside it), then both Qt-side redirects. What a suite wants unless it
+        has a reason to isolate only one. Safe to call more than once — a second call returns the
+        dirs the first created rather than re-redirecting (which would strand state already written
+        to the first pair).
         """
+        super().activate()
         return cls.qsettings(), cls.presets()
 
     @classmethod
     def is_active(cls):
-        """True once :meth:`qsettings` has redirected the store.
+        """True once every guard is in place: pythontk's and the ``QSettings`` redirect.
 
         For a suite that wants to *assert* its own isolation rather than assume it — the failure
         mode being silent, a missing sandbox is otherwise indistinguishable from a working one
         until a developer's live settings are already gone.
         """
-        if cls._qsettings_dir is None:
+        if cls._qsettings_dir is None or not super().is_active():
             return False
         try:
             from qtpy import QtCore

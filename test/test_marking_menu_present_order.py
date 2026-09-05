@@ -30,10 +30,13 @@ The harness exercises the REAL ``_show_marking_menu`` / ``setCurrentWidget`` /
 ``DriveableMarkingMenu``, which overrides them) with a stub switchboard, and
 records the current page at each presentation.
 """
+
 import logging
 import unittest
 
 from qtpy import QtCore, QtWidgets
+
+from uitk.managers.cursor_manager import CursorManager
 
 from conftest import QtBaseTestCase
 from uitk.widgets.marking_menu._marking_menu import MarkingMenu
@@ -243,8 +246,7 @@ class TestReopenPresentOrder(QtBaseTestCase):
     def tearDown(self):
         # start_gesture sets an application override cursor; make sure no
         # test path leaks it into the rest of the suite.
-        while QtWidgets.QApplication.overrideCursor() is not None:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        CursorManager.drain()
         super().tearDown()
 
     def _reopen_after_submenu_launch_cycle(self):
@@ -383,8 +385,7 @@ class TestHideDefeatsPinnedPages(QtBaseTestCase):
             self.track_widget(page)
 
     def tearDown(self):
-        while QtWidgets.QApplication.overrideCursor() is not None:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        CursorManager.drain()
         super().tearDown()
 
     def _navigate_to_pinned_submenu(self):

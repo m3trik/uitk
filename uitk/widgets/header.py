@@ -8,6 +8,7 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.managers.icon_manager import IconManager
+from uitk.managers.cursor_manager import CursorManager
 
 
 class Header(
@@ -172,6 +173,12 @@ class Header(
 
         self.setLayout(self.container_layout)
         self.setCursor(QtGui.QCursor(QtCore.Qt.OpenHandCursor))
+        # HoverMove is the hook for the stale-hover heal (see event()). Hover
+        # events need no mouse tracking and never propagate to the parent —
+        # a tracked MouseMove would, and would flood the marking menu's hover
+        # tracker with button-less moves.
+        self.setAttribute(QtCore.Qt.WA_Hover, True)
+        self._dragging = False  # a press that has moved far enough to drag
 
         self.setProperty("class", self.__class__.__name__)
         font = self.font()
@@ -1227,11 +1234,23 @@ class Header(
             self.__mousePressPos = event.globalPos()
         super().mousePressEvent(event)
 
+    def event(self, event):
+        # A hover move is proof the pointer is over the header. If Qt still
+        # says it is not, its enter/leave bookkeeping is stale and the open
+        # hand set in __init__ never applies (the "cursor never changes until
+        # I click somewhere" report) — re-dispatch the Enter so it does.
+        if event.type() == QtCore.QEvent.HoverMove and self.__mousePressPos is None:
+            CursorManager.heal_hover(self, event.globalPosition().toPoint())
+        return super().event(event)
+
     def mouseMoveEvent(self, event):
         """Handle the mouse move event."""
         if self.__mousePressPos is not None:
             moveAmount = event.globalPos() - self.__mousePressPos
             if moveAmount.manhattanLength() > 5:
+                if not self._dragging:
+                    self._dragging = True
+                    CursorManager.push(self, QtCore.Qt.ClosedHandCursor)
                 self.window().move(self.window().pos() + moveAmount)
                 self.__mousePressPos = event.globalPos()
                 if not self.pinned:  # Only change state if not already pinned
@@ -1241,7 +1260,15 @@ class Header(
     def mouseReleaseEvent(self, event):
         # No need to toggle pin state here, as pinning is controlled by the button
         self.__mousePressPos = None
+        self._end_drag_cursor()
         super().mouseReleaseEvent(event)
+
+    def _end_drag_cursor(self):
+        """Put the open hand back after a drag — from the release, or from a
+        hide that lands mid-drag and swallows the release."""
+        if self._dragging:
+            self._dragging = False
+            CursorManager.pop(self)
 
     def showEvent(self, event):
         if self._minimized:
@@ -1359,6 +1386,7 @@ class Header(
 
     def hideEvent(self, event):
         """Reset minimize/collapse state when header (and window) is hidden."""
+        self._end_drag_cursor()
         if self._minimized:
             self.restore_window()
         elif self._collapsed:

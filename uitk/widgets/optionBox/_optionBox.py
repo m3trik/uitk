@@ -254,7 +254,24 @@ class OptionBoxContainer(QtWidgets.QWidget):
             # Comparing the two hidden states keeps this idempotent: the
             # cascade our own setVisible triggers re-enters here with both
             # sides agreeing, and stops.
-            if obj is not self and obj.isHidden() != self.isHidden():
+            #
+            # A Hide whose target is NOT explicitly hidden is a cascade, and
+            # that includes the cascade from THIS container's own hide (a
+            # header collapse hides the row by hiding the container). Qt
+            # delivers that Hide to the widget while the container is already
+            # hidden, so the two states disagree - reacting re-showed the
+            # container from inside its own hide, and the row kept painting
+            # inside the collapsed header strip. Only an explicit hide of the
+            # widget may hide the container.
+            hide_cascade = (
+                etype in (QtCore.QEvent.Hide, QtCore.QEvent.HideToParent)
+                and not obj.isHidden()
+            )
+            if (
+                obj is not self
+                and not hide_cascade
+                and obj.isHidden() != self.isHidden()
+            ):
                 self.setVisible(not obj.isHidden())
         elif etype == QtCore.QEvent.Resize:
             # Re-square the option buttons to the wrapped widget's new height so

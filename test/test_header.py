@@ -1231,6 +1231,34 @@ class TestHeaderCollapseKeepsContentHidden(QtBaseTestCase):
         )
         self.assertLessEqual(header.y() + header.height(), window.height())
 
+    def test_option_box_wrapped_field_stays_hidden_while_collapsed(self):
+        """Live report (Shot Manifest): the CSV-path row painted inside the strip.
+
+        That row is an option-box-wrapped field. The container the collapse
+        hides mirrors the wrapped widget's visibility, and the Hide that Qt
+        cascades to the field during the container's own hide re-showed it.
+        """
+        from uitk.widgets.optionBox._optionBox import OptionBox
+
+        window, header, body = self._make()
+        field = QtWidgets.QLineEdit("path", parent=window)
+        window.layout().addWidget(field)
+        container = self.track_widget(OptionBox(options=[]).wrap(field))
+        window.show()
+        window.resize(400, 300)
+        app.processEvents()
+
+        header.collapse_window()
+        app.processEvents()
+        self.assertFalse(container.isVisible(), "option-box row must be hidden")
+        self.assertFalse(field.isVisible())
+        self.assertLessEqual(header.y() + header.height(), window.height())
+
+        header.expand_window()
+        app.processEvents()
+        self.assertTrue(container.isVisible())
+        self.assertTrue(field.isVisible())
+
     def test_expand_still_restores_content_after_a_reassert(self):
         """The re-assert must not strand content hidden once expanded."""
         window, header, body = self._make()
@@ -1671,6 +1699,101 @@ class TestHeaderPinOnTap(QtBaseTestCase):
         _, header = self._pin_header(pin_on_drag_only=True, pin_on_tap=False)
         self.assertTrue(header.pin_on_drag_only)
         self.assertFalse(header.pin_on_tap)
+
+
+class TestHeaderDragCursor(QtBaseTestCase):
+    """The header's cursor follows the gesture — open hand at rest, closed hand
+    while the window is being dragged, open hand again on release — and the
+    open hand comes back on its own when Qt's hover bookkeeping has gone
+    stale (the "cursor never changes until I click somewhere" report)."""
+
+    def _make(self):
+        window = self.track_widget(QtWidgets.QWidget())
+        window.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(parent=window)
+        layout.addWidget(header)
+        layout.addWidget(QtWidgets.QLabel("body", parent=window))
+        window.show()
+        app.processEvents()
+        return window, header
+
+    # The 6-arg form carries the global position the drag math reads; one
+    # event at a time (Qt6 pools mouse-event allocations).
+    @staticmethod
+    def _mouse(kind, x, y, button):
+        return QtGui.QMouseEvent(
+            kind,
+            QtCore.QPointF(x, y),
+            QtCore.QPointF(x, y),
+            button,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+
+    def _drag(self, header):
+        header.mousePressEvent(
+            self._mouse(QtCore.QEvent.MouseButtonPress, 0, 0, QtCore.Qt.LeftButton)
+        )
+        header.mouseMoveEvent(
+            self._mouse(QtCore.QEvent.MouseMove, 20, 20, QtCore.Qt.NoButton)
+        )
+
+    def test_closed_hand_while_dragging_open_hand_after(self):
+        window, header = self._make()
+        header.mousePressEvent(
+            self._mouse(QtCore.QEvent.MouseButtonPress, 0, 0, QtCore.Qt.LeftButton)
+        )
+        self.assertEqual(
+            header.cursor().shape(),
+            QtCore.Qt.OpenHandCursor,
+            "a press that has not moved is not a drag",
+        )
+        header.mouseMoveEvent(
+            self._mouse(QtCore.QEvent.MouseMove, 20, 20, QtCore.Qt.NoButton)
+        )
+        self.assertEqual(header.cursor().shape(), QtCore.Qt.ClosedHandCursor)
+        header.mouseReleaseEvent(
+            self._mouse(QtCore.QEvent.MouseButtonRelease, 20, 20, QtCore.Qt.LeftButton)
+        )
+        self.assertEqual(header.cursor().shape(), QtCore.Qt.OpenHandCursor)
+        self.assertTrue(
+            header.testAttribute(QtCore.Qt.WA_SetCursor),
+            "the header's own open hand must be restored, not unset",
+        )
+
+    def test_hide_mid_drag_releases_the_drag_cursor(self):
+        """A tap-to-hide can hide the window before the release arrives."""
+        window, header = self._make()
+        self._drag(header)
+        self.assertEqual(header.cursor().shape(), QtCore.Qt.ClosedHandCursor)
+        window.hide()
+        app.processEvents()
+        self.assertEqual(header.cursor().shape(), QtCore.Qt.OpenHandCursor)
+
+    def test_stale_hover_state_is_healed_by_a_hover_move(self):
+        window, header = self._make()
+        self.assertFalse(header.underMouse())  # never entered — the stale shape
+        local = QtCore.QPointF(header.rect().center())
+        glob = QtCore.QPointF(header.mapToGlobal(header.rect().center()))
+        hover = QtGui.QHoverEvent(QtCore.QEvent.HoverMove, local, glob, local)
+        QtWidgets.QApplication.sendEvent(header, hover)
+        self.assertTrue(
+            header.underMouse(),
+            "a hover move over a header Qt thinks is not under the mouse "
+            "must re-run the enter dispatch",
+        )
+
+    def test_hover_move_during_a_drag_does_not_heal(self):
+        """While a button is held the missing Enter is Qt's intent."""
+        window, header = self._make()
+        self._drag(header)
+        local = QtCore.QPointF(header.rect().center())
+        glob = QtCore.QPointF(header.mapToGlobal(header.rect().center()))
+        QtWidgets.QApplication.sendEvent(
+            header, QtGui.QHoverEvent(QtCore.QEvent.HoverMove, local, glob, local)
+        )
+        self.assertFalse(header.underMouse())
 
 
 # -----------------------------------------------------------------------------

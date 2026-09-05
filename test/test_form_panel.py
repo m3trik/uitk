@@ -31,6 +31,7 @@ app = setup_qt_application()
 from qtpy import QtCore, QtGui, QtWidgets
 
 from uitk.switchboard.utils import SwitchboardUtilsMixin
+from uitk.managers.cursor_manager import CursorManager
 from uitk.widgets.formPanel import FormPanel
 
 
@@ -701,7 +702,7 @@ class TestFormPanelBrowse(FormPanelTestCase):
     def test_the_busy_cursor_is_suspended_for_the_picker(self):
         panel = self._panel()
         with (
-            patch.object(SwitchboardUtilsMixin, "_suspend_override_cursor") as suspend,
+            patch.object(CursorManager, "suspend") as suspend,
             patch.object(
                 QtWidgets.QFileDialog,
                 "getExistingDirectory",
@@ -1054,9 +1055,7 @@ class TestFormDialog(FormPanelTestCase):
         """A modal under a slot's busy cursor must show an I-beam in its fields
         and an arrow on its buttons, not the host's hourglass."""
         with patch.object(
-            SwitchboardUtilsMixin,
-            "_suspend_override_cursor",
-            wraps=SwitchboardUtilsMixin._suspend_override_cursor,
+            CursorManager, "suspend", wraps=CursorManager.suspend
         ) as suspend:
             self._run_modal(lambda panel: panel._on_reject())
         suspend.assert_called()

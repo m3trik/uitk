@@ -38,6 +38,7 @@ question which one to read.
 from typing import Callable, Dict, List, Optional, Union
 
 from qtpy import QtCore, QtWidgets
+from uitk.managers.cursor_manager import CursorManager
 
 from uitk.widgets.windowPanel import WindowPanel
 
@@ -529,12 +530,8 @@ class FormPanel(WindowPanel):
     def _browse(self, spec, line) -> None:
         start = spec.get("start_dir") or line.text() or ""
         # Suspend any host busy-cursor so the picker shows normal cursors.
-        # Imported here: the switchboard imports this module's package, so a
-        # top-level import would close the cycle.
-        from uitk.switchboard.utils import SwitchboardUtilsMixin
-
         caption = str(spec.get("label") or spec["name"])
-        with SwitchboardUtilsMixin._suspend_override_cursor():
+        with CursorManager.suspend():
             if spec.get("kind") == "file":
                 chosen, _ = QtWidgets.QFileDialog.getOpenFileName(self, caption, start)
             else:
@@ -869,9 +866,7 @@ class FormPanel(WindowPanel):
         self._modal_loop = loop
         # Suspend any slot busy-cursor for the modal, so the fields show an
         # I-beam and the buttons an arrow instead of the busy hourglass.
-        from uitk.switchboard.utils import SwitchboardUtilsMixin
-
-        with SwitchboardUtilsMixin._suspend_override_cursor():
+        with CursorManager.suspend():
             self.present()
             loop.exec_()
         return self._accepted

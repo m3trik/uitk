@@ -42,6 +42,13 @@ autopatched onto plain ``QLineEdit``/etc.), so prefer it in slot code; the
     # Four modes: the three manual ones plus "use the shared convention",
     # which fills the field from the SSoT and makes it read-only while active.
     le.option_box.set_affix(default="auto", convention_key="material")
+
+    # Same fourth state for a field whose target type is not fixed: the key is
+    # resolved per read, so the field previews what the CURRENT selection would
+    # get, and a slot whose engine resolves per object passes its sentinel.
+    le.option_box.set_affix(
+        default="convention", convention_key=lambda: type_key(selection())
+    )
 """
 
 import logging
@@ -114,7 +121,7 @@ class AffixMode:
     @classmethod
     def convention(
         cls,
-        convention_key: str,
+        convention_key: Union[str, Callable[[], str]],
         *,
         key: str = "convention",
         label: str = "Scene",
@@ -133,9 +140,24 @@ class AffixMode:
         text has no type key (a version stamp, a user's own tag) has nothing to
         bind to. Opt in per call site via ``set_affix(convention_key=...)``.
 
+        **The key may be a callable**, for a field whose target type is not
+        fixed: a tool that names whatever the user selected cannot know up front
+        whether that is a mesh (``_GEO``) or a camera (``_CAM``). It is resolved
+        on every read, and the option box re-pulls when it is shown, so the
+        field previews the affix the CURRENT target would get. Deliberately the
+        same state rather than a second one: "follow the shared convention" is
+        one idea, and it must look and persist identically everywhere it is
+        offered. A caller whose operation resolves per object (a mixed selection
+        has no single answer) reads :attr:`AffixOption.mode`, sees
+        ``"convention"``, and passes its engine's "use the convention" sentinel
+        instead of the previewed text.
+
         Parameters:
             convention_key: The type key to read — ``"material"``, ``"mesh"``,
-                ``"group"``… See ``NamingConvention.keys()``.
+                ``"group"``… See ``NamingConvention.keys()``. Or a
+                ``() -> key`` callable for a target-dependent type; it must
+                always answer a key (fall back to the tool's usual type rather
+                than returning nothing, which would empty the field).
             key: Stable persisted identifier for this state.
             label: Display name in the tooltip.
             icon: Glyph for the button (a link: bound to the shared definition).
@@ -143,29 +165,39 @@ class AffixMode:
         """
         from pythontk import NamingConvention
 
-        if convention_key not in NamingConvention.resolve():
+        dynamic = callable(convention_key)
+        if not dynamic and convention_key not in NamingConvention.resolve():
             # Not fatal (a key can be added later), but say so: a typo here
             # otherwise produces a state that empties the field, locks it, and
-            # applies nothing — with no visible cause.
+            # applies nothing — with no visible cause. A callable is exempt:
+            # its answer depends on the scene, so there is nothing to check yet.
             logger.warning(
                 "[AffixOption] convention key %r is not in NamingConvention; "
                 "the mode will supply nothing.",
                 convention_key,
             )
-        title = NamingConvention.label(convention_key)
+
+        def resolve_key(k=convention_key) -> str:
+            return k() if dynamic else k
+
+        title = (
+            "each object's own type"
+            if dynamic
+            else NamingConvention.label(convention_key).lower()
+        )
         return cls(
             key=key,
             label=label,
             icon=icon,
             description=(
                 description
-                or f"follows the shared naming convention for {title.lower()} "
+                or f"follows the shared naming convention for {title} "
                 f"(read-only here — edit it in the Naming panel)"
             ),
-            resolver=lambda _text, default, k=convention_key: (
-                NamingConvention.affix_parts(k, default=default)
+            resolver=lambda _text, default: NamingConvention.affix_parts(
+                resolve_key(), default=default
             ),
-            provider=lambda k=convention_key: NamingConvention.affix(k),
+            provider=lambda: NamingConvention.affix(resolve_key()),
             locks_text=True,
         )
 
@@ -225,7 +257,7 @@ class AffixOption(PersistedOption, ButtonOption):
         *,
         default: str = "auto",
         modes: Optional[Sequence[Union[str, AffixMode]]] = None,
-        convention_key: Optional[str] = None,
+        convention_key: Optional[Union[str, Callable[[], str]]] = None,
         on_change: Optional[Callable[[str], None]] = None,
         tooltip: Optional[str] = None,
         settings_key: Optional[Union[str, bool]] = None,
@@ -244,6 +276,8 @@ class AffixOption(PersistedOption, ButtonOption):
             convention_key: Shorthand for appending
                 :meth:`AffixMode.convention` to the default cycle. Ignored when
                 *modes* is given explicitly (list the mode there instead).
+                A ``() -> key`` callable binds the state to the CURRENT
+                target's type instead of a fixed one — see that method.
             on_change: Optional callable invoked with the new mode key whenever
                 the mode changes on the built button (click or programmatic
                 :meth:`set_mode`). Not fired for the restore of a persisted mode.
@@ -286,7 +320,7 @@ class AffixOption(PersistedOption, ButtonOption):
     @staticmethod
     def _build_modes(
         modes: Optional[Sequence[Union[str, AffixMode]]],
-        convention_key: Optional[str],
+        convention_key: Optional[Union[str, Callable[[], str]]],
     ) -> "Dict[str, AffixMode]":
         """Normalize the requested cycle to an ordered ``{key: AffixMode}``.
 
@@ -301,9 +335,13 @@ class AffixOption(PersistedOption, ButtonOption):
                 # Skip an unknown key rather than offering a state that empties
                 # the field and locks it: a picker missing its fourth state is
                 # diagnosable (the warning names the key), a dead field is not.
+                # A callable key answers from the scene, so there is nothing to
+                # check here -- it is taken on trust.
                 from pythontk import NamingConvention
 
-                if convention_key in NamingConvention.resolve():
+                if callable(convention_key) or convention_key in (
+                    NamingConvention.resolve()
+                ):
                     resolved.append(AffixMode.convention(convention_key))
                 else:
                     logger.warning(
@@ -477,10 +515,21 @@ class AffixOption(PersistedOption, ButtonOption):
         spec = self._modes[self._mode]
 
         if spec.locks_text or spec.provider is not None:
+            supplied = spec.text()
             if capture and not self._locked:
                 self._held = host.text()
                 self._save_state()
-            supplied = spec.text()
+            elif self._held is None and not self._locked:
+                # A restore with NOTHING parked — a picker whose default IS a
+                # supplying mode, over a field the panel seeded (setText="_GEO").
+                # Without this the seed is overwritten and lost, so leaving the
+                # mode hands the slot an empty field, or this mode's own token
+                # as if it were a literal affix. Never park the supplied text
+                # itself: that is the mode's, not the user's.
+                current = host.text()
+                if current and current != supplied:
+                    self._held = current
+                    self._save_state()
             if supplied is not None:
                 host.setText(supplied)
             if spec.locks_text and hasattr(host, "setReadOnly"):

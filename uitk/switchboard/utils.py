@@ -2,12 +2,18 @@
 # coding=utf-8
 import re
 import traceback
-import contextlib
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Union
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
 from uitk.managers.value_manager import ValueManager
+from uitk.managers.cursor_manager import CursorManager
+
+# Compatibility re-export (2026-09, one release): ``uitk.switchboard`` still
+# publishes ``OverrideCursorGuard`` through this module. New code imports it
+# from ``uitk`` (or ``uitk.managers.cursor_manager``).
+from uitk.managers.cursor_manager import OverrideCursorGuard  # noqa: F401
 
 
 # Lock-toggle tints used by :meth:`SwitchboardUtilsMixin.link_spinboxes`, taken
@@ -17,183 +23,6 @@ from uitk.managers.value_manager import ValueManager
 # (which is there to flag the control that stopped something working).
 _LOCK_ACTIVE_COLOR = "#8A9BB0"
 _LOCK_INACTIVE_COLOR = "#555555"
-
-
-class OverrideCursorGuard(QtCore.QObject):
-    """Owns one application override cursor and guarantees its removal.
-
-    ``QApplication.setOverrideCursor`` / ``restoreOverrideCursor`` are a
-    balanced pair, so an override is only ever as reliable as the event that is
-    supposed to pop it. A cursor pushed for the duration of an interaction —
-    the marking menu's gesture ``CrossCursor`` — strands itself over the whole
-    application whenever that pop is missed, and nothing notices:
-
-      * the release lands somewhere else (a child widget holding the mouse
-        grab, the host DCC, another window), so the pushing widget never sees
-        the event that ends the interaction;
-      * the widget is *destroyed* rather than hidden — Qt sends no hide event
-        to a child in that case (only a parent ``hide()`` while visible does);
-      * a third party snapshots the stack and restores it afterwards
-        (:meth:`SwitchboardUtilsMixin._suspend_override_cursor`, the slot
-        dispatcher's modal filter). If the owner released its cursor while the
-        stack was suspended, the restore re-pushes an entry that now has no
-        owner at all.
-
-    This guard replaces balanced-call bookkeeping with an INVARIANT — *an
-    override of ``shape`` exists only while ``is_live()`` says it should* —
-    enforced from three sides:
-
-      * :meth:`apply` / :meth:`clear` — the ordinary, immediate path.
-      * a watchdog timer, running ONLY while the guard holds the override,
-        that clears it as soon as ``is_live()`` turns False. This is what
-        covers the missed events: no event has to arrive for the cursor to
-        come back. A predicate that raises (the owner's C++ object is gone)
-        counts as not-live, and the class keeps the guard — and therefore its
-        timer — alive while it holds a push, so even a destroyed owner is
-        cleaned up.
-      * :meth:`reconcile` — drops any stack entry whose shape a guard claims
-        but no guard holds (the snapshot/restore case). Run before every
-        apply, and applied as a filter inside
-        :meth:`SwitchboardUtilsMixin.push_override_cursor_stack` so a stale
-        entry is never re-pushed in the first place.
-
-    The claimed shape must be EXCLUSIVE to the guard: nothing else in the
-    process may push it, or reconcile would drop a stranger's cursor.
-
-    Parameters:
-        shape (Qt.CursorShape): The cursor this guard owns, exclusively.
-        is_live (callable): Zero-arg predicate — True while the override is
-            legitimate (e.g. ``widget.isVisible``). Raising counts as False.
-        interval_ms (int): Watchdog period while the override is held.
-    """
-
-    #: Shapes any guard has ever claimed — the set :meth:`is_stale` filters on.
-    _CLAIMED_SHAPES = set()
-    #: Guards currently holding a push. A strong ref, so a guard whose owner
-    #: was destroyed still gets ticked (and cleaned up) by its own timer.
-    _HOLDERS = set()
-
-    def __init__(self, shape, is_live: Callable[[], bool], interval_ms: int = 250):
-        super().__init__()
-        self._shape = shape
-        self._is_live = is_live
-        self._holding = False
-        # Explicitly the base class's registries: they are process-global by
-        # design (any subclass shares them), and mutating through ``type(self)``
-        # would read as per-subclass state.
-        OverrideCursorGuard._CLAIMED_SHAPES.add(shape)
-
-        self._timer = QtCore.QTimer(self)
-        self._timer.setInterval(interval_ms)
-        self._timer.timeout.connect(self._on_tick)
-
-    @property
-    def shape(self):
-        """The cursor shape this guard owns."""
-        return self._shape
-
-    @property
-    def holding(self) -> bool:
-        """True while this guard holds an application override cursor."""
-        return self._holding
-
-    def apply(self) -> None:
-        """Push the override (idempotent) and start the watchdog."""
-        app = QtWidgets.QApplication.instance()
-        if app is None or self._holding:
-            return
-        # Anything of our shape still on the stack is by definition stale —
-        # we hold nothing. Clear it so a leak can never accumulate a second
-        # entry that would outlive this interaction too.
-        self.reconcile()
-        app.setOverrideCursor(QtGui.QCursor(self._shape))
-        self._holding = True
-        OverrideCursorGuard._HOLDERS.add(self)
-        self._timer.start()
-
-    def clear(self) -> None:
-        """Remove the override (idempotent) and stop the watchdog."""
-        if not self._holding:
-            return
-        # Order matters: dropping ownership FIRST is what lets the removal
-        # below reuse the generic stale-entry filter for the buried case.
-        self._holding = False
-        OverrideCursorGuard._HOLDERS.discard(self)
-        self._timer.stop()
-
-        app = QtWidgets.QApplication.instance()
-        if app is None:
-            return
-        top = app.overrideCursor()
-        if top is None:
-            # Nothing to remove — the stack is currently suspended by someone
-            # else (their restore now drops our entry via is_stale).
-            return
-        if top.shape() == self._shape:
-            app.restoreOverrideCursor()
-        else:
-            # Buried under a later push (e.g. a slot's busy cursor): rebuild
-            # the stack without our entry rather than popping theirs.
-            self.reconcile()
-
-    def _on_tick(self) -> None:
-        """Watchdog: enforce the invariant without needing any event."""
-        if self._live():
-            return
-        self.clear()
-
-    def _live(self) -> bool:
-        """``is_live()``, fail-safe. Any failure — including a deleted C++
-        owner (``RuntimeError``) — means *not* live: an override that cannot
-        prove it is still wanted must go."""
-        try:
-            return bool(self._is_live())
-        except Exception:
-            return False
-
-    @classmethod
-    def holds(cls, shape) -> bool:
-        """True if any live guard currently holds ``shape``.
-
-        Snapshots the holder set: a guard released mid-iteration (a watchdog
-        tick landing inside a stack rebuild) mutates it.
-        """
-        return any(g.holding and g.shape == shape for g in tuple(cls._HOLDERS))
-
-    @classmethod
-    def is_stale(cls, cursor) -> bool:
-        """True if ``cursor`` is a guard-owned shape that no guard holds —
-        an orphan that must not be (re-)pushed onto the stack."""
-        shape = cursor.shape()
-        return shape in cls._CLAIMED_SHAPES and not cls.holds(shape)
-
-    @classmethod
-    def notify_stack_drained(cls) -> None:
-        """Drop every guard's ownership because the whole stack was dropped
-        out from under them (see :meth:`SwitchboardUtilsMixin._drain_override_cursor`).
-
-        Without this a guard keeps claiming an entry that no longer exists:
-        ``holds`` then reports True for an orphaned shape, and — the visible
-        part — :meth:`apply` short-circuits, so the interaction runs out its
-        life with no cursor instead of re-asserting one. Only the ownership
-        flag is cleared; there is nothing left to pop.
-        """
-        for guard in tuple(cls._HOLDERS):
-            guard._holding = False
-            guard._timer.stop()
-        cls._HOLDERS.clear()
-
-    @classmethod
-    def reconcile(cls) -> None:
-        """Drop every orphaned guard cursor from the application stack,
-        wherever it sits, leaving all other entries in their original order.
-        No-op when no override is active."""
-        app = QtWidgets.QApplication.instance()
-        if app is None or app.overrideCursor() is None:
-            return
-        saved = SwitchboardUtilsMixin.pop_override_cursor_stack(app)
-        # The re-push drops stale entries (see push_override_cursor_stack).
-        SwitchboardUtilsMixin.push_override_cursor_stack(app, saved)
 
 
 class SwitchboardUtilsMixin:
@@ -214,95 +43,41 @@ class SwitchboardUtilsMixin:
         return ("value", condition, invert)
 
     @staticmethod
-    def pop_override_cursor_stack(app):
-        """Pop the whole application override-cursor stack.
+    def busy_cursor(shape=QtCore.Qt.WaitCursor):
+        """Application busy cursor for the duration of a ``with`` block.
 
-        Shared primitive for the cursor-suspension helpers below and the
-        dispatcher's modal guard. Returns the popped cursors **top-first** so
-        they can be re-pushed in the original order via
-        :meth:`push_override_cursor_stack`. No-op (empty list) when no
-        override is active or ``app`` is ``None``.
+        :meth:`CursorManager.busy` reached through the switchboard, for slot
+        code that runs OUTSIDE dispatch (a worker callback, a method called
+        directly). Every dispatched slot is already bracketed in one, so a
+        slot body never needs it — and never touches
+        ``QApplication.setOverrideCursor`` directly: the raw pair pops the top
+        of the stack rather than its own entry.
         """
-        saved = []
-        if app is not None:
-            while True:
-                current = app.overrideCursor()
-                if current is None:
-                    break
-                saved.append(QtGui.QCursor(current))
-                app.restoreOverrideCursor()
-        return saved
+        return CursorManager.busy(shape)
+
+    @staticmethod
+    def pop_override_cursor_stack(app):
+        """Deprecated alias of :meth:`CursorManager.pop_stack` (2026-09; removed
+        in the release after). The new home takes ``pop_stack(app)``."""
+        warnings.warn(
+            "SwitchboardUtilsMixin.pop_override_cursor_stack is deprecated; "
+            "use uitk.CursorManager.pop_stack(app).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return CursorManager.pop_stack(app)
 
     @staticmethod
     def push_override_cursor_stack(app, saved):
-        """Re-push cursors captured by :meth:`pop_override_cursor_stack`,
-        restoring the original stack order. No-op when ``app`` is ``None``.
-
-        An entry belonging to an :class:`OverrideCursorGuard` that has since
-        released it is skipped: restoring it would strand a cursor whose owner
-        is gone (the pop/push pair brackets an unbounded wait — a modal dialog
-        — during which the owning interaction can easily end).
-        """
-        if app is not None:
-            for cursor in reversed(saved):
-                if OverrideCursorGuard.is_stale(cursor):
-                    continue
-                app.setOverrideCursor(cursor)
-
-    @staticmethod
-    @contextlib.contextmanager
-    def _suspend_override_cursor():
-        """Temporarily clear the application override-cursor stack.
-
-        The slot dispatcher pushes a :data:`Qt.WaitCursor` override for the
-        duration of every slot (see ``SlotWrapper._invoke``). A
-        ``QApplication`` override cursor takes precedence over *every* widget
-        cursor, so any dialog a slot spawns inherits the busy hourglass —
-        even over its buttons, text fields, and file lists, where the user is
-        expected to interact. A per-widget ``setCursor`` cannot win against an
-        active override, so the only correct fix is to suspend the override
-        for the dialog's (modal) lifetime, letting each widget show its
-        natural cursor (arrow on buttons, I-beam in line edits), then restore
-        the exact stack afterward so the slot's busy feedback resumes.
-
-        No-op when no override is active (dialogs opened outside a slot).
-        """
-        app = QtWidgets.QApplication.instance()
-        saved = SwitchboardUtilsMixin.pop_override_cursor_stack(app)
-        try:
-            yield
-        finally:
-            SwitchboardUtilsMixin.push_override_cursor_stack(app, saved)
-
-    @staticmethod
-    def _drain_override_cursor():
-        """Pop the entire application override-cursor stack.
-
-        Counterpart to :meth:`_suspend_override_cursor` for *non-modal*
-        windows. A modal dialog can suspend the slot's busy cursor for the
-        bounded lifetime of its event loop and restore it on close. A
-        non-modal viewer (see :meth:`text_view_dialog`) outlives the slot
-        that spawned it — by the time the user closes it the dispatcher's
-        ``finally`` has long since restored the cursor, so there is nothing
-        to restore *to*. Re-pushing a ``WaitCursor`` on the window's close
-        would strand a busy hourglass with no matching pop (the reported
-        "cursor stays active" symptom). The correct behaviour is therefore
-        to *cancel* the busy cursor outright when the window appears: the
-        slot's work product is on screen and the user is now meant to
-        interact with it. Draining the whole stack also leaves the
-        dispatcher's matching ``restoreOverrideCursor`` a harmless no-op,
-        keeping the override stack balanced.
-
-        No-op when no override is active (window opened outside a slot).
-
-        A drain takes *every* owner's entry, guards included — so they are
-        told, or a guard would keep claiming an entry that no longer exists
-        (see :meth:`OverrideCursorGuard.notify_stack_drained`).
-        """
-        SwitchboardUtilsMixin.pop_override_cursor_stack(
-            QtWidgets.QApplication.instance()
+        """Deprecated alias of :meth:`CursorManager.push_stack` (2026-09; removed
+        in the release after). The new home takes ``push_stack(saved, app)``."""
+        warnings.warn(
+            "SwitchboardUtilsMixin.push_override_cursor_stack is deprecated; "
+            "use uitk.CursorManager.push_stack(saved, app).",
+            DeprecationWarning,
+            stacklevel=2,
         )
-        OverrideCursorGuard.notify_stack_drained()
+        CursorManager.push_stack(saved, app)
 
     @staticmethod
     def get_cursor_offset_from_center(widget):
@@ -1922,6 +1697,7 @@ class SwitchboardUtilsMixin:
         ui=None,
         total: Optional[int] = None,
         text: str = "",
+        busy: Optional[bool] = None,
     ):
         """Context manager for cooperative progress / task feedback.
 
@@ -1951,6 +1727,10 @@ class SwitchboardUtilsMixin:
             total: Step count for determinate mode; ``None`` (default)
                 selects indeterminate / task-indicator mode.
             text: Optional status text shown alongside the bar.
+            busy: Show the footer's busy spinner beside the text. ``None``
+                (default) shows it for indeterminate work only; ``True``
+                keeps it on a determinate bar whose single steps are long
+                (see ``Footer.set_busy``); ``False`` never shows it.
 
         Yields:
             ``update(value=None, text=None) -> bool`` — returns ``False``
@@ -1977,7 +1757,7 @@ class SwitchboardUtilsMixin:
             ui = getattr(self, "active_ui", None) or getattr(self, "current_ui", None)
         footer = getattr(ui, "footer", None) if ui is not None else None
         if footer is not None and hasattr(footer, "progress"):
-            return footer.progress(total=total, text=text)
+            return footer.progress(total=total, text=text, busy=busy)
         return _NoOpProgressContext()
 
     @staticmethod
@@ -2077,7 +1857,7 @@ class SwitchboardUtilsMixin:
             msg_box.setStandardButtons(*buttons)
             msg_box.setText(string, background=background)
             # Modal: suspend any slot busy-cursor so buttons show an arrow.
-            with SwitchboardUtilsMixin._suspend_override_cursor():
+            with CursorManager.suspend():
                 return msg_box.exec_()
         else:
             # Safe to reuse for passive popups
@@ -2173,7 +1953,7 @@ class SwitchboardUtilsMixin:
         # modal dialogs above we cannot suspend-and-restore around a
         # bounded event loop, so cancel the busy cursor outright — the
         # report is on screen and the user is meant to interact with it.
-        SwitchboardUtilsMixin._drain_override_cursor()
+        CursorManager.drain()
         return dlg
 
     @staticmethod
@@ -2206,7 +1986,7 @@ class SwitchboardUtilsMixin:
         options = QtWidgets.QFileDialog.Options()
         file_types_string = f"{filter_description} ({' '.join(file_types)})"
 
-        with SwitchboardUtilsMixin._suspend_override_cursor():
+        with CursorManager.suspend():
             if allow_multiple:
                 files, _ = QtWidgets.QFileDialog.getOpenFileNames(
                     None, title, start_dir, file_types_string, options=options
@@ -2232,7 +2012,7 @@ class SwitchboardUtilsMixin:
             directory_path = dir_dialog(title="Select a project folder")
         """
         options = QtWidgets.QFileDialog.Options()
-        with SwitchboardUtilsMixin._suspend_override_cursor():
+        with CursorManager.suspend():
             directory_path = QtWidgets.QFileDialog.getExistingDirectory(
                 None, title, start_dir, options=options
             )
@@ -2270,7 +2050,7 @@ class SwitchboardUtilsMixin:
 
         file_types_string = f"{filter_description} ({' '.join(file_types)})"
 
-        with SwitchboardUtilsMixin._suspend_override_cursor():
+        with CursorManager.suspend():
             path, _ = QtWidgets.QFileDialog.getSaveFileName(
                 None, title, start_dir, file_types_string
             )
@@ -2365,7 +2145,7 @@ class SwitchboardUtilsMixin:
 
         # Modal: suspend any slot busy-cursor so the line edit shows an
         # I-beam and the buttons an arrow instead of the busy hourglass.
-        with SwitchboardUtilsMixin._suspend_override_cursor():
+        with CursorManager.suspend():
             accepted = dlg.exec_() == QtWidgets.QDialog.Accepted
         if accepted:
             result = line.text().strip()
@@ -2442,7 +2222,7 @@ class SwitchboardUtilsMixin:
 
         # Modal: suspend any slot busy-cursor so the list shows a normal
         # pointer instead of the busy hourglass.
-        with SwitchboardUtilsMixin._suspend_override_cursor():
+        with CursorManager.suspend():
             accepted = dlg.exec_() == QtWidgets.QDialog.Accepted
 
         return [i.text() for i in listing.selectedItems()] if accepted else []

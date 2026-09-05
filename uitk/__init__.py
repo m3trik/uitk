@@ -44,7 +44,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.3.97"
+__version__ = "1.3.98"
 
 
 DEFAULT_INCLUDE = {
@@ -180,6 +180,7 @@ DEFAULT_INCLUDE = {
     ],
     # Standalone services (uitk.managers / uitk.themes)
     "managers.cancel_manager": ["CancelManager", "CancelProvider"],
+    "managers.cursor_manager": ["CursorManager", "OverrideCursorGuard"],
     "managers.icon_manager": "IconManager",
     "managers.optional_package_manager": "OptionalPackageManager",
     "managers.preset_manager": "PresetManager",
