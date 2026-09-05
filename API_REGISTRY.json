@@ -6935,7 +6935,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, side: str = 'right', background: bool = False, rounded: bool = True) -> QtWidgets.QWidget",
               "summary": "Insert an arbitrary widget into the footer on the given side.",
-              "line": 276,
+              "line": 275,
               "deprecated": false
             },
             {
@@ -6944,7 +6944,7 @@
               "kind": "method",
               "signature": "(self, text: str = '', icon_name: str = None, tooltip: str = '', callback=None, rounded: bool = True, states=None) -> QtWidgets.QPushButton",
               "summary": "Add an action button to the right side of the footer.",
-              "line": 332,
+              "line": 331,
               "deprecated": false
             },
             {
@@ -6953,7 +6953,7 @@
               "kind": "property",
               "signature": "(self) -> ProgressBar",
               "summary": "Get the embedded progress bar.",
-              "line": 415,
+              "line": 412,
               "deprecated": false
             },
             {
@@ -6962,7 +6962,7 @@
               "kind": "property",
               "signature": "(self) -> QtWidgets.QLabel",
               "summary": "Get the status label.",
-              "line": 420,
+              "line": 417,
               "deprecated": false
             },
             {
@@ -6971,7 +6971,7 @@
               "kind": "property",
               "signature": "(self) -> Optional[QtWidgets.QSizeGrip]",
               "summary": "Get the size grip widget if it exists.",
-              "line": 425,
+              "line": 422,
               "deprecated": false
             },
             {
@@ -6980,7 +6980,7 @@
               "kind": "method",
               "signature": "(self, text: str, level: Optional[str] = None) -> None",
               "summary": "Set the status text (convenience method matching QLabel API).",
-              "line": 442,
+              "line": 439,
               "deprecated": false
             },
             {
@@ -6989,7 +6989,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Get the current displayed text (convenience method matching QLabel API).",
-              "line": 453,
+              "line": 450,
               "deprecated": false
             },
             {
@@ -6998,7 +6998,7 @@
               "kind": "method",
               "signature": "(self, text: str | None = None, level: Optional[str] = None) -> None",
               "summary": "Set the status text of the footer.",
-              "line": 461,
+              "line": 458,
               "deprecated": false
             },
             {
@@ -7007,7 +7007,7 @@
               "kind": "method",
               "signature": "(self, text: str | None = None) -> None",
               "summary": "Set fallback text shown when no explicit status is provided.",
-              "line": 493,
+              "line": 492,
               "deprecated": false
             },
             {
@@ -7016,7 +7016,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Get the status text of the footer.",
-              "line": 499,
+              "line": 498,
               "deprecated": false
             },
             {
@@ -7025,7 +7025,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Get the fallback text shown when no explicit status is set.",
-              "line": 507,
+              "line": 506,
               "deprecated": false
             },
             {
@@ -7034,7 +7034,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Whether the footer currently shows a resize grip.",
-              "line": 511,
+              "line": 510,
               "deprecated": false
             },
             {
@@ -7043,7 +7043,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Show or hide the resize grip, creating it on first enable.",
-              "line": 515,
+              "line": 514,
               "deprecated": false
             },
             {
@@ -7052,7 +7052,7 @@
               "kind": "method",
               "signature": "(self, value: str) -> None",
               "summary": "Set the status text (Qt-property setter for :meth:`setStatusText`).",
-              "line": 526,
+              "line": 525,
               "deprecated": false
             },
             {
@@ -7061,7 +7061,7 @@
               "kind": "method",
               "signature": "(self, total: Optional[int] = None, text: str = '', busy: Optional[bool] = None) -> Callable[[Optional[int], Optional[str]], bool]",
               "summary": "Start showing progress in the footer.",
-              "line": 546,
+              "line": 545,
               "deprecated": false
             },
             {
@@ -7070,7 +7070,7 @@
               "kind": "method",
               "signature": "(self, value: Optional[int] = None, text: Optional[str] = None) -> bool",
               "summary": "Tick the progress bar and optionally update the status text.",
-              "line": 601,
+              "line": 600,
               "deprecated": false
             },
             {
@@ -7079,7 +7079,7 @@
               "kind": "method",
               "signature": "(self, text: Optional[str] = None, delay_ms: int = 1000)",
               "summary": "Finish the progress and hide the bar.",
-              "line": 644,
+              "line": 643,
               "deprecated": false
             },
             {
@@ -7088,7 +7088,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Cancel the current progress operation.",
-              "line": 657,
+              "line": 656,
               "deprecated": false
             },
             {
@@ -7097,7 +7097,7 @@
               "kind": "method",
               "signature": "(self, total: int) -> None",
               "summary": "Adjust the bar's task total mid-flight.",
-              "line": 661,
+              "line": 660,
               "deprecated": false
             },
             {
@@ -7106,7 +7106,7 @@
               "kind": "method",
               "signature": "(self, total: Optional[int] = None, text: str = '', busy: Optional[bool] = None) -> 'FooterProgressContext'",
               "summary": "Context manager for cooperative progress / task feedback.",
-              "line": 670,
+              "line": 669,
               "deprecated": false
             },
             {
@@ -7115,7 +7115,7 @@
               "kind": "property",
               "signature": "(self) -> QtWidgets.QLabel",
               "summary": "The spinner label shown beside the status text while busy.",
-              "line": 738,
+              "line": 737,
               "deprecated": false
             },
             {
@@ -7124,7 +7124,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the busy indicator is showing.",
-              "line": 743,
+              "line": 742,
               "deprecated": false
             },
             {
@@ -7133,7 +7133,7 @@
               "kind": "method",
               "signature": "(self, busy: bool) -> None",
               "summary": "Show or hide the busy spinner beside the status text.",
-              "line": 747,
+              "line": 746,
               "deprecated": false
             },
             {
@@ -7142,7 +7142,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Debounce resize: restart timer on each event so we only",
-              "line": 833,
+              "line": 830,
               "deprecated": false
             },
             {
@@ -7151,7 +7151,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Ensure text is properly sized and elided on first show.",
-              "line": 839,
+              "line": 836,
               "deprecated": false
             },
             {
@@ -7160,7 +7160,7 @@
               "kind": "method",
               "signature": "(self, resolver: Optional[Callable[[], str]] = None, default_text: str | None = '', truncate_kwargs: Optional[Mapping[str, Any]] = None) -> 'FooterStatusController'",
               "summary": "Bind a :class:`FooterStatusController` to this footer and return it.",
-              "line": 910,
+              "line": 907,
               "deprecated": false
             },
             {
@@ -7169,7 +7169,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget.",
-              "line": 930,
+              "line": 927,
               "deprecated": false
             }
           ]
@@ -7177,14 +7177,14 @@
         {
           "name": "FooterProgressContext",
           "summary": "Context manager for footer progress tracking.",
-          "line": 948,
+          "line": 945,
           "bases": [],
           "members": []
         },
         {
           "name": "FooterStatusController",
           "summary": "Helper that keeps a footer in sync with a resolver function.",
-          "line": 976,
+          "line": 973,
           "bases": [],
           "members": [
             {
@@ -7193,7 +7193,7 @@
               "kind": "method",
               "signature": "(self, resolver: Callable[[], str]) -> None",
               "summary": "",
-              "line": 993,
+              "line": 990,
               "deprecated": false
             },
             {
@@ -7202,7 +7202,7 @@
               "kind": "method",
               "signature": "(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None",
               "summary": "Configure truncation behavior for footer updates via StrUtils.truncate kwargs.",
-              "line": 997,
+              "line": 994,
               "deprecated": false
             },
             {
@@ -7211,7 +7211,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "",
-              "line": 1011,
+              "line": 1008,
               "deprecated": false
             }
           ]
@@ -12950,7 +12950,7 @@
               "kind": "method",
               "signature": "(self, total: Optional[int] = 100, text: str = '', show: bool = True, scope: Optional['ptk.CancelScope'] = None, host_label: Optional[str] = None) -> None",
               "summary": "Start a new task.",
-              "line": 301,
+              "line": 299,
               "deprecated": false
             },
             {
