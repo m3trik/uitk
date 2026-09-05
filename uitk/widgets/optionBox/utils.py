@@ -539,7 +539,7 @@ class OptionBoxManager(ptk.LoggingMixin):
         *,
         default: str = "auto",
         modes=None,
-        convention_key: Optional[str] = None,
+        convention_key=None,
         on_change=None,
         tooltip: Optional[str] = None,
         settings_key=None,
@@ -568,7 +568,12 @@ class OptionBoxManager(ptk.LoggingMixin):
                 bound to ``pythontk.NamingConvention`` for that type key — the
                 field then shows the shared convention's affix and goes
                 read-only (still enabled, so the value reads) while selected.
-                Ignored when *modes* is given explicitly.
+                Pass a ``() -> key`` callable for a field whose target type is
+                not fixed (the locator rig's child is a mesh or a camera
+                depending on what is selected): it is resolved per read, and
+                showing the box re-pulls, so the field previews what the
+                current target would get. Ignored when *modes* is given
+                explicitly.
             on_change: Optional callable invoked with the new mode string
                 whenever the user changes the picker. It does NOT fire for the
                 restore of a persisted mode (nothing the user just did) — read

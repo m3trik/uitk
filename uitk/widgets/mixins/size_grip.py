@@ -4,6 +4,7 @@
 
 from typing import Optional, Tuple, Union
 from qtpy import QtWidgets, QtCore, QtGui
+from uitk.managers.cursor_manager import CursorManager
 
 # Qt's QWIDGETSIZE_MAX — the sentinel for "no maximum" on a widget dimension.
 QWIDGETSIZE_MAX = 16777215
@@ -43,6 +44,13 @@ class CornerSizeGrip(QtWidgets.QSizeGrip):
         self._update_lock_cursor()
         self.update()
         super().enterEvent(event)
+
+    def event(self, event: QtCore.QEvent) -> bool:
+        # Same repair as Header.event: a hover move over a grip Qt thinks is
+        # not under the mouse means the resize cursor never applied.
+        if event.type() == QtCore.QEvent.HoverMove:
+            CursorManager.heal_hover(self, event.globalPosition().toPoint())
+        return super().event(event)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         """Sync the window's max size to its content before the drag starts.

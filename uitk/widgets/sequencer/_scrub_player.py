@@ -16,6 +16,7 @@ Example
 >>> w.set_audio_source("/path/to/composite.wav", fps=24.0)
 >>> # Dragging the ruler now emits audible scrub automatically.
 """
+
 from __future__ import annotations
 
 import os
@@ -165,8 +166,7 @@ class ScrubPlayer(QtCore.QObject):
             return False
         try:
             return (
-                self._player.playbackState()
-                == QMediaPlayer.PlaybackState.PlayingState
+                self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
             )
         except Exception:
             return False

@@ -83,6 +83,12 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class CancelManager`
   - methods: register, provider, reset, new_scope
 
+### `managers/cursor_manager.py` — One owner for every cursor change in uitk.
+- `class OverrideCursorGuard(QtCore.QObject)`
+  - methods: shape, holding, apply, clear, holds, is_stale, notify_stack_drained, reconcile
+- `class CursorManager`
+  - methods: pop_stack, push_stack, suspend, drain, release, busy, has_explicit_cursor, push, pop, heal_hover
+
 ### `managers/icon_manager.py`
 - `class IconManager`
   - methods: set_default_color, register_icon_dir, get, fit_size, fit_icon, swap_icon, set_icon, set_label_icon, registered_info, update_widget_icons, clear_cache, get_cache_stats
@@ -112,7 +118,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `managers/shortcut_manager.py` — Generic keyboard-shortcut primitives, usable by any Qt widget.
 - `class GlobalShortcut(QtCore.QObject)`
-  - methods: eventFilter, setEnabled, setKey, setContext, dispose
+  - methods: eventFilter, setEnabled, isEnabled, setKey, setContext, dispose
 - `class ShortcutManager`
   - methods: context_to_scope_name, scope_name_to_context, host_namespace_suffix, resolve_application_host, find_duplicate_application_shortcuts, add_shortcut, add_shortcuts_batch, add_global_shortcut, add_info_entry, remove_shortcut, clear_all, on_change, rebind_shortcut, show_editor, get_shortcuts_info, has_shortcut, get_shortcut, get_registry
 
@@ -161,17 +167,15 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: style
 
 ### `switchboard/utils.py`
-- `class OverrideCursorGuard(QtCore.QObject)`
-  - methods: shape, holding, apply, clear, holds, is_stale, notify_stack_drained, reconcile
 - `class SwitchboardUtilsMixin`
-  - methods: pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, text_from, value_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
+  - methods: busy_cursor, pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, text_from, value_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
   - methods: unmet_policy, gate, recheck_gates, is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at
 
 ### `testing.py` — Test isolation for every suite in the ecosystem — keep test runs off live user state.
-- `class TestSandbox(_TestSandboxInternal)`
+- `class TestSandbox(_TestSandboxInternal, ptk.TestSandbox)`
   - methods: qsettings, presets, activate, is_active
 
 ### `themes/style_sheet.py`
@@ -271,7 +275,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/footer.py`
 - `class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin)`
-  - methods: container_layout, alignment, update_font_size, font, add_widget, add_action_button, progress_bar, status_label, size_grip, setText, text, setStatusText, setDefaultStatusText, statusText, getDefaultStatusText, getSizeGripEnabled, setSizeGripEnabled, setStatus, start_progress, update_progress, finish_progress, cancel_progress, set_progress_total, progress, resizeEvent, showEvent, status_controller, attach_to
+  - methods: container_layout, alignment, update_font_size, font, add_widget, add_action_button, progress_bar, status_label, size_grip, setText, text, setStatusText, setDefaultStatusText, statusText, getDefaultStatusText, getSizeGripEnabled, setSizeGripEnabled, setStatus, start_progress, update_progress, finish_progress, cancel_progress, set_progress_total, progress, busy_indicator, is_busy, set_busy, resizeEvent, showEvent, status_controller, attach_to
 - `class FooterProgressContext`
 - `class FooterStatusController`
   - methods: set_resolver, set_truncation, update
@@ -282,7 +286,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/header.py`
 - `class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`
-  - methods: pin_on_drag_only, set_default_pin_on_drag_only, pin_on_tap, set_default_pin_on_tap, claim_hide_as_tap, menu, get_icon_path, create_svg_icon, create_button, has_buttons, config_buttons, trigger_resize_event, resizeEvent, resize_buttons, update_font_size, setTitle, title, setVersion, version, setText, minimize_window, restore_window, toggle_maximize, toggle_fullscreen, hide_window, unhide_window, trigger_refresh, set_help_text, help_text, show_help, show_menu, toggle_collapse, collapse_window, expand_window, toggle_pin, reset_pin_state, eventFilter, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, showEvent, attach_to, hideEvent, setHelpText, setPinOnDragOnly, getConfigButtons, setConfigButtons, getAutoHideWithOsFrame, setAutoHideWithOsFrame
+  - methods: pin_on_drag_only, set_default_pin_on_drag_only, pin_on_tap, set_default_pin_on_tap, claim_hide_as_tap, menu, get_icon_path, create_svg_icon, create_button, has_buttons, config_buttons, trigger_resize_event, resizeEvent, resize_buttons, update_font_size, setTitle, title, setVersion, version, setText, minimize_window, restore_window, toggle_maximize, toggle_fullscreen, hide_window, unhide_window, trigger_refresh, set_help_text, help_text, show_help, show_menu, toggle_collapse, collapse_window, expand_window, toggle_pin, reset_pin_state, eventFilter, mousePressEvent, event, mouseMoveEvent, mouseReleaseEvent, showEvent, attach_to, hideEvent, setHelpText, setPinOnDragOnly, getConfigButtons, setConfigButtons, getAutoHideWithOsFrame, setAutoHideWithOsFrame
 
 ### `widgets/label.py`
 - `class Label(QtWidgets.QLabel, MenuMixin, OptionBoxMixin, AttributesMixin)`
@@ -374,7 +378,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/mixins/size_grip.py` — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 - `class CornerSizeGrip(QtWidgets.QSizeGrip)`
-  - methods: enterEvent, mousePressEvent, leaveEvent, getBaseColor, setBaseColor, getHoverColor, setHoverColor, paintEvent
+  - methods: enterEvent, event, mousePressEvent, leaveEvent, getBaseColor, setBaseColor, getHoverColor, setHoverColor, paintEvent
 - `class SizeGripMixin`
   - methods: content_max_size, content_min_height, sync_window_max_to_content, create_size_grip
 
@@ -553,7 +557,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/sequencer/_overlays.py` — Range-related overlay items: static ranges, gap hatching, and highlights.
 - `class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`
-  - methods: start, end, set_range, color, opacity_value, sync, boundingRect, paint, hoverMoveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent
+  - methods: start, end, set_range, color, opacity_value, sync, boundingRect, paint, zone_at, begin_edge_drag, hoverMoveEvent, mousePressEvent, mouseMoveEvent, update_edge_drag, finish_edge_drag, mouseReleaseEvent
 
 ### `widgets/sequencer/_playhead.py` — PlayheadItem — vertical playhead line with frame-number badge.
 - `class PlayheadItem(QtWidgets.QGraphicsItem)`
@@ -561,7 +565,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/sequencer/_ruler.py` — Ruler item for the timeline header area.
 - `class RulerItem(QtWidgets.QGraphicsItem)`
-  - methods: set_shot_blocks, clear_shot_blocks, selected_block, shot_block_at, set_content_width, boundingRect, paint
+  - methods: set_shot_blocks, clear_shot_blocks, selected_block, shot_block_at, set_content_width, set_key_ticks, set_content_left, boundingRect, paint
 
 ### `widgets/sequencer/_scrub_player.py` — Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 - `class ScrubPlayer(QtCore.QObject)`
@@ -571,7 +575,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class AttributeColorDialog(ColorMappingDialog)`
   - methods: load_color_map
 - `class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`
-  - methods: window_shortcuts, showEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, selected_shot, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, attribute_colors, set_attribute_color, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
+  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, selected_shot, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, attribute_colors, set_attribute_color, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`
@@ -579,7 +583,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class TimelineScene(QtWidgets.QGraphicsScene)`
   - methods: ruler, playhead
 - `class TimelineView(QtWidgets.QGraphicsView)`
-  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, drawBackground
+  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, add_default_context_actions, content_time_bounds, drawBackground
 
 ### `widgets/sequencer/_transport_controls.py` — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - `class PlayController(Protocol)`

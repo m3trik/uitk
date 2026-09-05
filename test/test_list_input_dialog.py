@@ -20,6 +20,7 @@ app = setup_qt_application()
 from qtpy import QtWidgets
 
 from uitk.switchboard.utils import SwitchboardUtilsMixin
+from uitk.managers.cursor_manager import CursorManager
 
 
 def _accept(dlg):
@@ -114,9 +115,7 @@ class TestListInputDialog(QtBaseTestCase):
 
     def test_suspends_the_busy_cursor(self):
         """Opened from inside a slot, the hourglass would otherwise stick."""
-        with patch.object(
-            SwitchboardUtilsMixin, "_suspend_override_cursor"
-        ) as mock_suspend:
+        with patch.object(CursorManager, "suspend") as mock_suspend:
             self._show(self.MATERIALS)
         mock_suspend.assert_called_once()
 

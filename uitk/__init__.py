@@ -180,6 +180,7 @@ DEFAULT_INCLUDE = {
     ],
     # Standalone services (uitk.managers / uitk.themes)
     "managers.cancel_manager": ["CancelManager", "CancelProvider"],
+    "managers.cursor_manager": ["CursorManager", "OverrideCursorGuard"],
     "managers.icon_manager": "IconManager",
     "managers.optional_package_manager": "OptionalPackageManager",
     "managers.preset_manager": "PresetManager",

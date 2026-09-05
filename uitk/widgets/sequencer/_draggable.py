@@ -85,6 +85,31 @@ class DraggableItemMixin:
     """
 
     _undo_captured: bool = False
+    #: Screen position of the press, for :meth:`_past_drag_threshold`.
+    _press_screen_pos = None
+    #: Whether the press has become a drag (grab cursor + frame label shown).
+    _grab_armed: bool = False
+
+    def _past_drag_threshold(self, event) -> bool:
+        """True once the pointer has travelled far enough to mean a drag.
+
+        Qt's own ``startDragDistance``, measured in SCREEN pixels rather than
+        scene units: a scene-space threshold would be a different physical
+        distance at every zoom level, so the same flick of the wrist would
+        start a drag zoomed out and not zoomed in.
+
+        Every handle in the package answers the same question — "is this a
+        click or a drag yet?" — and answers it to decide the same three
+        things: the grab cursor, the floating frame tooltip, and the undo
+        snapshot.  ``_press_screen_pos`` unset means the press was not
+        recorded, in which case there is nothing to measure from and the
+        gesture is treated as a drag (the pre-threshold behaviour).
+        """
+        origin = self._press_screen_pos
+        if origin is None:
+            return True
+        delta = event.screenPos() - origin
+        return delta.manhattanLength() >= QtWidgets.QApplication.startDragDistance()
 
     @staticmethod
     def snap_time(value: float, timeline) -> float:

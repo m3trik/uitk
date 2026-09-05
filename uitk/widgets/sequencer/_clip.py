@@ -25,6 +25,7 @@ from uitk.widgets.sequencer._data import (
 from uitk.widgets.sequencer._keyframe import KeyframeItem
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
 from uitk.widgets.sequencer._draggable import DraggableItemMixin
+from uitk.managers.cursor_manager import CursorManager
 
 
 class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
@@ -35,6 +36,10 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         self._data = clip_data
         self._timeline = timeline
         self._drag_mode = None  # "move", "resize_left", "resize_right"
+        # The zone a press landed on, held until the pointer proves it meant
+        # to drag rather than click; see _arm_drag.
+        self._pending_zone = None
+        self._press_screen_pos = None
         self._drag_origin_x = 0.0
         self._drag_origin_start = 0.0
         self._drag_origin_duration = 0.0
@@ -621,7 +626,12 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         if zone in ("resize_left", "resize_right"):
             self.setCursor(QtCore.Qt.SizeHorCursor)
         else:
-            self.setCursor(QtCore.Qt.OpenHandCursor)
+            # No hand over the body.  A press here is a SELECTION until the
+            # pointer travels far enough to mean a drag (see ``_arm_drag``),
+            # so advertising the grab on hover made every plain click look
+            # like one -- reported as clicking a clip not feeling "smooth".
+            # The closed hand appears when the drag actually arms.
+            self.unsetCursor()
         super().hoverMoveEvent(event)
 
     def hoverLeaveEvent(self, event):
@@ -664,7 +674,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         marquee, so the same chord means the same thing however the user picks
         clips:
 
-        * ``Ctrl``  -- remove this clip from the selection;
+        * ``Alt`` (or ``Ctrl``) -- remove this clip from the selection;
         * ``Shift`` -- add it (a no-op when it is already in);
         * neither   -- make it the selection, UNLESS it is already part of a
           multi-selection.  Collapsing on press would make a group impossible
@@ -674,7 +684,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         """
         if not (self.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable):
             return
-        if modifiers & QtCore.Qt.ControlModifier:
+        if modifiers & (QtCore.Qt.AltModifier | QtCore.Qt.ControlModifier):
             self.setSelected(False)
         elif modifiers & QtCore.Qt.ShiftModifier:
             self.setSelected(True)
@@ -706,27 +716,21 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 # Sub-row keys are dragged by KeyframeItem children.
                 super().mousePressEvent(event)
                 return
-            self._drag_mode = self._hit_zone(event.pos())
+            # The press SELECTS.  It does not grab: the zone is remembered
+            # and the drag is armed on the first move that clears Qt's own
+            # drag threshold (:meth:`_arm_drag`).  Grabbing here made every
+            # single click flicker through a whole drag -- closed-hand
+            # cursor, drag frame labels, a tooltip -- before the selection it
+            # was actually asking for had even been drawn.
+            self._pending_zone = self._hit_zone(event.pos())
+            self._press_screen_pos = event.screenPos()
+            self._drag_mode = None
+            self._drag_peers = []
             self._drag_origin_x = event.scenePos().x()
             self._drag_origin_start = self._data.start
             self._drag_origin_duration = self._data.duration
             sq = self._timeline.parent_sequencer
             sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
-            # Capture peer clips for group move
-            self._drag_peers = []
-            if self._drag_mode == "move" and self.isSelected():
-                for item in self._timeline._scene.selectedItems():
-                    if (
-                        isinstance(item, ClipItem)
-                        and item is not self
-                        and not item._data.locked
-                    ):
-                        self._drag_peers.append((item, item._data.start))
-                        # Propagate drag state so peer curve previews
-                        # also lock to their pre-drag positions.
-                        item._drag_mode = "move"
-                        item._drag_origin_start = item._data.start
-                        item._drag_origin_duration = item._data.duration
             # Alignment candidates are resolved lazily on the first real
             # move (next to the undo capture below): the set can't change
             # mid-gesture, but resolving it here would make every plain
@@ -736,16 +740,43 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             # capturing on press meant every selection click pushed a
             # no-op undo entry and wiped the redo stack.
             self._undo_captured = False
-            self.setCursor(QtCore.Qt.ClosedHandCursor)
-            self.update()  # repaint to show drag frame labels
-            self._show_clip_drag_tooltip(event.scenePos())
             event.accept()
         else:
             super().mousePressEvent(event)
 
+    def _arm_drag(self, event) -> None:
+        """Enter the drag the press only intended, now that it is one."""
+        self._drag_mode = self._pending_zone
+        self._pending_zone = None
+        # Peers are read HERE, not at press: the press may have changed the
+        # selection, and this is the set the drag actually moves.  Nothing
+        # has moved yet, so their origins are still the pre-drag values.
+        self._drag_peers = []
+        if self._drag_mode == "move" and self.isSelected():
+            for item in self._timeline._scene.selectedItems():
+                if (
+                    isinstance(item, ClipItem)
+                    and item is not self
+                    and not item._data.locked
+                ):
+                    self._drag_peers.append((item, item._data.start))
+                    # Propagate drag state so peer curve previews
+                    # also lock to their pre-drag positions.
+                    item._drag_mode = "move"
+                    item._drag_origin_start = item._data.start
+                    item._drag_origin_duration = item._data.duration
+        CursorManager.push(self, QtCore.Qt.ClosedHandCursor)
+        self.update()  # repaint to show drag frame labels
+        self._show_clip_drag_tooltip(event.scenePos())
+
     def mouseMoveEvent(self, event):
         if self._drag_mode is None:
-            return super().mouseMoveEvent(event)
+            if self._pending_zone is None:
+                return super().mouseMoveEvent(event)
+            if not self._past_drag_threshold(event):
+                event.accept()  # still a click, as far as anyone can tell
+                return
+            self._arm_drag(event)
 
         if not getattr(self, "_undo_captured", False):
             self._undo_captured = True
@@ -885,7 +916,14 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         self._align_hit = bool(hits)
 
     def _is_drag_active(self) -> bool:
-        return self._drag_mode is not None
+        """True while this item owns an in-flight gesture.
+
+        A press that has not yet cleared the drag threshold counts: it holds
+        the mouse grab and the origin state a later move would arm from, so
+        a cancel (Escape, or a popup stealing the grab) has to reach it too.
+        Otherwise the pending zone outlived the gesture that set it.
+        """
+        return self._drag_mode is not None or self._pending_zone is not None
 
     def _restore_drag_state(self) -> None:
         self._timeline.parent_sequencer.clear_snap_guides()
@@ -899,9 +937,11 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             peer._sync_geometry()
             peer.update()
         self._drag_mode = None
+        self._pending_zone = None  # an unarmed press is cancelled too
+        self._press_screen_pos = None
         self._drag_peers = []
         self._sync_geometry()
-        self.unsetCursor()
+        CursorManager.pop(self)
 
     @staticmethod
     def _collision_free_order(landings: list) -> list:
@@ -937,6 +977,10 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         return [(cid, new_start) for _origin, cid, new_start in ordered]
 
     def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            # Armed or not, the gesture is over.
+            self._pending_zone = None
+            self._press_screen_pos = None
         if event.button() == QtCore.Qt.LeftButton and not self._drag_mode:
             # A press this item took but never dragged (locked clip, sub-row,
             # or a plain click on the body) still has to finish its selection.
@@ -946,7 +990,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             peers = self._drag_peers
             self._drag_mode = None
             self._drag_peers = []
-            self.unsetCursor()
+            CursorManager.pop(self)
             self.update()  # repaint to hide drag frame labels
             self._drag_tooltip.hide()
             # Clear drag state on peers so their curve previews

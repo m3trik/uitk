@@ -14,9 +14,8 @@ Run standalone: python -m test.test_footer
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
 
-from conftest import QtBaseTestCase, setup_qt_application
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
@@ -172,7 +171,7 @@ class TestFooterAttachTo(QtBaseTestCase):
     def test_attach_to_widget_with_layout(self):
         """Should attach footer to widget with layout."""
         widget = self.track_widget(QtWidgets.QWidget())
-        layout = QtWidgets.QVBoxLayout(widget)
+        QtWidgets.QVBoxLayout(widget)
         footer = self.track_widget(Footer())
         footer.attach_to(widget)
         self.assertEqual(widget.footer, footer)
@@ -188,7 +187,7 @@ class TestFooterAttachTo(QtBaseTestCase):
         """Should attach to central widget of QMainWindow."""
         window = self.track_widget(QtWidgets.QMainWindow())
         central = QtWidgets.QWidget()
-        central_layout = QtWidgets.QVBoxLayout(central)
+        QtWidgets.QVBoxLayout(central)
         window.setCentralWidget(central)
         footer = self.track_widget(Footer())
         footer.attach_to(window)
@@ -197,7 +196,7 @@ class TestFooterAttachTo(QtBaseTestCase):
     def test_attach_to_avoids_double_attachment(self):
         """Should not attach twice to same widget."""
         widget = self.track_widget(QtWidgets.QWidget())
-        layout = QtWidgets.QVBoxLayout(widget)
+        QtWidgets.QVBoxLayout(widget)
         footer = self.track_widget(Footer())
         footer.attach_to(widget)
         footer.attach_to(widget)  # Second attach should be ignored
@@ -230,7 +229,6 @@ class TestFooterFontSize(QtBaseTestCase):
     def test_update_font_size_sets_font(self):
         """Should update font when called."""
         footer = self.track_widget(Footer())
-        initial_font = footer.font()
         footer.update_font_size()
         # Font should be updated (may be same size if height unchanged)
         self.assertIsNotNone(footer.font())
@@ -247,6 +245,107 @@ class TestFooterResizeEvent(QtBaseTestCase):
         # Font size should be recalculated
         font_size = footer.font().pointSizeF()
         self.assertGreater(font_size, 0)
+
+
+class TestFooterBusyIndicator(QtBaseTestCase):
+    """The spinner beside the status text: ``start_progress(busy=...)`` /
+    ``set_busy``. Shown by default for indeterminate work (the 3px marquee is
+    the only other sign of life), opt-in on a determinate bar, and advanced by
+    every ``update()`` tick so it keeps moving while a synchronous slot holds
+    the event loop. Added: 2026-09-04.
+    """
+
+    def _footer(self):
+        footer = self.track_widget(Footer())
+        footer.show()
+        return footer
+
+    def test_hidden_when_idle(self):
+        footer = self._footer()
+        self.assertFalse(footer.is_busy)
+        self.assertTrue(footer.busy_indicator.isHidden())
+
+    def test_indeterminate_progress_shows_it_by_default(self):
+        footer = self._footer()
+        footer.start_progress(text="Working...")
+        self.assertTrue(footer.is_busy)
+        self.assertTrue(footer._busy_timer.isActive())
+        footer.finish_progress()
+        self.assertFalse(footer.is_busy)
+        self.assertFalse(footer._busy_timer.isActive())
+
+    def test_determinate_progress_hides_it_unless_asked(self):
+        footer = self._footer()
+        footer.start_progress(10)
+        self.assertFalse(footer.is_busy)
+        footer.finish_progress()
+        footer.start_progress(10, busy=True)
+        self.assertTrue(footer.is_busy)
+        footer.finish_progress()
+        self.assertFalse(footer.is_busy)
+
+    def test_busy_false_opts_out_of_the_indeterminate_default(self):
+        footer = self._footer()
+        footer.start_progress(busy=False)
+        self.assertFalse(footer.is_busy)
+        footer.finish_progress()
+
+    def test_frames_come_from_the_icon_set(self):
+        footer = self._footer()
+        footer.start_progress(text="x")
+        self.assertEqual(len(footer._busy_frames), Footer.BUSY_FRAMES)
+        self.assertFalse(footer._busy_frames[0].isNull())
+        self.assertFalse(footer.busy_indicator.pixmap().isNull())
+        footer.finish_progress()
+
+    def test_update_ticks_advance_the_frame_without_the_timer(self):
+        footer = self._footer()
+        footer.start_progress(text="x")
+        footer._busy_timer.stop()  # a blocked event loop never fires it
+        before = footer._busy_frame
+        footer.update_progress()
+        self.assertNotEqual(footer._busy_frame, before)
+        footer.finish_progress()
+
+    def test_cancel_stops_it(self):
+        footer = self._footer()
+        footer.start_progress(text="x")
+        footer.cancel_progress()
+        self.assertFalse(footer.is_busy)
+
+    def test_progress_context_scopes_it(self):
+        footer = self._footer()
+        with footer.progress(text="x", busy=True) as update:
+            self.assertTrue(footer.is_busy)
+            update()
+        self.assertFalse(footer.is_busy)
+
+    def test_finishing_releases_the_esc_shortcut(self):
+        """The footer never called ``finish_task``, so the app-wide Esc
+        shortcut ``start_task`` enables outlived the task: a later Esc-hold
+        anywhere in the host fired ``cancel()`` on a task that was long over.
+        """
+        footer = self._footer()
+        footer.start_progress(text="x")
+        shortcut = footer.progress_bar._cancel_shortcut
+        self.assertIsNotNone(shortcut)
+        self.assertTrue(shortcut.isEnabled())
+        footer.finish_progress(delay_ms=0)
+        QtWait.pump()
+        self.assertFalse(shortcut.isEnabled())
+
+    def test_a_text_only_tick_holds_a_determinate_bar(self):
+        """``update(None, text)`` narrates without moving the bar. It used to
+        hand the bar a 0, snapping a determinate bar back to empty on every
+        narration tick ("converting…") between real steps.
+        """
+        footer = self._footer()
+        footer.start_progress(10)
+        footer.update_progress(4)
+        footer.update_progress(None, "narrating…")
+        self.assertEqual(footer.progress_bar.value(), 4)
+        self.assertEqual(footer.statusText(), "narrating…")
+        footer.finish_progress()
 
 
 class TestFooterStatusController(QtBaseTestCase):
@@ -268,7 +367,7 @@ class TestFooterStatusController(QtBaseTestCase):
     def test_controller_with_resolver(self):
         """Should use resolver function to get status."""
         footer = self.track_widget(Footer())
-        controller = FooterStatusController(footer, resolver=lambda: "From Resolver")
+        FooterStatusController(footer, resolver=lambda: "From Resolver")
         self.assertEqual(footer.statusText(), "From Resolver")
 
     def test_controller_set_resolver(self):
@@ -281,7 +380,7 @@ class TestFooterStatusController(QtBaseTestCase):
     def test_controller_with_default_text(self):
         """Should set default text on footer."""
         footer = self.track_widget(Footer())
-        controller = FooterStatusController(footer, default_text="Default")
+        FooterStatusController(footer, default_text="Default")
         self.assertEqual(footer._default_status_text, "Default")
 
 
@@ -333,7 +432,7 @@ class TestFooterStatusControllerTruncation(QtBaseTestCase):
     def test_truncation_with_length(self):
         """Should truncate text when length specified."""
         footer = self.track_widget(Footer())
-        controller = FooterStatusController(
+        FooterStatusController(
             footer,
             resolver=lambda: "This is a very long status text",
             truncate_kwargs={"length": 10, "mode": "end"},
@@ -344,7 +443,7 @@ class TestFooterStatusControllerTruncation(QtBaseTestCase):
     def test_truncation_with_invalid_length(self):
         """Should not truncate when length is invalid."""
         footer = self.track_widget(Footer())
-        controller = FooterStatusController(
+        FooterStatusController(
             footer,
             resolver=lambda: "Short",
             truncate_kwargs={"length": -1},

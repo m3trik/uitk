@@ -159,6 +159,34 @@ class TestOptionBoxWrappingVisibility(QtBaseTestCase):
         field.setVisible(True)
         self.assertFalse(container.isHidden(), "Container must follow a re-show.")
 
+    def test_hiding_the_container_itself_keeps_it_hidden(self):
+        """Hiding the CONTAINER (what a header collapse does) must stick.
+
+        ``container.hide()`` cascades a Hide to the wrapped widget, whose own
+        ``isHidden()`` stays False. The mirror read that as "the field is not
+        hidden but I am" and re-showed the container from inside its own hide
+        - the Shot Manifest CSV row painting inside a collapsed header.
+        """
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        field = QtWidgets.QLineEdit("text")
+        layout.addWidget(field)
+
+        container = OptionBox(options=[]).wrap(field)
+        self.track_widget(container)
+        parent.show()
+
+        container.hide()
+        self.assertTrue(
+            container.isHidden(), "A direct hide of the container must stick."
+        )
+        self.assertFalse(container.isVisible())
+        self.assertFalse(field.isVisible())
+
+        container.show()
+        self.assertFalse(container.isHidden())
+        self.assertTrue(field.isVisible(), "The field must come back with it.")
+
     def test_ancestor_hide_does_not_explicitly_hide_the_container(self):
         """Only an *explicit* hide collapses the container.
 

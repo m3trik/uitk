@@ -19,6 +19,7 @@ from uitk.widgets.sequencer._data import (
 )
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
 from uitk.widgets.sequencer._draggable import DraggableItemMixin
+from uitk.managers.cursor_manager import CursorManager
 
 # ---------------------------------------------------------------------------
 #  _StaticRangeOverlay
@@ -243,7 +244,7 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self._hovered = False
         self._color.setAlpha(self._base_alpha)
         self._line_color.setAlpha(min(255, self._base_alpha + 40))
-        self.setCursor(QtCore.Qt.ArrowCursor)
+        self.unsetCursor()
         self.update()
 
     def hoverMoveEvent(self, event):
@@ -282,26 +283,40 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             event.ignore()
             return
         zone = self._hit_zone(event.pos())
-        if zone == "body":
-            self._drag_mode = "move"
-            self.setCursor(QtCore.Qt.ClosedHandCursor)
-        else:
-            self._drag_mode = zone  # "left" or "right"
+        self._drag_mode = "move" if zone == "body" else zone  # "left"/"right"
         self._drag_origin_x = event.scenePos().x()
         self._drag_origin_start = self._start
         self._drag_origin_end = self._end
+        # The grab cursor and the floating frame label are what a DRAG looks
+        # like, and a press is not one until the pointer clears Qt's drag
+        # distance — showing them at press made every plain click (and the
+        # first half of every double-click) flicker through a grab it never
+        # performed.  Armed on the first real move, like the clip body.
+        self._grab_armed = False
+        self._press_screen_pos = event.screenPos()
         sq = self._timeline.parent_sequencer
         sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
         # Undo snapshot is captured lazily on the first real move — a
         # plain click must not burn an undo step or wipe redo.
         self._undo_captured = False
-        self._show_gap_drag_tooltip(event.scenePos())
         event.accept()
+
+    def _arm_gap_grab(self, event) -> None:
+        """Show the grab, now that the gesture is one."""
+        self._grab_armed = True
+        if self._drag_mode == "move":
+            CursorManager.push(self, QtCore.Qt.ClosedHandCursor)
+        self._show_gap_drag_tooltip(event.scenePos())
 
     def mouseMoveEvent(self, event):
         if self._drag_mode is None:
             event.ignore()
             return
+        if not self._grab_armed:
+            if not self._past_drag_threshold(event):
+                event.accept()  # still a click, as far as anyone can tell
+                return
+            self._arm_gap_grab(event)
         if not self._undo_captured:
             self._undo_captured = True
             self._timeline.parent_sequencer._capture_undo()
@@ -375,9 +390,9 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self.prepareGeometryChange()
         self._start = self._drag_origin_start
         self._end = self._drag_origin_end
-        if self._drag_mode == "move":
-            self.setCursor(QtCore.Qt.OpenHandCursor)
+        CursorManager.pop(self)  # no-op when the grab never armed
         self._drag_mode = None
+        self._grab_armed = False
         self._update_tooltip()
 
     def mouseReleaseEvent(self, event):
@@ -401,9 +416,9 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
                         self._start,
                         self._end,
                     )
-            if self._drag_mode == "move":
-                self.setCursor(QtCore.Qt.OpenHandCursor)
+            CursorManager.pop(self)  # no-op when the grab never armed
             self._drag_mode = None
+            self._grab_armed = False
             self._update_tooltip()
             self._drag_tooltip.hide()
         event.accept()
@@ -579,7 +594,11 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self.update()
 
     def _rect(self) -> QtCore.QRectF:
-        """Compute the painted rectangle from current range and track layout."""
+        """Compute the painted rectangle from current range and track layout.
+
+        Starts at ``_content_top`` -- the highlight stays clear of the whole
+        header; what shares its accent up there is the shot lane's band.
+        """
         tl = self._timeline
         sq = tl.parent_sequencer
         x0 = tl.time_to_x(self._start)
@@ -589,8 +608,7 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         return QtCore.QRectF(x0, top, x1 - x0, h)
 
     def boundingRect(self) -> QtCore.QRectF:
-        r = self._rect()
-        return r.adjusted(-_RANGE_HANDLE_WIDTH, 0, _RANGE_HANDLE_WIDTH, 0)
+        return self._rect().adjusted(-_RANGE_HANDLE_WIDTH, 0, _RANGE_HANDLE_WIDTH, 0)
 
     def paint(self, painter: QtGui.QPainter, option, widget=None):
         r = self._rect()
@@ -618,6 +636,39 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         painter.drawRect(r.adjusted(0, 0, -1, -1))
 
     # -- hit zone -----------------------------------------------------------
+    def zone_at(self, scene_x: float) -> str:
+        """``"left"`` / ``"right"`` / ``"move"`` for *scene_x*, else ``""``.
+
+        The x-only twin of :meth:`_hit_zone`, which needs a point inside the
+        item.  Exposed so the SHOT LANE can offer the same three grabs: the
+        shot's bounds and extent are drawn up there on its band, so that is
+        where a user reaches for them, but the item's own hit area stops at
+        ``_content_top`` and must keep doing so -- reaching it up into the
+        header means a view-dependent ``boundingRect``, which re-enters the
+        scene index on scroll and dies natively.  The view drives the drag
+        through :meth:`begin_edge_drag` instead.
+        """
+        tl = self._timeline
+        for edge, t in (("left", self._start), ("right", self._end)):
+            if abs(scene_x - tl.time_to_x(t)) <= _RANGE_HANDLE_WIDTH:
+                return edge
+        if tl.time_to_x(self._start) <= scene_x <= tl.time_to_x(self._end):
+            return "move"
+        return ""
+
+    def begin_edge_drag(self, edge: str, scene_x: float) -> None:
+        """Start a bound drag from outside the item (the shot lane's handles).
+
+        The same state ``mousePressEvent`` sets, so every later step --
+        move, release, cancel, undo capture -- is the one code path.
+        """
+        self._drag_mode = edge
+        self._drag_origin_x = scene_x
+        self._drag_origin_start = self._start
+        self._drag_origin_end = self._end
+        self._undo_captured = False
+        self._show_range_drag_tooltip(QtCore.QPointF(scene_x, self._rect().top()))
+
     def _hit_zone(self, pos: QtCore.QPointF) -> str:
         r = self._rect()
         local_x = pos.x() - r.left()
@@ -635,9 +686,10 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             # rest of the timeline, the gap's edge does not — the cursor is
             # the affordance that tells the two apart.
             self.setCursor(QtCore.Qt.SplitHCursor)
-        elif event.modifiers() & QtCore.Qt.ShiftModifier:
-            self.setCursor(QtCore.Qt.OpenHandCursor)
         else:
+            # No grab cursor over the body: it passes every press through to
+            # the marquee, so advertising a drag here would be a lie.  The
+            # shot lane offers the move, and shows the hand.
             self.unsetCursor()
 
     # -- mouse interaction --------------------------------------------------
@@ -646,12 +698,16 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             event.ignore()
             return
         zone = self._hit_zone(event.pos())
-        # Body clicks without Shift pass through for rubber-band selection;
-        # Shift+click on the body activates move mode.
+        # The BODY never claims a press, with or without Shift.  This item
+        # spans the whole active shot -- every track row, for the shot's full
+        # width -- so claiming Shift+drag here made the timeline's additive
+        # marquee impossible anywhere inside the current shot, which is where
+        # the user is working.  Marquee wins; the shot is moved by dragging
+        # its band on the shot lane, where its bounds are already drawn and
+        # nothing else competes for the gesture.
         if zone == "move":
-            if not (event.modifiers() & QtCore.Qt.ShiftModifier):
-                event.ignore()
-                return
+            event.ignore()
+            return
         # If a clip item exists under the cursor, defer to it instead of
         # capturing the press on the range highlight.  This ensures clip
         # handles are always preferred over the range-highlight handles
@@ -684,8 +740,6 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         # Undo snapshot is captured lazily on the first real move — a
         # plain click must not burn an undo step or wipe redo.
         self._undo_captured = False
-        if self._drag_mode == "move":
-            self.setCursor(QtCore.Qt.ClosedHandCursor)
         self._show_range_drag_tooltip(event.scenePos())
         event.accept()
 
@@ -727,6 +781,60 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self._update_range_drag_tooltip(event.scenePos())
         event.accept()
 
+    def update_edge_drag(self, scene_x: float) -> None:
+        """Advance a drag begun with :meth:`begin_edge_drag`."""
+        if self._drag_mode is None:
+            return
+        if not self._undo_captured:
+            self._undo_captured = True
+            self._timeline.parent_sequencer._capture_undo()
+        dt = (scene_x - self._drag_origin_x) / (self._timeline._pixels_per_unit or 1)
+        if self._drag_mode == "left":
+            new_start = DraggableItemMixin.snap_time(
+                self._drag_origin_start + dt, self._timeline
+            )
+            if new_start < self._end:
+                self._start = new_start
+        elif self._drag_mode == "right":
+            new_end = DraggableItemMixin.snap_time(
+                self._drag_origin_end + dt, self._timeline
+            )
+            if new_end > self._start:
+                self._end = new_end
+        elif self._drag_mode == "move":
+            # Both bounds by the same snapped delta, so the shot's DURATION
+            # is untouched -- measuring the delta off the start and adding it
+            # to the raw end would let rounding stretch the shot a frame.
+            new_start = DraggableItemMixin.snap_time(
+                self._drag_origin_start + dt, self._timeline
+            )
+            shift = new_start - self._drag_origin_start
+            self._start = new_start
+            self._end = self._drag_origin_end + shift
+        self.sync()
+        self._update_range_drag_tooltip(QtCore.QPointF(scene_x, self._rect().top()))
+
+    def finish_edge_drag(self) -> bool:
+        """End the drag and emit if a bound actually moved.
+
+        The shared tail of every bound drag, however it started.
+        """
+        moved = self._drag_mode is not None and (
+            abs(self._start - self._drag_origin_start) > 0.01
+            or abs(self._end - self._drag_origin_end) > 0.01
+        )
+        if moved:
+            sq = self._timeline.parent_sequencer
+            # The span the user just dragged to may reach past the
+            # scrollable extent (a shot grown past the end, or back
+            # before frame 0) -- widen it before the consumer reacts.
+            sq._refresh_extent()
+            sq.range_highlight_changed.emit(self._start, self._end)
+        CursorManager.pop(self)
+        self._drag_mode = None
+        self._drag_tooltip.hide()
+        return moved
+
     def _range_drag_frame(self) -> float:
         if self._drag_mode == "right":
             return float(self._end)
@@ -751,24 +859,13 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     def _restore_drag_state(self) -> None:
         self._start = self._drag_origin_start
         self._end = self._drag_origin_end
-        if self._drag_mode == "move":
-            self.setCursor(QtCore.Qt.OpenHandCursor)
+        CursorManager.pop(self)
         self._drag_mode = None
         self.sync()
 
     def mouseReleaseEvent(self, event):
-        if self._drag_mode is not None:
-            # Emit only on an actual change (mirrors the gap overlay's
-            # 0.01 gate) — a zero-motion click otherwise triggers a full
-            # save + resize + widget rebuild in the consumer.
-            if (
-                abs(self._start - self._drag_origin_start) > 0.01
-                or abs(self._end - self._drag_origin_end) > 0.01
-            ):
-                sq = self._timeline.parent_sequencer
-                sq.range_highlight_changed.emit(self._start, self._end)
-        if self._drag_mode == "move":
-            self.setCursor(QtCore.Qt.OpenHandCursor)
-        self._drag_mode = None
-        self._drag_tooltip.hide()
+        # Emit only on an actual change (mirrors the gap overlay's 0.01
+        # gate) — a zero-motion click otherwise triggers a full save +
+        # resize + widget rebuild in the consumer.
+        self.finish_edge_drag()
         event.accept()

@@ -25,11 +25,14 @@ Typical use::
         ...
         self._drag_tooltip.hide()
 """
+
 from __future__ import annotations
 
 from typing import Optional
 
 from qtpy import QtCore, QtGui, QtWidgets
+
+from uitk.widgets.sequencer._draggable import ItemRetirement
 
 
 class FrameTooltip:
@@ -105,11 +108,16 @@ class FrameTooltip:
         )
 
     def hide(self) -> None:
-        """Remove the tooltip from the scene, if any."""
+        """Remove the tooltip from the scene, if any.
+
+        Retired rather than dropped: ``removeItem`` hands ownership back, so
+        clearing the last reference destroyed the C++ item then and there --
+        and every caller hides from inside its own mouse handler, which is
+        exactly where Qt goes on to touch what it was just given.  The same
+        parking every other scene item in this package gets.
+        """
         if self._item is not None:
-            scene = self._item.scene()
-            if scene:
-                scene.removeItem(self._item)
+            ItemRetirement.retire(self._item)
             self._item = None
 
     def is_visible(self) -> bool:

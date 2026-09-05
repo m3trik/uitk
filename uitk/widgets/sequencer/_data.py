@@ -99,6 +99,12 @@ _SUB_ROW_HEIGHT = 22  # default height for expanded attribute sub-rows
 _TRACK_PADDING = 2
 _RULER_HEIGHT = 24
 _SHOT_LANE_HEIGHT = 12  # height of the always-visible shot block lane
+#: Ruler + shot lane.  The two are separate strips: the ruler is frame
+#: numbers and key ticks all the way down, the lane below it carries the
+#: shot blocks and the grabs that move them.  Sharing one band meant the
+#: active shot was painted inside the ruler and the ruler's bottom rows
+#: grabbed the shot instead of scrubbing.
+_HEADER_HEIGHT = _RULER_HEIGHT + _SHOT_LANE_HEIGHT
 _HANDLE_WIDTH = 5  # pixels from edge that activates resize cursor
 _MIN_CLIP_DURATION = 1.0
 _MIN_POINT_CLIP_WIDTH = 4  # minimum pixel width for zero-duration clips

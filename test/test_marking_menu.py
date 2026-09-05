@@ -10,7 +10,7 @@ from conftest import QtBaseTestCase
 from uitk.widgets.marking_menu._resolver import MenuResolver
 from uitk.widgets.marking_menu._marking_menu import MarkingMenu
 from uitk.widgets.marking_menu.overlay import Overlay
-from uitk.switchboard.utils import SwitchboardUtilsMixin
+from uitk.managers.cursor_manager import CursorManager
 
 resolve_target_menu = MenuResolver.resolve_target_menu
 
@@ -853,7 +853,7 @@ class TestOverlayGestureCursor(QtBaseTestCase):
 
     # The production drain (pops the stack AND drops guard ownership), so a
     # test can't leave either half of that state behind for the next one.
-    _drain_cursors = staticmethod(SwitchboardUtilsMixin._drain_override_cursor)
+    _drain_cursors = staticmethod(CursorManager.drain)
 
     def _override_shape(self):
         cursor = QtWidgets.QApplication.instance().overrideCursor()
@@ -904,8 +904,9 @@ class TestOverlayGestureCursor(QtBaseTestCase):
         the cursor is the invariant check — which is the whole point.
         """
         noop = lambda self, e: None  # noqa: E731 — deliberate event no-ops
-        with mock.patch.object(Overlay, "hideEvent", noop), mock.patch.object(
-            Overlay, "mouseReleaseEvent", noop
+        with (
+            mock.patch.object(Overlay, "hideEvent", noop),
+            mock.patch.object(Overlay, "mouseReleaseEvent", noop),
         ):
             self.overlay.start_gesture(QtCore.QPoint(10, 10))
             self.assertEqual(self._override_shape(), QtCore.Qt.CrossCursor)

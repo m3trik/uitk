@@ -25,6 +25,7 @@ from uitk.widgets.sequencer import (
     _GapOverlayItem,
     _StaticRangeOverlay,
     _RULER_HEIGHT,
+    _SHOT_LANE_HEIGHT,
     _SUB_ROW_HEIGHT,
     _MIN_CLIP_DURATION,
     _DEFAULT_ATTRIBUTE_COLORS,
@@ -2261,7 +2262,7 @@ class TestMultipleExpandedTracks(BaseTestCase):
 
 
 class TestContentTop(BaseTestCase):
-    """_content_top matches _RULER_HEIGHT."""
+    """_content_top clears the whole header -- the ruler AND the shot lane."""
 
     def setUp(self):
         self.w = SequencerWidget()
@@ -2270,8 +2271,8 @@ class TestContentTop(BaseTestCase):
         self.w.close()
         self.w.deleteLater()
 
-    def test_content_top_equals_ruler_height(self):
-        self.assertEqual(self.w._content_top, _RULER_HEIGHT)
+    def test_content_top_equals_header_height(self):
+        self.assertEqual(self.w._content_top, _RULER_HEIGHT + _SHOT_LANE_HEIGHT)
 
 
 # =========================================================================
@@ -3313,7 +3314,86 @@ class TestMarqueeSelection(BaseTestCase):
         tl.mouseReleaseEvent(ev_release)
         self.assertFalse(tl._marquee_active)
 
-    # -- 2) Ctrl+marquee subtracts -----------------------------------------
+    # -- 2) Alt+marquee subtracts ------------------------------------------
+
+    def test_alt_marquee_subtracts(self):
+        """Alt+marquee removes the enclosed keys from the selection."""
+        from qtpy import QtCore as C, QtGui as G
+
+        _clip, item = self._make_keys()
+        tl = self.w._timeline
+        keys = item._keyframe_items
+        for k in keys:
+            k.setSelected(True)
+
+        positions = [self._key_viewport_pos(k) for k in keys]
+        anchor = C.QPoint(positions[0].x() - 5, positions[0].y() - 5)
+        tl.mousePressEvent(
+            G.QMouseEvent(
+                C.QEvent.MouseButtonPress,
+                C.QPointF(anchor),
+                C.Qt.LeftButton,
+                C.Qt.LeftButton,
+                C.Qt.AltModifier,
+            )
+        )
+        self.assertTrue(tl._marquee_active)
+
+        tl.mouseMoveEvent(
+            G.QMouseEvent(
+                C.QEvent.MouseMove,
+                C.QPointF(C.QPoint(positions[0].x() + 3, positions[0].y() + 3)),
+                C.Qt.NoButton,
+                C.Qt.LeftButton,
+                C.Qt.AltModifier,
+            )
+        )
+        self.assertFalse(
+            keys[0].isSelected(), "the key inside an Alt-marquee is removed"
+        )
+        self.assertTrue(keys[1].isSelected(), "the rest of the selection stands")
+        self.assertTrue(keys[2].isSelected())
+
+    def test_shift_marquee_never_narrows_the_selection(self):
+        """Shift ADDS -- that is the whole point of holding it.
+
+        A Shift-drag over empty space must leave what was already picked
+        alone, never replace it with nothing.
+        """
+        from qtpy import QtCore as C, QtGui as G
+
+        _clip, item = self._make_keys()
+        tl = self.w._timeline
+        keys = item._keyframe_items
+        for k in keys:
+            k.setSelected(True)
+
+        far = C.QPoint(6, self.w.height() - 6)  # empty space, no keys in it
+        tl.mousePressEvent(
+            G.QMouseEvent(
+                C.QEvent.MouseButtonPress,
+                C.QPointF(far),
+                C.Qt.LeftButton,
+                C.Qt.LeftButton,
+                C.Qt.ShiftModifier,
+            )
+        )
+        tl.mouseMoveEvent(
+            G.QMouseEvent(
+                C.QEvent.MouseMove,
+                C.QPointF(C.QPoint(far.x() + 4, far.y() + 4)),
+                C.Qt.NoButton,
+                C.Qt.LeftButton,
+                C.Qt.ShiftModifier,
+            )
+        )
+        self.assertEqual(
+            len([k for k in keys if k.isSelected()]),
+            3,
+            "a Shift-marquee over nothing must not deselect",
+        )
+
+    # -- 2b) Ctrl+marquee subtracts ----------------------------------------
 
     def test_ctrl_marquee_subtracts(self):
         """Ctrl+marquee subtracts enclosed keys from existing selection."""
@@ -3593,7 +3673,10 @@ class TestResizeLeftSnapClamp(BaseTestCase):
             QtCore.QPointF(rect.x() + 1, rect.center().y()),
         )
         item.mousePressEvent(press)
-        self.assertEqual(item._drag_mode, "resize_left")
+        # The press remembers the zone; the move below is what arms the drag
+        # (a click must stay a click), so the mode is pending until then.
+        self.assertEqual(item._pending_zone, "resize_left")
+        self.assertIsNone(item._drag_mode)
 
         # dx_time = +12.6 → unclamped snap lands at 15 > (14 - MIN_DUR).
         move = _scene_mouse_event(
@@ -3956,6 +4039,9 @@ class TestLockedGapNoDrag(BaseTestCase):
         ev.setButtons(QtCore.Qt.LeftButton)
         ev.setScenePos(scene_pt)
         ev.setPos(scene_pt)
+        # The grab arms on SCREEN travel (``_past_drag_threshold``), so a
+        # simulated drag has to carry a screen position like a real one.
+        ev.setScreenPos(QtCore.QPoint(int(scene_pt.x()), int(scene_pt.y())))
         ev.setModifiers(QtCore.Qt.NoModifier)
         gap.mousePressEvent(ev)
         return ev
@@ -3966,6 +4052,7 @@ class TestLockedGapNoDrag(BaseTestCase):
         ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseMove)
         ev.setScenePos(scene_pt)
         ev.setPos(scene_pt)
+        ev.setScreenPos(QtCore.QPoint(int(scene_pt.x()), int(scene_pt.y())))
         gap.mouseMoveEvent(ev)
         return ev
 
@@ -4335,7 +4422,6 @@ class TestZoneMenuEnabledAPI(BaseTestCase):
         self.assertEqual(received, [], "disabled zone menu must not emit")
 
 
-
 # =========================================================================
 # Rebuilding from inside an item's own event must not destroy that item
 # =========================================================================
@@ -4377,10 +4463,14 @@ class TestItemRetirement(BaseTestCase):
         press.setButton(QtCore.Qt.LeftButton)
         press.setScenePos(QtCore.QPointF(item.rect().center().x(), 0))
         press.setPos(item.rect().center())
+        # screenPos is what the drag threshold measures; without it the
+        # pointer never appears to travel and the drag is never armed.
+        press.setScreenPos(QtCore.QPoint(int(item.rect().center().x()), 0))
         item.mousePressEvent(press)
 
         move = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseMove)
         move.setScenePos(QtCore.QPointF(item.rect().center().x() + 60, 0))
+        move.setScreenPos(QtCore.QPoint(int(item.rect().center().x()) + 60, 0))
         item.mouseMoveEvent(move)
 
         # The consumer's handler clears the widget mid-release.
@@ -4433,7 +4523,12 @@ class TestKeyBatchMoved(BaseTestCase):
             0,
             20,
             sub_row=sub_row,
-            curve_preview={"keys": keys, "segments": [], "val_min": 0.0, "val_max": 1.0},
+            curve_preview={
+                "keys": keys,
+                "segments": [],
+                "val_min": 0.0,
+                "val_max": 1.0,
+            },
         )
         return cid, self.w._clip_items[cid]
 
@@ -4500,6 +4595,215 @@ class TestKeyBatchMoved(BaseTestCase):
 # =========================================================================
 
 
+class TestPlayheadFrameEntry(BaseTestCase):
+    """Double-clicking the playhead sets the frame instead of dropping a
+    marker on top of it: the scrub gesture answers "roughly there", typing
+    answers "exactly this frame"."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.tl = self.w._timeline
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _badge_x(self):
+        from qtpy import QtCore
+
+        self.tl._scene.playhead.sync()
+        return self.tl.mapFromScene(
+            QtCore.QPointF(self.tl._scene.playhead._badge_hit_x(), 0)
+        ).x()
+
+    def test_hit_test_covers_the_badge_and_nothing_far_from_it(self):
+        from qtpy import QtCore
+
+        self.w.set_playhead(40.0)
+        x = self._badge_x()
+        self.assertTrue(self.tl._playhead_hit(QtCore.QPoint(int(x), 5)))
+        self.assertFalse(self.tl._playhead_hit(QtCore.QPoint(int(x) + 200, 5)))
+
+    def test_the_prompt_moves_the_playhead_and_emits(self):
+        from qtpy import QtWidgets
+
+        moved = []
+        self.w.playhead_moved.connect(moved.append)
+        original = QtWidgets.QInputDialog.getDouble
+        QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (77.0, True))
+        try:
+            self.tl._prompt_playhead_time()
+        finally:
+            QtWidgets.QInputDialog.getDouble = original
+        self.assertAlmostEqual(self.tl._scene.playhead.time, 77.0)
+        self.assertEqual(moved, [77.0])
+
+    def test_a_cancelled_prompt_changes_nothing(self):
+        from qtpy import QtWidgets
+
+        self.w.set_playhead(10.0)
+        moved = []
+        self.w.playhead_moved.connect(moved.append)
+        original = QtWidgets.QInputDialog.getDouble
+        QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (99.0, False))
+        try:
+            self.tl._prompt_playhead_time()
+        finally:
+            QtWidgets.QInputDialog.getDouble = original
+        self.assertAlmostEqual(self.tl._scene.playhead.time, 10.0)
+        self.assertEqual(moved, [])
+
+    def test_double_click_on_the_playhead_prompts_instead_of_marking(self):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        self.w.set_playhead(40.0)
+        x = self._badge_x()
+        before = len(self.w.markers())
+        original = QtWidgets.QInputDialog.getDouble
+        QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (12.0, True))
+        try:
+            self.tl.mouseDoubleClickEvent(
+                QtGui.QMouseEvent(
+                    QtCore.QEvent.MouseButtonDblClick,
+                    QtCore.QPointF(x, 5),
+                    QtCore.Qt.LeftButton,
+                    QtCore.Qt.LeftButton,
+                    QtCore.Qt.NoModifier,
+                )
+            )
+        finally:
+            QtWidgets.QInputDialog.getDouble = original
+        self.assertEqual(len(self.w.markers()), before, "no marker may be added")
+        self.assertAlmostEqual(self.tl._scene.playhead.time, 12.0)
+
+    def test_double_click_away_from_it_still_adds_a_marker(self):
+        from qtpy import QtCore, QtGui
+
+        self.w.set_playhead(40.0)
+        x = self._badge_x()
+        before = len(self.w.markers())
+        self.tl.mouseDoubleClickEvent(
+            QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonDblClick,
+                QtCore.QPointF(x + 200, 5),
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.NoModifier,
+            )
+        )
+        self.assertEqual(len(self.w.markers()), before + 1)
+
+
+class TestNoGrabCursorUntilTheDragArms(BaseTestCase):
+    """A press is a click until the pointer clears Qt's drag distance.
+
+    Bug: markers and gap overlays pushed the closed hand and showed the
+    floating frame label at PRESS, so every plain click -- and the first half
+    of every double-click -- flickered through a grab it never performed.
+    The clip body was fixed this way earlier; these two were not.
+    """
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.tl = self.w._timeline
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    @staticmethod
+    def _ev(kind, scene_pt, screen_pt, button=None):
+        from qtpy import QtWidgets
+
+        ev = QtWidgets.QGraphicsSceneMouseEvent(kind)
+        if button is not None:
+            ev.setButton(button)
+            ev.setButtons(button)
+        ev.setPos(scene_pt)
+        ev.setScenePos(scene_pt)
+        ev.setScreenPos(screen_pt)
+        return ev
+
+    def _pressed_marker(self):
+        from qtpy import QtCore
+
+        mid = self.w.add_marker(time=20.0, note="m")
+        item = self.w._marker_items[mid]
+        x = self.tl.time_to_x(20.0)
+        item.mousePressEvent(
+            self._ev(
+                QtCore.QEvent.GraphicsSceneMousePress,
+                QtCore.QPointF(x, 5),
+                QtCore.QPoint(500, 300),
+                QtCore.Qt.LeftButton,
+            )
+        )
+        return mid, item, x
+
+    def test_a_marker_press_does_not_arm_the_grab(self):
+        _mid, item, _x = self._pressed_marker()
+        self.assertFalse(item._grab_armed)
+        self.assertFalse(item._drag_tooltip.is_visible())
+
+    def test_a_marker_arms_only_past_the_drag_distance(self):
+        from qtpy import QtCore
+
+        _mid, item, x = self._pressed_marker()
+        item.mouseMoveEvent(
+            self._ev(
+                QtCore.QEvent.GraphicsSceneMouseMove,
+                QtCore.QPointF(x + 1, 5),
+                QtCore.QPoint(501, 300),
+            )
+        )
+        self.assertFalse(item._grab_armed, "1px of travel is still a click")
+        item.mouseMoveEvent(
+            self._ev(
+                QtCore.QEvent.GraphicsSceneMouseMove,
+                QtCore.QPointF(x + 100, 5),
+                QtCore.QPoint(600, 300),
+            )
+        )
+        self.assertTrue(item._grab_armed)
+        self.assertTrue(item._drag_tooltip.is_visible())
+
+    def test_a_click_on_a_marker_leaves_it_where_it_was(self):
+        """Press + release with no travel must not move or delete anything."""
+        from qtpy import QtCore
+
+        mid, item, x = self._pressed_marker()
+        item.mouseReleaseEvent(
+            self._ev(
+                QtCore.QEvent.GraphicsSceneMouseRelease,
+                QtCore.QPointF(x, 5),
+                QtCore.QPoint(500, 300),
+                QtCore.Qt.LeftButton,
+            )
+        )
+        self.assertEqual(len(self.w.markers()), 1)
+        self.assertAlmostEqual(self.w.get_marker(mid).time, 20.0)
+
+    def test_a_gap_press_does_not_arm_the_grab(self):
+        from qtpy import QtCore
+
+        self.w.add_gap_overlay(50, 90)
+        gap = self.w._gap_overlays[0]
+        r = gap._rect()
+        gap.mousePressEvent(
+            self._ev(
+                QtCore.QEvent.GraphicsSceneMousePress,
+                QtCore.QPointF(r.center().x(), r.center().y()),
+                QtCore.QPoint(500, 300),
+                QtCore.Qt.LeftButton,
+            )
+        )
+        self.assertIsNotNone(gap._drag_mode, "the drag mode is still recorded")
+        self.assertFalse(gap._grab_armed)
+        self.assertFalse(gap._drag_tooltip.is_visible())
+
+
 class TestTailGapOverlay(BaseTestCase):
     """The last shot has no following shot, so the between-shots gap loop
     leaves it with no drag handle at its end.  A zero-width ``tail`` overlay
@@ -4541,11 +4845,15 @@ class TestTailGapOverlay(BaseTestCase):
         press.setButton(QtCore.Qt.LeftButton)
         press.setPos(QtCore.QPointF(r.center().x(), r.center().y()))
         press.setScenePos(QtCore.QPointF(r.center().x(), r.center().y()))
+        # The grab arms on SCREEN travel (``_past_drag_threshold``), so a
+        # simulated drag has to carry a screen position like a real one.
+        press.setScreenPos(QtCore.QPoint(int(r.center().x()), int(r.center().y())))
         gap.mousePressEvent(press)
         self.assertEqual(gap._drag_mode, "left")
 
         move = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseMove)
         move.setScenePos(QtCore.QPointF(r.center().x() + 40, r.center().y()))
+        move.setScreenPos(QtCore.QPoint(int(r.center().x()) + 40, int(r.center().y())))
         gap.mouseMoveEvent(move)
 
         rel = QtWidgets.QGraphicsSceneMouseEvent(
@@ -4678,8 +4986,6 @@ class TestAlignmentGuides(BaseTestCase):
 
     def test_snap_to_keys_is_off_by_default(self):
         self.assertFalse(self.w.snap_to_keys)
-
-
 
 
 # =========================================================================
@@ -5043,13 +5349,144 @@ class TestClipClickSelection(BaseTestCase):
         self._click(self.c0)
         self._click(self.c1, QtCore.Qt.ShiftModifier)
         item = self.w._clip_items[self.c0]
+        centre = item.rect().center()
         item.mousePressEvent(
-            _scene_mouse_event(
-                QtCore.QEvent.GraphicsSceneMousePress, item.rect().center()
-            )
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMousePress, centre)
         )
         self.assertEqual(self._selected(), sorted([self.c0, self.c1]))
+
+        # Peers are captured when the drag ARMS, not on press -- a press that
+        # never travels is a click and must not build a drag payload.
+        self.assertEqual(item._drag_peers, [], "a press alone is not a drag")
+        item.mouseMoveEvent(
+            _scene_mouse_event(
+                QtCore.QEvent.GraphicsSceneMouseMove,
+                QtCore.QPointF(centre.x() + 40, centre.y()),
+            )
+        )
+        self.assertEqual(
+            self._selected(),
+            sorted([self.c0, self.c1]),
+            "the group must survive the move that starts the drag",
+        )
         self.assertTrue(item._drag_peers, "the peer must be captured for the drag")
+
+
+class TestAClickIsNotADrag(BaseTestCase):
+    """A press selects; only travel starts a drag.
+
+    Reported live: "single clicking a shot sequence is not smooth because it
+    first grabs the shot sequence before selecting".  The press used to enter
+    drag mode outright -- closed-hand cursor, drag frame labels and a
+    tooltip -- so every plain selection click flickered through a whole
+    gesture before showing the selection it was asking for.
+    """
+
+    def setUp(self):
+        from qtpy import QtCore, QtWidgets
+
+        self.C, self.QtW = QtCore, QtWidgets
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.tid = self.w.add_track("A")
+        self.cid = self.w.add_clip(self.tid, start=10, duration=40)
+        self.item = self.w._clip_items[self.cid]
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _press(self, pos=None):
+        pos = self.item.rect().center() if pos is None else pos
+        self.item.mousePressEvent(
+            _scene_mouse_event(self.C.QEvent.GraphicsSceneMousePress, pos)
+        )
+        return pos
+
+    def _move_by(self, origin, dx):
+        pos = self.C.QPointF(origin.x() + dx, origin.y())
+        self.item.mouseMoveEvent(
+            _scene_mouse_event(self.C.QEvent.GraphicsSceneMouseMove, pos)
+        )
+        return pos
+
+    def test_a_press_selects_without_grabbing(self):
+        self._press()
+        self.assertTrue(self.item.isSelected(), "the press still selects")
+        self.assertIsNone(self.item._drag_mode, "but it does not grab")
+
+    def test_a_press_draws_no_drag_tooltip(self):
+        """The floating frame label is the loudest part of the flicker.
+
+        Counted in the SCENE rather than asked of the tooltip: it adds its
+        text item on show and owns no visibility flag of its own.
+        """
+        scene = self.w._timeline._scene
+
+        def labels():
+            return sum(
+                isinstance(it, self.QtW.QGraphicsSimpleTextItem) for it in scene.items()
+            )
+
+        before = labels()
+        origin = self._press()
+        self.assertEqual(labels(), before, "a click draws no frame label")
+
+        self._move_by(origin, self.QtW.QApplication.startDragDistance() + 4)
+        self.assertGreater(labels(), before, "but a real drag does")
+
+    def test_travel_under_the_threshold_stays_a_click(self):
+        origin = self._press()
+        limit = self.QtW.QApplication.startDragDistance()
+        self._move_by(origin, max(1, limit // 2))
+        self.assertIsNone(self.item._drag_mode, "a wobble is not a drag")
+        self.assertEqual(
+            self.item.clip_data.start, 10.0, "and it must not move the clip"
+        )
+
+    def test_travel_past_the_threshold_arms_the_drag(self):
+        origin = self._press()
+        self._move_by(origin, self.QtW.QApplication.startDragDistance() + 4)
+        self.assertEqual(self.item._drag_mode, "move")
+
+    def test_a_cancel_clears_the_pending_press(self):
+        """A gesture cancelled before it armed must leave nothing behind.
+
+        Cancellation is gated on "is a drag active", and an unarmed press
+        holds the mouse grab plus the origin state a later move would arm
+        from -- so it has to count as active, or a popup stealing the grab
+        (routine in this codebase's marking-menu environment) would strand
+        the pending zone past the gesture that set it.
+        """
+        self._press()
+        self.assertTrue(
+            self.item._is_drag_active(), "an unarmed press is still in flight"
+        )
+
+        self.assertTrue(self.item.cancel_drag())
+
+        self.assertIsNone(self.item._pending_zone)
+        self.assertIsNone(self.item._press_screen_pos)
+        self.assertFalse(self.item._is_drag_active())
+
+    def test_a_cancelled_press_cannot_be_armed_afterwards(self):
+        origin = self.item.rect().center()
+        self._press(origin)
+        self.item.cancel_drag()
+
+        self._move_by(origin, self.QtW.QApplication.startDragDistance() + 20)
+
+        self.assertIsNone(self.item._drag_mode, "the gesture was cancelled")
+        self.assertEqual(self.item.clip_data.start, 10.0, "so nothing moved")
+
+    def test_the_armed_move_travels_from_the_PRESS_not_the_arming_point(self):
+        """Otherwise the clip would jump backwards by the threshold at the
+        moment the drag arms."""
+        origin = self._press()
+        dx = self.QtW.QApplication.startDragDistance() + 20
+        self._move_by(origin, dx)
+        expected = 10.0 + dx / self.w._timeline._pixels_per_unit
+        self.assertAlmostEqual(self.item.clip_data.start, expected, places=3)
 
 
 class TestGroupDragKeepsItsShape(BaseTestCase):
@@ -5196,6 +5633,699 @@ class TestSelectedClipIsVisiblyMarked(BaseTestCase):
         from uitk.widgets.sequencer._ruler import _SELECTED_ACCENT
 
         self.assertEqual(SELECTED_ACCENT, _SELECTED_ACCENT)
+
+
+class TestTimelineReachesBeforeFrameZero(BaseTestCase):
+    """A shot that lands before the origin has to stay reachable.
+
+    Padding a head or rippling a shot upstream legitimately puts content at
+    negative frames.  The scene rect used to start at x=0, so that content was
+    drawn nowhere the scrollbar could go -- invisible, and un-editable.
+    """
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _scene_left(self):
+        self.w._timeline._update_scene_rect()
+        return self.w._timeline._scene.sceneRect().left()
+
+    def test_all_positive_content_still_starts_at_the_origin(self):
+        self.w.add_clip(self.tid, 10.0, 20.0, "c")
+        self.assertEqual(self._scene_left(), 0.0)
+
+    def test_a_clip_before_zero_is_inside_the_scene_rect(self):
+        self.w.add_clip(self.tid, -60.0, 30.0, "c")
+        tl = self.w._timeline
+        self.assertLessEqual(self._scene_left(), tl.time_to_x(-60.0))
+
+    def test_a_shot_band_before_zero_widens_the_scene_alone(self):
+        """The band is the thing the user resized; no clip need follow it."""
+        self.w.set_shot_blocks(
+            [{"id": 1, "name": "s", "start": -80.0, "end": -20.0, "active": True}]
+        )
+        tl = self.w._timeline
+        self.assertLessEqual(self._scene_left(), tl.time_to_x(-80.0))
+
+    def test_the_scrollbar_can_actually_reach_the_negative_content(self):
+        self.w.add_clip(self.tid, -60.0, 30.0, "c")
+        tl = self.w._timeline
+        tl._update_scene_rect()
+        self.assertLessEqual(tl.x_to_time(tl.horizontalScrollBar().minimum()), -60.0)
+
+    def test_the_ruler_paints_as_far_left_as_the_scene(self):
+        self.w.add_clip(self.tid, -60.0, 30.0, "c")
+        tl = self.w._timeline
+        tl._update_scene_rect()
+        self.assertLessEqual(
+            tl._scene.ruler.boundingRect().left(), tl._scene.sceneRect().left()
+        )
+
+    def test_the_playhead_reports_a_negative_frame_instead_of_pinning_to_zero(self):
+        self.w.set_playhead(-30.0)
+        self.assertEqual(self.w._timeline._scene.playhead.time, -30.0)
+
+    def test_the_extent_does_not_creep_while_parked_at_an_end(self):
+        """Padding is measured from content, not from where the view sits."""
+        self.w.add_clip(self.tid, 0.0, 50.0, "c")
+        tl = self.w._timeline
+        tl._update_scene_rect()
+        hbar = tl.horizontalScrollBar()
+        hbar.setValue(hbar.maximum())
+        tl._update_scene_rect()  # settle on the parked position
+        before = tl._scene.sceneRect().width()
+        for _ in range(3):
+            tl._update_scene_rect()
+        self.assertEqual(tl._scene.sceneRect().width(), before)
+
+
+class TestShotSizeChangeRefreshesTheExtent(BaseTestCase):
+    """Resizing a shot has to move the scrollable extent with it.
+
+    The decoration setters drew the new span but left ``_update_scene_rect``
+    to whatever happened to call it next, so a grown shot was painted outside
+    everywhere the view could scroll.
+    """
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.tid = self.w.add_track("A")
+        self.w.add_clip(self.tid, 0.0, 50.0, "c")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _reaches(self, time):
+        rect = self.w._timeline._scene.sceneRect()
+        x = self.w._timeline.time_to_x(time)
+        return rect.left() <= x <= rect.right()
+
+    def test_range_highlight_growth_widens_the_scene(self):
+        self.w.set_range_highlight(0.0, 4000.0)
+        self.assertTrue(self._reaches(4000.0))
+
+    def test_shot_blocks_widen_the_scene(self):
+        self.w.set_shot_blocks(
+            [{"id": 1, "name": "s", "start": 0.0, "end": 8000.0, "active": True}]
+        )
+        self.assertTrue(self._reaches(8000.0))
+
+    def test_a_gap_overlay_widens_the_scene(self):
+        self.w.add_gap_overlay(6000.0, 6500.0)
+        self.assertTrue(self._reaches(6500.0))
+
+    def test_a_bulk_rebuild_still_recomputes_only_once_at_exit(self):
+        tl = self.w._timeline
+        calls = []
+        original = tl._update_scene_rect
+        tl._update_scene_rect = lambda: (calls.append(1), original())[1]
+        try:
+            with self.w.bulk_updates():
+                self.w.set_range_highlight(0.0, 900.0)
+                self.w.set_shot_blocks(
+                    [{"id": 1, "name": "s", "start": 0.0, "end": 900.0}]
+                )
+                self.w.add_gap_overlay(900.0, 950.0)
+        finally:
+            del tl._update_scene_rect
+        self.assertEqual(len(calls), 1)
+
+
+class TestShotLaneCoversTheWholeColumn(BaseTestCase):
+    """Right-clicking a shot means the shot, at any height.
+
+    The refinement used to apply only inside the ruler strip, so a
+    right-click over the TRACKS -- which is most of the shot -- reported
+    "tracks" and the consumer answered with the widget's own marker menu:
+    no edit, no delete, nothing about the shot under the cursor.
+    """
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.w.zone_menu_enabled = True
+        self.tid = self.w.add_track("A")
+        self.w.add_clip(self.tid, 0.0, 200.0, "c")
+        self.w.set_shot_blocks(
+            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
+        )
+        self.zones = []
+        self.w.zone_context_menu_requested.connect(
+            lambda zone, t, pos: self.zones.append((zone, t))
+        )
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _right_click(self, time, y):
+        from qtpy import QtCore, QtGui
+
+        tl = self.w._timeline
+        x = int(tl.time_to_x(time) - tl.horizontalScrollBar().value())
+        ev = QtGui.QContextMenuEvent(
+            QtGui.QContextMenuEvent.Mouse,
+            QtCore.QPoint(x, y),
+            tl.viewport().mapToGlobal(QtCore.QPoint(x, y)),
+        )
+        tl.contextMenuEvent(ev)
+
+    def _empty_track_y(self):
+        """Well below the single track: an item under the cursor forwards the
+        event to ITS menu, which blocks on ``exec_``."""
+        return int(self.w._content_top + 120)
+
+    def test_a_click_over_the_tracks_inside_a_shot_is_the_shot_lane(self):
+        self._right_click(80.0, self._empty_track_y())
+        self.assertEqual([z for z, _t in self.zones], ["shot_lane"])
+
+    def test_a_click_over_the_ruler_inside_a_shot_is_still_the_shot_lane(self):
+        self._right_click(80.0, 4)
+        self.assertEqual([z for z, _t in self.zones], ["shot_lane"])
+
+    def test_a_click_outside_every_shot_is_still_the_tracks(self):
+        self._right_click(180.0, self._empty_track_y())
+        self.assertEqual([z for z, _t in self.zones], ["tracks"])
+
+    def test_the_reported_time_is_where_the_user_clicked(self):
+        self._right_click(80.0, self._empty_track_y())
+        self.assertAlmostEqual(self.zones[0][1], 80.0, places=0)
+
+
+class TestDefaultContextActionsFoldIntoAnyMenu(BaseTestCase):
+    """The timeline's own actions have to be reachable from a consumer menu.
+
+    They used to live only in ``_show_default_context_menu``, so folding them
+    into a shot menu meant a consumer re-implementing them (twice, once per
+    engine) or the user hunting for a second menu somewhere a shot does not
+    cover.
+    """
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _menu(self):
+        from qtpy import QtWidgets
+
+        menu = QtWidgets.QMenu(self.w)
+        handled = self.w._timeline.add_default_context_actions(menu, 42.0)
+        return menu, handled
+
+    def test_the_actions_are_appended(self):
+        menu, _ = self._menu()
+        labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+        self.assertIn("Add Marker at 42\u2026", labels)
+        self.assertEqual(
+            labels[-3:], ["Show Shot Ranges", "Show Active Range", "Show Gap Overlays"]
+        )
+
+    def test_they_append_after_a_consumer_s_own_entries(self):
+        from qtpy import QtWidgets
+
+        menu = QtWidgets.QMenu(self.w)
+        mine = menu.addAction("Delete Shot")
+        self.w._timeline.add_default_context_actions(menu, 42.0)
+        self.assertIs(menu.actions()[0], mine)
+        self.assertTrue(menu.actions()[1].isSeparator(), "kept visually apart")
+
+    def test_the_handler_owns_its_own_actions_and_nothing_else(self):
+        from qtpy import QtWidgets
+
+        menu = QtWidgets.QMenu(self.w)
+        mine = menu.addAction("Delete Shot")
+        handled = self.w._timeline.add_default_context_actions(menu, 42.0)
+        toggle = next(a for a in menu.actions() if a.text() == "Show Gap Overlays")
+        toggle.setChecked(False)
+        self.assertTrue(handled(toggle))
+        self.assertFalse(self.w.show_gap_overlays)
+        self.assertFalse(handled(mine), "a consumer action must fall through")
+        self.assertFalse(handled(None), "a dismissed menu is nobody's action")
+
+
+class TestMarqueeWorksInsideTheActiveShot(BaseTestCase):
+    """Shift+drag inside the current shot must still marquee.
+
+    The range highlight spans the active shot across EVERY track row, so
+    while its body claimed Shift+drag as "move the shot" there was nowhere
+    left to rubber-band: the whole working area was covered.  The body now
+    passes every press through -- the view then falls through to its own
+    marquee -- and the shot moves from its ruler band instead.
+
+    Driven against the ITEM rather than the view: whether the view routes a
+    press here depends on what else the scene stacks above the highlight,
+    which is exactly what differs between a synthetic fixture and the real
+    panel.  The rule under test is the item's, so the item is asked.
+    """
+
+    def setUp(self):
+        from qtpy import QtCore, QtWidgets
+
+        self.C, self.QtW = QtCore, QtWidgets
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.w.show()
+        self.tid = self.w.add_track("A")
+        self.w.add_clip(self.tid, 40.0, 80.0, "c")
+        self.w.set_range_highlight(0.0, 300.0)
+        self.hl = self.w._range_highlight
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _press(self, scene_x, mods):
+        C, QtW = self.C, self.QtW
+        pos = C.QPointF(scene_x, self.hl._rect().center().y())
+        ev = QtW.QGraphicsSceneMouseEvent(C.QEvent.GraphicsSceneMousePress)
+        ev.setButton(C.Qt.LeftButton)
+        ev.setModifiers(mods)
+        ev.setPos(pos)
+        ev.setScenePos(pos)
+        ev.setScreenPos(C.QPoint(int(pos.x()), int(pos.y())))
+        ev.setAccepted(True)  # Qt's default; the handler must clear it
+        self.hl.mousePressEvent(ev)
+        return ev
+
+    def _body_x(self):
+        """A scene x well inside the span, clear of both edge handles."""
+        return self.w._timeline.time_to_x(150.0)
+
+    def test_shift_on_the_body_is_passed_through(self):
+        ev = self._press(self._body_x(), self.C.Qt.ShiftModifier)
+        self.assertFalse(
+            ev.isAccepted(),
+            "Shift+drag inside the active shot must reach the marquee",
+        )
+        self.assertIsNone(self.hl._drag_mode, "no shot move may start")
+
+    def test_a_plain_press_on_the_body_is_passed_through(self):
+        ev = self._press(self._body_x(), self.C.Qt.NoModifier)
+        self.assertFalse(ev.isAccepted())
+        self.assertIsNone(self.hl._drag_mode)
+
+    def test_an_edge_press_is_still_claimed(self):
+        """Only the body gives way; the bounds are still the item's."""
+        ev = self._press(self.w._timeline.time_to_x(0.0), self.C.Qt.NoModifier)
+        self.assertTrue(ev.isAccepted())
+        self.assertEqual(self.hl._drag_mode, "left")
+
+
+class TestShotBoundsDragFromTheRuler(BaseTestCase):
+    """A shot's bounds are drawn on the ruler band, so they drag from there.
+
+    They were drawn but inert: the highlight's hit area stops at
+    ``_content_top`` and a press on the band scrubbed the playhead instead.
+    The view drives the item's own drag rather than the item reaching its
+    geometry up into the ruler -- a view-dependent ``boundingRect`` re-enters
+    the scene index on scroll and dies natively (measured: access violation).
+    """
+
+    def setUp(self):
+        from qtpy import QtCore, QtGui
+
+        self.C, self.G = QtCore, QtGui
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.w.show()
+        self.tid = self.w.add_track("A")
+        self.w.add_clip(self.tid, 40.0, 80.0, "c")
+        self.w.set_shot_blocks(
+            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
+        )
+        self.w.set_range_highlight(40.0, 120.0)
+        self.SPAN = 120.0 - 40.0
+        self.tl = self.w._timeline
+        self.emitted = []
+        self.w.range_highlight_changed.connect(lambda a, b: self.emitted.append((a, b)))
+        self.moved = []
+        self.w.playhead_moved.connect(self.moved.append)
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _vx(self, time):
+        return int(self.tl.time_to_x(time) - self.tl.horizontalScrollBar().value())
+
+    def _lane_y(self):
+        return _RULER_HEIGHT + _SHOT_LANE_HEIGHT // 2
+
+    def _drag(self, from_time, to_time, y=None):
+        C, G = self.C, self.G
+        y = self._lane_y() if y is None else y
+        for kind, x, btn, btns in (
+            (
+                C.QEvent.MouseButtonPress,
+                self._vx(from_time),
+                C.Qt.LeftButton,
+                C.Qt.LeftButton,
+            ),
+            (C.QEvent.MouseMove, self._vx(to_time), C.Qt.NoButton, C.Qt.LeftButton),
+            (
+                C.QEvent.MouseButtonRelease,
+                self._vx(to_time),
+                C.Qt.LeftButton,
+                C.Qt.NoButton,
+            ),
+        ):
+            ev = G.QMouseEvent(kind, C.QPointF(x, y), btn, btns, C.Qt.NoModifier)
+            if kind == C.QEvent.MouseButtonPress:
+                self.tl.mousePressEvent(ev)
+            elif kind == C.QEvent.MouseMove:
+                self.tl.mouseMoveEvent(ev)
+            else:
+                self.tl.mouseReleaseEvent(ev)
+
+    def test_dragging_the_end_bound_on_the_ruler_resizes_the_shot(self):
+        self._drag(120.0, 150.0)
+        self.assertEqual(len(self.emitted), 1, self.emitted)
+        start, end = self.emitted[0]
+        self.assertAlmostEqual(start, 40.0, places=0)
+        self.assertAlmostEqual(end, 150.0, places=0)
+
+    def test_dragging_the_start_bound_on_the_ruler_resizes_the_shot(self):
+        self._drag(40.0, 20.0)
+        self.assertEqual(len(self.emitted), 1, self.emitted)
+        start, _end = self.emitted[0]
+        self.assertAlmostEqual(start, 20.0, places=0)
+
+    def test_the_band_between_the_bounds_moves_the_whole_shot(self):
+        """The band is the ONE place the shot can be dragged bodily.
+
+        The highlight's own body passes presses through so the timeline's
+        marquee works inside the active shot -- it spans every track row of
+        that shot, so claiming the gesture there left nowhere to marquee.
+        The band is where the shot's extent is already drawn, so it is where
+        the move lives instead.
+        """
+        self._drag(80.0, 90.0)
+        self.assertEqual(len(self.emitted), 1, "a body drag emits once")
+        start, end = self.emitted[0]
+        self.assertAlmostEqual(
+            end - start, self.SPAN, places=3, msg="a move must not resize the shot"
+        )
+        self.assertEqual(self.moved, [], "the band moves the shot, it does not scrub")
+
+    def test_the_tick_row_above_the_lane_still_scrubs(self):
+        self._drag(120.0, 150.0, y=2)
+        self.assertEqual(self.emitted, [])
+        self.assertTrue(self.moved)
+
+    def test_a_press_without_a_move_emits_nothing(self):
+        """Same zero-motion gate the item's own release keeps."""
+        self._drag(120.0, 120.0)
+        self.assertEqual(self.emitted, [])
+
+    def test_no_handle_is_offered_when_the_highlight_is_hidden(self):
+        self.w.show_range_highlight = False
+        self._drag(120.0, 150.0)
+        self.assertEqual(self.emitted, [])
+        self.assertTrue(self.moved, "it scrubs, as the ruler otherwise would")
+
+
+class TestRulerKeyTicks(BaseTestCase):
+    """Keyed frames are marked on the ruler, the way Maya's timeline does."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.tid = self.w.add_track("A")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _ticks(self):
+        self.w._timeline._update_scene_rect()
+        return self.w._timeline._scene.ruler._key_ticks
+
+    def test_clip_bounds_are_marked(self):
+        self.w.add_clip(self.tid, 10.0, 20.0, "c")
+        self.assertEqual(self._ticks(), [10.0, 30.0])
+
+    def test_every_key_of_a_curve_preview_is_marked(self):
+        self.w.add_clip(
+            self.tid,
+            10.0,
+            20.0,
+            "c",
+            sub_row="translateX",
+            curve_preview={
+                "keys": [(12.0, 0.0), (17.0, 1.0), (25.0, 2.0)],
+                "segments": [],
+                "val_min": 0.0,
+                "val_max": 1.0,
+            },
+        )
+        self.assertEqual(self._ticks(), [10.0, 12.0, 17.0, 25.0, 30.0])
+
+    def test_an_empty_timeline_has_no_ticks(self):
+        self.assertEqual(self._ticks(), [])
+
+    def test_setting_the_same_ticks_again_does_not_repaint(self):
+        """This runs on every content pulse; churning a repaint per pulse is
+        exactly the O(n) waste the extent recompute was already fixed for."""
+        self.w.add_clip(self.tid, 10.0, 20.0, "c")
+        ruler = self.w._timeline._scene.ruler
+        self._ticks()
+        calls = []
+        original = ruler.update
+        ruler.update = lambda *a, **k: (calls.append(1), original(*a, **k))[1]
+        try:
+            ruler.set_key_ticks([10.0, 30.0])
+            self.assertEqual(calls, [])
+            ruler.set_key_ticks([10.0, 31.0])
+            self.assertEqual(len(calls), 1)
+        finally:
+            del ruler.update
+
+
+class TestShotLaneSitsBelowTheRuler(BaseTestCase):
+    """The shot band is its own strip; the ruler is ruler all the way down.
+
+    Reported live, twice: "the blue shot border still overlaps the shot
+    timeline ... we need to be able to click into that timeline area without
+    selecting the shot".  The band used to occupy the bottom half of the
+    ruler, so the active shot's accent rule was painted inside it and the
+    bottom 12px of the ruler grabbed the shot instead of scrubbing.
+    """
+
+    def setUp(self):
+        from qtpy import QtCore, QtGui
+
+        self.C, self.G = QtCore, QtGui
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.w.show()
+        self.tid = self.w.add_track("A")
+        self.w.add_clip(self.tid, 40.0, 80.0, "c")
+        self.w.set_shot_blocks(
+            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
+        )
+        self.w.set_range_highlight(40.0, 120.0)
+        self.tl = self.w._timeline
+        self.emitted = []
+        self.w.range_highlight_changed.connect(lambda a, b: self.emitted.append((a, b)))
+        self.moved = []
+        self.w.playhead_moved.connect(self.moved.append)
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _vx(self, time):
+        return int(self.tl.time_to_x(time) - self.tl.horizontalScrollBar().value())
+
+    def _drag(self, from_time, to_time, y):
+        C, G = self.C, self.G
+        for kind, x, btn, btns in (
+            (
+                C.QEvent.MouseButtonPress,
+                self._vx(from_time),
+                C.Qt.LeftButton,
+                C.Qt.LeftButton,
+            ),
+            (C.QEvent.MouseMove, self._vx(to_time), C.Qt.NoButton, C.Qt.LeftButton),
+            (
+                C.QEvent.MouseButtonRelease,
+                self._vx(to_time),
+                C.Qt.LeftButton,
+                C.Qt.NoButton,
+            ),
+        ):
+            ev = G.QMouseEvent(kind, C.QPointF(x, y), btn, btns, C.Qt.NoModifier)
+            if kind == C.QEvent.MouseButtonPress:
+                self.tl.mousePressEvent(ev)
+            elif kind == C.QEvent.MouseMove:
+                self.tl.mouseMoveEvent(ev)
+            else:
+                self.tl.mouseReleaseEvent(ev)
+
+    def test_every_row_of_the_ruler_scrubs(self):
+        """Including the bottom row, which the band used to own."""
+        for y in (2, _RULER_HEIGHT // 2, _RULER_HEIGHT - 1):
+            with self.subTest(y=y):
+                self.emitted.clear()
+                self.moved.clear()
+                self._drag(120.0, 150.0, y=y)
+                self.assertEqual(self.emitted, [], "the ruler must not resize the shot")
+                self.assertTrue(self.moved, "it scrubs")
+
+    def test_the_band_below_the_ruler_still_grabs_the_shot(self):
+        self._drag(120.0, 150.0, y=_RULER_HEIGHT + _SHOT_LANE_HEIGHT // 2)
+        self.assertEqual(len(self.emitted), 1, self.emitted)
+        self.assertEqual(self.moved, [], "the band moves the shot, it does not scrub")
+
+    def test_the_ruler_item_covers_the_band_it_paints(self):
+        ruler = self.tl._scene.ruler
+        self.assertEqual(
+            ruler.boundingRect().height(), _RULER_HEIGHT + _SHOT_LANE_HEIGHT
+        )
+
+    def test_the_highlight_starts_clear_of_the_ruler(self):
+        top = self.w._range_highlight._rect().top()
+        self.assertGreaterEqual(top, _RULER_HEIGHT + _SHOT_LANE_HEIGHT)
+
+    def test_the_track_labels_line_up_with_the_tracks(self):
+        margin = self.w._header._layout.contentsMargins().top()
+        self.assertEqual(margin, _RULER_HEIGHT + _SHOT_LANE_HEIGHT)
+
+
+class TestTheHandAppearsOnlyOnceDragging(BaseTestCase):
+    """Hovering and clicking a clip leave the ordinary arrow in place.
+
+    Reported live: "make the cursor remain standard during clicking and
+    change to the drag cursor only on drag".  The body advertised an
+    open-hand on hover, so a plain selection click looked like a grab.
+    """
+
+    def setUp(self):
+        from qtpy import QtCore, QtWidgets
+
+        self.C, self.QtW = QtCore, QtWidgets
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.tid = self.w.add_track("A")
+        self.cid = self.w.add_clip(self.tid, start=10, duration=40)
+        self.item = self.w._clip_items[self.cid]
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _hover(self, pos):
+        ev = self.QtW.QGraphicsSceneHoverEvent(self.C.QEvent.GraphicsSceneHoverMove)
+        ev.setPos(pos)
+        ev.setScenePos(pos)
+        self.item.hoverMoveEvent(ev)
+
+    def test_hovering_the_body_leaves_the_arrow(self):
+        self._hover(self.item.rect().center())
+        self.assertFalse(
+            self.item.hasCursor(), f"body set {self.item.cursor().shape()}"
+        )
+
+    def test_hovering_an_edge_still_offers_the_resize(self):
+        r = self.item.rect()
+        self._hover(self.C.QPointF(r.right() - 1, r.center().y()))
+        self.assertTrue(self.item.hasCursor())
+        self.assertEqual(self.item.cursor().shape(), self.C.Qt.SizeHorCursor)
+
+    def test_a_press_alone_does_not_take_the_hand(self):
+        center = self.item.rect().center()
+        self.item.mousePressEvent(
+            _scene_mouse_event(self.C.QEvent.GraphicsSceneMousePress, center)
+        )
+        self.assertFalse(self.item.hasCursor())
+
+    def test_arming_the_drag_takes_the_closed_hand(self):
+        center = self.item.rect().center()
+        self.item.mousePressEvent(
+            _scene_mouse_event(self.C.QEvent.GraphicsSceneMousePress, center)
+        )
+        far = self.C.QPointF(center.x() + 200, center.y())
+        self.item.mouseMoveEvent(
+            _scene_mouse_event(self.C.QEvent.GraphicsSceneMouseMove, far)
+        )
+        self.assertIsNotNone(self.item._drag_mode)
+        self.assertEqual(self.item.cursor().shape(), self.C.Qt.ClosedHandCursor)
+
+
+class TestTheActiveShotIsFramedOnFirstShow(BaseTestCase):
+    """Opening the panel lands on the shot being worked on, not frame 0."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+        self.w.add_clip(self.tid, 0.0, 4000.0, "everything")
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _framed_span(self):
+        tl = self.w._timeline
+        vp = tl.viewport().width()
+        left = tl.x_to_time(tl.horizontalScrollBar().value())
+        return left, left + vp / tl.pixels_per_unit
+
+    def test_the_active_shot_fills_the_view(self):
+        self.w.set_range_highlight(3000.0, 3200.0)
+        self.w.resize(900, 400)
+        self.w.show()
+        left, right = self._framed_span()
+        self.assertLess(left, 3000.0)
+        self.assertGreater(right, 3200.0)
+        self.assertLess(right - left, 400.0, "framed the shot, not the whole scene")
+
+    def test_a_second_show_leaves_the_users_view_alone(self):
+        self.w.set_range_highlight(3000.0, 3200.0)
+        self.w.resize(900, 400)
+        self.w.show()
+        self.w._timeline.horizontalScrollBar().setValue(0)
+        self.w.hide()
+        self.w.show()
+        self.assertEqual(self.w._timeline.horizontalScrollBar().value(), 0)
+
+    def test_opting_out_never_frames(self):
+        """A consumer that manages its own view must keep it."""
+        calls = []
+        self.w.frame_shot = lambda: calls.append(1)
+        self.w.frame_on_first_show = False
+        self.w.set_range_highlight(3000.0, 3200.0)
+        self.w.resize(900, 400)
+        self.w.show()
+        self.assertEqual(calls, [])
+
+    def test_an_empty_show_retries_rather_than_giving_up(self):
+        """Content can arrive after the show; the next resize still frames."""
+        empty = SequencerWidget()
+        self.addCleanup(empty.deleteLater)
+        self.addCleanup(empty.close)
+        empty.resize(900, 400)
+        empty.show()
+        tid = empty.add_track("A")
+        empty.add_clip(tid, 0.0, 4000.0, "everything")
+        empty.set_range_highlight(3000.0, 3200.0)
+        empty.resize(880, 400)
+        tl = empty._timeline
+        left = tl.x_to_time(tl.horizontalScrollBar().value())
+        right = left + tl.viewport().width() / tl.pixels_per_unit
+        self.assertLess(left, 3000.0)
+        self.assertGreater(right, 3200.0)
 
 
 if __name__ == "__main__":

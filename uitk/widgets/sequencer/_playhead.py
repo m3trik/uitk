@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """PlayheadItem — vertical playhead line with frame-number badge."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -36,7 +37,10 @@ class PlayheadItem(QtWidgets.QGraphicsItem):
     @time.setter
     def time(self, value: float):
         self.prepareGeometryChange()  # mark OLD rect before data changes
-        self._time = max(0.0, value)
+        # Not floored at 0: the timeline reaches before the origin whenever a
+        # shot does, and a playhead pinned at 0 would misreport the frame the
+        # consumer actually sits on.
+        self._time = float(value)
         t = self._time
         self._label = str(int(t)) if t == int(t) else f"{t:.1f}"
         self._update_badge_width()
@@ -50,6 +54,18 @@ class PlayheadItem(QtWidgets.QGraphicsItem):
             else fm.width(self._label)
         )
         self._badge_width = max(text_w + 12, 24)
+
+    def _badge_hit_x(self) -> float:
+        """Scene x of the playhead's centre line — the hit target's centre."""
+        return self._timeline.time_to_x(self._time)
+
+    def _badge_hit_half_width(self) -> float:
+        """Half the badge width, in VIEW pixels: the click tolerance.
+
+        The badge does not scale with zoom (it is drawn at a fixed pixel
+        size), so the tolerance is a pixel figure, not a scene one.
+        """
+        return self._badge_width / 2.0 + 2
 
     def boundingRect(self) -> QtCore.QRectF:
         x = self._timeline.time_to_x(self._time)

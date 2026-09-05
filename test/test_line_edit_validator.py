@@ -12,9 +12,10 @@ Verifies:
 """
 
 import os
-import sys
 import tempfile
+import threading
 import unittest
+from unittest.mock import patch
 
 from conftest import QtBaseTestCase, setup_qt_application
 
@@ -37,6 +38,14 @@ def _pump(ms=50):
         QtWidgets.QApplication.processEvents(
             QtCore.QEventLoop.AllEvents, max(1, ms - deadline.elapsed())
         )
+
+
+def _settle(le, ms=1000):
+    """Pump until a deferred check has answered (the ``info`` state clears)."""
+    deadline = QtCore.QElapsedTimer()
+    deadline.start()
+    while le.property("actionState") == "info" and deadline.elapsed() < ms:
+        _pump(20)
 
 
 class TestValidatorBasics(QtBaseTestCase):
@@ -119,6 +128,154 @@ class TestValidatorBasics(QtBaseTestCase):
         # Subsequent text changes should NOT re-validate
         le.setText("y")
         self.assertIsNone(le.is_valid)
+
+
+class TestValidatorDeferred(QtBaseTestCase):
+    """The deferred stage: a slow check off the Qt thread whose answer lands
+    on the field only while it still describes the current text."""
+
+    def _field(self, answer):
+        le = self.track_widget(LineEdit())
+        le.set_validator(
+            lambda t: bool(t),
+            deferred=answer,
+            invalid_tooltip="bad",
+            pending_tooltip="checking",
+            debounce_ms=0,
+        )
+        return le
+
+    def test_pending_then_failure_colors_invalid_with_message(self):
+        le = self._field(lambda t: (False, f"{t} unreachable"))
+        le.setText("http://x")
+        self.assertEqual(le.property("actionState"), "info")
+        self.assertEqual(le.toolTip(), "checking")
+        _settle(le)
+        self.assertEqual(le.property("actionState"), "invalid")
+        self.assertEqual(le.toolTip(), "http://x unreachable")
+        self.assertFalse(le.is_valid)
+
+    def test_success_resets_and_emits_validated_twice(self):
+        le = self._field(lambda t: True)
+        captured = []
+        le.validated.connect(lambda ok, t: captured.append(ok))
+        le.setText("http://x")
+        _settle(le)
+        self.assertNotIn(le.property("actionState"), ("info", "invalid"))
+        self.assertEqual(captured, [True, True])
+        self.assertTrue(le.is_valid)
+
+    def test_stale_answer_for_replaced_text_is_dropped(self):
+        gate = threading.Event()
+
+        def answer(t):
+            if t == "http://first":
+                gate.wait(2)
+                return (False, "late")
+            return True
+
+        le = self._field(answer)
+        le.setText("http://first")
+        le.setText("http://second")
+        _settle(le)
+        gate.set()
+        _pump(150)
+        self.assertNotIn(le.property("actionState"), ("info", "invalid"))
+        self.assertNotEqual(le.toolTip(), "late")
+        self.assertTrue(le.is_valid)
+
+    def test_validate_now_without_deferred_settles_sync_only(self):
+        le = self._field(lambda t: (False, "no"))
+        le.setText("http://x")
+        le.validate_now(run_deferred=False)
+        self.assertNotIn(le.property("actionState"), ("info", "invalid"))
+        _pump(150)  # the retired probe's answer must not land
+        self.assertNotIn(le.property("actionState"), ("info", "invalid"))
+        self.assertTrue(le.is_valid)
+
+    def test_exception_in_deferred_reads_as_invalid_with_default_tooltip(self):
+        def boom(_t):
+            raise RuntimeError("x")
+
+        le = self._field(boom)
+        le.setText("http://x")
+        _settle(le)
+        self.assertEqual(le.property("actionState"), "invalid")
+        self.assertEqual(le.toolTip(), "bad")
+
+    def test_clear_validator_retires_in_flight_check(self):
+        gate = threading.Event()
+
+        def slow(_t):
+            gate.wait(2)
+            return (False, "late")
+
+        le = self._field(slow)
+        le.setText("http://x")
+        le.clear_validator()
+        gate.set()
+        _pump(150)
+        self.assertNotIn(le.property("actionState"), ("info", "invalid"))
+
+
+class TestValidatorUrlPresets(QtBaseTestCase):
+    """``"url"`` / ``"file_or_url"``: shape synchronously, reachability through
+    the auto-installed deferred probe, the reason wrapped by a callable tooltip."""
+
+    _URL = "https://x.test/a.csv"
+
+    def test_file_or_url_accepts_an_existing_file_without_probing(self):
+        le = self.track_widget(LineEdit())
+        with patch("pythontk.RemoteFile.probe", side_effect=AssertionError("probed")):
+            le.set_validator("file_or_url", debounce_ms=0)
+            le.setText(__file__)
+            _pump(50)
+        self.assertNotIn(le.property("actionState"), ("info", "invalid"))
+        self.assertTrue(le.is_valid)
+
+    def test_file_or_url_rejects_a_missing_file_synchronously(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator("file_or_url", invalid_tooltip="nope", debounce_ms=0)
+        le.setText("X:/no/such.csv")
+        self.assertEqual(le.property("actionState"), "invalid")
+        self.assertEqual(le.toolTip(), "nope")
+
+    def test_url_preset_probes_and_wraps_the_reason(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator("url", invalid_tooltip=lambda m: f"[{m}]", debounce_ms=0)
+        with patch("pythontk.RemoteFile.probe", return_value="Can't fetch: 404"):
+            le.setText(self._URL)
+            self.assertEqual(le.property("actionState"), "info")
+            _settle(le)
+        self.assertEqual(le.property("actionState"), "invalid")
+        self.assertEqual(le.toolTip(), "[Can't fetch: 404]")
+        self.assertFalse(le.is_valid)
+
+    def test_url_preset_reachable_resets(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator("url", debounce_ms=0)
+        with patch("pythontk.RemoteFile.probe", return_value=None):
+            le.setText(self._URL)
+            _settle(le)
+        self.assertNotIn(le.property("actionState"), ("info", "invalid"))
+        self.assertTrue(le.is_valid)
+
+    def test_callable_invalid_tooltip_gets_none_on_sync_failure(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator(
+            "url", invalid_tooltip=lambda m: "sync" if m is None else m, debounce_ms=0
+        )
+        le.setText("not a url")
+        self.assertEqual(le.property("actionState"), "invalid")
+        self.assertEqual(le.toolTip(), "sync")
+
+    def test_explicit_deferred_overrides_the_preset_probe(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator("url", deferred=lambda t: (False, "custom"), debounce_ms=0)
+        with patch("pythontk.RemoteFile.probe", side_effect=AssertionError("probed")):
+            le.setText(self._URL)
+            _settle(le)
+        self.assertEqual(le.toolTip(), "custom")
 
 
 class TestValidatorDebounce(QtBaseTestCase):
