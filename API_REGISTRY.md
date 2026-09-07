@@ -86,7 +86,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/mixins/spin_box_display.py`](#widgets--mixins--spin_box_display) — Shared display behaviour for the spin-box widgets.
 - [`widgets/mixins/text.py`](#widgets--mixins--text) — Text rendering for uitk widgets.
 - [`widgets/mixins/tooltip_mixin.py`](#widgets--mixins--tooltip_mixin)
-- [`widgets/mixins/wheel_step.py`](#widgets--mixins--wheel_step) — Shared modifier-driven wheel-step handling for spin-box widgets.
+- [`widgets/mixins/wheel_step.py`](#widgets--mixins--wheel_step) — Shared input handling for spin-box widgets: the modifier-driven wheel
 - [`widgets/optionBox/_optionBox.py`](#widgets--optionBox--_optionBox) — OptionBox - Plugin-based container for wrapping widgets with action buttons.
 - [`widgets/optionBox/options/_options.py`](#widgets--optionBox--options--_options)
 - [`widgets/optionBox/options/_persistence.py`](#widgets--optionBox--options--_persistence) — Shared persistence wiring for OptionBox plugins.
@@ -121,6 +121,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/sequencer/_sequencer.py`](#widgets--sequencer--_sequencer) — An NLE-style timeline sequencer widget.
 - [`widgets/sequencer/_timeline.py`](#widgets--sequencer--_timeline) — Timeline view, scene, and track-header widgets.
 - [`widgets/sequencer/_transport_controls.py`](#widgets--sequencer--_transport_controls) — Reusable Maya-style transport controls for :class:`SequencerWidget`.
+- [`widgets/shortcut_overlay.py`](#widgets--shortcut_overlay) — A corner legend of a widget's mouse gestures and keyboard shortcuts.
 - [`widgets/slider.py`](#widgets--slider)
 - [`widgets/spinBox.py`](#widgets--spinBox)
 - [`widgets/tableWidget.py`](#widgets--tableWidget)
@@ -587,6 +588,8 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
   - `ShortcutManager.add_shortcuts_batch(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]` — Add multiple shortcuts from a configuration list
   - `ShortcutManager.add_global_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut` — Add a global shortcut (robust press/release detection).
   - `ShortcutManager.add_info_entry(self, key_label: str, description: str) -> None` — Register a display-only entry (e.g.
+  - `ShortcutManager.add_gesture(self, group: str, keys: str, description: str) -> None` — Register a display-only mouse gesture under *group*.
+  - `ShortcutManager.overlay(self, host: QtWidgets.QWidget, anchor: str = 'bottom-right', max_keys: int = 4)` — A :class:`~uitk.widgets.shortcut_overlay.ShortcutOverlay` for this
   - `ShortcutManager.remove_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool` — Remove a specific shortcut
   - `ShortcutManager.clear_all(self) -> None` — Remove all shortcuts
   - `ShortcutManager.on_change(self, callback: Callable) -> None` — Register a callback invoked after any shortcut is rebound.
@@ -717,7 +720,7 @@ Switchboard-side keyboard shortcut machinery.
   - `Signals.blockSignals(cls, func)` *(class)* — Decorator that blocks widget signals during method execution.
 - **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L73)** — Decorator: enable cooperative cancel + warning dialog for a heavy slot.
 - **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L198)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
-- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L523)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
+- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L556)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
   - `SwitchboardSlotsMixin.get_default_signals(self, widget: QtWidgets.QWidget) -> set` — Retrieves the default signals for a given widget type.
   - `SwitchboardSlotsMixin.get_available_signals(self, widget, derived=True, exc=None)` — Get all available signals for a type of widget.
   - `SwitchboardSlotsMixin.slots_instantiated(self, key: str) -> bool`
@@ -996,7 +999,7 @@ In-cell key-combination capture for item views.
 <a id="widgets--doubleSpinBox"></a>
 ### `widgets/doubleSpinBox.py`
 
-- **[`class DoubleSpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/doubleSpinBox.py#L12)** — Custom QDoubleSpinBox with modifier-driven wheel-step adjustment.
+- **[`class DoubleSpinBox(WheelStepMixin, SpinBoxAdjustingMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/doubleSpinBox.py#L13)** — Custom QDoubleSpinBox with modifier-driven wheel-step adjustment.
   - `DoubleSpinBox.textFromValue(self, value: float) -> str` — Format the text displayed in the spin box, removing trailing zeros and unnecessary decimal points.
 
 <a id="widgets--editors--color_mapping_editor"></a>
@@ -1713,10 +1716,16 @@ Text rendering for uitk widgets.
 <a id="widgets--mixins--wheel_step"></a>
 ### `widgets/mixins/wheel_step.py`
 
-Shared modifier-driven wheel-step handling for spin-box widgets.
+Shared input handling for spin-box widgets: the modifier-driven wheel
 
-- **[`class WheelStepMixin`](uitk/uitk/widgets/mixins/wheel_step.py#L40)** — Mixin: modifier-driven wheel handling for ``QAbstractSpinBox`` subclasses.
+- **[`class WheelStepMixin`](uitk/uitk/widgets/mixins/wheel_step.py#L43)** — Mixin: modifier-driven wheel handling for ``QAbstractSpinBox`` subclasses.
   - `WheelStepMixin.wheelEvent(self, event: QtGui.QWheelEvent) -> None`
+- **[`class SpinBoxAdjustingMixin`](uitk/uitk/widgets/mixins/wheel_step.py#L119)** — Mixin: the *adjusting* state of a ``QAbstractSpinBox`` subclass.
+  - `SpinBoxAdjustingMixin.adjusting(self) -> bool` *(property)* — True while a mouse button is held on the box or a typed edit is
+  - `SpinBoxAdjustingMixin.mousePressEvent(self, event) -> None`
+  - `SpinBoxAdjustingMixin.mouseReleaseEvent(self, event) -> None`
+  - `SpinBoxAdjustingMixin.keyPressEvent(self, event) -> None`
+  - `SpinBoxAdjustingMixin.focusOutEvent(self, event) -> None`
 
 <a id="widgets--optionBox--_optionBox"></a>
 ### `widgets/optionBox/_optionBox.py`
@@ -2080,6 +2089,7 @@ ClipItem — draggable, resizable clip rectangle on the timeline.
 
 - **[`class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_clip.py#L31)** — A draggable, resizable rectangle representing one clip on the timeline.
   - `ClipItem.clip_data(self) -> ClipData` *(property)*
+  - `ClipItem.keys_editable(self) -> bool` *(property)* — False when this clip is locked or read-only.
   - `ClipItem.boundingRect(self)`
   - `ClipItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
   - `ClipItem.hoverMoveEvent(self, event)`
@@ -2104,8 +2114,9 @@ Data models and shared constants for the sequencer widget.
 - **[`class MenuUtils`](uitk/uitk/widgets/sequencer/_data.py#L141)** — Construction/placement helpers for the sequencer's context menus.
 - **[`class CurveUtils`](uitk/uitk/widgets/sequencer/_data.py#L162)** — Shared value→pixel mapping + curve-segment path builder.
   - `CurveUtils.make_value_mapper(rect_top: float, rect_height: float, val_min: float, val_max: float)` *(static)* — Return ``(map_y, is_flat)`` — the canonical value→pixel mapping.
+  - `CurveUtils.unmap_value(rect_top: float, rect_height: float, val_min: float, val_max: float, y: float) -> float` *(static)* — The value a pixel row *y* stands for -- :meth:`make_value_mapper`
   - `CurveUtils.build_curve_path(segments, map_x, map_y) -> QtGui.QPainterPath` *(static)* — Build a QPainterPath from curve *segments*.
-- **[`class PatternRegistry`](uitk/uitk/widgets/sequencer/_data.py#L266)** — Registry of tile-painters + cached tiled brushes for background fills.
+- **[`class PatternRegistry`](uitk/uitk/widgets/sequencer/_data.py#L289)** — Registry of tile-painters + cached tiled brushes for background fills.
   - `PatternRegistry.register_pattern(name: str, painter: PatternPainter) -> None` *(static)* — Register (or override) a tile-painter for :meth:`pattern_brush`.
   - `PatternRegistry.pattern_brush(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush` *(static)* — Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for…
   - `PatternRegistry.paint_pattern(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None` *(static)* — Fill ``rect`` with ``spec``;
@@ -2144,12 +2155,28 @@ KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row.
   - `KeyframeItem.value(self) -> float` *(property)*
   - `KeyframeItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
   - `KeyframeItem.boundingRect(self) -> QtCore.QRectF`
+  - `KeyframeItem.itemChange(self, change, value)`
+  - `KeyframeItem.is_broken(self, index: Optional[int] = None) -> bool` — True when this key's tangents are broken (IN and OUT independent).
   - `KeyframeItem.shape(self) -> QtGui.QPainterPath` — Larger hit area for easier clicking.
   - `KeyframeItem.hoverEnterEvent(self, event)`
   - `KeyframeItem.hoverLeaveEvent(self, event)`
   - `KeyframeItem.mousePressEvent(self, event)`
   - `KeyframeItem.mouseMoveEvent(self, event)`
   - `KeyframeItem.mouseReleaseEvent(self, event)`
+  - `KeyframeItem.contextMenuEvent(self, event)` — Right-click a key: the key menu, for the selected keys (this one
+- **[`class TangentHandleItem(QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L518)** — The grab point of a selected key's IN or OUT tangent handle.
+  - `TangentHandleItem.side(self) -> str` *(property)*
+  - `TangentHandleItem.key(self) -> KeyframeItem` *(property)*
+  - `TangentHandleItem.slot(self) -> tuple` — ``(key, side, segment index, control-point key)`` -- what this
+  - `TangentHandleItem.control_point(self) -> Optional[tuple]`
+  - `TangentHandleItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
+  - `TangentHandleItem.shape(self) -> QtGui.QPainterPath`
+  - `TangentHandleItem.hoverEnterEvent(self, event)`
+  - `TangentHandleItem.hoverLeaveEvent(self, event)`
+  - `TangentHandleItem.mousePressEvent(self, event)`
+  - `TangentHandleItem.mouseMoveEvent(self, event)`
+  - `TangentHandleItem.mouseReleaseEvent(self, event)`
+  - `TangentHandleItem.contextMenuEvent(self, event)`
 
 <a id="widgets--sequencer--_markers"></a>
 ### `widgets/sequencer/_markers.py`
@@ -2175,7 +2202,7 @@ MarkerItem — named marker on the timeline with drag and context menu.
 
 Range-related overlay items: static ranges, gap hatching, and highlights.
 
-- **[`class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_overlays.py#L517)** — A semi-transparent rectangle highlighting a time range on the timeline.
+- **[`class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_overlays.py#L529)** — A semi-transparent rectangle highlighting a time range on the timeline.
   - `RangeHighlightItem.start(self) -> float` *(property)*
   - `RangeHighlightItem.end(self) -> float` *(property)*
   - `RangeHighlightItem.set_range(self, start: float, end: float)`
@@ -2242,9 +2269,9 @@ Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 
 An NLE-style timeline sequencer widget.
 
-- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L64)** — Dialog for configuring attribute-type color mappings.
+- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L65)** — Dialog for configuring attribute-type color mappings.
   - `AttributeColorDialog.load_color_map() -> Dict[str, str]` *(static)* — Return the persisted attribute color map without opening a dialog.
-- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L148)** — A split-view NLE sequencer widget.
+- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L178)** — A split-view NLE sequencer widget.
   - `SequencerWidget.window_shortcuts(self) -> bool` *(property)* — When ``True``, sequencer shortcuts are active whenever the
   - `SequencerWidget.showEvent(self, event: QtGui.QShowEvent) -> None`
   - `SequencerWidget.resizeEvent(self, event: QtGui.QResizeEvent) -> None`
@@ -2309,6 +2336,10 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.show_range_highlight(self) -> bool` *(property)*
   - `SequencerWidget.zone_menu_enabled(self) -> bool` *(property)* — When ``True``, right-clicks emit :attr:`zone_context_menu_requested`
   - `SequencerWidget.shift_held_at_press(self) -> bool` *(property)* — Whether Shift was held when the last drag interaction started.
+  - `SequencerWidget.ctrl_held_at_press(self) -> bool` *(property)* — Whether Ctrl was held when the last drag interaction started.
+  - `SequencerWidget.record_press_modifiers(self, modifiers) -> None` — Bank the modifiers a press carried, for the consumers' gates.
+  - `SequencerWidget.shortcut_overlay(self)` *(property)* — The corner legend (:class:`ShortcutOverlay`), or ``None`` until
+  - `SequencerWidget.shortcut_overlay_visible(self) -> bool` *(property)* — Show a legend of the drag grammar and keys in the timeline's corner.
   - `SequencerWidget.attribute_colors(self) -> Dict[str, str]` *(property)* — Mapping of attribute name to hex color string.
   - `SequencerWidget.set_attribute_color(self, name: str, color: str) -> None` — Set a single attribute's color and repaint.
   - `SequencerWidget.sub_row_height(self) -> int` *(property)* — Pixel height of expanded attribute sub-rows (default half track height).
@@ -2319,13 +2350,16 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.is_track_expanded(self, track_id: int) -> bool` — Return True if the track is currently expanded.
   - `SequencerWidget.toggle_track_expanded(self, track_id: int)` — Toggle expansion state.
   - `SequencerWidget.selected_clips(self) -> List[int]` — Return clip IDs for all currently selected clips.
+  - `SequencerWidget.selected_keys(self) -> List[dict]` — Selected keyframe dots grouped by clip: ``[{clip_id, times}, ...]``.
+  - `SequencerWidget.select_keys(self, wanted: List[dict], replace: bool = True) -> int` — Select keyframe dots by clip data and time;
+  - `SequencerWidget.show_key_menu(self, global_pos) -> bool` — Open the key menu for the current key selection;
 
 <a id="widgets--sequencer--_timeline"></a>
 ### `widgets/sequencer/_timeline.py`
 
 Timeline view, scene, and track-header widgets.
 
-- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L87)** — Left-pane widget showing track labels, vertically synced to the timeline.
+- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L88)** — Left-pane widget showing track labels, vertically synced to the timeline.
   - `TrackHeaderWidget.set_top_margin(self, margin: int) -> None`
   - `TrackHeaderWidget.add_track_label(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: str = None, text_color: str = None)`
   - `TrackHeaderWidget.set_track_expanded(self, track_idx: int, sub_names: List[str], sub_height: int)`
@@ -2333,10 +2367,10 @@ Timeline view, scene, and track-header widgets.
   - `TrackHeaderWidget.eventFilter(self, obj, event)`
   - `TrackHeaderWidget.selected_names(self) -> List[str]`
   - `TrackHeaderWidget.clear_tracks(self)`
-- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L348)** — Scene that owns the ruler, playhead, and all clip items.
+- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L349)** — Scene that owns the ruler, playhead, and all clip items.
   - `TimelineScene.ruler(self) -> RulerItem` *(property)*
   - `TimelineScene.playhead(self) -> PlayheadItem` *(property)*
-- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L373)** — QGraphicsView providing zoom, pan, and coordinate mapping.
+- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L374)** — QGraphicsView providing zoom, pan, and coordinate mapping.
   - `TimelineView.event(self, event: QtCore.QEvent) -> bool`
   - `TimelineView.keyPressEvent(self, event)`
   - `TimelineView.keyReleaseEvent(self, event)`
@@ -2348,6 +2382,7 @@ Timeline view, scene, and track-header widgets.
   - `TimelineView.wheelEvent(self, event)`
   - `TimelineView.mousePressEvent(self, event)`
   - `TimelineView.mouseMoveEvent(self, event)`
+  - `TimelineView.leaveEvent(self, event)`
   - `TimelineView.mouseReleaseEvent(self, event)`
   - `TimelineView.mouseDoubleClickEvent(self, event)`
   - `TimelineView.paintEvent(self, event)`
@@ -2381,6 +2416,19 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
   - `TransportControls.button(self, name: str) -> Optional[QtWidgets.QToolButton]` — Lookup a button by name (e.g.
   - `TransportControls.attach_to_footer(self, footer, side: str = 'center') -> None` — Insert this row into *footer*'s main layout on the given side.
 
+<a id="widgets--shortcut_overlay"></a>
+### `widgets/shortcut_overlay.py`
+
+A corner legend of a widget's mouse gestures and keyboard shortcuts.
+
+- **[`class ShortcutOverlay(QtWidgets.QWidget)`](uitk/uitk/widgets/shortcut_overlay.py#L20)** — Translucent, mouse-transparent legend anchored to a corner of *host*.
+  - `ShortcutOverlay.context(self) -> Optional[str]` *(property)* — The gesture group the pointer is over, or ``None`` (first group shown).
+  - `ShortcutOverlay.shown_group(self) -> Optional[str]` *(property)* — The group whose rows are on screen right now.
+  - `ShortcutOverlay.set_context(self, group: Optional[str]) -> None` — Brighten *group* (a gesture group name) and dim the others.
+  - `ShortcutOverlay.refresh(self) -> None` — Re-render from the manager and re-anchor.
+  - `ShortcutOverlay.paintEvent(self, event)`
+  - `ShortcutOverlay.eventFilter(self, obj, event)`
+
 <a id="widgets--slider"></a>
 ### `widgets/slider.py`
 
@@ -2389,7 +2437,7 @@ Reusable Maya-style transport controls for :class:`SequencerWidget`.
 <a id="widgets--spinBox"></a>
 ### `widgets/spinBox.py`
 
-- **[`class SpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`](uitk/uitk/widgets/spinBox.py#L15)** — Unified SpinBox that supports both integer and float behavior, plus custom display values.
+- **[`class SpinBox(WheelStepMixin, SpinBoxAdjustingMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`](uitk/uitk/widgets/spinBox.py#L16)** — Unified SpinBox that supports both integer and float behavior, plus custom display values.
   - `SpinBox.value(self) -> Union[float, int]` — Return integer if decimals is 0, else float.
   - `SpinBox.setCustomDisplayValues(self, *args)` — Set a mapping of values to custom display strings.
   - `SpinBox.textFromValue(self, value: float) -> str` — Format the text displayed in the spin box.

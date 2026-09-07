@@ -295,7 +295,7 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self._grab_armed = False
         self._press_screen_pos = event.screenPos()
         sq = self._timeline.parent_sequencer
-        sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
+        sq.record_press_modifiers(event.modifiers())
         # Undo snapshot is captured lazily on the first real move — a
         # plain click must not burn an undo step or wipe redo.
         self._undo_captured = False
@@ -370,18 +370,30 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             return float(self._end)
         return float(self._start)
 
+    def _gap_drag_label(self) -> str:
+        """``"<verb> <frame>"`` -- what this drag does under the modifiers
+        recorded at press, so the gesture reads at the cursor."""
+        sq = self._timeline.parent_sequencer
+        if self._drag_mode == "move":
+            verb = "Slide gap"
+        elif sq.ctrl_held_at_press:
+            verb = "Trim"
+        elif sq.shift_held_at_press:
+            verb = "Retime"
+        else:
+            verb = "Slide"
+        return f"{verb} {FrameTooltip.format_frame(self._gap_drag_frame())}"
+
     def _show_gap_drag_tooltip(self, scene_pos):
         self._drag_tooltip.show(
             self.scene(),
             scene_pos,
-            label=FrameTooltip.format_frame(self._gap_drag_frame()),
+            label=self._gap_drag_label(),
             color=self._line_color.name(),
         )
 
     def _update_gap_drag_tooltip(self, scene_pos):
-        self._drag_tooltip.update(
-            scene_pos, label=FrameTooltip.format_frame(self._gap_drag_frame())
-        )
+        self._drag_tooltip.update(scene_pos, label=self._gap_drag_label())
 
     def _is_drag_active(self) -> bool:
         return self._drag_mode is not None
@@ -529,6 +541,7 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         self._color = QtGui.QColor(90, 140, 220, 30)  # semi-transparent blue
         self._handle_color = QtGui.QColor(90, 140, 220, 80)
         self._drag_mode: Optional[str] = None  # "move" | "left" | "right"
+        self._grab_zone: str = "move"  # the handle the gesture started on
         self._drag_origin_x: float = 0.0
         self._drag_origin_start: float = 0.0
         self._drag_origin_end: float = 0.0
@@ -660,14 +673,28 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         """Start a bound drag from outside the item (the shot lane's handles).
 
         The same state ``mousePressEvent`` sets, so every later step --
-        move, release, cancel, undo capture -- is the one code path.
+        move, release, cancel, undo capture -- is the one code path.  The
+        caller has recorded the press modifiers (``record_press_modifiers``).
         """
+        self._grab_zone = edge
         self._drag_mode = edge
         self._drag_origin_x = scene_x
         self._drag_origin_start = self._start
         self._drag_origin_end = self._end
         self._undo_captured = False
         self._show_range_drag_tooltip(QtCore.QPointF(scene_x, self._rect().top()))
+
+    def _drag_verb(self) -> str:
+        """What this drag does, as the consumers apply the modifiers recorded
+        at press: a plain bound drag resizes the shot (the neighbours ripple
+        to keep the gaps), Ctrl trims the bound alone, Shift retimes.  A
+        body/band drag moves the shot."""
+        sq = self._timeline.parent_sequencer
+        if self._drag_mode == "move":
+            return "Move"
+        if sq.shift_held_at_press:
+            return "Retime"
+        return "Trim" if sq.ctrl_held_at_press else "Resize"
 
     def _hit_zone(self, pos: QtCore.QPointF) -> str:
         r = self._rect()
@@ -731,12 +758,13 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             ):
                 event.ignore()
                 return
+        sq = self._timeline.parent_sequencer
+        sq.record_press_modifiers(event.modifiers())
+        self._grab_zone = zone
         self._drag_mode = zone
         self._drag_origin_x = event.scenePos().x()
         self._drag_origin_start = self._start
         self._drag_origin_end = self._end
-        sq = self._timeline.parent_sequencer
-        sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
         # Undo snapshot is captured lazily on the first real move — a
         # plain click must not burn an undo step or wipe redo.
         self._undo_captured = False
@@ -836,22 +864,25 @@ class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         return moved
 
     def _range_drag_frame(self) -> float:
-        if self._drag_mode == "right":
-            return float(self._end)
-        return float(self._start)
+        # The bound under the hand: a plain edge grab moves the whole shot,
+        # but the frame that reads at the cursor is still the edge grabbed.
+        return float(self._end if self._grab_zone == "right" else self._start)
+
+    def _range_drag_label(self) -> str:
+        return (
+            f"{self._drag_verb()} {FrameTooltip.format_frame(self._range_drag_frame())}"
+        )
 
     def _show_range_drag_tooltip(self, scene_pos):
         self._drag_tooltip.show(
             self.scene(),
             scene_pos,
-            label=FrameTooltip.format_frame(self._range_drag_frame()),
+            label=self._range_drag_label(),
             color=self._handle_color.name(),
         )
 
     def _update_range_drag_tooltip(self, scene_pos):
-        self._drag_tooltip.update(
-            scene_pos, label=FrameTooltip.format_frame(self._range_drag_frame())
-        )
+        self._drag_tooltip.update(scene_pos, label=self._range_drag_label())
 
     def _is_drag_active(self) -> bool:
         return self._drag_mode is not None

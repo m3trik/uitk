@@ -21,10 +21,11 @@ from uitk.widgets.sequencer._data import (
     PatternRegistry,
 )
 from uitk.widgets.sequencer._clip import ClipItem
+from uitk.widgets.sequencer._keyframe import KeyframeItem, TangentHandleItem
 from uitk.widgets.sequencer._overlays import (
+    _GapOverlayItem,
     _SnapGuideItem,
     _StaticRangeOverlay,
-    _GapOverlayItem,
     RangeHighlightItem,
 )
 from uitk.widgets.sequencer._ruler import RulerItem
@@ -516,19 +517,21 @@ class TimelineView(QtWidgets.QGraphicsView):
         """
         return self._hit_zone(viewport_y) == "shot_lane"
 
-    def _shot_bound_handle(self, viewport_pos, scene_x: float):
+    def _shot_bound_handle(self, viewport_pos, scene_x: float, modifiers=None):
         """The range highlight, if *viewport_pos* is on one of its grabs.
 
         Returns the item with its drag already begun, or ``None`` -- in
-        which case the ruler keeps its scrub.
+        which case the ruler keeps its scrub.  *modifiers* are the press's
+        own (they decide the grab: move, bound-only or retime); the live
+        keyboard state is the fallback for a caller without an event.
         """
         zone = self._shot_band_zone(viewport_pos)
         if not zone:
             return None
         sq = self.parent_sequencer
-        sq.shift_held_at_press = bool(
-            QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ShiftModifier
-        )
+        if modifiers is None:
+            modifiers = QtWidgets.QApplication.keyboardModifiers()
+        sq.record_press_modifiers(modifiers)
         sq._range_highlight.begin_edge_drag(zone, scene_x)
         return sq._range_highlight
 
@@ -685,7 +688,7 @@ class TimelineView(QtWidgets.QGraphicsView):
             # of it.  Driven directly rather than by extending the highlight's
             # hit area up here: a view-dependent boundingRect re-enters the
             # scene index on scroll and dies natively.
-            hl = self._shot_bound_handle(event.pos(), scene_pos.x())
+            hl = self._shot_bound_handle(event.pos(), scene_pos.x(), event.modifiers())
             if hl is not None:
                 self._range_edge_drag = hl
                 event.accept()
@@ -736,16 +739,25 @@ class TimelineView(QtWidgets.QGraphicsView):
                     self._restore_selection(pre_selection)
                 event.accept()
         elif event.button() == QtCore.Qt.RightButton:
-            # Preserve multi-selection on right-click: if the item under
-            # the cursor is already selected, keep the whole selection so
-            # the context menu can operate on all selected items.
-            # If it's unselected, switch to it (standard OS behaviour).
+            # Preserve the selection the menu is about to act on: forwarding
+            # a press the scene does not accept CLEARS it, which is how a
+            # multi-key selection collapsed to the one dot under the cursor
+            # before its menu had even opened.  An UNSELECTED item under the
+            # cursor becomes the selection (standard OS behaviour).
             item = self.itemAt(event.pos())
-            if isinstance(item, ClipItem):
+            # A key selection outranks the clip under the cursor: the menu
+            # that follows is the KEYS' (see :meth:`contextMenuEvent`), so
+            # switching to the clip would throw away what it acts on.
+            keys_selected = bool(self.parent_sequencer.selected_keys())
+            if isinstance(item, KeyframeItem) or (
+                isinstance(item, ClipItem) and not keys_selected
+            ):
                 if not item.isSelected():
                     self._scene.clearSelection()
                     item.setSelected(True)
                 event.accept()
+            elif keys_selected:
+                event.accept()  # empty space, an overlay, a tangent handle
             else:
                 super().mousePressEvent(event)
         else:
@@ -783,7 +795,34 @@ class TimelineView(QtWidgets.QGraphicsView):
             event.accept()
         else:
             self._sync_shot_bound_cursor(event.pos())
+            self._sync_gesture_context(event.pos())
             super().mouseMoveEvent(event)
+
+    def _sync_gesture_context(self, viewport_pos) -> None:
+        """Tell the shortcut overlay which gesture group the pointer is over."""
+        sq = self.parent_sequencer
+        if not sq.shortcut_overlay_visible:
+            return  # nobody is reading: skip the per-move scene query
+        zone = self._hit_zone(viewport_pos.y())
+        if zone in ("ruler", "shot_lane"):
+            group = "Shot bounds" if self._shot_band_zone(viewport_pos) else "Timeline"
+        else:
+            item = self.itemAt(viewport_pos)
+            if isinstance(item, (ClipItem, KeyframeItem, TangentHandleItem)):
+                group = "Clips & keys"
+            elif isinstance(item, _GapOverlayItem):
+                group = "Gaps"
+            elif isinstance(item, RangeHighlightItem) and item._hit_zone(
+                item.mapFromScene(self.mapToScene(viewport_pos))
+            ) in ("left", "right"):
+                group = "Shot bounds"
+            else:
+                group = "Timeline"
+        sq._set_gesture_context(group)
+
+    def leaveEvent(self, event):
+        self.parent_sequencer._set_gesture_context(None)
+        super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.MiddleButton:
@@ -878,19 +917,36 @@ class TimelineView(QtWidgets.QGraphicsView):
                 painter.end()
 
     def contextMenuEvent(self, event):
+        sq = self.parent_sequencer
         item = self.itemAt(event.pos())
-        if isinstance(item, (ClipItem, MarkerItem, _GapOverlayItem)):
+        zone = self._hit_zone(event.pos().y())
+
+        # A key selection owns the right-click.  The key menu used to need a
+        # hit on a 7-pixel dot -- and reaching it took a press that had
+        # already collapsed a multi-key selection to that one key.  While any
+        # key is selected it opens anywhere over the TRACKS; the ruler and
+        # the shot lane keep their own menus, and an unselected key still
+        # becomes the selection first, through its own handler below.
+        if zone == "tracks" and not (
+            isinstance(item, KeyframeItem) and not item.isSelected()
+        ):
+            if sq.show_key_menu(event.globalPos()):
+                event.accept()
+                return
+
+        if isinstance(
+            item,
+            (ClipItem, KeyframeItem, TangentHandleItem, MarkerItem, _GapOverlayItem),
+        ):
             super().contextMenuEvent(event)
             return
 
-        sq = self.parent_sequencer
         scene_pos = self.mapToScene(event.pos())
         t = self.x_to_time(scene_pos.x())
         interval = sq.snap_interval
         if interval > 0:
             t = round(t / interval) * interval
 
-        zone = self._hit_zone(event.pos().y())
         # Refine: a click at a time some shot covers is the shot lane,
         # whatever the height — a shot owns its whole timeline COLUMN, not
         # just the band drawn in the lane, so "right-click the shot" has to

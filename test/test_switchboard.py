@@ -112,6 +112,55 @@ class TestSwitchboardSlotWrappers(QtBaseTestCase):
             self.ui.button_a.debounce = 0
             del instance.button_a
 
+    def _run_loop(self, ms):
+        loop = QtCore.QEventLoop()
+        QtCore.QTimer.singleShot(ms, loop.quit)
+        getattr(loop, "exec_", loop.exec)()
+
+    def test_debounced_slot_waits_while_the_widget_is_adjusting(self):
+        """A widget exposing ``adjusting`` holds its debounced call: the
+        window is re-armed until the flag clears, then the slot runs once."""
+        calls = []
+        instance = self.sb.get_slots_instance(self.ui)
+        instance.button_a = lambda widget=None: calls.append(1)
+        self.ui.button_a.debounce = 30
+        self.ui.button_a.adjusting = True
+        try:
+            self.ui.button_a.call_slot()
+            self._run_loop(150)
+            self.assertEqual(calls, [], "held while adjusting")
+            self.ui.button_a.adjusting = False
+            self._run_loop(150)
+            self.assertEqual(calls, [1], "runs once the adjustment ends")
+        finally:
+            self.ui.button_a.debounce = 0
+            del self.ui.button_a.adjusting
+            del instance.button_a
+
+    def test_debounce_can_be_a_ui_dynamic_property(self):
+        """``debounce`` declared in a .ui (a dynamic property, no Python
+        attribute) defers the call the same way; an explicit attribute of 0
+        wins over the property."""
+        calls = []
+        instance = self.sb.get_slots_instance(self.ui)
+        instance.button_b = lambda widget=None: calls.append(1)
+        widget = self.ui.button_b
+        self.assertFalse(hasattr(widget, "debounce"))
+        widget.setProperty("debounce", 30)
+        try:
+            widget.call_slot()
+            self.assertEqual(calls, [], "the property defers the call")
+            self._run_loop(150)
+            self.assertEqual(calls, [1])
+            widget.debounce = 0  # the attribute switches it off
+            widget.call_slot()
+            self.assertEqual(calls, [1, 1], "an explicit 0 runs at once")
+        finally:
+            widget.setProperty("debounce", None)
+            if hasattr(widget, "debounce"):
+                del widget.debounce
+            del instance.button_b
+
     def test_get_slot_error_branch_uses_instance_class_name(self):
         """get_slot's ``except Exception`` branch must log the raised error
         and return None -- not raise AttributeError from ``slot_class.__name__``
@@ -1027,6 +1076,46 @@ class TestSwitchboardLinkSpinboxes(QtBaseTestCase):
         self.assertEqual(wired, self.boxes)
         for b in self.boxes:
             self.assertIsNotNone(self._toggle(b))
+
+    def test_fields_can_start_locked(self):
+        """``initial=True`` is the 'these two move together unless you say
+        otherwise' default a paired setting wants (the render-effects pulse
+        gaps): no click needed before the first link takes."""
+        self.sb.link_spinboxes(self.ui, "s000-2", initial=True, settings_key=False)
+        a, b, _c = self.boxes
+        self.assertTrue(self._toggle(a).is_on)
+        a.setValue(4.0)
+        self.assertEqual(b.value(), 4.0, "locked from the start, no click needed")
+
+    def test_fields_inside_an_option_box_menu_link(self):
+        """The fields a tool puts in its own option-box menu are the ones that
+        most want linking, and they are not children of the ui: they are
+        created by ``menu.add`` and live in the menu. Resolution by explicit
+        widget has to reach them, and each has to carry its own lock toggle
+        inside that menu."""
+        from qtpy import QtWidgets
+
+        host = QtWidgets.QPushButton("host")
+        host.setObjectName("b_host")
+        self.ui.centralWidget().layout().addWidget(host)
+        self.ui.register_widget(host)
+        pair = [
+            host.option_box.menu.add(
+                "QDoubleSpinBox", setObjectName=name, setMaximum=100.0, setValue=1.0
+            )
+            for name in ("s_lead_in", "s_lead_out")
+        ]
+
+        wired = self.sb.link_spinboxes(self.ui, pair, initial=True, settings_key=False)
+
+        self.assertEqual(wired, pair)
+        lead_in, lead_out = pair
+        self.assertTrue(self._toggle(lead_in).is_on)
+        lead_in.setValue(3.0)
+        self.assertEqual(lead_out.value(), 3.0, "the pair moves together")
+        self._lock(lead_out, False)
+        lead_in.setValue(5.0)
+        self.assertEqual(lead_out.value(), 3.0, "...until one is unlocked")
 
     def test_unlocked_fields_are_independent(self):
         self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)

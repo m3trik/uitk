@@ -367,6 +367,9 @@ class ShortcutManager:
     def __init__(self, widget: QtWidgets.QWidget):
         self.widget = widget
         self.shortcuts: Dict[str, Dict] = {}
+        #: ``{group: [(keys, description), ...]}`` -- the mouse half of the
+        #: widget's control surface (:meth:`add_gesture`).
+        self.gestures: Dict[str, List[Tuple[str, str]]] = {}
         self._change_callbacks: List[Callable] = []
 
     def add_shortcut(
@@ -507,6 +510,33 @@ class ShortcutManager:
             "default_key": key_label,
             "read_only": True,
         }
+
+    # -- gestures: what a drag or click does under each modifier ---------------
+
+    def add_gesture(self, group: str, keys: str, description: str) -> None:
+        """Register a display-only mouse gesture under *group*.
+
+        A gesture is the half of a widget's control surface no ``QShortcut``
+        can express -- what a drag does with a given modifier.  Grouped so an
+        :meth:`overlay` can brighten the group the pointer is over; the
+        shortcut editor lists each one as a read-only row beside the keyboard
+        bindings (:meth:`add_info_entry`), keyed ``"<keys> (<group>)"``.
+        """
+        self.gestures.setdefault(group, []).append((keys, description))
+        self.add_info_entry(f"{keys} ({group})", description)
+
+    def overlay(
+        self, host: QtWidgets.QWidget, anchor: str = "bottom-right", max_keys: int = 4
+    ):
+        """A :class:`~uitk.widgets.shortcut_overlay.ShortcutOverlay` for this
+        manager's gestures and shortcuts, anchored to a corner of *host*.
+
+        Hidden until the caller shows it; it re-renders on every change this
+        manager publishes.  Loaded on demand so the manager stays light.
+        """
+        from uitk.widgets.shortcut_overlay import ShortcutOverlay
+
+        return ShortcutOverlay(self, host, anchor=anchor, max_keys=max_keys)
 
     def remove_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool:
         """Remove a specific shortcut

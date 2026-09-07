@@ -158,7 +158,15 @@ def spn_start_init(self, widget):
     widget.debounce = 400   # coalesce rapid clicks into one call
 ```
 
-Implementation: [switchboard/slots.py](../uitk/switchboard/slots.py).
+A `.ui` can declare it instead, as a dynamic property on the widget (the Python attribute wins when both are set; an explicit `0` switches it off):
+
+```xml
+<property name="debounce" stdset="0"><number>400</number></property>
+```
+
+**Waiting for the user to finish.** A widget that exposes `adjusting` holds the call while it is `True`: the timer is re-armed each time it fires until the widget is at rest, so the slot runs once the user is done, not merely after a pause. The uitk spin boxes (`SpinBox`, `DoubleSpinBox`) report `adjusting` while a mouse button is held on the box (an arrow auto-repeating) or a typed edit is not yet committed (Enter / focus-out). Pair it with `setKeyboardTracking(False)` when a half-typed value must never reach the slot at all.
+
+Implementation: [switchboard/slots.py](../uitk/switchboard/slots.py), [widgets/mixins/wheel_step.py](../uitk/widgets/mixins/wheel_step.py).
 
 ### `@Cancelable(timeout=N)` (recommended) and `widget.slot_timeout`
 

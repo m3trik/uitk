@@ -28,7 +28,10 @@ class SwitchboardNameMixin:
         if not isinstance(name, str):
             raise ValueError(f"Expected a string, got {type(name)}")
 
-        return re.sub(r"[^0-9a-zA-Z]", "_", name)
+        # One rule, owned by pythontk: a headless reader deriving the same
+        # objectName from a definition (ExportProfile) must agree with the
+        # widget the switchboard built.
+        return ptk.ExportProfile.legal_name(name)
 
     def get_slot_class_names(self, base_name: str) -> List[str]:
         """Generate potential slot class names from a base name.
