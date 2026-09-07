@@ -6,11 +6,13 @@ from uitk.widgets.mixins.feedback import FeedbackMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.spin_box_display import PrefixColumnMixin
 from uitk.widgets.mixins.spin_box_display import SpinBoxTextColorMixin
+from uitk.widgets.mixins.wheel_step import SpinBoxAdjustingMixin
 from uitk.widgets.mixins.wheel_step import WheelStepMixin
 
 
 class DoubleSpinBox(
     WheelStepMixin,
+    SpinBoxAdjustingMixin,
     FeedbackMixin,
     SpinBoxTextColorMixin,
     PrefixColumnMixin,
@@ -22,6 +24,8 @@ class DoubleSpinBox(
 
     See :class:`uitk.widgets.mixins.wheel_step.WheelStepMixin` for the
     Ctrl / Ctrl+Shift / Alt / Ctrl+Alt modifier contract,
+    :class:`uitk.widgets.mixins.wheel_step.SpinBoxAdjustingMixin` for the
+    ``adjusting`` state a debounced slot (``widget.debounce``) waits on,
     :class:`uitk.widgets.mixins.feedback.FeedbackMixin` for the transient
     HUD popup that surfaces the step amount, and
     :class:`uitk.widgets.mixins.spin_box_display.PrefixColumnMixin` for the

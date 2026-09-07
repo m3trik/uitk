@@ -57,17 +57,13 @@ class TestDoubleSpinBoxModifierSteps(QtBaseTestCase):
 
     def test_ctrl_wheel_up_steps_by_10x(self):
         sb = self._make_spinbox(value=5.0, step=1.0)
-        event = self._make_wheel_event(
-            delta=120, modifiers=QtCore.Qt.ControlModifier
-        )
+        event = self._make_wheel_event(delta=120, modifiers=QtCore.Qt.ControlModifier)
         sb.wheelEvent(event)
         self.assertAlmostEqual(sb.value(), 15.0, places=5)
 
     def test_ctrl_wheel_down_steps_by_10x(self):
         sb = self._make_spinbox(value=50.0, step=1.0)
-        event = self._make_wheel_event(
-            delta=-120, modifiers=QtCore.Qt.ControlModifier
-        )
+        event = self._make_wheel_event(delta=-120, modifiers=QtCore.Qt.ControlModifier)
         sb.wheelEvent(event)
         self.assertAlmostEqual(sb.value(), 40.0, places=5)
 
@@ -86,17 +82,13 @@ class TestDoubleSpinBoxModifierSteps(QtBaseTestCase):
     def test_alt_wheel_up_steps_by_singleStep_over_10(self):
         """Alt+wheel up should step by ``singleStep / 10``."""
         sb = self._make_spinbox(value=5.0, step=1.0, decimals=4)
-        event = self._make_wheel_event(
-            delta=120, modifiers=QtCore.Qt.AltModifier
-        )
+        event = self._make_wheel_event(delta=120, modifiers=QtCore.Qt.AltModifier)
         sb.wheelEvent(event)
         self.assertAlmostEqual(sb.value(), 5.1, places=6)
 
     def test_alt_wheel_down_steps_by_singleStep_over_10(self):
         sb = self._make_spinbox(value=5.0, step=1.0, decimals=4)
-        event = self._make_wheel_event(
-            delta=-120, modifiers=QtCore.Qt.AltModifier
-        )
+        event = self._make_wheel_event(delta=-120, modifiers=QtCore.Qt.AltModifier)
         sb.wheelEvent(event)
         self.assertAlmostEqual(sb.value(), 4.9, places=6)
 
@@ -106,9 +98,7 @@ class TestDoubleSpinBoxModifierSteps(QtBaseTestCase):
         """
         sb = self._make_spinbox(value=5.0, step=1.0, decimals=3)
         before_step = sb.singleStep()
-        event = self._make_wheel_event(
-            delta=120, modifiers=QtCore.Qt.AltModifier
-        )
+        event = self._make_wheel_event(delta=120, modifiers=QtCore.Qt.AltModifier)
         sb.wheelEvent(event)
         self.assertEqual(sb.singleStep(), before_step)
 
@@ -141,9 +131,7 @@ class TestDoubleSpinBoxModifierSteps(QtBaseTestCase):
         sb = self._make_spinbox(value=5.0, step=1.0, decimals=4)
         # Alt alone
         sb.setValue(5.0)
-        event_alt = self._make_wheel_event(
-            delta=120, modifiers=QtCore.Qt.AltModifier
-        )
+        event_alt = self._make_wheel_event(delta=120, modifiers=QtCore.Qt.AltModifier)
         sb.wheelEvent(event_alt)
         delta_alt = sb.value() - 5.0
         # Ctrl+Alt
@@ -501,3 +489,67 @@ class TestDoubleSpinBoxTextColor(QtBaseTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDoubleSpinBoxAdjusting(QtBaseTestCase):
+    """``adjusting`` -- what a debounced slot waits on: a mouse button held
+    on the box, or a typed edit not yet committed."""
+
+    def _make(self):
+        from uitk.widgets.doubleSpinBox import DoubleSpinBox
+
+        sb = self.track_widget(DoubleSpinBox())
+        sb.setRange(0, 100)
+        sb.setValue(5.0)
+        sb.show()
+        return sb
+
+    def test_at_rest_it_is_not_adjusting(self):
+        self.assertFalse(self._make().adjusting)
+
+    def test_a_held_mouse_button_is_adjusting(self):
+        from qtpy.QtTest import QTest
+
+        sb = self._make()
+        QTest.mousePress(sb, QtCore.Qt.LeftButton)
+        self.assertTrue(sb.adjusting)
+        QTest.mouseRelease(sb, QtCore.Qt.LeftButton)
+        self.assertFalse(sb.adjusting)
+
+    def test_an_uncommitted_edit_is_adjusting_until_enter(self):
+        from qtpy.QtTest import QTest
+
+        sb = self._make()
+        QtWidgets.QApplication.setActiveWindow(sb)
+        sb.setFocus()
+        QtWidgets.QApplication.processEvents()
+        if not sb.hasFocus():
+            self.skipTest("the platform gives the box no keyboard focus")
+        sb.lineEdit().selectAll()
+        QTest.keyClicks(sb.lineEdit(), "12")
+        self.assertTrue(sb.lineEdit().isModified())
+        self.assertTrue(sb.adjusting, "typed but not committed")
+        QTest.keyClick(sb.lineEdit(), QtCore.Qt.Key_Return)
+        self.assertEqual(sb.value(), 12.0)
+        self.assertFalse(sb.adjusting, "Enter commits the edit")
+
+    def test_focus_out_commits_the_edit(self):
+        from qtpy.QtTest import QTest
+
+        sb = self._make()
+        QtWidgets.QApplication.setActiveWindow(sb)
+        sb.setFocus()
+        QtWidgets.QApplication.processEvents()
+        if not sb.hasFocus():
+            self.skipTest("the platform gives the box no keyboard focus")
+        QTest.keyClicks(sb.lineEdit(), "7")
+        self.assertTrue(sb.adjusting)
+        sb.clearFocus()
+        QtWidgets.QApplication.processEvents()
+        self.assertFalse(sb.lineEdit().isModified())
+        self.assertFalse(sb.adjusting)
+
+    def test_a_programmatic_set_is_not_adjusting(self):
+        sb = self._make()
+        sb.setValue(42.0)
+        self.assertFalse(sb.adjusting)

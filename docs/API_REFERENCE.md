@@ -618,7 +618,7 @@ When a widget registers on a `MainWindow`, it gains these attributes:
 | `widget.is_initialized` | `bool` | Set after first `*_init` |
 | `widget.refresh_on_show` | `bool` | Re-init on each show (default `False`) |
 | `widget.restore_state` | `bool` | Persist value (default `True`) |
-| `widget.debounce` | `int` | Milliseconds to coalesce signals (default `0`) |
+| `widget.debounce` | `int` | Milliseconds to coalesce signals (default `0`); also a `.ui` dynamic property. Held while `widget.adjusting` is `True` (the spin boxes: a mouse button down, an uncommitted edit) |
 | `widget.slot_timeout` | `float` | Per-widget timeout (seconds); falls back to `ui.default_slot_timeout` |
 | `widget.block_signals_on_restore` | `bool` | Restore silently (default `False`) |
 

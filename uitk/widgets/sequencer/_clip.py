@@ -48,6 +48,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         self._waveform_pixmap: Optional[QtGui.QPixmap] = None
         self._waveform_pixmap_size: Optional[tuple] = None
         self._keyframe_items: list = []  # KeyframeItem children for sub-rows
+        self._tangent_handle_items: list = []  # TangentHandleItem children
         self._align_times = None  # alignment candidates, resolved on first move
         self._align_hit: bool = False  # drag currently sits on a key frame
         self._keys_dragging = False  # True while any child KeyframeItem is mid-drag
@@ -79,6 +80,18 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
     def clip_data(self) -> ClipData:
         return self._data
 
+    @property
+    def keys_editable(self) -> bool:
+        """False when this clip is locked or read-only.
+
+        Its keys may still be SELECTED -- a consumer mirrors the selection
+        into its host app, and a marquee sweeps whatever it covers -- but
+        never dragged, retangented or deleted through the widget: a
+        read-only row is drawn dimmed and locked to say exactly that, and
+        an edit from here would be written straight into the host.
+        """
+        return not (self._data.locked or self._data.data.get("read_only"))
+
     # -- geometry sync ------------------------------------------------------
     def _sync_geometry(self):
         """Recalculate rect from data using the timeline's mapper."""
@@ -107,11 +120,13 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         if not self._data.sub_row:
             return
 
-        # If any child key is mid-drag, skip rebuild to avoid destroying
-        # active drag state.  Just reposition existing items.
-        if self._keys_dragging:
+        # If any child key -- or a tangent handle -- is mid-drag, skip the
+        # rebuild to avoid destroying active drag state.  Just reposition
+        # the existing items.
+        if self._keys_dragging or any(h._dragging for h in self._tangent_handle_items):
             for ki in self._keyframe_items:
                 ki._reposition()
+            self._sync_tangent_handles()
             return
 
         preview = self._data.data.get("curve_preview") or {}
@@ -133,6 +148,9 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             sq = self._timeline.parent_sequencer
             sq._selection_suppressed += 1
             try:
+                for item in self._tangent_handle_items:
+                    ItemRetirement.retire(item)
+                self._tangent_handle_items.clear()
                 for item in self._keyframe_items:
                     ItemRetirement.retire(item)
             finally:
@@ -160,6 +178,36 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             in_range = (start - eps) <= ki._time <= (end + eps)
             ki.setVisible(in_range)
             ki.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, in_range)
+        self._sync_tangent_handles()
+
+    def _sync_tangent_handles(self):
+        """Give every selected, visible key its :class:`TangentHandleItem`
+        grab points, and take them from every other key.
+
+        Repositions in place when the wanted set is unchanged (zoom, scroll,
+        a key drag ending), rebuilds otherwise.  Nothing while a key drag is
+        live -- the preview is being re-timed under the keys -- and never
+        while a handle itself is being dragged.
+        """
+        from uitk.widgets.sequencer._draggable import ItemRetirement
+        from uitk.widgets.sequencer._keyframe import TangentHandleItem
+
+        if any(h._dragging for h in self._tangent_handle_items):
+            return
+        wanted = []
+        if not self._keys_dragging:
+            for idx, ki in enumerate(self._keyframe_items):
+                if not ki.isSelected() or not ki.isVisible():
+                    continue
+                for side, seg_i, cp_key in ki._tangent_slots(idx):
+                    wanted.append((ki, side, seg_i, cp_key))
+        if wanted == [h.slot() for h in self._tangent_handle_items]:
+            for h in self._tangent_handle_items:
+                h._reposition()
+            return
+        for h in self._tangent_handle_items:
+            ItemRetirement.retire(h)
+        self._tangent_handle_items = [TangentHandleItem(*w) for w in wanted]
 
     def boundingRect(self):
         base = super().boundingRect()
@@ -612,9 +660,41 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         painter.setBrush(QtCore.Qt.NoBrush)
 
         painter.drawPath(CurveUtils.build_curve_path(segments, map_x, map_y))
+        self._paint_tangent_handles(painter, curve_color)
 
         painter.restore()
         # Key dots are rendered by KeyframeItem children (un-cropped).
+
+    def _paint_tangent_handles(self, painter, color):
+        """Draw the IN/OUT handle LINES of every SELECTED key over the curve.
+
+        Painted here rather than by the key dot: a handle lies on the curve
+        this clip draws, inside this clip's rect, so nothing has to grow --
+        a key dot whose rect swelled on selection fell inside marquees it
+        was never under.  The grab points at the ends are
+        :class:`TangentHandleItem` children (:meth:`_sync_tangent_handles`),
+        so they can be dragged; the dots repaint the clip when their
+        selection changes (:meth:`KeyframeItem.itemChange`).
+        """
+        for idx, ki in enumerate(self._keyframe_items):
+            if not ki.isSelected():
+                continue
+            # The index rides along: a per-key scan would make a select-all
+            # on a long curve quadratic on every repaint.
+            painter.setPen(self._handle_pen(color, ki, idx))
+            root = ki.pos()
+            for p in ki._tangent_handles(idx):
+                painter.drawLine(root, p)
+
+    @staticmethod
+    def _handle_pen(color, key, index: int) -> QtGui.QPen:
+        """The pen a key's handle lines are drawn with: dotted when its
+        tangents are broken (:meth:`KeyframeItem.is_broken`), solid when
+        unified -- the Graph Editor's own convention."""
+        pen = QtGui.QPen(QtGui.QColor(color).lighter(150), 1.0)
+        if key.is_broken(index):
+            pen.setStyle(QtCore.Qt.DotLine)
+        return pen
 
     # -- hover cursor -------------------------------------------------------
     def hoverMoveEvent(self, event):
@@ -730,7 +810,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             self._drag_origin_start = self._data.start
             self._drag_origin_duration = self._data.duration
             sq = self._timeline.parent_sequencer
-            sq.shift_held_at_press = bool(event.modifiers() & QtCore.Qt.ShiftModifier)
+            sq.record_press_modifiers(event.modifiers())
             # Alignment candidates are resolved lazily on the first real
             # move (next to the undo capture below): the set can't change
             # mid-gesture, but resolving it here would make every plain

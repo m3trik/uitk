@@ -3822,9 +3822,11 @@ class TestRangeHighlightReleaseGuard(BaseTestCase):
 
         r = item._rect()
         pos = QtCore.QPointF(r.left() + 1, r.center().y())
-        item.mousePressEvent(
-            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMousePress, pos)
-        )
+        # Ctrl: a plain grab of a bound is a whole-shot move now; the edge
+        # mode this guard is about is the bound-only grab.
+        press = _scene_mouse_event(QtCore.QEvent.GraphicsSceneMousePress, pos)
+        press.setModifiers(QtCore.Qt.ControlModifier)
+        item.mousePressEvent(press)
         self.assertEqual(item._drag_mode, "left")
         item.mouseReleaseEvent(
             _scene_mouse_event(QtCore.QEvent.GraphicsSceneMouseRelease, pos)
@@ -5937,8 +5939,14 @@ class TestMarqueeWorksInsideTheActiveShot(BaseTestCase):
         self.assertIsNone(self.hl._drag_mode)
 
     def test_an_edge_press_is_still_claimed(self):
-        """Only the body gives way; the bounds are still the item's."""
+        """Only the body gives way; the bounds are still the item's.  A grab
+        of a bound is a bound drag under every modifier -- the consumer reads
+        the modifiers to decide what else moves."""
         ev = self._press(self.w._timeline.time_to_x(0.0), self.C.Qt.NoModifier)
+        self.assertTrue(ev.isAccepted())
+        self.assertEqual(self.hl._drag_mode, "left")
+        self.hl._drag_mode = None
+        ev = self._press(self.w._timeline.time_to_x(0.0), self.C.Qt.ControlModifier)
         self.assertTrue(ev.isAccepted())
         self.assertEqual(self.hl._drag_mode, "left")
 
@@ -5983,9 +5991,10 @@ class TestShotBoundsDragFromTheRuler(BaseTestCase):
     def _lane_y(self):
         return _RULER_HEIGHT + _SHOT_LANE_HEIGHT // 2
 
-    def _drag(self, from_time, to_time, y=None):
+    def _drag(self, from_time, to_time, y=None, modifiers=None):
         C, G = self.C, self.G
         y = self._lane_y() if y is None else y
+        modifiers = C.Qt.NoModifier if modifiers is None else modifiers
         for kind, x, btn, btns in (
             (
                 C.QEvent.MouseButtonPress,
@@ -6001,7 +6010,7 @@ class TestShotBoundsDragFromTheRuler(BaseTestCase):
                 C.Qt.NoButton,
             ),
         ):
-            ev = G.QMouseEvent(kind, C.QPointF(x, y), btn, btns, C.Qt.NoModifier)
+            ev = G.QMouseEvent(kind, C.QPointF(x, y), btn, btns, modifiers)
             if kind == C.QEvent.MouseButtonPress:
                 self.tl.mousePressEvent(ev)
             elif kind == C.QEvent.MouseMove:
@@ -6010,17 +6019,35 @@ class TestShotBoundsDragFromTheRuler(BaseTestCase):
                 self.tl.mouseReleaseEvent(ev)
 
     def test_dragging_the_end_bound_on_the_ruler_resizes_the_shot(self):
+        """A grab of a bound moves that bound; the other stays."""
         self._drag(120.0, 150.0)
         self.assertEqual(len(self.emitted), 1, self.emitted)
         start, end = self.emitted[0]
         self.assertAlmostEqual(start, 40.0, places=0)
         self.assertAlmostEqual(end, 150.0, places=0)
+        self.assertFalse(self.w.ctrl_held_at_press)
+
+    def test_ctrl_dragging_the_end_bound_on_the_ruler_resizes_the_shot(self):
+        self._drag(120.0, 150.0, modifiers=self.C.Qt.ControlModifier)
+        self.assertEqual(len(self.emitted), 1, self.emitted)
+        start, end = self.emitted[0]
+        self.assertAlmostEqual(start, 40.0, places=0)
+        self.assertAlmostEqual(end, 150.0, places=0)
+        self.assertTrue(self.w.ctrl_held_at_press)
 
     def test_dragging_the_start_bound_on_the_ruler_resizes_the_shot(self):
         self._drag(40.0, 20.0)
         self.assertEqual(len(self.emitted), 1, self.emitted)
-        start, _end = self.emitted[0]
+        start, end = self.emitted[0]
         self.assertAlmostEqual(start, 20.0, places=0)
+        self.assertAlmostEqual(end, 120.0, places=0)
+
+    def test_ctrl_dragging_the_start_bound_on_the_ruler_resizes_the_shot(self):
+        self._drag(40.0, 20.0, modifiers=self.C.Qt.ControlModifier)
+        self.assertEqual(len(self.emitted), 1, self.emitted)
+        start, end = self.emitted[0]
+        self.assertAlmostEqual(start, 20.0, places=0)
+        self.assertAlmostEqual(end, 120.0, places=0)
 
     def test_the_band_between_the_bounds_moves_the_whole_shot(self):
         """The band is the ONE place the shot can be dragged bodily.
@@ -6328,5 +6355,928 @@ class TestTheActiveShotIsFramedOnFirstShow(BaseTestCase):
         self.assertGreater(right, 3200.0)
 
 
+# =========================================================================
+# Key context menu + tangent handles
+# =========================================================================
+
+
+class TestKeyContextMenuAndTangentHandles(BaseTestCase):
+    """Right-click on a key opens the KEY menu (not the clip's), and a
+    selected key shows its tangent handles -- hidden otherwise, or a strip a
+    few pixels tall would be buried under two lines per key."""
+
+    #: Snapshotted at import, BEFORE any test runs: the widget hands the dict
+    #: to the clip as-is, and TestKeyframeItem's drag tests re-time the
+    #: shared fixture in place, so a copy taken per test inherits their edits.
+    PREVIEW = __import__("copy").deepcopy(TestKeyframeItem.SAMPLE_PREVIEW)
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _clip(self, **extra):
+        import copy
+
+        tid = self.w.add_track("obj_A")
+        preview = copy.deepcopy(self.PREVIEW)
+        data = {"curve_preview": preview}
+        data.update(extra)
+        self.w.expand_track(
+            tid,
+            sub_row_data=[("translateX", [(0, 100, "translateX", "#FF6600", data)])],
+        )
+        clip = [c for c in self.w.clips() if c.sub_row][0]
+        return clip, self.w._clip_items[clip.clip_id]
+
+    @staticmethod
+    def _ctx_event(item):
+        from qtpy import QtWidgets, QtCore
+
+        ev = QtWidgets.QGraphicsSceneContextMenuEvent(
+            QtCore.QEvent.GraphicsSceneContextMenu
+        )
+        ev.setScenePos(item.scenePos())
+        ev.setScreenPos(QtCore.QPoint(100, 100))
+        return ev
+
+    # -- selection payload --------------------------------------------------
+
+    def test_selected_keys_groups_the_selection_by_clip(self):
+        clip, item = self._clip()
+        item._keyframe_items[0].setSelected(True)
+        item._keyframe_items[2].setSelected(True)
+        groups = self.w.selected_keys()
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0]["clip_id"], clip.clip_id)
+        self.assertEqual(sorted(groups[0]["times"]), [10, 90])
+
+    def test_nothing_selected_is_an_empty_list(self):
+        self._clip()
+        self.assertEqual(self.w.selected_keys(), [])
+
+    def test_select_keys_by_clip_data_and_time(self):
+        """A consumer re-selects keys after its rebuild by ITS vocabulary."""
+        clip, item = self._clip(obj="cube", attr_name="translateX")
+        seen = []
+        self.w.key_selection_changed.connect(lambda groups: seen.append(groups))
+        n = self.w.select_keys(
+            [{"data": {"obj": "cube", "attr_name": "translateX"}, "times": [10, 90]}]
+        )
+        self.assertEqual(n, 2)
+        self.assertEqual(sorted(self.w.selected_keys()[0]["times"]), [10, 90])
+        self.assertEqual(len(seen), 1, "one notification for the batch")
+        # A bag that does not match selects nothing and clears the rest.
+        self.assertEqual(
+            self.w.select_keys([{"data": {"obj": "other"}, "times": [10]}]), 0
+        )
+        self.assertEqual(self.w.selected_keys(), [])
+
+    # -- context menu -------------------------------------------------------
+
+    def test_right_click_asks_the_consumer_with_the_selection(self):
+        from unittest.mock import patch
+        from qtpy import QtWidgets
+
+        clip, item = self._clip()
+        key = item._keyframe_items[1]
+        got = []
+        self.w.key_menu_requested.connect(
+            lambda menu, groups: got.append((menu, groups))
+        )
+        with patch.object(QtWidgets.QMenu, "exec_", return_value=None):
+            key.contextMenuEvent(self._ctx_event(key))
+        self.assertEqual(len(got), 1)
+        menu, groups = got[0]
+        self.assertEqual(groups, [{"clip_id": clip.clip_id, "times": [50]}])
+        self.assertTrue(key.isSelected(), "an unselected key becomes the selection")
+        labels = [a.text() for a in menu.actions() if not a.isSeparator()]
+        self.assertEqual(labels, ["Delete Key"], "the widget owns Delete")
+
+    def test_right_click_on_a_selected_key_keeps_the_whole_selection(self):
+        from unittest.mock import patch
+        from qtpy import QtWidgets
+
+        clip, item = self._clip()
+        for ki in item._keyframe_items:
+            ki.setSelected(True)
+        got = []
+        self.w.key_menu_requested.connect(lambda menu, groups: got.append(groups))
+        with patch.object(QtWidgets.QMenu, "exec_", return_value=None):
+            k = item._keyframe_items[0]
+            k.contextMenuEvent(self._ctx_event(k))
+        self.assertEqual(sorted(got[0][0]["times"]), [10, 50, 90])
+
+    def test_the_consumer_s_actions_come_before_delete(self):
+        from unittest.mock import patch
+        from qtpy import QtWidgets
+
+        clip, item = self._clip()
+        for ki in item._keyframe_items:
+            ki.setSelected(True)
+        self.w.key_menu_requested.connect(lambda menu, groups: menu.addAction("Flat"))
+        seen = []
+        with patch.object(
+            QtWidgets.QMenu,
+            "exec_",
+            lambda m, *a, **k: (
+                seen.append([(x.text(), x.isSeparator()) for x in m.actions()]) or None
+            ),
+        ):
+            k = item._keyframe_items[0]
+            k.contextMenuEvent(self._ctx_event(k))
+        labels = [t for t, sep in seen[0] if not sep]
+        self.assertEqual(labels, ["Flat", "Delete Keys (3)"])
+        self.assertTrue(seen[0][1][1], "kept visually apart")
+
+    def test_delete_from_the_menu_emits_keys_deleted(self):
+        from unittest.mock import patch
+        from qtpy import QtWidgets
+
+        clip, item = self._clip()
+        key = item._keyframe_items[0]
+        deleted = []
+        self.w.keys_deleted.connect(lambda cid, times: deleted.append((cid, times)))
+
+        def _pick_delete(menu, *_a, **_k):
+            return next(a for a in menu.actions() if a.text().startswith("Delete"))
+
+        with patch.object(QtWidgets.QMenu, "exec_", _pick_delete):
+            key.contextMenuEvent(self._ctx_event(key))
+        self.assertEqual(deleted, [(clip.clip_id, [10])])
+
+    def test_a_read_only_key_has_no_menu(self):
+        from unittest.mock import patch
+        from qtpy import QtWidgets
+
+        clip, item = self._clip(read_only=True)
+        got = []
+        self.w.key_menu_requested.connect(lambda m, g: got.append(g))
+        key = item._keyframe_items[0]
+        with patch.object(QtWidgets.QMenu, "exec_", return_value=None):
+            key.contextMenuEvent(self._ctx_event(key))
+        self.assertEqual(got, [])
+
+    def test_the_timeline_routes_a_key_right_click_to_the_key(self):
+        """The view used to treat a key like empty track space and open the
+        zone menu; a key under the cursor must reach the key's own handler."""
+        from unittest.mock import patch
+        from qtpy import QtWidgets, QtGui
+
+        clip, item = self._clip()
+        QtWidgets.QApplication.processEvents()
+        key = item._keyframe_items[1]
+        seen = []
+        zone = []
+        self.w.zone_context_menu_requested.connect(lambda *a: zone.append(a))
+        with patch.object(
+            KeyframeItem, "contextMenuEvent", lambda self_, ev: seen.append(self_)
+        ):
+            tl = self.w._timeline
+            vp = tl.mapFromScene(key.scenePos())
+            ev = QtGui.QContextMenuEvent(
+                QtGui.QContextMenuEvent.Mouse, vp, tl.mapToGlobal(vp)
+            )
+            tl.contextMenuEvent(ev)
+        self.assertEqual(seen, [key])
+        self.assertEqual(zone, [], "not the zone menu")
+
+    # -- the selection owns the right-click ---------------------------------
+
+    @staticmethod
+    def _right_press(tl, viewport_pos):
+        from qtpy import QtCore, QtGui
+
+        tl.mousePressEvent(
+            QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonPress,
+                QtCore.QPointF(viewport_pos),
+                QtCore.Qt.RightButton,
+                QtCore.Qt.RightButton,
+                QtCore.Qt.NoModifier,
+            )
+        )
+
+    @staticmethod
+    def _view_ctx_event(tl, viewport_pos):
+        from qtpy import QtGui
+
+        return QtGui.QContextMenuEvent(
+            QtGui.QContextMenuEvent.Mouse, viewport_pos, tl.mapToGlobal(viewport_pos)
+        )
+
+    def test_a_right_press_keeps_the_key_selection(self):
+        """A press the scene does not accept CLEARS the selection -- which is
+        how a multi-key selection collapsed to the one dot under the cursor
+        before its menu had even opened."""
+        from qtpy import QtWidgets
+
+        clip, item = self._clip()
+        QtWidgets.QApplication.processEvents()
+        tl = self.w._timeline
+        keys = item._keyframe_items
+        for ki in keys:
+            ki.setSelected(True)
+
+        self._right_press(tl, tl.mapFromScene(keys[0].scenePos()))
+        self.assertEqual(
+            sorted(self.w.selected_keys()[0]["times"]), [10, 50, 90], "on a key"
+        )
+
+        body = tl.mapFromScene(item.mapToScene(item.rect().center()))
+        self._right_press(tl, body)
+        self.assertEqual(
+            sorted(self.w.selected_keys()[0]["times"]), [10, 50, 90], "on the clip"
+        )
+
+        empty = tl.mapFromScene(item.mapToScene(item.rect().center()))
+        empty.setX(tl.viewport().width() - 2)
+        self._right_press(tl, empty)
+        self.assertEqual(
+            sorted(self.w.selected_keys()[0]["times"]), [10, 50, 90], "on empty space"
+        )
+
+    def test_a_right_press_on_an_unselected_key_switches_to_it(self):
+        from qtpy import QtWidgets
+
+        clip, item = self._clip()
+        QtWidgets.QApplication.processEvents()
+        tl = self.w._timeline
+        keys = item._keyframe_items
+        keys[0].setSelected(True)
+        self._right_press(tl, tl.mapFromScene(keys[2].scenePos()))
+        self.assertEqual(self.w.selected_keys()[0]["times"], [90])
+
+    def test_the_key_menu_opens_anywhere_over_the_tracks(self):
+        """With keys selected the right-click belongs to them: reaching the
+        key menu must not mean hitting a dot a few pixels wide."""
+        from unittest.mock import patch
+        from qtpy import QtWidgets
+
+        clip, item = self._clip()
+        QtWidgets.QApplication.processEvents()
+        tl = self.w._timeline
+        for ki in item._keyframe_items:
+            ki.setSelected(True)
+        got, clips, zones = [], [], []
+        self.w.key_menu_requested.connect(lambda m, g: got.append(g))
+        self.w.clip_menu_requested.connect(lambda m, c: clips.append(c))
+        self.w.zone_context_menu_requested.connect(lambda *a: zones.append(a))
+
+        body = tl.mapFromScene(item.mapToScene(item.rect().center()))
+        with patch.object(QtWidgets.QMenu, "exec_", return_value=None):
+            tl.contextMenuEvent(self._view_ctx_event(tl, body))
+        self.assertEqual(len(got), 1, "the key menu, not the clip's")
+        self.assertEqual(sorted(got[0][0]["times"]), [10, 50, 90])
+        self.assertEqual((clips, zones), ([], []))
+
+    def test_without_a_key_selection_the_clip_and_zone_menus_are_unchanged(self):
+        from unittest.mock import patch
+        from qtpy import QtWidgets
+
+        clip, item = self._clip()
+        QtWidgets.QApplication.processEvents()
+        tl = self.w._timeline
+        keys_seen, clips = [], []
+        self.w.key_menu_requested.connect(lambda m, g: keys_seen.append(g))
+        self.w.clip_menu_requested.connect(lambda m, c: clips.append(c))
+
+        body = tl.mapFromScene(item.mapToScene(item.rect().center()))
+        with patch.object(QtWidgets.QMenu, "exec_", return_value=None):
+            tl.contextMenuEvent(self._view_ctx_event(tl, body))
+        self.assertEqual((keys_seen, clips), ([], [clip.clip_id]))
+
+    def test_the_ruler_keeps_its_own_menu_while_keys_are_selected(self):
+        from unittest.mock import patch
+        from qtpy import QtWidgets, QtCore
+
+        clip, item = self._clip()
+        QtWidgets.QApplication.processEvents()
+        tl = self.w._timeline
+        for ki in item._keyframe_items:
+            ki.setSelected(True)
+        got, zones = [], []
+        self.w.key_menu_requested.connect(lambda m, g: got.append(g))
+        self.w.zone_menu_enabled = True
+        self.w.zone_context_menu_requested.connect(lambda *a: zones.append(a[0]))
+        with patch.object(QtWidgets.QMenu, "exec_", return_value=None):
+            tl.contextMenuEvent(self._view_ctx_event(tl, QtCore.QPoint(200, 2)))
+        self.assertEqual(got, [], "no key menu on the ruler")
+        self.assertEqual(zones, ["ruler"])
+
+    def test_a_locked_clip_keeps_its_keys_out_of_the_menu(self):
+        """The read-only guard used to sit on the key that was clicked; the
+        menu is the selection's now, so it has to filter the selection."""
+        from unittest.mock import patch
+        from qtpy import QtWidgets
+
+        clip, item = self._clip(read_only=True)
+        QtWidgets.QApplication.processEvents()
+        tl = self.w._timeline
+        for ki in item._keyframe_items:
+            ki.setSelected(True)
+        got = []
+        self.w.key_menu_requested.connect(lambda m, g: got.append(g))
+        body = tl.mapFromScene(item.mapToScene(item.rect().center()))
+        with patch.object(QtWidgets.QMenu, "exec_", return_value=None):
+            self.assertFalse(self.w.show_key_menu(tl.mapToGlobal(body)))
+        self.assertEqual(got, [])
+
+    def test_a_locked_row_refuses_every_key_edit(self):
+        """Locked and read-only rows are drawn dimmed to say "not editable"
+        -- but their keys dragged, showed grab points and answered Delete,
+        each one written straight into the host."""
+        from qtpy import QtCore, QtWidgets
+
+        clip, item = self._clip(read_only=True)
+        QtWidgets.QApplication.processEvents()
+        self.assertFalse(item.keys_editable)
+        key = item._keyframe_items[0]
+        key.setSelected(True)
+
+        # No handles to grab, and no lines painted for them.
+        self.assertEqual(key._tangent_slots(), [])
+        self.assertEqual(key._tangent_handles(), [])
+        self.assertEqual(item._tangent_handle_items, [])
+
+        # A drag selects and goes no further.
+        moved = []
+        self.w.keys_moved.connect(lambda cid, ch: moved.append((cid, ch)))
+        pos = key.scenePos()
+        key.mousePressEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMousePress, pos)
+        )
+        self.assertFalse(key._dragging)
+        key.mouseMoveEvent(
+            _scene_mouse_event(
+                QtCore.QEvent.GraphicsSceneMouseMove,
+                QtCore.QPointF(pos.x() + 40, pos.y()),
+            )
+        )
+        key.mouseReleaseEvent(
+            _scene_mouse_event(
+                QtCore.QEvent.GraphicsSceneMouseRelease,
+                QtCore.QPointF(pos.x() + 40, pos.y()),
+            )
+        )
+        self.assertEqual((moved, key._time), ([], 10))
+
+        # And Delete leaves them alone.
+        deleted = []
+        self.w.keys_deleted.connect(lambda cid, times: deleted.append((cid, times)))
+        self.w._delete_selected_keys()
+        self.assertEqual(deleted, [])
+
+    # -- tangent handles ----------------------------------------------------
+
+    def test_handles_appear_only_while_selected(self):
+        clip, item = self._clip()
+        k0, k1, k2 = item._keyframe_items
+        for k in (k0, k1, k2):
+            self.assertEqual(k._tangent_handles(), [])
+        for k in (k0, k1, k2):
+            k.setSelected(True)
+        # k0 opens a spline span: one OUT handle.  k1 closes it (IN) and
+        # opens a stepped span (no OUT).  k2 closes the stepped span: none.
+        self.assertEqual(len(k0._tangent_handles()), 1)
+        self.assertEqual(len(k1._tangent_handles()), 1)
+        self.assertEqual(k2._tangent_handles(), [])
+        k0.setSelected(False)
+        self.assertEqual(k0._tangent_handles(), [])
+
+    def test_a_handle_lies_on_the_clip_curve_mapping(self):
+        clip, item = self._clip()
+        k0 = item._keyframe_items[0]
+        k0.setSelected(True)
+        (h,) = k0._tangent_handles()
+        expect = k0._clip_point(23.33, 0.33)
+        self.assertAlmostEqual(h.x(), expect.x(), places=6)
+        self.assertAlmostEqual(h.y(), expect.y(), places=6)
+        self.assertGreater(h.x(), k0.pos().x(), "the OUT handle points forward")
+        self.assertTrue(item.rect().contains(h), "a handle lies inside its clip")
+
+    def test_the_dot_stays_where_it_was(self):
+        """The shared mapping must reproduce the old dot placement exactly."""
+        clip, item = self._clip()
+        k1 = item._keyframe_items[1]
+        rect = item.rect()
+        frac = (50 - clip.start) / clip.duration
+        self.assertAlmostEqual(k1.pos().x(), rect.x() + frac * rect.width(), places=6)
+
+    def test_selecting_a_key_never_changes_its_own_rect(self):
+        """The clip paints the handles; a key rect that grew on selection
+        landed the key inside subtract-marquees it was never under."""
+        clip, item = self._clip()
+        k0 = item._keyframe_items[0]
+        bare = k0.boundingRect()
+        k0.setSelected(True)
+        self.assertEqual(len(k0._tangent_handles()), 1)
+        self.assertEqual(k0.boundingRect(), bare)
+
+    def test_the_clip_paints_the_handles_of_selected_keys(self):
+        from unittest.mock import patch
+        from qtpy import QtGui
+
+        clip, item = self._clip()
+        item._keyframe_items[0].setSelected(True)
+        img = QtGui.QImage(400, 100, QtGui.QImage.Format_ARGB32)
+        p = QtGui.QPainter(img)
+        drawn = []
+        try:
+            with patch.object(
+                QtGui.QPainter, "drawLine", lambda self_, *a: drawn.append(a)
+            ):
+                item.paint(p, None, None)
+        finally:
+            p.end()
+        self.assertEqual(len(drawn), 1, "one handle line for the one OUT handle")
+
+    def test_handles_retract_while_a_key_is_dragged(self):
+        clip, item = self._clip()
+        k0 = item._keyframe_items[0]
+        k0.setSelected(True)
+        item._keys_dragging = True
+        try:
+            self.assertEqual(k0._tangent_handles(), [])
+        finally:
+            item._keys_dragging = False
+        self.assertEqual(len(k0._tangent_handles()), 1)
+
+    def test_a_selected_key_still_paints(self):
+        from qtpy import QtGui
+
+        clip, item = self._clip()
+        k0 = item._keyframe_items[0]
+        k0.setSelected(True)
+        img = QtGui.QImage(64, 64, QtGui.QImage.Format_ARGB32)
+        p = QtGui.QPainter(img)
+        try:
+            p.translate(32, 32)
+            k0.paint(p, None, None)
+        finally:
+            p.end()
+
+    def test_selecting_a_key_repaints_its_clip(self):
+        from unittest.mock import patch
+
+        clip, item = self._clip()
+        calls = []
+        with patch.object(type(item), "update", lambda self_, *a: calls.append(a)):
+            item._keyframe_items[0].setSelected(True)
+        self.assertEqual(len(calls), 1)
+
+
+# =========================================================================
+# One modifier grammar for every shot-bound handle + the shortcut overlay
+# =========================================================================
+
+
+class TestBoundHandleGrammar(BaseTestCase):
+    """A grab of a shot bound drags THAT bound under every modifier; the
+    press records Ctrl and Shift so the consumer decides what else moves
+    (plain: the neighbours ripple; Ctrl: nothing else; Shift: retime).  The
+    whole-shot move is the ruler band's."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.w.show()
+        self.w.add_track("A")
+        self.w.set_shot_blocks(
+            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
+        )
+        self.w.set_range_highlight(40.0, 120.0)
+        self.emitted = []
+        self.w.range_highlight_changed.connect(lambda a, b: self.emitted.append((a, b)))
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _grab_right_edge(self, modifiers):
+        from qtpy import QtCore, QtWidgets
+
+        item = self.w._range_highlight
+        r = item._rect()
+        pt = QtCore.QPointF(r.right() - 1, r.center().y())
+        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMousePress)
+        ev.setButton(QtCore.Qt.LeftButton)
+        ev.setButtons(QtCore.Qt.LeftButton)
+        ev.setScenePos(pt)
+        ev.setPos(pt)
+        ev.setScreenPos(QtCore.QPoint(int(pt.x()), int(pt.y())))
+        ev.setModifiers(modifiers)
+        item.mousePressEvent(ev)
+        return item, pt
+
+    def _drag_to(self, item, pt, dx):
+        from qtpy import QtCore, QtWidgets
+
+        moved = QtCore.QPointF(pt.x() + dx, pt.y())
+        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseMove)
+        ev.setScenePos(moved)
+        ev.setPos(moved)
+        ev.setScreenPos(QtCore.QPoint(int(moved.x()), int(moved.y())))
+        item.mouseMoveEvent(ev)
+        rel = QtWidgets.QGraphicsSceneMouseEvent(
+            QtCore.QEvent.GraphicsSceneMouseRelease
+        )
+        rel.setButton(QtCore.Qt.LeftButton)
+        item.mouseReleaseEvent(rel)
+
+    def test_a_plain_edge_grab_moves_only_that_bound(self):
+        from qtpy import QtCore
+
+        item, pt = self._grab_right_edge(QtCore.Qt.NoModifier)
+        self.assertEqual(item._drag_mode, "right")
+        self.assertEqual(item._grab_zone, "right")
+        self._drag_to(item, pt, 4 * self.w._timeline._pixels_per_unit)
+        self.assertEqual(len(self.emitted), 1)
+        start, end = self.emitted[0]
+        self.assertAlmostEqual(start, 40.0, "the other bound stays")
+        self.assertGreater(end, 120.0)
+        self.assertFalse(self.w.ctrl_held_at_press)
+        self.assertFalse(self.w.shift_held_at_press)
+
+    def test_a_ctrl_edge_grab_moves_only_that_bound(self):
+        from qtpy import QtCore
+
+        item, pt = self._grab_right_edge(QtCore.Qt.ControlModifier)
+        self.assertEqual(item._drag_mode, "right")
+        self.assertTrue(self.w.ctrl_held_at_press)
+        self.assertFalse(self.w.shift_held_at_press)
+        self._drag_to(item, pt, 4 * self.w._timeline._pixels_per_unit)
+        start, end = self.emitted[0]
+        self.assertAlmostEqual(start, 40.0)
+        self.assertGreater(end, 120.0)
+
+    def test_a_shift_edge_grab_moves_only_that_bound(self):
+        from qtpy import QtCore
+
+        item, _pt = self._grab_right_edge(QtCore.Qt.ShiftModifier)
+        self.assertEqual(item._drag_mode, "right")
+        self.assertTrue(self.w.shift_held_at_press)
+        self.assertFalse(self.w.ctrl_held_at_press)
+
+    def test_the_drag_label_names_the_gesture(self):
+        from qtpy import QtCore
+
+        item, _pt = self._grab_right_edge(QtCore.Qt.ControlModifier)
+        self.assertTrue(item._range_drag_label().startswith("Trim 120"))
+        item._drag_mode = None
+        item, _pt = self._grab_right_edge(QtCore.Qt.ShiftModifier)
+        self.assertTrue(item._range_drag_label().startswith("Retime 120"))
+        item._drag_mode = None
+        item, _pt = self._grab_right_edge(QtCore.Qt.NoModifier)
+        self.assertTrue(item._range_drag_label().startswith("Resize 120"))
+
+    def test_a_plain_press_clears_stale_modifier_flags(self):
+        from qtpy import QtCore
+
+        self.w.shift_held_at_press = True
+        self.w.ctrl_held_at_press = True
+        self._grab_right_edge(QtCore.Qt.NoModifier)
+        self.assertFalse(self.w.shift_held_at_press)
+        self.assertFalse(self.w.ctrl_held_at_press)
+
+    def test_a_gap_edge_press_records_ctrl_and_labels_the_trim(self):
+        from qtpy import QtCore, QtWidgets
+
+        self.w.add_gap_overlay(120, 160)
+        gap = self.w._gap_overlays[0]
+        r = gap._rect()
+        pt = QtCore.QPointF(r.right() - 1, r.center().y())
+        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMousePress)
+        ev.setButton(QtCore.Qt.LeftButton)
+        ev.setButtons(QtCore.Qt.LeftButton)
+        ev.setScenePos(pt)
+        ev.setPos(pt)
+        ev.setScreenPos(QtCore.QPoint(int(pt.x()), int(pt.y())))
+        ev.setModifiers(QtCore.Qt.ControlModifier)
+        gap.mousePressEvent(ev)
+        self.assertEqual(gap._drag_mode, "right")
+        self.assertTrue(self.w.ctrl_held_at_press)
+        self.assertTrue(gap._gap_drag_label().startswith("Trim 160"))
+
+
+class TestShortcutOverlay(BaseTestCase):
+    """The corner legend: fed by the shortcut manager, hidden until asked,
+    one group at a time with the hovered group lit, transparent to the mouse."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_gestures_are_registered_with_the_manager(self):
+        mgr = self.w._shortcut_mgr
+        self.assertEqual(
+            list(mgr.gestures), ["Shot bounds", "Gaps", "Clips & keys", "Timeline"]
+        )
+        entry = mgr.shortcuts["Ctrl+Drag (Shot bounds)"]
+        self.assertTrue(entry["read_only"], "listed in the editor, not rebindable")
+
+    def test_hidden_until_shown_then_anchored_in_the_timelines_corner(self):
+        from qtpy import QtCore
+
+        self.assertIsNone(self.w.shortcut_overlay)
+        self.assertFalse(self.w.shortcut_overlay_visible)
+        self.w.shortcut_overlay_visible = True
+        overlay = self.w.shortcut_overlay
+        self.assertTrue(overlay.isVisible())
+        self.assertTrue(overlay.testAttribute(QtCore.Qt.WA_TransparentForMouseEvents))
+        host = self.w._timeline.viewport().geometry()
+        g = overlay.geometry()
+        self.assertEqual(g.right() + 1 + overlay.MARGIN, host.right() + 1)
+        self.assertEqual(g.bottom() + 1 + overlay.MARGIN, host.bottom() + 1)
+        self.assertLessEqual(g.width(), overlay.MAX_WIDTH)
+        self.assertLess(g.height(), g.width(), "a card, not a column")
+        self.w.shortcut_overlay_visible = False
+        self.assertFalse(overlay.isVisible())
+
+    def test_it_re_anchors_when_the_timeline_resizes(self):
+        self.w.shortcut_overlay_visible = True
+        overlay = self.w.shortcut_overlay
+        self.w.resize(700, 300)
+        self.w._timeline.resize(400, 200)
+        host = self.w._timeline.viewport().geometry()
+        self.assertEqual(
+            overlay.geometry().right() + 1 + overlay.MARGIN, host.right() + 1
+        )
+
+    def test_the_hovered_group_is_the_one_shown(self):
+        self.w.shortcut_overlay_visible = True
+        overlay = self.w.shortcut_overlay
+        self.assertEqual(overlay.shown_group, "Shot bounds")
+        self.w._set_gesture_context("Gaps")
+        self.assertEqual(overlay.shown_group, "Gaps")
+        self.assertIn("Lock / unlock the gap", overlay._label.text())
+        self.assertNotIn("Marquee", overlay._label.text())
+        self.w._set_gesture_context(None)
+        self.assertEqual(overlay.shown_group, "Shot bounds")
+
+    def test_the_timeline_reports_the_group_under_the_pointer(self):
+        from qtpy import QtCore
+
+        self.w.set_shot_blocks(
+            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
+        )
+        self.w.set_range_highlight(40.0, 120.0)
+        self.w.add_gap_overlay(120, 160)
+        self.w.shortcut_overlay_visible = True
+        tl = self.w._timeline
+        gap = self.w._gap_overlays[0]
+        centre = gap._rect().center()
+        vp = tl.mapFromScene(centre)
+        tl._sync_gesture_context(QtCore.QPoint(vp.x(), vp.y()))
+        self.assertEqual(self.w.shortcut_overlay.shown_group, "Gaps")
+
+    def test_the_card_stays_translucent_under_the_theme(self):
+        """A slight transparency: whatever is behind the card tints it.
+
+        uitk's theme gives every ``QLabel`` an opaque background and a
+        border -- which painted a solid slab over the card's own
+        translucent fill -- so the legend's label opts out of both.
+        """
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        self.w.setStyleSheet(
+            "QLabel { background-color: rgb(0, 255, 0);"
+            " border: 1px solid rgb(0, 255, 0); }"
+        )
+        self.w.shortcut_overlay_visible = True
+        overlay = self.w.shortcut_overlay
+        pixmap = QtGui.QPixmap(overlay.size())
+        pixmap.fill(QtGui.QColor(255, 0, 0))  # the ground it must let through
+        overlay.render(
+            pixmap, QtCore.QPoint(), QtGui.QRegion(), QtWidgets.QWidget.DrawChildren
+        )
+        image = pixmap.toImage()
+        middle = image.pixelColor(image.width() // 2, image.height() // 2)
+        self.assertGreater(middle.red(), 30, f"opaque card: {middle.getRgb()}")
+        self.assertLess(middle.red(), 220, f"no card drawn: {middle.getRgb()}")
+        greens = [
+            (x, y)
+            for y in range(0, image.height(), 2)
+            for x in range(0, image.width(), 2)
+            if image.pixelColor(x, y).green() > image.pixelColor(x, y).red() + 40
+        ]
+        self.assertEqual(greens, [], "the theme's label background covers the card")
+
+    def test_a_manager_without_gestures_still_renders(self):
+        from qtpy import QtWidgets
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        host = QtWidgets.QWidget()
+        host.resize(300, 200)
+        mgr = ShortcutManager(host)
+        mgr.add_shortcut("F", lambda: None, "frame")
+        overlay = mgr.overlay(host, anchor="bottom-left")
+        overlay.show()
+        self.assertIsNone(overlay.shown_group)
+        self.assertIn("frame", overlay._label.text())
+        self.assertEqual(overlay.geometry().left(), overlay.MARGIN)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTangentHandleDrag(BaseTestCase):
+    """A selected key's tangent handles are grab points: dragging one reshapes
+    the preview's control point live and reports the handle vector once, on
+    release, as ``key_tangent_dragged``."""
+
+    PREVIEW = __import__("copy").deepcopy(TestKeyframeItem.SAMPLE_PREVIEW)
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _clip(self):
+        import copy
+
+        tid = self.w.add_track("obj_A")
+        preview = copy.deepcopy(self.PREVIEW)
+        self.w.expand_track(
+            tid,
+            sub_row_data=[
+                (
+                    "translateX",
+                    [(0, 100, "translateX", "#FF6600", {"curve_preview": preview})],
+                )
+            ],
+        )
+        clip = [c for c in self.w.clips() if c.sub_row][0]
+        return clip, self.w._clip_items[clip.clip_id]
+
+    # The fixture's first span is a spline (cp1 + cp2) and its second is
+    # linear (no control points): the first key owns an OUT handle only,
+    # the middle key an IN handle only.
+    @staticmethod
+    def _first_key(item):
+        return item._keyframe_items[0]
+
+    @staticmethod
+    def _middle_key(item):
+        return item._keyframe_items[1]
+
+    def _handles(self, item):
+        from uitk.widgets.sequencer._keyframe import TangentHandleItem
+
+        return [c for c in item.childItems() if isinstance(c, TangentHandleItem)]
+
+    def _drag(self, handle, dx, dy):
+        from qtpy import QtCore
+
+        start = handle.scenePos()
+        end = QtCore.QPointF(start.x() + dx, start.y() + dy)
+        handle.mousePressEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMousePress, start)
+        )
+        handle.mouseMoveEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMouseMove, end)
+        )
+        handle.mouseReleaseEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMouseRelease, end)
+        )
+
+    def test_handles_exist_only_for_selected_keys(self):
+        clip, item = self._clip()
+        self.assertEqual(self._handles(item), [])
+        first, middle = self._first_key(item), self._middle_key(item)
+        middle.setSelected(True)
+        handles = self._handles(item)
+        self.assertEqual([(h.side, h.key) for h in handles], [("in", middle)])
+        first.setSelected(True)
+        self.assertEqual(
+            sorted((h.side, h.key is first) for h in self._handles(item)),
+            [("in", False), ("out", True)],
+        )
+        middle.setSelected(False)
+        first.setSelected(False)
+        self.assertEqual(self._handles(item), [])
+
+    def test_dragging_the_out_handle_reports_the_vector_and_reshapes_the_preview(self):
+        clip, item = self._clip()
+        key = self._first_key(item)
+        key.setSelected(True)
+        out = next(h for h in self._handles(item) if h.side == "out")
+        before = out.control_point()
+        got = []
+        self.w.key_tangent_dragged.connect(lambda *a: got.append(a))
+        self._drag(out, 30.0, -10.0)
+        self.assertEqual(len(got), 1)
+        cid, t, side, dt, dv = got[0]
+        self.assertEqual((cid, side), (clip.clip_id, "out"))
+        self.assertAlmostEqual(t, key._time)
+        self.assertGreater(dt, 0.0)
+        self.assertGreater(dv, 0.0, "up on screen is a higher value")
+        after = out.control_point()
+        self.assertNotEqual(before, after)
+        self.assertAlmostEqual(after[0], key._time + dt)
+        self.assertAlmostEqual(after[1], key._value + dv)
+        self.assertEqual(
+            tuple(clip.data["curve_preview"]["segments"][out._seg_index]["cp1"]),
+            after,
+            "the drag rewrote the preview's control point in place",
+        )
+
+    def test_the_in_handle_never_crosses_its_key(self):
+        clip, item = self._clip()
+        key = self._middle_key(item)
+        key.setSelected(True)
+        inh = next(h for h in self._handles(item) if h.side == "in")
+        got = []
+        self.w.key_tangent_dragged.connect(lambda *a: got.append(a))
+        self._drag(inh, 500.0, 0.0)  # far past the key, to the right
+        self.assertEqual(len(got), 1)
+        self.assertLess(got[0][3], 0.0, "an IN handle stays before its key")
+
+    def test_a_release_without_movement_reports_nothing(self):
+        clip, item = self._clip()
+        key = self._first_key(item)
+        key.setSelected(True)
+        out = next(h for h in self._handles(item) if h.side == "out")
+        got = []
+        self.w.key_tangent_dragged.connect(lambda *a: got.append(a))
+        self._drag(out, 0.0, 0.0)
+        self.assertEqual(got, [])
+
+    def test_a_marquee_never_selects_a_handle(self):
+        from qtpy import QtWidgets
+
+        clip, item = self._clip()
+        key = self._middle_key(item)
+        key.setSelected(True)
+        for h in self._handles(item):
+            self.assertFalse(h.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable)
+
+    def test_handles_hide_during_a_key_drag_and_return_after(self):
+        from qtpy import QtCore
+
+        clip, item = self._clip()
+        key = self._middle_key(item)
+        key.setSelected(True)
+        self.assertEqual(len(self._handles(item)), 1)
+        pos = key.scenePos()
+        key.mousePressEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMousePress, pos)
+        )
+        self.assertEqual(self._handles(item), [], "hidden while the key drags")
+        key.mouseReleaseEvent(
+            _scene_mouse_event(QtCore.QEvent.GraphicsSceneMouseRelease, pos)
+        )
+        self.assertEqual(len(self._handles(item)), 1, "back once the drag ends")
+
+    def test_a_right_press_on_a_handle_leaves_it_standing(self):
+        """The handles live on the SELECTION: a right press that cleared it
+        took the handle out from under the click that was aiming at it."""
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        clip, item = self._clip()
+        QtWidgets.QApplication.processEvents()
+        key = self._first_key(item)
+        key.setSelected(True)
+        (handle,) = self._handles(item)
+        tl = self.w._timeline
+        vp = tl.mapFromScene(handle.scenePos())
+        tl.mousePressEvent(
+            QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonPress,
+                QtCore.QPointF(vp),
+                QtCore.Qt.RightButton,
+                QtCore.Qt.RightButton,
+                QtCore.Qt.NoModifier,
+            )
+        )
+        self.assertTrue(key.isSelected())
+        self.assertEqual(self._handles(item), [handle])
+
+    def test_a_broken_key_draws_its_handles_dotted(self):
+        from qtpy import QtCore
+
+        clip, item = self._clip()
+        clip.data["curve_preview"]["broken"] = [True, False, False]
+        first, middle = self._first_key(item), self._middle_key(item)
+        self.assertTrue(first.is_broken(0))
+        self.assertFalse(middle.is_broken(1))
+        self.assertEqual(
+            item._handle_pen("#FF6600", first, 0).style(), QtCore.Qt.DotLine
+        )
+        self.assertEqual(
+            item._handle_pen("#FF6600", middle, 1).style(), QtCore.Qt.SolidLine
+        )

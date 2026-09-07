@@ -179,20 +179,43 @@ class CurveUtils:
         flat background curves paint at the row bottom while their key dots
         centered).
         """
-        pad = rect_height * 0.15
-        y_top = rect_top + pad
-        y_bot = rect_top + rect_height - pad
-        y_span = y_bot - y_top
-        val_range = val_max - val_min
-        is_flat = val_range < 1e-9
+        y_bot, y_span, val_range, is_flat = CurveUtils._value_axis(
+            rect_top, rect_height, val_min, val_max
+        )
 
         def map_y(v: float) -> float:
             if is_flat:
-                return y_top + y_span * 0.5
+                return y_bot - y_span * 0.5
             frac = (v - val_min) / val_range
             return y_bot - frac * y_span
 
         return map_y, is_flat
+
+    @staticmethod
+    def _value_axis(
+        rect_top: float, rect_height: float, val_min: float, val_max: float
+    ):
+        """``(y_bot, y_span, val_range, is_flat)`` behind the value mapping."""
+        pad = rect_height * 0.15
+        y_top = rect_top + pad
+        y_bot = rect_top + rect_height - pad
+        val_range = val_max - val_min
+        return y_bot, y_bot - y_top, val_range, val_range < 1e-9
+
+    @staticmethod
+    def unmap_value(
+        rect_top: float, rect_height: float, val_min: float, val_max: float, y: float
+    ) -> float:
+        """The value a pixel row *y* stands for -- :meth:`make_value_mapper`
+        run backwards, for a handle dragged in pixels that has to land in
+        curve units.  A flat range has no value axis to read, so its one
+        value comes back."""
+        y_bot, y_span, val_range, is_flat = CurveUtils._value_axis(
+            rect_top, rect_height, val_min, val_max
+        )
+        if is_flat or y_span < 1e-9:
+            return val_min
+        return val_min + (y_bot - y) / y_span * val_range
 
     @staticmethod
     def build_curve_path(segments, map_x, map_y) -> QtGui.QPainterPath:

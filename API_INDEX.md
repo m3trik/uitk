@@ -120,7 +120,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class GlobalShortcut(QtCore.QObject)`
   - methods: eventFilter, setEnabled, isEnabled, setKey, setContext, dispose
 - `class ShortcutManager`
-  - methods: context_to_scope_name, scope_name_to_context, host_namespace_suffix, resolve_application_host, find_duplicate_application_shortcuts, add_shortcut, add_shortcuts_batch, add_global_shortcut, add_info_entry, remove_shortcut, clear_all, on_change, rebind_shortcut, show_editor, get_shortcuts_info, has_shortcut, get_shortcut, get_registry
+  - methods: context_to_scope_name, scope_name_to_context, host_namespace_suffix, resolve_application_host, find_duplicate_application_shortcuts, add_shortcut, add_shortcuts_batch, add_global_shortcut, add_info_entry, add_gesture, overlay, remove_shortcut, clear_all, on_change, rebind_shortcut, show_editor, get_shortcuts_info, has_shortcut, get_shortcut, get_registry
 
 ### `managers/state_manager.py`
 - `class StateManager(ptk.LoggingMixin)`
@@ -227,7 +227,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class BorderedShortcutCaptureDelegate(ShortcutCaptureDelegate, RowSelectionBorderDelegate)`
 
 ### `widgets/doubleSpinBox.py`
-- `class DoubleSpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`
+- `class DoubleSpinBox(WheelStepMixin, SpinBoxAdjustingMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`
   - methods: textFromValue
 
 ### `widgets/editors/color_mapping_editor.py` — Reusable color-mapping editor widget.
@@ -407,9 +407,11 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: bind
 - `class TooltipMixin`
 
-### `widgets/mixins/wheel_step.py` — Shared modifier-driven wheel-step handling for spin-box widgets.
+### `widgets/mixins/wheel_step.py` — Shared input handling for spin-box widgets: the modifier-driven wheel
 - `class WheelStepMixin`
   - methods: wheelEvent
+- `class SpinBoxAdjustingMixin`
+  - methods: adjusting, mousePressEvent, mouseReleaseEvent, keyPressEvent, focusOutEvent
 
 ### `widgets/optionBox/_optionBox.py` — OptionBox - Plugin-based container for wrapping widgets with action buttons.
 - `class OptionBoxContainer(QtWidgets.QWidget)`
@@ -522,7 +524,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/sequencer/_clip.py` — ClipItem — draggable, resizable clip rectangle on the timeline.
 - `class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`
-  - methods: clip_data, boundingRect, paint, hoverMoveEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent, mouseDoubleClickEvent
+  - methods: clip_data, keys_editable, boundingRect, paint, hoverMoveEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent, mouseDoubleClickEvent
 
 ### `widgets/sequencer/_data.py` — Data models and shared constants for the sequencer widget.
 - `class PatternSpec`
@@ -533,7 +535,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class MarkerData`
 - `class MenuUtils`
 - `class CurveUtils`
-  - methods: make_value_mapper, build_curve_path
+  - methods: make_value_mapper, unmap_value, build_curve_path
 - `class PatternRegistry`
   - methods: register_pattern, pattern_brush, paint_pattern
 
@@ -549,7 +551,9 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/sequencer/_keyframe.py` — KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row.
 - `class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem)`
-  - methods: time, value, paint, boundingRect, shape, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent
+  - methods: time, value, paint, boundingRect, itemChange, is_broken, shape, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent
+- `class TangentHandleItem(QtWidgets.QGraphicsEllipseItem)`
+  - methods: side, key, slot, control_point, paint, shape, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent
 
 ### `widgets/sequencer/_markers.py` — MarkerItem — named marker on the timeline with drag and context menu.
 - `class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`
@@ -575,7 +579,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class AttributeColorDialog(ColorMappingDialog)`
   - methods: load_color_map
 - `class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`
-  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, selected_shot, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, attribute_colors, set_attribute_color, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips
+  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, selected_shot, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, ctrl_held_at_press, record_press_modifiers, shortcut_overlay, shortcut_overlay_visible, attribute_colors, set_attribute_color, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips, selected_keys, select_keys, show_key_menu
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`
@@ -583,7 +587,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class TimelineScene(QtWidgets.QGraphicsScene)`
   - methods: ruler, playhead
 - `class TimelineView(QtWidgets.QGraphicsView)`
-  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, add_default_context_actions, content_time_bounds, drawBackground
+  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, mousePressEvent, mouseMoveEvent, leaveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, add_default_context_actions, content_time_bounds, drawBackground
 
 ### `widgets/sequencer/_transport_controls.py` — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - `class PlayController(Protocol)`
@@ -593,11 +597,15 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class TransportControls(QtWidgets.QWidget)`
   - methods: showEvent, hideEvent, play_controller, set_range_fn, set_play_controller, set_interrupt_mode, interrupt_mode, button, attach_to_footer
 
+### `widgets/shortcut_overlay.py` — A corner legend of a widget's mouse gestures and keyboard shortcuts.
+- `class ShortcutOverlay(QtWidgets.QWidget)`
+  - methods: context, shown_group, set_context, refresh, paintEvent, eventFilter
+
 ### `widgets/slider.py`
 - `class Slider(QtWidgets.QSlider, MenuMixin, OptionBoxMixin, AttributesMixin)`
 
 ### `widgets/spinBox.py`
-- `class SpinBox(WheelStepMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`
+- `class SpinBox(WheelStepMixin, SpinBoxAdjustingMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, OptionBoxMixin, AttributesMixin)`
   - methods: value, setCustomDisplayValues, textFromValue, valueFromText, validate, stepBy
 
 ### `widgets/tableWidget.py`

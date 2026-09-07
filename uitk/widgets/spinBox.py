@@ -9,11 +9,13 @@ from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 from uitk.widgets.mixins.spin_box_display import PrefixColumnMixin
 from uitk.widgets.mixins.spin_box_display import SpinBoxTextColorMixin
+from uitk.widgets.mixins.wheel_step import SpinBoxAdjustingMixin
 from uitk.widgets.mixins.wheel_step import WheelStepMixin
 
 
 class SpinBox(
     WheelStepMixin,
+    SpinBoxAdjustingMixin,
     FeedbackMixin,
     SpinBoxTextColorMixin,
     PrefixColumnMixin,
@@ -28,6 +30,10 @@ class SpinBox(
     - Custom value-to-text mapping (e.g. -1 -> "Auto")
     - Modifier-driven wheel stepping (see
       :class:`uitk.widgets.mixins.wheel_step.WheelStepMixin`)
+    - ``adjusting`` for a debounced slot (``widget.debounce``): the slot
+      waits while a mouse button is held on the box or a typed edit is
+      uncommitted (see
+      :class:`uitk.widgets.mixins.wheel_step.SpinBoxAdjustingMixin`)
     - Tab-aligned prefix label that collapses on a narrow field (see
       :class:`uitk.widgets.mixins.spin_box_display.PrefixColumnMixin`)
     - Themed HUD feedback popup (see

@@ -111,6 +111,8 @@ class ShotsController:
 
 `setKeyboardTracking(False)` makes the spinbox only emit `valueChanged` on commit (Enter / focus loss / arrow click), not on every keystroke. Without it, clearing "100" to retype "200" emits `valueChanged(0)` mid-edit. See the `ShotsSlots.__init__` keyboard-tracking block in [mayatk shots_slots.py](https://github.com/m3trik/mayatk/blob/main/mayatk/anim_utils/shots/shots_slots.py) for the real scenario this guards against.
 
+The uitk spin boxes go one step further: they report `adjusting` while a mouse button is held on the box or a typed edit is uncommitted, and the debounced dispatch waits for that to clear — so a slot that re-renders on every value (the Shadow Rig's Softness) runs once, when the user lets go. Both settings can live in the `.ui`: `keyboardTracking` is a Qt property, `debounce` a dynamic one (`stdset="0"`).
+
 ---
 
 ## Cross-UI widget sync

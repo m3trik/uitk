@@ -200,10 +200,14 @@ class SlotWrapper:
 
     Debounce
     --------
-    If ``widget.debounce`` is set to a positive integer (milliseconds),
-    the slot call is deferred until that many ms elapse without another
-    signal.  Each new signal restarts the timer so rapid changes (e.g.
-    spinner increments) coalesce into a single slot invocation.
+    If ``widget.debounce`` is set to a positive integer (milliseconds) --
+    a Python attribute, or a ``debounce`` dynamic property declared in the
+    .ui -- the slot call is deferred until that many ms elapse without
+    another signal.  Each new signal restarts the timer so rapid changes
+    (e.g. spinner increments) coalesce into a single slot invocation. A
+    widget that exposes ``adjusting`` (the uitk spin boxes: a mouse button
+    held on the box, an edit typed but not yet committed) holds the call
+    while it is True, so the slot runs once the user is done adjusting.
     """
 
     # Class-level cache: slot FUNCTION object -> (param_names frozenset,
@@ -325,7 +329,7 @@ class SlotWrapper:
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in self.param_names}
 
         # Debounce: defer the call if the widget requests it
-        debounce_ms = getattr(self.widget, "debounce", 0) or 0
+        debounce_ms = self._debounce_ms()
         if debounce_ms > 0:
             self._debounce_args = args
             self._debounce_kwargs = filtered_kwargs
@@ -341,8 +345,37 @@ class SlotWrapper:
 
         return self._invoke(*args, **filtered_kwargs)
 
+    def _debounce_ms(self):
+        """The widget's debounce window in ms: its ``debounce`` attribute
+        when set (0 switches it off), else the ``debounce`` dynamic
+        property a .ui can declare; 0 without either."""
+        value = getattr(self.widget, "debounce", None)
+        if value is None:
+            try:
+                value = self.widget.property("debounce")
+            except (AttributeError, RuntimeError):
+                value = None
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _widget_adjusting(self):
+        """Is the widget still being adjusted? Widgets opt in by exposing
+        ``adjusting`` (a mouse button held on a spin box, a typed edit not
+        yet committed); the debounced call waits while it is True."""
+        try:
+            return bool(getattr(self.widget, "adjusting", False))
+        except (AttributeError, RuntimeError):
+            return False
+
     def _flush_debounce(self):
-        """Execute the deferred slot call after the debounce timer fires."""
+        """Execute the deferred slot call after the debounce timer fires --
+        or look again after another window while the widget reports it is
+        still being adjusted."""
+        if self._widget_adjusting() and self._debounce_timer is not None:
+            self._debounce_timer.start()
+            return
         args = self._debounce_args or ()
         kwargs = self._debounce_kwargs or {}
         self._debounce_args = None

@@ -30,6 +30,7 @@ from uitk.managers.shortcut_manager import ShortcutManager
 
 from uitk.widgets.sequencer._data import (
     ClipData,
+    MenuUtils,
     TrackData,
     MarkerData,
     _TRACK_HEIGHT,
@@ -145,6 +146,35 @@ class AttributeColorDialog(ColorMappingDialog):
 # ---------------------------------------------------------------------------
 #  SequencerWidget  (the public API)
 # ---------------------------------------------------------------------------
+#: The mouse grammar, as the consumers implement it and the shortcut overlay
+#: shows it: ``(group, keys, what it does)``.  A shot's own bound (its edges,
+#: the ruler band's edges) never moves the shot's keys: a plain drag moves
+#: the bound and the neighbouring shots ripple with their keys to keep the
+#: gaps; Ctrl moves the bound and nothing else (the shot grows into the gap
+#: over the keys there, or shrinks and leaves keys for the next shot); Shift
+#: retimes the keys into the new span.  The ruler band's body moves the shot.
+#: A gap's edge belongs to the shot beyond it: a plain drag slides that shot.
+_GESTURE_DEFS = (
+    ("Shot bounds", "Drag", "Move the bound; neighbours ripple (keys stay)"),
+    ("Shot bounds", "Ctrl+Drag", "Move the bound only; nothing else moves"),
+    ("Shot bounds", "Shift+Drag", "Retime keys into the new span"),
+    ("Shot bounds", "Drag band", "Move the shot (keys ride)"),
+    ("Gaps", "Drag edge", "Slide the shot beyond it (gap changes)"),
+    ("Gaps", "Ctrl+Drag edge", "Move that bound only (keys stay)"),
+    ("Gaps", "Shift+Drag edge", "Retime that shot into the new span"),
+    ("Gaps", "Drag body", "Slide the gap (active shot's edge follows)"),
+    ("Gaps", "Right-click", "Lock / unlock the gap"),
+    ("Clips & keys", "Drag", "Move keys (ripple)"),
+    ("Clips & keys", "Drag edge", "Scale the clip's keys"),
+    ("Clips & keys", "Shift+Drag", "Cross shot bounds, bounds stay"),
+    ("Clips & keys", "Ctrl", "Snap to whole frames"),
+    ("Clips & keys", "Right-click", "Tangents, lock, Move to Shot"),
+    ("Timeline", "Drag", "Marquee select (Space moves it)"),
+    ("Timeline", "Ctrl+Shift+Click", "Switch to the shot under the cursor"),
+    ("Timeline", "Wheel / Middle-drag", "Zoom / pan"),
+)
+
+
 class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     """A split-view NLE sequencer widget.
 
@@ -227,6 +257,17 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     key_selection_changed = QtCore.Signal(
         list
     )  # [{clip_id, obj, attr_name, times}, ...]
+    # Right-click on a key: the selected keys (the clicked one included),
+    # grouped by clip exactly as ``key_selection_changed`` reports them, so a
+    # consumer resolves both payloads with one routine.  Emitted before
+    # ``exec_`` -- add actions; the widget appends Delete after them.
+    key_menu_requested = QtCore.Signal(object, list)  # (QMenu, [{clip_id, times}])
+    # A tangent handle of a selected key was dragged: the key's clip and
+    # time, which side ("in" / "out"), and the handle VECTOR from the key in
+    # curve units -- frames along, value up.  One emit per gesture, on
+    # release; the preview's control point already shows the new shape, and
+    # the consumer rebuilds from the scene after writing the tangent.
+    key_tangent_dragged = QtCore.Signal(int, float, str, float, float)
 
     def __init__(self, parent=None, **kwargs):
         super().__init__(QtCore.Qt.Horizontal, parent)
@@ -363,7 +404,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._shortcut_mgr.add_shortcuts_batch(
             [(k, fn, desc, _ctx) for k, fn, desc in _shortcut_defs]
         )
-        self._shortcut_mgr.add_info_entry("Ctrl+Shift+LMB", "Switch to shot at cursor")
+        for group, keys, description in _GESTURE_DEFS:
+            self._shortcut_mgr.add_gesture(group, keys, description)
+        self._shortcut_overlay = None  # built on first show (shortcut_overlay_visible)
+        self._ctrl_at_press = False
         # Keep the ShortcutOverride sequences in sync with the manager
         self._shortcut_mgr.on_change(self._sync_shortcut_sequences)
         self._sync_shortcut_sequences()
@@ -1580,6 +1624,60 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def shift_held_at_press(self, value: bool) -> None:
         self._shift_at_press = value
 
+    @property
+    def ctrl_held_at_press(self) -> bool:
+        """Whether Ctrl was held when the last drag interaction started.
+
+        The consumers' "bound only" gate: a shot-bound handle grabbed with
+        Ctrl moves the bound and leaves the keys where they are.
+        """
+        return self._ctrl_at_press
+
+    @ctrl_held_at_press.setter
+    def ctrl_held_at_press(self, value: bool) -> None:
+        self._ctrl_at_press = bool(value)
+
+    def record_press_modifiers(self, modifiers) -> None:
+        """Bank the modifiers a press carried, for the consumers' gates.
+
+        Every press site calls this -- clips, keys, both overlays, the ruler
+        band -- so a gesture never inherits what the LAST one left behind.
+        """
+        self._shift_at_press = bool(modifiers & QtCore.Qt.ShiftModifier)
+        self._ctrl_at_press = bool(modifiers & QtCore.Qt.ControlModifier)
+
+    # -- shortcut overlay ---------------------------------------------------
+
+    @property
+    def shortcut_overlay(self):
+        """The corner legend (:class:`ShortcutOverlay`), or ``None`` until
+        it has been shown once."""
+        return self._shortcut_overlay
+
+    @property
+    def shortcut_overlay_visible(self) -> bool:
+        """Show a legend of the drag grammar and keys in the timeline's corner.
+
+        The reminder Substance Painter keeps in its viewport: the gesture
+        group under the pointer is brightened as the mouse moves.  Built on
+        first show from the shortcut manager's gestures and bindings.
+        """
+        return self._shortcut_overlay is not None and self._shortcut_overlay.isVisible()
+
+    @shortcut_overlay_visible.setter
+    def shortcut_overlay_visible(self, value: bool) -> None:
+        if value and self._shortcut_overlay is None:
+            self._shortcut_overlay = self._shortcut_mgr.overlay(self._timeline)
+        if self._shortcut_overlay is not None:
+            self._shortcut_overlay.setVisible(bool(value))
+            if value:
+                self._shortcut_overlay.refresh()
+
+    def _set_gesture_context(self, group: Optional[str]) -> None:
+        """Brighten *group* on the legend, if one is showing."""
+        if self._shortcut_overlay is not None:
+            self._shortcut_overlay.set_context(group)
+
     # -- attribute colors ---------------------------------------------------
     @property
     def attribute_colors(self) -> Dict[str, str]:
@@ -1818,6 +1916,64 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             return []
         return [item.clip_data.clip_id for item in items if isinstance(item, ClipItem)]
 
+    def selected_keys(self) -> List[dict]:
+        """Selected keyframe dots grouped by clip: ``[{clip_id, times}, ...]``.
+
+        The payload of :attr:`key_selection_changed`, :attr:`key_menu_requested`
+        and the Delete shortcut alike, so every consumer resolves a key
+        selection through one routine.
+        """
+        from uitk.widgets.sequencer._keyframe import KeyframeItem
+
+        try:
+            items = self._timeline._scene.selectedItems()
+        except RuntimeError:
+            return []
+        by_clip: dict = {}
+        for item in items:
+            if isinstance(item, KeyframeItem):
+                cid = item._parent_clip._data.clip_id
+                by_clip.setdefault(cid, {"clip_id": cid, "times": []})
+                by_clip[cid]["times"].append(item._time)
+        return list(by_clip.values())
+
+    def select_keys(self, wanted: List[dict], replace: bool = True) -> int:
+        """Select keyframe dots by clip data and time; returns how many matched.
+
+        *wanted* is ``[{"data": {...}, "times": [...]}, ...]``: a key is
+        selected when its clip's ``data`` bag carries every item of ``data``
+        and its time is one of ``times`` (within 1e-6 -- the times come back
+        from :meth:`selected_keys`, so they match exactly).  This is how
+        a consumer keeps a key selection alive across its own rebuild, whose
+        clip ids are fresh every time -- the ``data`` bag is the consumer's
+        own vocabulary (``obj``/``attr_name``, say), so no id survives here.
+        One ``key_selection_changed`` for the whole batch, not one per dot.
+        """
+        scene = self._timeline._scene
+        selectable = QtWidgets.QGraphicsItem.ItemIsSelectable
+        n = 0
+        self._selection_suppressed += 1
+        try:
+            if replace:
+                scene.clearSelection()
+            for item in self._clip_items.values():
+                bag = item._data.data
+                for want in wanted:
+                    match = want.get("data") or {}
+                    if any(bag.get(k) != v for k, v in match.items()):
+                        continue
+                    times = want.get("times") or []
+                    for ki in item._keyframe_items:
+                        if not (ki.flags() & selectable):
+                            continue
+                        if any(abs(ki._time - t) <= 1e-6 for t in times):
+                            ki.setSelected(True)
+                            n += 1
+        finally:
+            self._selection_suppressed -= 1
+        self._on_scene_selection()
+        return n
+
     # -- internal -----------------------------------------------------------
     def _on_scene_selection(self):
         if self._selection_suppressed:
@@ -1833,49 +1989,67 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             self.clip_selected.emit(sel[0])
 
         # Emit key-level selection info for graph-editor sync.
-        from uitk.widgets.sequencer._keyframe import KeyframeItem
+        self.key_selection_changed.emit(self.selected_keys())
 
-        try:
-            items = self._timeline._scene.selectedItems()
-        except RuntimeError:
-            items = []
+    def show_key_menu(self, global_pos) -> bool:
+        """Open the key menu for the current key selection; ``False`` if empty.
 
-        by_clip: dict = {}
-        for item in items:
-            if isinstance(item, KeyframeItem):
-                cd = item._parent_clip._data
-                cid = cd.clip_id
-                by_clip.setdefault(cid, {"clip_id": cid, "times": []})
-                by_clip[cid]["times"].append(item._time)
+        The menu belongs to the SELECTION, not to the dot under the cursor:
+        a right-click anywhere over the tracks opens it while any key is
+        selected (:meth:`TimelineView.contextMenuEvent`), so reaching a
+        tangent type never means hitting a 7-pixel dot.  The widget owns
+        Delete; everything else -- tangent types, move to shot -- is the
+        consumer's, added through :attr:`key_menu_requested` before the menu
+        opens.
 
-        self.key_selection_changed.emit(list(by_clip.values()))
+        Parameters:
+            global_pos (QPoint): Screen position to open the menu at.
+
+        Returns:
+            bool: True when a menu was shown.
+        """
+        groups = self._editable_key_groups()
+        if not groups:
+            return False
+        menu = MenuUtils._styled_menu()
+        self.key_menu_requested.emit(menu, groups)
+        if menu.actions():
+            menu.addSeparator()
+        n = sum(len(g["times"]) for g in groups)
+        act_delete = menu.addAction(f"Delete Keys ({n})" if n > 1 else "Delete Key")
+        if menu.exec_(global_pos) == act_delete:
+            self._delete_selected_keys()
+        return True
+
+    def _editable_key_groups(self) -> List[dict]:
+        """:meth:`selected_keys` minus the clips that refuse key edits.
+
+        What the key menu offers and what Delete acts on: both are built
+        from the SELECTION, which a marquee can sweep across a locked or
+        read-only row (:attr:`ClipItem.keys_editable`) that must not be
+        written to.
+        """
+        groups = []
+        for group in self.selected_keys():
+            item = self._clip_items.get(group["clip_id"])
+            if item is None or item.keys_editable:
+                groups.append(group)
+        return groups
 
     def _delete_selected_keys(self):
         """Delete all selected :class:`KeyframeItem` instances.
 
         Groups deletions by parent clip and emits one
-        :attr:`keys_deleted` signal per clip.
+        :attr:`keys_deleted` signal per clip -- for the clips that accept
+        key edits; a locked or read-only row keeps its keys.
         """
-        from uitk.widgets.sequencer._keyframe import KeyframeItem
-
-        try:
-            items = self._timeline._scene.selectedItems()
-        except RuntimeError:
-            return
-
-        # Group selected keys by clip_id
-        by_clip: dict = {}
-        for item in items:
-            if isinstance(item, KeyframeItem):
-                cid = item._parent_clip._data.clip_id
-                by_clip.setdefault(cid, []).append(item._time)
-
-        if not by_clip:
+        groups = self._editable_key_groups()
+        if not groups:
             return
 
         self._capture_undo()
-        for clip_id, times in by_clip.items():
-            self.keys_deleted.emit(clip_id, times)
+        for group in groups:
+            self.keys_deleted.emit(group["clip_id"], group["times"])
 
     def _on_splitter_moved(self, pos: int, index: int):
         """Snap-close the header pane when dragged below threshold."""

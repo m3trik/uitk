@@ -1,11 +1,13 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Shared modifier-driven wheel-step handling for spin-box widgets.
+"""Shared input handling for spin-box widgets: the modifier-driven wheel
+step (:class:`WheelStepMixin`) and the *adjusting* state a debounced slot
+waits on (:class:`SpinBoxAdjustingMixin`).
 
 Used by :class:`uitk.widgets.spinBox.SpinBox` and
 :class:`uitk.widgets.doubleSpinBox.DoubleSpinBox`. Both widgets derive
 from ``QDoubleSpinBox`` and previously duplicated the same dispatch +
-helper methods; this mixin pulls the contract into one place.
+helper methods; these mixins pull the contract into one place.
 
 Modifier ladder (wheel scroll only) — symmetric: ``Ctrl`` scales the
 step **up** ×10, ``Alt`` scales it **down** ×10, and stacking with
@@ -34,7 +36,8 @@ the delta — some platforms (X11, certain Qt6 builds) transpose
 ``.y() > 0`` check would silently stop responding to Alt- and Ctrl+Alt-
 wheel scrolls.
 """
-from qtpy import QtCore, QtGui
+
+from qtpy import QtCore, QtGui, QtWidgets
 
 
 class WheelStepMixin:
@@ -111,3 +114,59 @@ class WheelStepMixin:
         if notifier is None:
             return
         notifier(f"Step: <font color='yellow'>{adjustment:g}</font>")
+
+
+class SpinBoxAdjustingMixin:
+    """Mixin: the *adjusting* state of a ``QAbstractSpinBox`` subclass.
+
+    ``adjusting`` is True while the user is still on the value -- a mouse
+    button held on the box (an arrow auto-repeating, a drag) or an edit
+    typed but not yet committed (Enter or focus-out interprets it). The
+    switchboard's debounced dispatch (``widget.debounce``, see
+    ``SlotWrapper``) holds a slot while its widget reports ``adjusting``,
+    so a slot that re-renders something on every value runs once, when the
+    user is done, instead of on each step of the way. Inherit *before* the
+    Qt spin-box base so the event overrides win in the MRO.
+    """
+
+    _adjust_mouse_held = False
+
+    @property
+    def adjusting(self) -> bool:
+        """True while a mouse button is held on the box or a typed edit is
+        uncommitted -- a debounced slot waits for this to clear."""
+        if self._adjust_mouse_held:
+            # A release the box never saw (hidden or reparented mid-press)
+            # must not hold a slot forever: trust the live button state.
+            if QtWidgets.QApplication.mouseButtons() == QtCore.Qt.NoButton:
+                self._adjust_mouse_held = False
+            else:
+                return True
+        edit = self.lineEdit()
+        return bool(edit is not None and self.hasFocus() and edit.isModified())
+
+    def mousePressEvent(self, event) -> None:
+        self._adjust_mouse_held = True
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._adjust_mouse_held = False
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event) -> None:
+        super().keyPressEvent(event)
+        if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            self._mark_committed()
+
+    def focusOutEvent(self, event) -> None:
+        super().focusOutEvent(event)
+        self._mark_committed()
+
+    def _mark_committed(self) -> None:
+        """Enter and focus-out interpret the text; Qt leaves the line edit
+        flagged modified when the interpreted value did not change it, so
+        clear the flag by hand or the edit reads as unfinished until the
+        next programmatic set."""
+        edit = self.lineEdit()
+        if edit is not None:
+            edit.setModified(False)
