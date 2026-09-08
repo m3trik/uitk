@@ -29,9 +29,12 @@ class SwitchboardNameMixin:
             raise ValueError(f"Expected a string, got {type(name)}")
 
         # One rule, owned by pythontk: a headless reader deriving the same
-        # objectName from a definition (ExportProfile) must agree with the
-        # widget the switchboard built.
-        return ptk.ExportProfile.legal_name(name)
+        # objectName from a definition (ExportProfile.widget_key) must agree
+        # with the widget the switchboard built. It lives on StrUtils, not on
+        # the export-profile class that also reads it -- this mixin is core
+        # switchboard naming and has no business reaching into a Scene
+        # Exporter's contract for it.
+        return ptk.StrUtils.to_legal_name(name)
 
     def get_slot_class_names(self, base_name: str) -> List[str]:
         """Generate potential slot class names from a base name.

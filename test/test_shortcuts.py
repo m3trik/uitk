@@ -915,6 +915,131 @@ class TestGlobalShortcutDispose(QtBaseTestCase):
             "dispose must drop the static ref even when the Qt side is gone",
         )
 
+    def test_nothing_is_dispatched_to_the_shortcut_while_no_key_is_held(self):
+        """A GlobalShortcut must not be dispatched events while idle.
+
+        A permanently-installed application-level Python event filter is
+        dispatched for every event in the process, including those Qt sends
+        from inside ``QWidgetPrivate::init`` while a widget is still being
+        constructed; handing shiboken a half-built object there access-violates
+        with no Python frame. That was the non-deterministic suite segfault --
+        5 crashes in 5 runs on PySide6 6.9.1 with the filter installed
+        for object lifetime; 0 in the 6 runs since, 4 of them this exact fix. The watch still has to be
+        application-wide while a key IS held (the release goes to the focus
+        widget, not to this shortcut's window), so the invariant is that it is
+        dispatched during exactly the hold and not outside it.
+
+        Counted through a SUBCLASS, never by patching ``eventFilter`` after
+        construction: PySide binds virtual overrides when the C++ object is
+        built, so a late patch is never called and the assertion would pass
+        vacuously.
+        """
+        from uitk.managers.shortcut_manager import GlobalShortcut
+
+        class _CountingShortcut(GlobalShortcut):
+            dispatches = 0  # class default: safe before QObject.__init__ runs
+
+            def eventFilter(self, obj, event):
+                self.dispatches += 1
+                return super().eventFilter(obj, event)
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.show()
+        sc = _CountingShortcut("Ctrl+Alt+Shift+F6", host)
+        self.addCleanup(sc.dispose)
+
+        # Idle: building widgets is the exact traffic that used to crash.
+        built = [self.track_widget(QtWidgets.QFrame()) for _ in range(25)]
+        self.assertEqual(
+            sc.dispatches,
+            0,
+            "an idle shortcut must see no events at all -- it is not on the "
+            "application filter list",
+        )
+
+        sc._on_press()
+        built += [self.track_widget(QtWidgets.QFrame()) for _ in range(25)]
+        self.assertGreater(
+            sc.dispatches,
+            0,
+            "while the key is held the watch must be live and application-wide",
+        )
+
+        sc._on_release()
+        held_count = sc.dispatches
+        built += [self.track_widget(QtWidgets.QFrame()) for _ in range(25)]
+        self.assertEqual(
+            sc.dispatches,
+            held_count,
+            "the watch must come off again on release",
+        )
+
+    def test_dispose_mid_hold_leaves_no_application_filter(self):
+        """Disposing during a hold must not strand the application filter.
+
+        ``deleteLater`` only schedules destruction, so without an explicit
+        removal a shortcut disposed mid-hold would keep filtering every event
+        in the process until that deferred deletion was actually processed.
+        """
+        from uitk.managers.shortcut_manager import GlobalShortcut
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.show()
+        sc = GlobalShortcut("Ctrl+Alt+Shift+F5", host)
+        sc._on_press()
+        self.assertIsNotNone(sc._filter_source)
+
+        sc.dispose()
+        self.assertIsNone(
+            sc._filter_source, "dispose must take the filter back off the app"
+        )
+
+    def test_host_destruction_does_not_strand_the_static_ref(self):
+        """A shortcut whose HOST dies is never disposed -- and leaked forever.
+
+        ``dispose()`` is what drops the static ``_instances`` ref, but a
+        ``GlobalShortcut`` is a child of its host widget: when that widget is
+        destroyed Qt takes the shortcut with it and nobody calls ``dispose``.
+        The strong ref then pins a dead-C++ wrapper for the life of the
+        process. Measured on the full uitk suite before the fix: 26 retained
+        across 2750 tests, all with a destroyed C++ side.
+
+        Registration purges them, so the set stays bounded by the number of
+        LIVE shortcuts rather than growing with every host that has ever died.
+        """
+        from uitk.managers.shortcut_manager import GlobalShortcut
+
+        host = QtWidgets.QWidget()  # deliberately untracked: destroyed here
+        host.show()
+        orphan = GlobalShortcut("Ctrl+Alt+Shift+F11", host)
+        self.assertIn(orphan, GlobalShortcut._instances)
+
+        host.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.assertFalse(
+            GlobalShortcut._is_alive(orphan),
+            "host destruction should have taken the child shortcut's C++ side",
+        )
+
+        # Any later registration must clear it out.
+        survivor_host = self.track_widget(QtWidgets.QWidget())
+        survivor = GlobalShortcut("Ctrl+Alt+Shift+F12", survivor_host)
+        self.addCleanup(survivor.dispose)
+
+        # COUNT, never the objects themselves: a dead wrapper raises from
+        # __repr__, so handing a list of them to assertEqual makes the failure
+        # report blow up instead of stating the defect.
+        dead = sum(
+            1 for o in GlobalShortcut._instances if not GlobalShortcut._is_alive(o)
+        )
+        self.assertEqual(
+            dead,
+            0,
+            "a destroyed shortcut must not stay in the static set for the "
+            "life of the process",
+        )
+        self.assertIn(survivor, GlobalShortcut._instances)
+
     def test_manager_remove_and_clear_dispose_global(self):
         from uitk.managers.shortcut_manager import ShortcutManager, GlobalShortcut
 

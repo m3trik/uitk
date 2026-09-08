@@ -82,11 +82,14 @@ class GlobalShortcut(QtCore.QObject):
         self._shortcut.setAutoRepeat(False)
         self._shortcut.activated.connect(self._on_press)
 
-        # 2. Setup Event Filter for Release detection
+        # 2. Release detection. The filter is installed on PRESS and removed on
+        # release (see _install_event_filter) rather than kept for this object's
+        # lifetime, so nothing of ours sits on the application filter list while
+        # no key is held.
         self._target = self._resolve_target(parent)
-        self._filter_source = self._install_event_filter()
+        self._filter_source = None
 
-        GlobalShortcut._instances.add(self)
+        GlobalShortcut._register(self)
 
     def _get_primary_key(self, sequence: QtGui.QKeySequence) -> int:
         """Extract the primary key from the sequence for raw event checking.
@@ -136,12 +139,52 @@ class GlobalShortcut(QtCore.QObject):
         return explicit_parent
 
     def _install_event_filter(self):
-        """Install event filter on the application or target window."""
-        app = QtWidgets.QApplication.instance()
-        source = app if app else self._target
-        if source:
+        """Start watching for the release, application-wide, for THIS hold only.
+
+        The watch has to be application-wide: a key release goes to the focus
+        widget, which in a DCC host is routinely a native viewport or some
+        widget other than this shortcut's own window, so a filter on the target
+        window alone would miss it. But it must not OUTLIVE the hold, because a
+        permanently-installed application-level Python event filter is a crash
+        surface: Qt dispatches it for every event in the process, including the
+        ones it sends from inside ``QWidgetPrivate::init`` while a widget is
+        still being constructed, and handing shiboken a half-built ``obj``
+        there drives ``Shiboken::Errors::storePythonOverrideErrorOrPrint`` into
+        an access violation with no Python frame to name it.
+
+        That was the long-standing non-deterministic uitk suite segfault. On
+        PySide6 6.9.1, same tree and offscreen platform, the suite died 5 runs
+        out of 5 while this filter was installed for object lifetime, and
+        completed cleanly once it was not. It was also expensive: every event in
+        the process paid a C++ -> Python transition, worth roughly 3x the full
+        suite's wall time.
+
+        Scoping it to the hold keeps the detection identical -- the filter is
+        live for exactly the window in which a release can arrive -- while
+        leaving the application filter list empty the rest of the time, which is
+        all of it during widget construction.
+        """
+        if self._filter_source is not None:
+            return self._filter_source
+        source = QtWidgets.QApplication.instance() or self._target
+        if source is not None:
             source.installEventFilter(self)
+            self._filter_source = source
         return source
+
+    def _remove_event_filter(self):
+        """Stop watching; the counterpart to :meth:`_install_event_filter`.
+
+        Tolerates a source whose C++ object has already gone -- a shortcut is
+        routinely disposed after its host window was destroyed.
+        """
+        source, self._filter_source = self._filter_source, None
+        if source is None:
+            return
+        try:
+            source.removeEventFilter(self)
+        except (RuntimeError, AttributeError):
+            pass
 
     def eventFilter(self, obj, event):
         """Monitor global events for the specific key release."""
@@ -176,12 +219,14 @@ class GlobalShortcut(QtCore.QObject):
             # fall through and fire the new press.
             self._on_release()
         self._is_down = True
+        self._install_event_filter()
         self.pressed.emit()
 
     def _on_release(self):
         if not self._is_down:
             return
         self._is_down = False
+        self._remove_event_filter()
         self.released.emit()
 
     def setEnabled(self, enabled: bool):
@@ -211,6 +256,45 @@ class GlobalShortcut(QtCore.QObject):
         """
         self._shortcut.setContext(context)
 
+    @staticmethod
+    def _is_alive(instance) -> bool:
+        """Probe a Qt object to detect a deleted C++ underlying.
+
+        Same idiom as ``Widgets._widget_is_alive``: ask for something cheap and
+        let the binding object. ``RuntimeError`` is PySide's signal that the
+        wrapped C++ object is gone; some shiboken builds raise
+        ``AttributeError`` for a partially-disposed wrapper.
+        """
+        try:
+            instance.objectName()
+            return True
+        except (RuntimeError, AttributeError):
+            return False
+
+    @classmethod
+    def _register(cls, instance) -> None:
+        """Register *instance*, dropping wrappers whose Qt side Qt has destroyed.
+
+        ``_instances`` holds a STRONG reference on purpose (see :meth:`dispose`),
+        so nothing here is collectable on its own -- which means a shortcut that
+        is never disposed is retained for the life of the process. And one class
+        of shortcut is never disposed: a ``GlobalShortcut`` is a child of its
+        host widget, so when that widget dies Qt destroys the shortcut without
+        anyone calling :meth:`dispose`, stranding a dead-C++ wrapper in this set
+        forever. Measured on the uitk suite before this purge: 26 such wrappers
+        retained across 2750 tests, every one of them with a destroyed C++ side.
+
+        Purging on registration keeps the set bounded without a ``destroyed``
+        connection (whose ordering against shiboken's wrapper invalidation is
+        not something to rely on) and without a ``WeakSet`` (which would defeat
+        the deliberate strong ref). The set is mutated IN PLACE, never rebound:
+        callers bind ``GlobalShortcut._instances.discard`` ahead of time, and
+        rebinding would leave them discarding from an orphaned set.
+        """
+        for dead in [o for o in cls._instances if not cls._is_alive(o)]:
+            cls._instances.discard(dead)
+        cls._instances.add(instance)
+
     def dispose(self) -> None:
         """Disable, unregister, and schedule deletion of this shortcut.
 
@@ -233,6 +317,10 @@ class GlobalShortcut(QtCore.QObject):
         """
         GlobalShortcut._instances.discard(self)
         try:
+            # Never leave a filter behind: a hold interrupted by disposal
+            # would otherwise keep this object on the application filter list
+            # until its deferred deletion is actually processed.
+            self._remove_event_filter()
             self.setEnabled(False)
             if self._shortcut is not None:
                 self._shortcut.deleteLater()

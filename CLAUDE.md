@@ -18,6 +18,14 @@
 
 Hand-written docs are ledgered in [`docs/DOCMAP.md`](docs/DOCMAP.md) (status, module→doc coverage, backlog); workflow contract: [`docs/MAINTAINING.md`](docs/MAINTAINING.md). After any docs or public-API change: `python ../m3trik/scripts/check_docs.py --root .` must exit 0 (fix-or-ledger, like the parity sweep).
 
+## Test
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"; & python o:\Cloud\Code\_scripts\uitk\test\run_tests.py
+```
+
+**`offscreen` is not optional.** Without it the suite runs under the platform's NATIVE style and system palette (`windows11`, dark) and the pixel-rendering tests fail against a widget stack they were never written for -- `TestShortcutOverlay.test_the_card_stays_translucent_under_the_theme` draws a 344x202 card of pale cyan where offscreen/Fusion gives 380x336 of translucent dark. Same tree: 0 failures offscreen, 2 native. The runner warns when the variable is unset.
+
 ## Architecture
 
 - `uitk/widgets/` — reusable widgets. **Module filenames are frozen public API**: `.ui` files across the ecosystem reference them as custom-widget headers (`uitk.widgets.pushButton`) — never rename or move a widget module (the grandfathered exception to root's `my_class.py` naming rule; new modules elsewhere follow it).

@@ -3199,12 +3199,19 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     def remove_widget(self, widget):
         """Remove a widget from the layout.
 
-        If this results in an empty menu, event filters will be uninstalled
-        to free up resources.
+        The item filter :meth:`add` installed comes off with it: this hands
+        the widget's lifetime back to the caller, and a menu that goes on
+        filtering a widget it no longer owns both pins the menu alive through
+        the widget's filter list and keeps answering that widget's events.
+
+        If this results in an empty menu, the PARENT trigger hooks are
+        uninstalled too (:meth:`_uninstall_event_filters`, which covers only
+        those -- never the per-item filters).
         """
         self.logger.debug(
             f"Menu.remove_widget: Removing widget={widget.objectName() or type(widget).__name__}"
         )
+        self._remove_item_event_filter(widget)
         self.gridLayout.removeWidget(widget)
         if widget in self.widget_data:
             del self.widget_data[widget]
@@ -3216,10 +3223,29 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 "Menu.remove_widget: Menu now empty, event filters uninstalled"
             )
 
+    def _remove_item_event_filter(self, widget) -> None:
+        """Undo the ``installEventFilter`` :meth:`add` puts on every item.
+
+        The counterpart that was missing. Tolerates a widget whose C++ object
+        has already gone: the point is that the menu stops filtering it, and a
+        wrapper that raises has no filter list left to clean anyway.
+        """
+        try:
+            widget.removeEventFilter(self)
+        except (RuntimeError, AttributeError):
+            pass
+
     def clear(self) -> None:
         """Clear all items in the list.
 
-        This will also uninstall event filters since the menu becomes empty.
+        Each item gives up the filter :meth:`add` installed on it BEFORE it is
+        deleted. ``deleteLater`` only schedules the destruction, so an item
+        keeps receiving events until the loop drains it -- with the menu still
+        filtering them, through ``widget in items`` / ``objectName()`` /
+        :meth:`_resolve_hide_on_trigger` on an object being torn down.
+
+        :meth:`_uninstall_event_filters` below does NOT cover this: it removes
+        the PARENT/trigger hooks only, which is what its own name means.
         """
         if self.gridLayout is None:
             return
@@ -3243,6 +3269,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         for i in reversed(range(self.gridLayout.count())):
             widget = self.gridLayout.itemAt(i).widget()
             if widget:
+                self._remove_item_event_filter(widget)
                 self.gridLayout.removeWidget(widget)
                 widget.setParent(None)
                 widget.deleteLater()

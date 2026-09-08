@@ -453,7 +453,7 @@ class _DetailedTestResult(unittest.TextTestResult):
 
     def __init__(self, stream, descriptions, verbosity):
         super().__init__(stream, descriptions, verbosity)
-        self.successes = []
+        self.successes = []  # test NAMES -- see addSuccess
         self.modules_ran = set()  # imported, and its cases were run
         self.modules_executed = set()  # produced at least one non-skipped case
 
@@ -470,7 +470,14 @@ class _DetailedTestResult(unittest.TextTestResult):
 
     def addSuccess(self, test):
         super().addSuccess(test)
-        self.successes.append(test)
+        # The NAME, not the instance. unittest drops each case from the suite
+        # as it runs (``TestSuite._removeTestAtIndex``) precisely so a finished
+        # test -- and every widget it holds in an attribute -- can be collected;
+        # appending the instance here defeated that and pinned all ~4k of them,
+        # plus their widgets, for the whole run. Measured over 537 tests:
+        # 263 live QWidget wrappers pinned vs 39 unpinned. `_collect_results`
+        # only ever reads ``str(test)``, so this is behaviour-identical.
+        self.successes.append(str(test))
         self._note_module(test, True)
 
     def addError(self, test, err):
@@ -627,6 +634,26 @@ def _hard_exit(code: int) -> None:
 
 
 if __name__ == "__main__":
+    # The suite is written against the OFFSCREEN platform, whose default style
+    # is Fusion with a light palette. Run it on a native platform and the
+    # pixel-rendering tests are measuring a different widget stack: on Windows
+    # that is the `windows11` style under the system's dark palette, where the
+    # shortcut-overlay card comes out 344x202 of pale cyan instead of 380x336
+    # of translucent dark. Same tree, 0 failures offscreen and 2 native -- and
+    # nothing in the output says why, which is a whole debugging session.
+    #
+    # Warn rather than force it: a deliberate native run is a legitimate way to
+    # check how the widgets actually look, and silently overriding the caller's
+    # platform would make THAT impossible to ask for.
+    if not os.environ.get("QT_QPA_PLATFORM"):
+        print(
+            "[WARN] QT_QPA_PLATFORM is unset, so this runs on the NATIVE "
+            "platform style. The suite's rendering tests expect 'offscreen' "
+            "(Fusion + light palette) and will report failures that are not "
+            "in the code. Set QT_QPA_PLATFORM=offscreen for a clean run.",
+            flush=True,
+        )
+
     # Initialize QApplication global reference to prevent premature GC/teardown
     global_app = None
     try:

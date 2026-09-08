@@ -578,7 +578,7 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
   - `GlobalShortcut.setKey(self, key_sequence: Union[str, QtGui.QKeySequence])`
   - `GlobalShortcut.setContext(self, context: QtCore.Qt.ShortcutContext)` — Live-update the underlying QShortcut's context.
   - `GlobalShortcut.dispose(self) -> None` — Disable, unregister, and schedule deletion of this shortcut.
-- **[`class ShortcutManager`](uitk/uitk/managers/shortcut_manager.py#L245)** — Centralized shortcut management with clear separation of concerns
+- **[`class ShortcutManager`](uitk/uitk/managers/shortcut_manager.py#L333)** — Centralized shortcut management with clear separation of concerns
   - `ShortcutManager.context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str` *(static)* — Convert a Qt.ShortcutContext to its persistence string.
   - `ShortcutManager.scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext` *(static)* — Convert a persisted scope string to a Qt.ShortcutContext.
   - `ShortcutManager.host_namespace_suffix(context_tags) -> str` *(static)* — Settings-key suffix namespacing persisted state by host context.
