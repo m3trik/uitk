@@ -7069,7 +7069,19 @@ class TestShortcutOverlay(BaseTestCase):
             for x in range(0, image.width(), 2)
             if image.pixelColor(x, y).green() > image.pixelColor(x, y).red() + 40
         ]
-        self.assertEqual(greens, [], "the theme's label background covers the card")
+        self.assertEqual(
+            greens,
+            [],
+            # A bare list of coordinates says nothing about WHY: name the card's
+            # size, the label's own opt-out and the colours at the first few
+            # offending points, so a failure is diagnosable from the log alone
+            # rather than only under a debugger.
+            "the theme's label background covers the card -- "
+            f"card={overlay.width()}x{overlay.height()} "
+            f"label_qss={overlay._label.styleSheet()!r} "
+            f"middle={middle.getRgb()[:3]} "
+            f"at={[(x, y, image.pixelColor(x, y).getRgb()[:3]) for x, y in greens[:6]]}",
+        )
 
     def test_a_manager_without_gestures_still_renders(self):
         from qtpy import QtWidgets

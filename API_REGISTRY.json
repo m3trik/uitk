@@ -2842,7 +2842,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "Monitor global events for the specific key release.",
-              "line": 146,
+              "line": 189,
               "deprecated": false
             },
             {
@@ -2851,7 +2851,7 @@
               "kind": "method",
               "signature": "(self, enabled: bool)",
               "summary": "",
-              "line": 187,
+              "line": 232,
               "deprecated": false
             },
             {
@@ -2860,7 +2860,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Whether the underlying QShortcut is armed (mirror of ``setEnabled``).",
-              "line": 193,
+              "line": 238,
               "deprecated": false
             },
             {
@@ -2869,7 +2869,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence])",
               "summary": "",
-              "line": 197,
+              "line": 242,
               "deprecated": false
             },
             {
@@ -2878,7 +2878,7 @@
               "kind": "method",
               "signature": "(self, context: QtCore.Qt.ShortcutContext)",
               "summary": "Live-update the underlying QShortcut's context.",
-              "line": 206,
+              "line": 251,
               "deprecated": false
             },
             {
@@ -2887,7 +2887,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Disable, unregister, and schedule deletion of this shortcut.",
-              "line": 214,
+              "line": 298,
               "deprecated": false
             }
           ]
@@ -2895,7 +2895,7 @@
         {
           "name": "ShortcutManager",
           "summary": "Centralized shortcut management with clear separation of concerns",
-          "line": 245,
+          "line": 333,
           "bases": [],
           "members": [
             {
@@ -2904,7 +2904,7 @@
               "kind": "staticmethod",
               "signature": "(context: QtCore.Qt.ShortcutContext) -> str",
               "summary": "Convert a Qt.ShortcutContext to its persistence string.",
-              "line": 249,
+              "line": 337,
               "deprecated": false
             },
             {
@@ -2913,7 +2913,7 @@
               "kind": "staticmethod",
               "signature": "(name: str) -> QtCore.Qt.ShortcutContext",
               "summary": "Convert a persisted scope string to a Qt.ShortcutContext.",
-              "line": 254,
+              "line": 342,
               "deprecated": false
             },
             {
@@ -2922,7 +2922,7 @@
               "kind": "staticmethod",
               "signature": "(context_tags) -> str",
               "summary": "Settings-key suffix namespacing persisted state by host context.",
-              "line": 259,
+              "line": 347,
               "deprecated": false
             },
             {
@@ -2931,7 +2931,7 @@
               "kind": "staticmethod",
               "signature": "(widget: Optional[QtWidgets.QWidget]) -> Optional[QtWidgets.QWidget]",
               "summary": "Return an always-visible top-level window to own an application shortcut.",
-              "line": 276,
+              "line": 364,
               "deprecated": false
             },
             {
@@ -2940,7 +2940,7 @@
               "kind": "staticmethod",
               "signature": "(app=None) -> Dict[str, int]",
               "summary": "Return ``{sequence: count}`` for key sequences bound by more than one",
-              "line": 323,
+              "line": 411,
               "deprecated": false
             },
             {
@@ -2949,7 +2949,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut, hidden: bool = False) -> QtWidgets.QShortcut",
               "summary": "Add a keyboard shortcut with optional description and context",
-              "line": 375,
+              "line": 463,
               "deprecated": false
             },
             {
@@ -2958,7 +2958,7 @@
               "kind": "method",
               "signature": "(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]",
               "summary": "Add multiple shortcuts from a configuration list",
-              "line": 427,
+              "line": 515,
               "deprecated": false
             },
             {
@@ -2967,7 +2967,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut",
               "summary": "Add a global shortcut (robust press/release detection).",
-              "line": 458,
+              "line": 546,
               "deprecated": false
             },
             {
@@ -2976,7 +2976,7 @@
               "kind": "method",
               "signature": "(self, key_label: str, description: str) -> None",
               "summary": "Register a display-only entry (e.g.",
-              "line": 497,
+              "line": 585,
               "deprecated": false
             },
             {
@@ -2985,7 +2985,7 @@
               "kind": "method",
               "signature": "(self, group: str, keys: str, description: str) -> None",
               "summary": "Register a display-only mouse gesture under *group*.",
-              "line": 516,
+              "line": 604,
               "deprecated": false
             },
             {
@@ -2994,7 +2994,7 @@
               "kind": "method",
               "signature": "(self, host: QtWidgets.QWidget, anchor: str = 'bottom-right', max_keys: int = 4)",
               "summary": "A :class:`~uitk.widgets.shortcut_overlay.ShortcutOverlay` for this",
-              "line": 528,
+              "line": 616,
               "deprecated": false
             },
             {
@@ -3003,7 +3003,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
               "summary": "Remove a specific shortcut",
-              "line": 541,
+              "line": 629,
               "deprecated": false
             },
             {
@@ -3012,7 +3012,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove all shortcuts",
-              "line": 580,
+              "line": 668,
               "deprecated": false
             },
             {
@@ -3021,7 +3021,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable) -> None",
               "summary": "Register a callback invoked after any shortcut is rebound.",
-              "line": 588,
+              "line": 676,
               "deprecated": false
             },
             {
@@ -3030,7 +3030,7 @@
               "kind": "method",
               "signature": "(self, old_key: str, new_key: str) -> bool",
               "summary": "Change the key sequence for an existing shortcut.",
-              "line": 598,
+              "line": 686,
               "deprecated": false
             },
             {
@@ -3039,7 +3039,7 @@
               "kind": "method",
               "signature": "(self, parent=None, title: str = 'Shortcuts') -> None",
               "summary": "Open the unified shortcut editor for this manager's bindings.",
-              "line": 623,
+              "line": 711,
               "deprecated": false
             },
             {
@@ -3048,7 +3048,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, str]",
               "summary": "Get information about all registered shortcuts",
-              "line": 649,
+              "line": 737,
               "deprecated": false
             },
             {
@@ -3057,7 +3057,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
               "summary": "Check if a shortcut is registered",
-              "line": 657,
+              "line": 745,
               "deprecated": false
             },
             {
@@ -3066,7 +3066,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> Optional[QtWidgets.QShortcut]",
               "summary": "Get a specific shortcut object",
-              "line": 672,
+              "line": 760,
               "deprecated": false
             },
             {
@@ -3075,7 +3075,7 @@
               "kind": "method",
               "signature": "(self) -> List[Dict]",
               "summary": "Registry entries for this manager's shortcuts, in the shared editor",
-              "line": 694,
+              "line": 782,
               "deprecated": false
             }
           ]
@@ -3602,7 +3602,7 @@
               "kind": "method",
               "signature": "(self, base_name: str) -> List[str]",
               "summary": "Generate potential slot class names from a base name.",
-              "line": 36,
+              "line": 39,
               "deprecated": false
             },
             {
@@ -3611,7 +3611,7 @@
               "kind": "method",
               "signature": "(self, base_name: str) -> List[str]",
               "summary": "Generate potential slot file names from a base name.",
-              "line": 49,
+              "line": 52,
               "deprecated": false
             },
             {
@@ -3620,7 +3620,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> str",
               "summary": "",
-              "line": 72,
+              "line": 75,
               "deprecated": false
             },
             {
@@ -3629,7 +3629,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> set[str]",
               "summary": "Extract tags from a UI name string.",
-              "line": 82,
+              "line": 85,
               "deprecated": false
             },
             {
@@ -3638,7 +3638,7 @@
               "kind": "method",
               "signature": "(self, ui, tags=None) -> bool",
               "summary": "Check if any of the given tag(s) are present in the UI's tags set.",
-              "line": 94,
+              "line": 97,
               "deprecated": false
             },
             {
@@ -3647,7 +3647,7 @@
               "kind": "method",
               "signature": "(self, target: Union[str, QtWidgets.QWidget], add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]",
               "summary": "Edit tags on a widget or a tag string.",
-              "line": 119,
+              "line": 122,
               "deprecated": false
             },
             {
@@ -3656,7 +3656,7 @@
               "kind": "method",
               "signature": "(self, tag_string: str, keep_tags: list[str] = None, remove_tags: list[str] = None) -> str",
               "summary": "Filter tags from a tag string - either keep only specified tags or remove specified tags.",
-              "line": 176,
+              "line": 179,
               "deprecated": false
             },
             {
@@ -3665,7 +3665,7 @@
               "kind": "method",
               "signature": "(self, tag_string: str, known_tags: list[str]) -> list[str]",
               "summary": "Get tags that are not in the known_tags list.",
-              "line": 213,
+              "line": 216,
               "deprecated": false
             }
           ]
@@ -9602,7 +9602,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear all items in the list.",
-              "line": 3219,
+              "line": 3238,
               "deprecated": false
             },
             {
@@ -9611,7 +9611,7 @@
               "kind": "method",
               "signature": "(self, x: Union[str, QtWidgets.QWidget, type, dict, list, tuple, set, zip, map], data: Any = None, row: Optional[int] = None, col: int = 0, rowSpan: int = 1, colSpan: Optional[int] = None, **kwargs) -> Union[QtWidgets.QWidget, list]",
               "summary": "Add an item or multiple items to the list.",
-              "line": 3257,
+              "line": 3284,
               "deprecated": false
             },
             {
@@ -9620,7 +9620,7 @@
               "kind": "method",
               "signature": "(self, items: list, title: Optional[str] = None, spacing: int = 4, stretch: bool = True, justify: Optional[str] = None, **shared_kwargs) -> list",
               "summary": "Add a single horizontal row of widgets, optionally under a titled separator.",
-              "line": 3510,
+              "line": 3537,
               "deprecated": false
             },
             {
@@ -9629,7 +9629,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the recommended size for the widget.",
-              "line": 3692,
+              "line": 3719,
               "deprecated": false
             },
             {
@@ -9638,7 +9638,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle show event with positioning (optimized for performance).",
-              "line": 3731,
+              "line": 3758,
               "deprecated": false
             },
             {
@@ -9647,7 +9647,7 @@
               "kind": "method",
               "signature": "(self, force: bool = False) -> bool",
               "summary": "Hide the menu, respecting the pinned state.",
-              "line": 3859,
+              "line": 3886,
               "deprecated": false
             },
             {
@@ -9656,7 +9656,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle hide event.",
-              "line": 3880,
+              "line": 3907,
               "deprecated": false
             },
             {
@@ -9665,7 +9665,7 @@
               "kind": "method",
               "signature": "(self, widget, event)",
               "summary": "Handle events for the menu and its children.",
-              "line": 4006,
+              "line": 4033,
               "deprecated": false
             },
             {
@@ -9674,7 +9674,7 @@
               "kind": "method",
               "signature": "(self, widget: Optional[QtWidgets.QWidget] = None, *, button: QtCore.Qt.MouseButton = QtCore.Qt.LeftButton) -> None",
               "summary": "Toggle visibility using the same rules as the parent click event.",
-              "line": 4056,
+              "line": 4083,
               "deprecated": false
             }
           ]

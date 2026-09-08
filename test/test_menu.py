@@ -969,6 +969,64 @@ class TestMenuClear(QtBaseTestCase):
         self.assertEqual(menu.widget_data, {})
 
 
+class TestMenuItemFilterLifetime(QtBaseTestCase):
+    """The menu must stop filtering an item it deleted or handed back.
+
+    `Menu.add` installs the menu as an event filter on every item and nothing
+    took it off again. `_uninstall_event_filters()` -- which both `clear()`
+    and `remove_widget()` cited for this -- only drops the PARENT/trigger
+    hooks, so a cleared menu went on filtering items it had just
+    `deleteLater()`'d, and `remove_widget` left the menu answering events for
+    a widget whose lifetime it had given back to the caller.
+
+    Detection is by SUBCLASS, deliberately: PySide binds virtual overrides
+    when the C++ object is constructed, so patching `Menu.eventFilter` after
+    the menu exists is never called and every assertion below would pass
+    vacuously. The first test is the control that proves that.
+    """
+
+    class _SpyMenu(Menu):
+        def __init__(self, *args, **kwargs):
+            self.seen = []
+            super().__init__(*args, **kwargs)
+
+        def eventFilter(self, obj, event):
+            self.seen.append(obj)
+            return super().eventFilter(obj, event)
+
+    def _is_filtered(self, menu, widget) -> bool:
+        """Does an event delivered to *widget* reach *menu*'s filter?"""
+        menu.seen.clear()
+        QtWidgets.QApplication.sendEvent(widget, QtCore.QEvent(QtCore.QEvent.Type.User))
+        return any(o is widget for o in menu.seen)
+
+    def test_an_owned_item_is_filtered(self):
+        """Control: without this the other two could pass for the wrong reason."""
+        menu = self.track_widget(self._SpyMenu())
+        item = menu.add("QLabel", setText="Item")
+        self.assertTrue(self._is_filtered(menu, item))
+
+    def test_clear_stops_filtering_the_items_it_deletes(self):
+        """`deleteLater` only schedules the destruction.
+
+        The item keeps receiving events until the loop drains it, and the
+        menu was still filtering them -- reaching into `widget in items`,
+        `objectName()` and `_resolve_hide_on_trigger` on an object being
+        torn down.
+        """
+        menu = self.track_widget(self._SpyMenu())
+        item = menu.add("QLabel", setText="Item")
+        menu.clear()
+        self.assertFalse(self._is_filtered(menu, item))
+
+    def test_remove_widget_stops_filtering_the_item_it_gives_up(self):
+        menu = self.track_widget(self._SpyMenu())
+        item = menu.add("QLabel", setText="Item")
+        menu.remove_widget(item)
+        self.assertFalse(self._is_filtered(menu, item))
+        item.setParent(None)
+
+
 class TestMenuRemoveWidget(QtBaseTestCase):
     """Tests for Menu remove_widget method."""
 
