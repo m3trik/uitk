@@ -539,14 +539,26 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             return parent
         return widget
 
-    def _row_widgets(self):
-        """This list's own rows in layout order, wrapped rows unwrapped."""
-        rows = []
+    def _layout_slots(self):
+        """The widgets this list actually seats, in layout order -- NO unwrap.
+
+        An option-box wrap stands a container in for the row, and it is the
+        CONTAINER the list seats and drives. The distinction is not cosmetic:
+        the list consumes the mouse release of anything it considers its own
+        item so it can run the interaction itself, and a wrapped row is not
+        its own item -- the row keeps its button behaviour, and consuming its
+        release is exactly what stops ``clicked`` from ever firing.
+        """
+        slots = []
         for i in range(self._layout.count()):
             w = self._layout.itemAt(i).widget()
             if w is not None:
-                rows.append(self._unwrap_item(w))
-        return rows
+                slots.append(w)
+        return slots
+
+    def _row_widgets(self):
+        """This list's own rows in layout order, wrapped rows unwrapped."""
+        return [self._unwrap_item(w) for w in self._layout_slots()]
 
     @property
     def contains_items(self) -> bool:
@@ -569,8 +581,14 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             list: A list of all QWidget items in the list and its sublists.
         """
+        # Iterate a SNAPSHOT of this level. `item.sublist.get_items()` is
+        # already the whole subtree, so walking the list as it grows re-walked
+        # every descendant once per ancestor: a 4-deep nest returned 9 entries
+        # for 4 widgets, the deepest one five times. Membership tests and the
+        # one `seen`-guarded caller hid it, but any caller that acted per item
+        # would have acted repeatedly.
         items = self._row_widgets()
-        for item in items:
+        for item in list(items):
             if hasattr(item, "sublist"):
                 items.extend(item.sublist.get_items())
         return items
@@ -1878,8 +1896,17 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                     self._schedule_sublist_hide(self.parent_item)
 
         elif event_type == QtCore.QEvent.MouseButtonRelease:
-            # Check if widget is a child of this ExpandableList
-            if widget in self.get_items():
+            # _layout_slots(), NOT get_items(): get_items() reports the row
+            # inside an option-box wrap (what a caller added, and what carries
+            # a value), but the list drives the CONTAINER. Testing membership
+            # with get_items() consumed the wrapped row's release too, so its
+            # `clicked` never fired -- every option-box row in a panel went
+            # click-dead. Own level only, and deliberately not recursive: an
+            # item is filtered by the list that OWNS it (installEventFilter in
+            # _finalize_widget_setup), so `widget` is always one of this
+            # layout's own slots -- measured, a child item's release reaches
+            # only its own list's filter.
+            if widget in self._layout_slots():
                 # We consume the release so the item's own release handling
                 # never runs (the list drives interaction via on_item_interacted).
                 # A QAbstractButton item received the press — which sank it and

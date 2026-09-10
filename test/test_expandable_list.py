@@ -1566,6 +1566,24 @@ class TestContainsItems(QtBaseTestCase):
         self.lst.clear()
         self.assertFalse(self.lst.contains_items)
 
+    def test_a_deep_nest_reports_each_widget_once(self):
+        """`get_items()` walked a snapshot, not the list it was growing.
+
+        Each `sublist.get_items()` already returns the whole subtree, so
+        iterating the list as it grew re-walked every descendant once per
+        ancestor: this 4-deep nest returned 9 entries for 4 widgets, the
+        deepest one five times. Membership tests and the one `seen`-guarded
+        caller hid it; a caller that ACTED per item would have acted repeatedly.
+        """
+        a = self.lst.add("A")
+        b = a.sublist.add("B")
+        c = b.sublist.add("C")
+        c.sublist.add("D")
+
+        items = self.lst.get_items()
+        self.assertEqual([w.text() for w in items], ["A", "B", "C", "D"])
+        self.assertEqual(len(items), len(set(items)), "no widget reported twice")
+
 
 class TestWrappedItems(QtBaseTestCase):
     """An option-box wrap stands a container in for an item in the layout;
@@ -1592,6 +1610,39 @@ class TestWrappedItems(QtBaseTestCase):
         self.assertIsNot(container, btn)
         self.assertIn(btn, self.lst.get_items())
         self.assertNotIn(container, self.lst.get_items())
+
+    def test_the_list_drives_the_container_not_the_wrapped_row(self):
+        """`get_items()` reports the row; `_layout_slots()` reports the slot.
+
+        The two must disagree here, and the release filter must ask the
+        SECOND one. It asked `get_items()` once (uitk 1.3.102) and the answer
+        flipped to include the row, so the list consumed the row's release.
+        """
+        btn, container = self._wrapped_button()
+        self.assertIn(container, self.lst._layout_slots())
+        self.assertNotIn(btn, self.lst._layout_slots())
+
+    def test_a_wrapped_row_still_emits_clicked(self):
+        """The regression that reached PyPI as 1.3.102 and broke tentacle.
+
+        The list consumes the release of anything it drives so it can run the
+        interaction itself. A wrapped row is NOT driven -- it keeps its own
+        button behaviour -- so consuming its release silently killed every
+        option-box row in every panel. Asserted by CLICKING, because the
+        membership detail this rides on is exactly what changed underneath.
+        """
+        from qtpy.QtTest import QTest
+
+        btn, _container = self._wrapped_button()
+        fired = []
+        btn.clicked.connect(lambda *_: fired.append(True))
+        self.window.show()
+        QtWidgets.QApplication.processEvents()
+
+        QTest.mouseClick(btn, QtCore.Qt.LeftButton, pos=btn.rect().center())
+        QtWidgets.QApplication.processEvents()
+
+        self.assertTrue(fired, "a wrapped row's clicked must still fire")
 
     def test_clear_takes_the_wrapped_row_and_its_sublist_down(self):
         btn, _container = self._wrapped_button()
