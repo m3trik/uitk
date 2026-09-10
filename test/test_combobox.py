@@ -9,6 +9,8 @@ from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
 app = setup_qt_application()
 
+from qtpy import QtWidgets, QtCore  # noqa: E402
+
 
 class SetEditableNoneSafety(QtBaseTestCase):
     """``setEditable(False)`` on a non-editable combo must not AttributeError.
@@ -1196,6 +1198,181 @@ class PrefixOnlyFormatsWhatTheCallerOmitted(QtBaseTestCase):
         self.assertEqual(
             [combo.itemData(i) for i in range(combo.count())], [None, None]
         )
+
+
+class CellRows(QtBaseTestCase):
+    """A row made of cells: joined display text, per-cell values, an inline
+    editor with one field per cell that reports only what changed."""
+
+    SPEC = [
+        {"key": "name", "label": "Name"},
+        {"key": "start", "label": "Start", "kind": "int", "format": "{:.0f}"},
+        {"key": "end", "label": "End", "kind": "int", "format": "{:.0f}"},
+        {"key": "description", "label": "Description"},
+    ]
+    FORMAT = "{name}  [{start:.0f}-{end:.0f}]  {description}"
+
+    def _combo(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.set_cells(self.SPEC, cell_format=self.FORMAT)
+        combo.add_cells({"name": "Shot A", "start": 10, "end": 50}, data=7)
+        combo.add_cells(
+            {"name": "Shot B", "start": 60, "end": 120, "description": "wide"}, 8
+        )
+        return combo
+
+    def test_display_text_comes_from_the_row_format(self):
+        combo = self._combo()
+        self.assertEqual(combo.itemText(0), "Shot A  [10-50]")
+        self.assertEqual(combo.itemText(1), "Shot B  [60-120]  wide")
+        self.assertEqual(combo.itemData(1), 8, "UserRole data untouched")
+        self.assertEqual(combo.item_cells(0)["start"], 10)
+        self.assertIsNone(combo.item_cells(5))
+
+    def test_the_editor_lines_its_cells_up_with_the_painted_columns(self):
+        """Every text cell sharing the surplus blew the FIRST one up to half
+        the combo: a two-character name in a field wide enough for a sentence,
+        with the next cell a combo-width away from it."""
+        combo = self._combo()
+        combo.resize(600, 24)
+        combo.begin_cell_edit(0)
+        QtWait.pump()
+        editor = combo._cell_editor
+        self.assertIsNotNone(editor, "double-click opens the cell editor")
+        try:
+            name = editor._fields["name"]
+            desc = editor._fields["description"]
+            self.assertLess(
+                name.maximumWidth(),
+                combo.width() // 3,
+                "the name column is capped at its content, not the surplus",
+            )
+            self.assertLessEqual(name.width(), name.maximumWidth())
+            self.assertGreater(
+                desc.width(),
+                name.width(),
+                "the last cell is the one that absorbs what is left over",
+            )
+        finally:
+            combo._end_cell_edit()
+
+    def test_an_explicit_stretch_still_wins(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.set_cells(
+            [{"key": "a", "label": "A", "stretch": 3}, {"key": "b", "label": "B"}]
+        )
+        combo.add_cells({"a": "x", "b": "y"})
+        combo.resize(400, 24)
+        combo.begin_cell_edit(0)
+        QtWait.pump()
+        editor = combo._cell_editor
+        try:
+            field = editor._fields["a"]
+            self.assertEqual(field.maximumWidth(), 16777215, "left uncapped")
+        finally:
+            combo._end_cell_edit()
+
+    def test_default_join_without_a_format(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.set_cells(["a", {"key": "n", "kind": "int", "format": "{:03d}"}])
+        combo.add_cells({"a": "x", "n": 5})
+        self.assertEqual(combo.itemText(0), "x  005")
+
+    def test_set_item_cells_merges_and_refreshes_the_text(self):
+        combo = self._combo()
+        combo.set_item_cells(0, {"end": 55})
+        self.assertEqual(combo.item_cells(0)["end"], 55)
+        self.assertEqual(combo.item_cells(0)["name"], "Shot A")
+        self.assertEqual(combo.itemText(0), "Shot A  [10-55]")
+
+    def test_the_editor_has_a_field_per_cell(self):
+        combo = self._combo()
+        combo.show()
+        combo.setCurrentIndex(1)
+        combo._begin_cell_edit()
+        self.assertTrue(combo.cell_editing)
+        fields = combo._cell_editor._fields
+        self.assertIsInstance(fields["name"], QtWidgets.QLineEdit)
+        self.assertIsInstance(fields["start"], QtWidgets.QSpinBox)
+        self.assertEqual(fields["start"].value(), 60)
+        self.assertEqual(fields["description"].text(), "wide")
+        combo._end_cell_edit()
+        self.assertFalse(combo.cell_editing)
+
+    def test_commit_reports_only_the_changed_cells(self):
+        combo = self._combo()
+        combo.show()
+        combo.setCurrentIndex(0)
+        got = []
+        combo.on_cells_edited.connect(lambda i, cells: got.append((i, cells)))
+        combo._begin_cell_edit()
+        editor = combo._cell_editor
+        editor._fields["end"].setValue(70)
+        editor._fields["name"].setText("Shot A")  # unchanged
+        editor.committed.emit(editor.values())
+        self.assertEqual(got, [(0, {"end": 70})])
+        self.assertEqual(combo.itemText(0), "Shot A  [10-70]")
+        self.assertFalse(combo.cell_editing)
+
+    def test_an_unchanged_commit_is_silent(self):
+        combo = self._combo()
+        combo.show()
+        got = []
+        combo.on_cells_edited.connect(lambda i, cells: got.append(cells))
+        combo._begin_cell_edit()
+        editor = combo._cell_editor
+        editor.committed.emit(editor.values())
+        self.assertEqual(got, [])
+
+    def test_escape_cancels(self):
+        from qtpy import QtGui
+
+        combo = self._combo()
+        combo.show()
+        combo._begin_cell_edit()
+        editor = combo._cell_editor
+        editor._fields["end"].setValue(99)
+        QtWidgets.QApplication.sendEvent(
+            editor._fields["end"],
+            QtGui.QKeyEvent(
+                QtCore.QEvent.KeyPress, QtCore.Qt.Key_Escape, QtCore.Qt.NoModifier
+            ),
+        )
+        self.assertFalse(combo.cell_editing)
+        self.assertEqual(combo.item_cells(0)["end"], 50, "nothing committed")
+
+    def test_begin_rename_routes_cell_rows_to_the_cell_editor(self):
+        combo = self._combo()
+        combo.show()
+        combo.begin_rename()
+        QtWait.until(lambda: combo.cell_editing, "cell editor never opened")
+        self.assertFalse(combo.isEditable(), "not the single-line rename")
+        combo._end_cell_edit()
+
+    def test_columns_are_measured_per_cell(self):
+        combo = self._combo()
+        columns = combo._measure_cell_columns()
+        self.assertEqual(
+            [spec["key"] for spec, _w in columns],
+            ["name", "start", "end", "description"],
+        )
+        fm = combo.view().fontMetrics()
+        self.assertEqual(columns[0][1], fm.horizontalAdvance("Shot A"))
+        self.assertEqual(columns[3][1], fm.horizontalAdvance("Description"))
+
+    def test_a_plain_combo_has_no_cells(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("plain")
+        self.assertIsNone(combo.item_cells(0))
+        self.assertEqual(combo._measure_cell_columns(), [])
 
 
 if __name__ == "__main__":

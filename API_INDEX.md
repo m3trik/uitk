@@ -204,7 +204,13 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class AlignedComboBox(QtWidgets.QComboBox)`
   - methods: setHeaderText, setHeaderAlignment, get_stylesheet_property, format_current_display_text, paintEvent
 - `class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`
-  - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, setCurrentTextPrefix, setCurrentTextSuffix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, mousePressEvent, mouseDoubleClickEvent, begin_rename, focusOutEvent, editable, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
+  - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, setCurrentTextPrefix, setCurrentTextSuffix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, mousePressEvent, mouseDoubleClickEvent, begin_rename, set_cells, cell_spec, format_cell, cell_text, add_cells, item_cells, set_item_cells, begin_cell_edit, cell_editing, resizeEvent, focusOutEvent, editable, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
+
+### `widgets/context_menu.py` — A popup context menu whose rows can expand into sub-rows.
+- `class MenuRow(QtWidgets.QPushButton, OptionBoxMixin)`
+  - methods: has_flyout, add_option_menu, option_menu, resizeEvent, sizeHint, paintEvent
+- `class ContextMenu(Menu)`
+  - methods: list, add, add_separator, add_entries, keyPressEvent, popup, exec_, dispose
 
 ### `widgets/delegates/centered_icon.py` — Centered icon painting for item-view cells.
 - `class CenteredIconActionDelegate(RowSelectionBorderDelegate)`
@@ -271,7 +277,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/expandableList.py`
 - `class ExpandableList(QtWidgets.QWidget, AttributesMixin)`
-  - methods: getExpandPosition, setExpandPosition, setMinItemHeight, setMaxItemHeight, setFixedItemHeight, setSublistXOffset, setSublistYOffset, setOpenDelay, apply_preset, get_items, get_item_text, get_parent_item_text, get_item_data, get_parent_item_data, set_item_data, clear, add, hide, showEvent, hideEvent, get_padding, sizeHint, eventFilter, leaveEvent
+  - methods: getExpandPosition, setExpandPosition, setMinItemHeight, setMaxItemHeight, setFixedItemHeight, setSublistXOffset, setSublistYOffset, setOpenDelay, apply_preset, contains_items, get_items, get_item_text, get_parent_item_text, get_item_data, get_parent_item_data, set_item_data, clear, add, hide, showEvent, hideEvent, get_padding, sizeHint, eventFilter, leaveEvent
 
 ### `widgets/footer.py`
 - `class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin)`
@@ -587,7 +593,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class TimelineScene(QtWidgets.QGraphicsScene)`
   - methods: ruler, playhead
 - `class TimelineView(QtWidgets.QGraphicsView)`
-  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, mousePressEvent, mouseMoveEvent, leaveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, add_default_context_actions, content_time_bounds, drawBackground
+  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, mousePressEvent, mouseMoveEvent, leaveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, default_context_entries, add_default_context_actions, content_time_bounds, drawBackground
 
 ### `widgets/sequencer/_transport_controls.py` — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - `class PlayController(Protocol)`

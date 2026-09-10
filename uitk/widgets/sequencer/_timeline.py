@@ -811,7 +811,8 @@ class TimelineView(QtWidgets.QGraphicsView):
             if isinstance(item, (ClipItem, KeyframeItem, TangentHandleItem)):
                 group = "Clips & keys"
             elif isinstance(item, _GapOverlayItem):
-                group = "Gaps"
+                # A head/tail cap is the first/last shot's own bound.
+                group = "Shot bounds" if (item._tail or item._head) else "Gaps"
             elif isinstance(item, RangeHighlightItem) and item._hit_zone(
                 item.mapFromScene(self.mapToScene(viewport_pos))
             ) in ("left", "right"):
@@ -951,14 +952,17 @@ class TimelineView(QtWidgets.QGraphicsView):
         # whatever the height — a shot owns its whole timeline COLUMN, not
         # just the band drawn in the lane, so "right-click the shot" has to
         # mean the same thing over the tracks as over the band.  Consumers
-        # present a shot-specific menu there and fold the timeline's own
-        # actions into it (see :meth:`add_default_context_actions`).
+        # present a shot-specific menu there.
         # Hit-test with the UNSNAPPED click time: `t` was snapped above,
         # which near a block edge can land the test on the wrong side of the
         # boundary.  (Press/double-click keep plain "ruler" semantics: scrub
         # and add-marker.)
+        # The RULER is exempt from that refinement: it IS the timeline, and
+        # the timeline's own menu has to be reachable somewhere better than
+        # "wherever no shot happens to be" -- which is what it came to when
+        # consumers folded those actions into the shot menu instead.
         raw_t = self.x_to_time(scene_pos.x())
-        if self._scene.ruler.shot_block_at(raw_t) is not None:
+        if zone == "tracks" and self._scene.ruler.shot_block_at(raw_t) is not None:
             zone = "shot_lane"
 
         if sq.zone_menu_enabled:
@@ -968,59 +972,95 @@ class TimelineView(QtWidgets.QGraphicsView):
 
         self._show_default_context_menu(sq, t, event.globalPos())
 
+    def default_context_entries(self, t: float) -> list:
+        """The timeline's own context-menu entries at time *t*, as data.
+
+        ``[{"label", "callback", "checkable", "checked"}, ...]`` in menu
+        order, ``None`` standing for a separator.  A checkable entry's
+        callback takes the new checked state; a plain one takes nothing.
+        The ONE description of what the widget offers on a right-click, so
+        a consumer building its own menu (a shot menu, in whatever menu
+        widget it builds with) folds these in rather than leaving the user
+        to hunt for a second menu, and
+        :meth:`add_default_context_actions` renders the same list into a
+        QMenu.
+        """
+        sq = self.parent_sequencer
+
+        def _add_marker():
+            note, ok = QtWidgets.QInputDialog.getText(
+                sq,
+                "Marker Note",
+                "Note:",
+                QtWidgets.QLineEdit.Normal,
+                "",
+            )
+            if ok:
+                mid = sq.add_marker(t, note=note)
+                sq.marker_added.emit(mid, t)
+
+        entries = [
+            {
+                "label": f"Add Marker at {int(t)}\u2026",
+                "callback": _add_marker,
+                "checkable": False,
+                "checked": False,
+            },
+            None,
+        ]
+        for key, label in (
+            ("range_overlays", "Show Shot Ranges"),
+            ("range_highlight", "Show Active Range"),
+            ("gap_overlays", "Show Gap Overlays"),
+        ):
+            entries.append(
+                {
+                    "label": label,
+                    "callback": lambda checked, k=key: setattr(
+                        sq, f"show_{k}", bool(checked)
+                    ),
+                    "checkable": True,
+                    "checked": bool(getattr(sq, f"show_{key}")),
+                }
+            )
+        return entries
+
     def add_default_context_actions(self, menu, t: float):
-        """Append the timeline's own actions to *menu*; return their handler.
+        """Append the timeline's own actions to a QMenu; return their handler.
 
-        The marker and display-toggle entries the widget owns.  Split out of
-        :meth:`_show_default_context_menu` so a consumer building a richer
-        menu -- a shot menu, say -- can FOLD these into it rather than
-        leaving the user to hunt for a second menu somewhere else to reach
-        them.
-
-        Returns a callable: pass it whatever ``menu.exec_`` returned; it
-        performs the action and answers whether it owned it, so the consumer
-        can fall through to its own entries::
+        Renders :meth:`default_context_entries` into *menu* (the marker and
+        display-toggle entries the widget owns).  Returns a callable: pass
+        it whatever ``menu.exec_`` returned; it performs the action and
+        answers whether it owned it, so the consumer can fall through to
+        its own entries::
 
             handled = widget._timeline.add_default_context_actions(menu, t)
             chosen = menu.exec_(pos)
             if handled(chosen):
                 return
         """
-        sq = self.parent_sequencer
         if not menu.isEmpty():
             menu.addSeparator()
-        add_action = menu.addAction(f"Add Marker at {int(t)}\u2026")
-        menu.addSeparator()
-
-        toggles = {}
-        for key, label, current in (
-            ("range_overlays", "Show Shot Ranges", sq.show_range_overlays),
-            ("range_highlight", "Show Active Range", sq.show_range_highlight),
-            ("gap_overlays", "Show Gap Overlays", sq.show_gap_overlays),
-        ):
-            act = menu.addAction(label)
-            act.setCheckable(True)
-            act.setChecked(current)
-            toggles[key] = act
+        actions = []
+        for entry in self.default_context_entries(t):
+            if entry is None:
+                menu.addSeparator()
+                continue
+            act = menu.addAction(entry["label"])
+            if entry["checkable"]:
+                act.setCheckable(True)
+                act.setChecked(entry["checked"])
+            actions.append((act, entry))
 
         def _handle(chosen) -> bool:
             if chosen is None:
                 return False
-            if chosen is add_action:
-                note, ok = QtWidgets.QInputDialog.getText(
-                    sq,
-                    "Marker Note",
-                    "Note:",
-                    QtWidgets.QLineEdit.Normal,
-                    "",
-                )
-                if ok:
-                    mid = sq.add_marker(t, note=note)
-                    sq.marker_added.emit(mid, t)
-                return True
-            for key, act in toggles.items():
+            for act, entry in actions:
                 if chosen is act:
-                    setattr(sq, f"show_{key}", act.isChecked())
+                    if entry["checkable"]:
+                        entry["callback"](act.isChecked())
+                    else:
+                        entry["callback"]()
                     return True
             return False
 

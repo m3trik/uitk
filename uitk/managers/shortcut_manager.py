@@ -460,6 +460,23 @@ class ShortcutManager:
         self.gestures: Dict[str, List[Tuple[str, str]]] = {}
         self._change_callbacks: List[Callable] = []
 
+    def _replacement_slot(self, default_key: str) -> str:
+        """The registry key an add for *default_key* should write to.
+
+        Normally *default_key* itself.  But ``rebind_shortcut`` re-keys an
+        entry under the user's NEW sequence while keeping ``default_key`` on
+        it, so a host that re-binds by the DEFAULT on re-init -- which is how
+        a panel points its keys at a new controller -- would find nothing
+        there and ADD a second binding: the remapped key going on firing the
+        old, dead action while the default came back to life beside it.  When
+        an entry carries this default, that entry's live key is the one to
+        replace, and the user's remap survives.
+        """
+        for existing_key, entry in self.shortcuts.items():
+            if existing_key != default_key and entry.get("default_key") == default_key:
+                return existing_key
+        return default_key
+
     def add_shortcut(
         self,
         key_sequence: Union[str, QtGui.QKeySequence],
@@ -487,20 +504,23 @@ class ShortcutManager:
         else:
             sequence = QtGui.QKeySequence(key_sequence)
 
+        shortcut_key = sequence.toString()
+        target_key = self._replacement_slot(shortcut_key)
+        if target_key != shortcut_key:
+            sequence = QtGui.QKeySequence(target_key)  # keep the user's remap
+
         shortcut = QtWidgets.QShortcut(sequence, self.widget)
         shortcut.setContext(context)
         shortcut.activated.connect(action)
 
-        # Store for potential cleanup or reference
-        shortcut_key = sequence.toString()
         # Overwriting an existing same-sequence binding must dispose the old
         # QShortcut first; otherwise it stays enabled+parented to self.widget
         # (Qt then logs an ambiguous-overload and fires NEITHER) and is orphaned
         # out of self.shortcuts where it can never be removed/cleared.
-        prev = self.shortcuts.get(shortcut_key)
+        prev = self.shortcuts.get(target_key)
         if prev is not None:
             self._dispose(prev.get("shortcut"))
-        self.shortcuts[shortcut_key] = {
+        self.shortcuts[target_key] = {
             "shortcut": shortcut,
             "action": action,
             "description": description,
@@ -561,24 +581,28 @@ class ShortcutManager:
         Returns:
             GlobalShortcut instance.
         """
-        shortcut = GlobalShortcut(key_sequence, self.widget)
+        default_key = QtGui.QKeySequence(key_sequence).toString()
+        # Same two disciplines as add_shortcut: replace the entry the user may
+        # have REMAPPED this default onto (_replacement_slot), and dispose the
+        # prior binding there -- GlobalShortcut._dispose also drops its static
+        # _instances ref + event filter, else it leaks and ambiguates.
+        target_key = self._replacement_slot(default_key)
+        shortcut = GlobalShortcut(
+            target_key if target_key != default_key else key_sequence, self.widget
+        )
         if on_press:
             shortcut.pressed.connect(on_press)
         if on_release:
             shortcut.released.connect(on_release)
 
-        shortcut_key = shortcut._key_sequence.toString()
-        # Same overwrite discipline as add_shortcut: dispose any prior binding on
-        # this sequence (GlobalShortcut._dispose also drops its static _instances
-        # ref + event filter) before replacing it, else it leaks and ambiguates.
-        prev = self.shortcuts.get(shortcut_key)
+        prev = self.shortcuts.get(target_key)
         if prev is not None:
             self._dispose(prev.get("shortcut"))
-        self.shortcuts[shortcut_key] = {
+        self.shortcuts[target_key] = {
             "shortcut": shortcut,
             "description": description,
             "type": "global",
-            "default_key": shortcut_key,
+            "default_key": default_key,
         }
         return shortcut
 

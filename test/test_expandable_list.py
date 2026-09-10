@@ -1030,9 +1030,7 @@ class TestClickActivation(QtBaseTestCase):
         self.assertTrue(lw.embedded)
         self.assertEqual(lw.position, "bottom")
         self.assertEqual(lw._preset_child_position, "right")
-        self.assertEqual(
-            lw.sizePolicy().verticalPolicy(), QtWidgets.QSizePolicy.Fixed
-        )
+        self.assertEqual(lw.sizePolicy().verticalPolicy(), QtWidgets.QSizePolicy.Fixed)
 
     def test_header_menu_preset_configuration(self):
         """header_menu = embedded root with HOVER activation, expanding right —
@@ -1045,9 +1043,7 @@ class TestClickActivation(QtBaseTestCase):
         self.assertTrue(lw.embedded)
         self.assertEqual(lw.position, "right")
         self.assertEqual(lw._preset_child_position, "right")
-        self.assertEqual(
-            lw.sizePolicy().verticalPolicy(), QtWidgets.QSizePolicy.Fixed
-        )
+        self.assertEqual(lw.sizePolicy().verticalPolicy(), QtWidgets.QSizePolicy.Fixed)
 
     def test_embedded_hover_flyout_is_popup_window(self):
         """An embedded HOVER list's flyouts get the same popup-window
@@ -1414,9 +1410,7 @@ class TestEmbeddedHostMenuAdoption(QtBaseTestCase):
         lw._handle_widget_enter_event(root_item)
         # Park the flyout clearly outside the menu's own rect — the real
         # geometry (it fans right), and the condition the rect test fails on.
-        root_item.sublist.move(
-            menu.mapToGlobal(QtCore.QPoint(menu.width() + 40, 0))
-        )
+        root_item.sublist.move(menu.mapToGlobal(QtCore.QPoint(menu.width() + 40, 0)))
         QtWidgets.QApplication.processEvents()
         return menu, lw, root_item
 
@@ -1528,9 +1522,7 @@ class TestEmbeddedSizing(QtBaseTestCase):
         lw._handle_widget_enter_event(root_item)
         flyout_x = root_item.sublist.x()
         QtWidgets.QApplication.processEvents()
-        expected = root_item.mapToGlobal(
-            QtCore.QPoint(root_item.width(), 0)
-        ).x()
+        expected = root_item.mapToGlobal(QtCore.QPoint(root_item.width(), 0)).x()
         self.assertEqual(flyout_x, expected)
 
     def test_standalone_list_still_self_sizes_on_show(self):
@@ -1546,6 +1538,100 @@ class TestEmbeddedSizing(QtBaseTestCase):
         self.window.show()
         self.assertFalse(lw._is_layout_managed())
         self.assertEqual(lw.width(), lw.sizeHint().width())
+
+
+class TestContainsItems(QtBaseTestCase):
+    """``contains_items`` is the O(1) own-level predicate; ``get_items``
+    is the recursive walk.  Hot paths (a row's paint/sizeHint) read the
+    former."""
+
+    def setUp(self):
+        super().setUp()
+        self.window = self.track_widget(QtWidgets.QMainWindow())
+        self.lst = ExpandableList(self.window, fixed_item_height=20)
+
+    def test_empty_list(self):
+        self.assertFalse(self.lst.contains_items)
+
+    def test_own_rows_only(self):
+        row = self.lst.add("Parent")
+        self.assertTrue(self.lst.contains_items)
+        self.assertFalse(row.sublist.contains_items, "a leaf's flyout is empty")
+        row.sublist.add("Child")
+        self.assertTrue(row.sublist.contains_items)
+        self.assertEqual(len(self.lst.get_items()), 2, "get_items still recurses")
+
+    def test_clear_empties_it(self):
+        self.lst.add("Parent").sublist.add("Child")
+        self.lst.clear()
+        self.assertFalse(self.lst.contains_items)
+
+
+class TestWrappedItems(QtBaseTestCase):
+    """An option-box wrap stands a container in for an item in the layout;
+    every walk of the layout must look through it to the item."""
+
+    def setUp(self):
+        super().setUp()
+        self.window = self.track_widget(QtWidgets.QMainWindow())
+        self.lst = ExpandableList(self.window, fixed_item_height=20)
+
+    def _wrapped_button(self):
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        btn = self.lst.add(QtWidgets.QPushButton, setText="Row")
+        manager = OptionBoxManager(btn)
+        manager.enable_option_menu(items=[("A", lambda: None)])
+        container = manager.container  # the wrap replaces btn in the layout
+        self.assertIsNotNone(container)
+        self.assertIs(btn.parent(), container)
+        return btn, container
+
+    def test_get_items_sees_through_the_wrap(self):
+        btn, container = self._wrapped_button()
+        self.assertIsNot(container, btn)
+        self.assertIn(btn, self.lst.get_items())
+        self.assertNotIn(container, self.lst.get_items())
+
+    def test_clear_takes_the_wrapped_row_and_its_sublist_down(self):
+        btn, _container = self._wrapped_button()
+        btn.sublist.add("child")
+        sub = btn.sublist
+        self.lst.clear()
+        self.assertEqual(self.lst.get_items(), [])
+        self.assertIsNone(sub.parent(), "detached from the window with its row")
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        with self.assertRaises(RuntimeError):
+            sub.objectName()
+
+
+class TestSublistAnchor(QtBaseTestCase):
+    """A flyout is measured from the LAYOUT SLOT, not the raw row.
+
+    An option-box wrap stands a container in for the row and makes the row
+    its child, so the row ends where its settings button begins -- and a
+    flyout positioned from the row opened straight over that button.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.window = self.track_widget(QtWidgets.QMainWindow())
+        self.lst = ExpandableList(self.window, fixed_item_height=20)
+
+    def test_an_unwrapped_row_anchors_on_itself(self):
+        row = self.lst.add(QtWidgets.QPushButton, setText="Trim")
+        self.assertIs(ExpandableList._anchor_item(row), row)
+
+    def test_a_wrapped_row_anchors_on_its_container(self):
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        row = self.lst.add(QtWidgets.QPushButton, setText="Extend")
+        manager = OptionBoxManager(row)
+        manager.enable_option_menu(items=[("Reach", lambda: None)])
+        container = manager.container
+        self.assertIsNotNone(container)
+        self.assertIs(ExpandableList._anchor_item(row), container)
+        self.assertIs(ExpandableList._unwrap_item(container), row, "the inverse")
 
 
 if __name__ == "__main__":

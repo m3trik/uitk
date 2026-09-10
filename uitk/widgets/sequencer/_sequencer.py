@@ -1137,15 +1137,26 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         alpha: int = 120,
         locked: bool = False,
         tail: bool = False,
+        head: bool = False,
     ):
         """Add a diagonal-hatch overlay for a gap between shots.
 
         ``tail=True`` places a left-edge-only handle (pass ``start == end``
         at the last shot's end) so the final shot -- which has no following
-        shot to form a gap with -- still gets a drag handle.
+        shot to form a gap with -- still gets a drag handle; ``head=True``
+        is the right-edge-only twin at the first shot's start.  Both report
+        through ``gap_left_resized`` / ``gap_resized`` like a gap edge; the
+        consumer tells them apart by the shot having no neighbour there.
         """
         item = _GapOverlayItem(
-            self._timeline, start, end, color, alpha, locked=locked, tail=tail
+            self._timeline,
+            start,
+            end,
+            color,
+            alpha,
+            locked=locked,
+            tail=tail,
+            head=head,
         )
         item.setVisible(self._show_gap_overlays)
         self._timeline._scene.addItem(item)
@@ -1161,11 +1172,12 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def set_all_gap_overlays_locked(self, locked: bool):
         """Set the locked state on every gap overlay.
 
-        Tail handles are exempt: they are shot-end handles, not gaps, and a
-        locked tail would leave the LAST shot with no way to resize.
+        Head/tail handles are exempt: they are shot-bound handles, not gaps,
+        and a locked one would leave the first/last shot with no way to
+        resize.
         """
         for item in self._gap_overlays:
-            if item._tail:
+            if item._tail or item._head:
                 continue
             item._locked = locked
             item._update_tooltip()
@@ -1997,10 +2009,17 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         The menu belongs to the SELECTION, not to the dot under the cursor:
         a right-click anywhere over the tracks opens it while any key is
         selected (:meth:`TimelineView.contextMenuEvent`), so reaching a
-        tangent type never means hitting a 7-pixel dot.  The widget owns
-        Delete; everything else -- tangent types, move to shot -- is the
-        consumer's, added through :attr:`key_menu_requested` before the menu
-        opens.
+        tangent type never means hitting a 7-pixel dot.  Everything in it --
+        tangent types, move to shot -- is the consumer's, added through
+        :attr:`key_menu_requested` before the menu opens; the widget adds
+        nothing of its own, so a consumer that offers nothing gets no menu
+        rather than an empty one.
+
+        Deleting is deliberately NOT here: ``Delete`` is a registered
+        shortcut (:meth:`_delete_selected_keys`, which a host may re-point)
+        acting on this same selection, and a menu row duplicating a key
+        every editor already binds is one more row between the user and the
+        rows only this menu has.
 
         Parameters:
             global_pos (QPoint): Screen position to open the menu at.
@@ -2013,12 +2032,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             return False
         menu = MenuUtils._styled_menu()
         self.key_menu_requested.emit(menu, groups)
-        if menu.actions():
-            menu.addSeparator()
-        n = sum(len(g["times"]) for g in groups)
-        act_delete = menu.addAction(f"Delete Keys ({n})" if n > 1 else "Delete Key")
-        if menu.exec_(global_pos) == act_delete:
-            self._delete_selected_keys()
+        if not menu.actions():
+            return False
+        menu.exec_(global_pos)
         return True
 
     def _editable_key_groups(self) -> List[dict]:
