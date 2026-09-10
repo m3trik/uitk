@@ -1126,6 +1126,94 @@ class TestShortcutManagerOverwriteDispose(QtBaseTestCase):
         self.assertIs(mgr.shortcuts["Ctrl+Alt+Shift+F9"]["shortcut"], second)
 
 
+class TestShortcutManagerRebindAfterRemap(QtBaseTestCase):
+    """A host re-binding by the DEFAULT key must find the REMAPPED entry.
+
+    ``rebind_shortcut`` re-keys the dict under the new sequence and keeps
+    ``default_key`` on the entry. A host that re-binds by the default on
+    re-init -- which is how a panel points its keys at a new controller --
+    found nothing there and added a SECOND binding: the user's remapped key
+    went on firing the dead controller while the default key came back to life
+    beside it.
+    """
+
+    def _mgr(self):
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        return ShortcutManager(self.track_widget(QtWidgets.QWidget()))
+
+    def test_rebinding_by_the_default_key_repoints_the_remapped_entry(self):
+        mgr = self._mgr()
+        fired = []
+        mgr.add_shortcut("Delete", lambda: fired.append("old"), "Delete keys")
+        self.assertTrue(mgr.rebind_shortcut("Delete", "Backspace"))
+
+        mgr.add_shortcut("Delete", lambda: fired.append("new"), "Delete keys")
+
+        self.assertEqual(
+            sorted(mgr.shortcuts), ["Backspace"], "one entry, on the user's key"
+        )
+        entry = mgr.shortcuts["Backspace"]
+        # Qt normalises the spelling ("Delete" -> "Del"), so ask it rather
+        # than hard-coding which spelling the registry keeps.
+        self.assertEqual(
+            entry["default_key"],
+            QtGui.QKeySequence("Delete").toString(),
+            "the remap is remembered",
+        )
+        entry["shortcut"].activated.emit()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(fired, ["new"], "the new action, and only it")
+
+    def test_the_replaced_shortcut_is_disposed_not_orphaned(self):
+        mgr = self._mgr()
+        first = mgr.add_shortcut("Delete", lambda: None)
+        mgr.rebind_shortcut("Delete", "Backspace")
+        second = mgr.add_shortcut("Delete", lambda: None)
+        self.assertIsNot(first, second)
+        self.assertFalse(first.isEnabled(), "the old QShortcut is inert")
+        self.assertIs(mgr.shortcuts["Backspace"]["shortcut"], second)
+        self.assertEqual(
+            second.key().toString(), "Backspace", "bound to the remapped key"
+        )
+
+    def test_an_unremapped_binding_is_still_replaced_in_place(self):
+        """The ordinary path must not change: same key, one entry."""
+        mgr = self._mgr()
+        mgr.add_shortcut("Ctrl+G", lambda: None)
+        mgr.add_shortcut("Ctrl+G", lambda: None)
+        self.assertEqual(sorted(mgr.shortcuts), ["Ctrl+G"])
+        self.assertEqual(mgr.shortcuts["Ctrl+G"]["default_key"], "Ctrl+G")
+
+    def test_a_global_shortcut_follows_the_same_rule(self):
+        """``GlobalShortcut.setKey`` exists, so a global can be remapped too."""
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        host = self.track_widget(QtWidgets.QWidget())
+        host.show()
+        mgr = ShortcutManager(host)
+        mgr.add_global_shortcut("Ctrl+Alt+Shift+F8")
+        self.assertTrue(mgr.rebind_shortcut("Ctrl+Alt+Shift+F8", "Ctrl+Alt+Shift+F7"))
+
+        mgr.add_global_shortcut("Ctrl+Alt+Shift+F8")
+
+        self.assertEqual(
+            sorted(mgr.shortcuts),
+            ["Ctrl+Alt+Shift+F7"],
+            "one entry, on the user's key",
+        )
+        self.assertEqual(
+            mgr.shortcuts["Ctrl+Alt+Shift+F7"]["default_key"], "Ctrl+Alt+Shift+F8"
+        )
+
+    def test_a_different_key_still_adds_its_own_binding(self):
+        """Re-pointing keys off ``default_key``, not off any near-miss."""
+        mgr = self._mgr()
+        mgr.add_shortcut("Delete", lambda: None)
+        mgr.add_shortcut("Ctrl+C", lambda: None)
+        self.assertEqual(sorted(mgr.shortcuts), ["Ctrl+C", "Del"])
+
+
 class TestShortcutManagerRegistry(QtBaseTestCase):
     """``ShortcutManager.get_registry`` emits the shared editor entry shape so
     the one unified ShortcutEditor can render a manager's bindings."""

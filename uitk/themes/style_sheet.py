@@ -88,6 +88,11 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             # see-through than the window itself.
             "CHROME_BACKGROUND": "rgba(70,70,70,150)",
             "WINDOW_BACKGROUND": "rgba(80,80,80,170)",
+            # Context-menu ground.  OPAQUE where WINDOW_BACKGROUND is
+            # not: a menu is its own top-level popup, so it composites
+            # over the desktop rather than over a window body, and an
+            # alpha there reads as see-through instead of glassy.
+            "MENU_BACKGROUND": "rgb(80,80,80)",
             "WIDGET_BACKGROUND": "rgb(125,125,125)",
             "WIDGET_BACKGROUND_HOVER": "rgb(140,140,140)",
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
@@ -133,6 +138,10 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "PANEL_BACKGROUND": "rgba(105,105,105,100)",
             "CHROME_BACKGROUND": "rgba(105,105,105,60)",
             "WINDOW_BACKGROUND": "rgba(100,100,100,125)",
+            # Matches the sequencer's hardcoded QMenu ground (#333 in
+            # ``widgets/sequencer/_data.py``) so the two menu systems
+            # read as one surface; change them together.
+            "MENU_BACKGROUND": "rgb(51,51,51)",
             "WIDGET_BACKGROUND": "rgb(60,60,60)",
             "WIDGET_BACKGROUND_HOVER": "rgb(78,78,78)",
             "DISABLED_BACKGROUND": "rgb(85,85,85)",
@@ -187,6 +196,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             # outlined buttons, not a tinted band.
             "CHROME_BACKGROUND": "rgb(0,0,0)",
             "WINDOW_BACKGROUND": "rgb(0,0,0)",
+            "MENU_BACKGROUND": "rgb(0,0,0)",
             "WIDGET_BACKGROUND": "rgb(16,16,16)",
             "WIDGET_BACKGROUND_HOVER": "rgb(48,48,48)",
             "DISABLED_BACKGROUND": "rgb(26,26,26)",

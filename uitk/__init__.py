@@ -106,6 +106,7 @@ DEFAULT_INCLUDE = {
     "widgets.spinBox": "SpinBox",
     "widgets.embeddedMenu": ["EmbeddedMenuWidget", "PersistentMenu"],
     "widgets.expandableList": "ExpandableList",
+    "widgets.context_menu": ["ContextMenu", "MenuRow"],
     "widgets.header": "Header",
     "widgets.footer": ["Footer", "FooterStatusController"],
     "widgets.formPanel": "FormPanel",

@@ -333,17 +333,41 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
             option.text = ""
             option.features &= ~QtWidgets.QStyleOptionViewItem.HasDisplay
 
+    def _cell_columns(self):
+        """``[(cell spec, width), ...]`` the combo measured for this popup."""
+        return getattr(self._combo, "_cell_columns", None) or []
+
     def paint(self, painter, option, index):
         # Suppress hover/selection bg only for rows that host an embedded
         # widget (WidgetComboBox). With uniform-height rows + AlignVCenter,
         # a shorter embedded widget leaves a gap above/below where the row's
         # BUTTON_HOVER bg would otherwise show as a blue frame. Text-only
         # rows keep the full hover styling.
+        cells = index.data(ComboBox.CellsRole)
+        columns = self._cell_columns() if isinstance(cells, dict) else []
         if self._is_embedded_row(index):
             paint_opt = QtWidgets.QStyleOptionViewItem(option)
             paint_opt.state &= ~QtWidgets.QStyle.State_MouseOver
             paint_opt.state &= ~QtWidgets.QStyle.State_Selected
             super().paint(painter, paint_opt, index)
+        elif columns:
+            # A cell row paints as columns: the base pass draws the row's
+            # background (hover/selection) with the joined text suppressed,
+            # then each cell lands at its column so the popup reads as a
+            # table while the closed combo still shows the joined line.
+            paint_opt = QtWidgets.QStyleOptionViewItem(option)
+            self.initStyleOption(paint_opt, index)
+            paint_opt.text = ""
+            paint_opt.features &= ~QtWidgets.QStyleOptionViewItem.HasDisplay
+            style = (
+                paint_opt.widget.style()
+                if paint_opt.widget
+                else QtWidgets.QApplication.style()
+            )
+            style.drawControl(
+                QtWidgets.QStyle.CE_ItemViewItem, paint_opt, painter, paint_opt.widget
+            )
+            self._paint_cells(painter, paint_opt, cells, columns)
         else:
             super().paint(painter, option, index)
 
@@ -354,6 +378,29 @@ class _CurrentItemIndicatorDelegate(QtWidgets.QStyledItemDelegate):
             rect = option.rect
             painter.drawRect(rect.x(), rect.y(), self._STRIP_WIDTH, rect.height())
             painter.restore()
+
+    def _paint_cells(self, painter, option, cells, columns):
+        painter.save()
+        role = (
+            QtGui.QPalette.HighlightedText
+            if option.state & QtWidgets.QStyle.State_Selected
+            else QtGui.QPalette.Text
+        )
+        painter.setPen(option.palette.color(role))
+        metrics = painter.fontMetrics()
+        x = option.rect.x() + self._STRIP_WIDTH + ComboBox.CELL_INSET
+        top, height = option.rect.y(), option.rect.height()
+        for spec, width in columns:
+            text = ComboBox.format_cell(spec, cells.get(spec["key"]))
+            text = metrics.elidedText(text, QtCore.Qt.ElideRight, width)
+            align = QtCore.Qt.AlignVCenter | (
+                QtCore.Qt.AlignRight
+                if spec.get("kind") in ("int", "float")
+                else QtCore.Qt.AlignLeft
+            )
+            painter.drawText(QtCore.QRect(x, top, width, height), align, text)
+            x += width + ComboBox.CELL_GAP
+        painter.restore()
 
 
 class _PopupItemClickCommitter(QtCore.QObject):
@@ -440,6 +487,115 @@ class _PopupItemClickCommitter(QtCore.QObject):
 _UNSET = object()
 
 
+class _CellEditor(QtWidgets.QFrame):
+    """Inline editor for a multi-cell row: one field per cell, laid over
+    the combo's body, each on the column its value is painted in.
+
+    The single-line rename edits the row's TEXT; a row that carries cells
+    is a record, and each cell gets the editor its kind asks for (a line
+    edit, a spin box) so a number is typed as a number.  Tab moves between
+    cells, Return commits every cell at once, Escape cancels, and focus
+    leaving the editor cancels too -- the same contract the plain rename
+    keeps (``ComboBox.focusOutEvent``).
+    """
+
+    committed = QtCore.Signal(dict)
+    cancelled = QtCore.Signal()
+
+    def __init__(self, combo, spec, values, widths=None):
+        super().__init__(combo)
+        self.setObjectName("comboCellEditor")
+        self.setAutoFillBackground(True)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(2)
+        self._fields = {}
+        self._kinds = {}
+        widths = widths or {}
+        last_key = spec[-1]["key"] if spec else None
+        for cell in spec:
+            key = cell["key"]
+            kind = cell.get("kind", "text")
+            value = values.get(key)
+            if not cell.get("editable", True):
+                field = QtWidgets.QLabel(ComboBox.format_cell(cell, value), self)
+            elif kind == "int":
+                field = QtWidgets.QSpinBox(self)
+                field.setRange(
+                    int(cell.get("min", -1000000)), int(cell.get("max", 1000000))
+                )
+                field.setValue(int(round(float(value or 0))))
+            elif kind == "float":
+                field = QtWidgets.QDoubleSpinBox(self)
+                field.setDecimals(int(cell.get("decimals", 2)))
+                field.setRange(
+                    float(cell.get("min", -1e9)), float(cell.get("max", 1e9))
+                )
+                field.setValue(float(value or 0.0))
+            else:
+                field = QtWidgets.QLineEdit("" if value is None else str(value), self)
+                field.setPlaceholderText(cell.get("label", key))
+            field.setToolTip(cell.get("label", key))
+            # Cells keep the column widths the collapsed row is painted with,
+            # so double-clicking a row opens fields where its values already
+            # are.  Sharing the surplus between every text cell instead (a
+            # plain stretch of 1) inflated the FIRST one to half the combo:
+            # a two-character name sat in a field wide enough for a sentence,
+            # with the next cell pushed a combo-width away from it.  The last
+            # cell absorbs what is left over -- something has to, and it is
+            # the one whose content has no cell after it to crowd.
+            width = widths.get(key)
+            if "stretch" in cell:
+                stretch = int(cell["stretch"])
+            elif key == last_key:
+                stretch = 1
+            elif width is not None:
+                # A CAP, not a pin.  These fields are Expanding, so the cap is
+                # what holds one to its column; pinning the floor to match
+                # would push the fields out of a combo too narrow for the
+                # measured columns instead of letting them squeeze.
+                field.setMaximumWidth(max(width, field.minimumSizeHint().width()))
+                stretch = 0
+            else:
+                stretch = 1 if kind == "text" else 0
+            layout.addWidget(field, stretch)
+            field.installEventFilter(self)
+            self._fields[key] = field
+            self._kinds[key] = (kind, cell.get("editable", True))
+        self.setGeometry(combo.rect())
+
+    def values(self) -> dict:
+        out = {}
+        for key, field in self._fields.items():
+            kind, editable = self._kinds[key]
+            if not editable:
+                continue
+            if isinstance(field, QtWidgets.QAbstractSpinBox):
+                out[key] = field.value()
+            else:
+                out[key] = field.text()
+        return out
+
+    def focus_first(self) -> None:
+        for field in self._fields.values():
+            if isinstance(field, (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox)):
+                field.setFocus(QtCore.Qt.OtherFocusReason)
+                field.selectAll()
+                return
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.KeyPress:
+            key = event.key()
+            if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                self.committed.emit(self.values())
+                return True
+            if key == QtCore.Qt.Key_Escape:
+                self.cancelled.emit()
+                return True
+        return super().eventFilter(obj, event)
+
+
 class ComboBox(
     AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay
 ):
@@ -454,6 +610,19 @@ class ComboBox(
     before_popup_shown = QtCore.Signal()
     on_editing_finished = QtCore.Signal(str)
     on_item_deleted = QtCore.Signal(str)
+    #: ``(index, {cell key: new value, ...})`` after an inline cell edit
+    #: commits -- only the cells whose value actually changed.
+    on_cells_edited = QtCore.Signal(int, dict)
+
+    #: Item-data role holding a row's cells (``{key: value}``) -- see
+    #: :meth:`set_cells` / :meth:`add_cells`.  Roles are per MODEL, and this
+    #: combo's model uses only ``UserRole`` (the item data ``addItem``
+    #: stores), so ``+1`` is its first free slot -- unrelated to the
+    #: ``UserRole + N`` series other widgets define on their own models.
+    CellsRole = QtCore.Qt.UserRole + 1
+    #: Popup column geometry for cell rows (px).
+    CELL_INSET = 4
+    CELL_GAP = 12
 
     #: Opt-in: double-clicking the combo (its body, showing the current item)
     #: enters edit mode on that item, so renaming needs no menu command of its
@@ -482,6 +651,13 @@ class ComboBox(
         # replay (see _is_replayed_second_click) is recognised and dropped.
         self._consumed_click_ts = None
         self._replay_guard = None  # EventFactoryFilter on the rename's line edit
+        # Multi-cell rows: the cell spec (see set_cells), the row format that
+        # joins a row's cells into its display text, the live inline editor.
+        self._cell_spec = []
+        self.cell_format = None
+        self._cell_editor = None
+        self._cell_edit_index = -1
+        self._cell_columns = []
         # `self.editable = editable` (a plain attribute) never made the combo
         # editable — Qt properties aren't set by attribute assignment. Route
         # through the real setter; skip the signal on construction.
@@ -878,7 +1054,203 @@ class ComboBox(
         the mirror of the teardown crash ``focusOutEvent`` documents. One turn
         later the popup is gone and the combo owns its own state again.
         """
+        if self._cell_spec and self.item_cells(self.currentIndex()) is not None:
+            QtCore.QTimer.singleShot(0, self._begin_cell_edit)
+            return
         QtCore.QTimer.singleShot(0, self._begin_rename)
+
+    # -- multi-cell rows ------------------------------------------------------
+
+    def set_cells(self, spec, cell_format=None) -> None:
+        """Declare the cells a row of this combo is made of.
+
+        Parameters:
+            spec: One entry per cell, in column order: a ``dict`` with
+                ``key`` (required), ``label``, ``kind`` (``"text"`` default,
+                ``"int"``, ``"float"``), ``editable`` (default True),
+                ``format`` (a ``str.format`` template for one value, e.g.
+                ``"{:.0f}"``), spin-box ``min`` / ``max`` / ``decimals`` and
+                a layout ``stretch`` -- or just the key string.
+            cell_format: A ``str.format`` template over the cell keys that
+                becomes the row's display text (what the closed combo shows
+                and what ``itemText`` returns); ``None`` joins the cells with
+                two spaces.  Missing keys format as empty.
+        """
+        normalized = []
+        for cell in spec:
+            if isinstance(cell, str):
+                cell = {"key": cell}
+            cell = dict(cell)
+            cell.setdefault("label", cell["key"])
+            cell.setdefault("kind", "text")
+            normalized.append(cell)
+        self._cell_spec = normalized
+        self.cell_format = cell_format
+
+    @property
+    def cell_spec(self) -> list:
+        return list(self._cell_spec)
+
+    @staticmethod
+    def format_cell(spec: dict, value) -> str:
+        """One cell's display text per its spec (``format``), ``""`` for None."""
+        if value is None:
+            return ""
+        fmt = spec.get("format")
+        if fmt:
+            try:
+                return fmt.format(value)
+            except (ValueError, TypeError):
+                pass
+        return str(value)
+
+    def cell_text(self, cells: dict) -> str:
+        """The display text a row with *cells* gets (see :meth:`set_cells`)."""
+        if self.cell_format:
+
+            class _Blank(dict):
+                def __missing__(self, key):
+                    return ""
+
+            try:
+                return self.cell_format.format_map(_Blank(cells)).rstrip()
+            except (ValueError, TypeError):
+                pass
+        parts = []
+        for spec in self._cell_spec or [{"key": k} for k in cells]:
+            text = self.format_cell(spec, cells.get(spec["key"]))
+            if text:
+                parts.append(text)
+        return "  ".join(parts)
+
+    def add_cells(self, cells: dict, data=None) -> int:
+        """Append a row made of *cells*; returns its index.
+
+        *data* is the row's ``UserRole`` value exactly as ``addItem`` stores
+        it (``currentData`` / ``items`` are unchanged); the cells live under
+        :attr:`CellsRole`.
+        """
+        cells = dict(cells)
+        self.addItem(self.cell_text(cells), data)
+        index = self.count() - 1
+        self.setItemData(index, cells, self.CellsRole)
+        return index
+
+    def item_cells(self, index: int):
+        """The ``{key: value}`` cells of row *index*, or ``None``."""
+        if index is None or index < 0 or index >= self.count():
+            return None
+        cells = self.itemData(index, self.CellsRole)
+        return dict(cells) if isinstance(cells, dict) else None
+
+    def set_item_cells(self, index: int, cells: dict) -> None:
+        """Merge *cells* into row *index* and refresh its display text."""
+        current = self.item_cells(index) or {}
+        current.update(cells)
+        with self._silenced():
+            self.setItemData(index, current, self.CellsRole)
+            self.setItemText(index, self.cell_text(current))
+
+    def begin_cell_edit(self, index=None) -> None:
+        """Open the inline cell editor on row *index* (the current row)."""
+        if index is not None and index != self.currentIndex():
+            self.setCurrentIndex(index)
+        QtCore.QTimer.singleShot(0, self._begin_cell_edit)
+
+    def _begin_cell_edit(self):
+        try:
+            if self._cell_editor is not None or self.isEditable():
+                return
+            index = self.currentIndex()
+            cells = self.item_cells(index)
+            if cells is None or not self._cell_spec:
+                return
+            self.hidePopup()
+            # Measured here, not read off ``_cell_columns``: that is filled by
+            # showPopup, and a row can be opened for editing (double-click)
+            # without the list ever having been dropped down.
+            widths = dict(
+                (s["key"], w + self.CELL_INSET * 2)
+                for s, w in self._measure_cell_columns()
+            )
+            editor = _CellEditor(self, self._cell_spec, cells, widths)
+            editor.committed.connect(self._commit_cells)
+            editor.cancelled.connect(self._end_cell_edit)
+            self._cell_editor = editor
+            self._cell_edit_index = index
+            editor.show()
+            editor.raise_()
+            editor.focus_first()
+            app = QtWidgets.QApplication.instance()
+            if app is not None:
+                app.focusChanged.connect(self._on_focus_changed_while_cell_editing)
+        except RuntimeError:  # combo deleted between the click and the timer
+            pass
+
+    def _on_focus_changed_while_cell_editing(self, _old, new):
+        editor = self._cell_editor
+        if editor is None:
+            return
+        if new is None or new is editor or editor.isAncestorOf(new):
+            return
+        # Focus went elsewhere: a cancel, as the plain rename's focus-out is.
+        self._end_cell_edit()
+
+    def _commit_cells(self, values: dict) -> None:
+        index = self._cell_edit_index
+        before = self.item_cells(index) or {}
+        self._end_cell_edit()
+
+        def _norm(value):
+            return "" if value is None else value  # an absent cell reads blank
+
+        changed = {k: v for k, v in values.items() if _norm(before.get(k)) != v}
+        if not changed:
+            return
+        self.set_item_cells(index, changed)
+        self.on_cells_edited.emit(index, changed)
+
+    def _end_cell_edit(self) -> None:
+        editor = self._cell_editor
+        if editor is None:
+            return
+        self._cell_editor = None
+        self._cell_edit_index = -1
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            try:
+                app.focusChanged.disconnect(self._on_focus_changed_while_cell_editing)
+            except (RuntimeError, TypeError):
+                pass
+        editor.hide()
+        editor.setParent(None)
+        editor.deleteLater()
+        self.setFocus(QtCore.Qt.OtherFocusReason)
+
+    @property
+    def cell_editing(self) -> bool:
+        """Whether the inline cell editor is open."""
+        return self._cell_editor is not None
+
+    def _measure_cell_columns(self) -> list:
+        """``[(spec, width px), ...]`` sized to the widest value per column."""
+        if not self._cell_spec:
+            return []
+        metrics = self.view().fontMetrics()
+        widths = [metrics.horizontalAdvance(spec["label"]) for spec in self._cell_spec]
+        for i in range(self.count()):
+            cells = self.item_cells(i)
+            if cells is None:
+                continue
+            for col, spec in enumerate(self._cell_spec):
+                text = self.format_cell(spec, cells.get(spec["key"]))
+                widths[col] = max(widths[col], metrics.horizontalAdvance(text))
+        return list(zip(self._cell_spec, widths))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._cell_editor is not None:
+            self._cell_editor.setGeometry(self.rect())
 
     def _begin_rename(self):
         try:
@@ -1124,6 +1496,12 @@ class ComboBox(
     def showPopup(self):
         view = self.view()
         view.setMinimumWidth(view.sizeHintForColumn(0))
+        self._cell_columns = self._measure_cell_columns()
+        if self._cell_columns:
+            total = self.CELL_INSET * 2 + _CurrentItemIndicatorDelegate._STRIP_WIDTH
+            total += sum(w for _s, w in self._cell_columns)
+            total += self.CELL_GAP * (len(self._cell_columns) - 1)
+            view.setMinimumWidth(max(view.minimumWidth(), total))
         # Popup view defaults vary by Qt version / platform style; force
         # both so QSS ``::item:hover`` fires reliably for every row.
         view.setMouseTracking(True)

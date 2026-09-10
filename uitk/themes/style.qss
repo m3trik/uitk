@@ -610,6 +610,34 @@ QLabel#widgetComboBoxRowLabel:disabled {
     background-color: {BUTTON_HOVER};
     color: {TEXT_HOVER};
 }
+/* A list flagged menu_surface paints the same ground as the ContextMenu it
+   belongs to.  Its flyouts are reparented and shown as their own frameless
+   Tool windows, so they inherit no background of their own.  MENU_BACKGROUND
+   and not WINDOW_BACKGROUND: the latter is translucent by design (it
+   composites over a window body), and a flyout has no body behind it -- only
+   the desktop, which is what made a fanned-out list read as transparent. */
+ExpandableList[menuSurface="true"] {
+    background-color: {MENU_BACKGROUND};
+    border: {BORDER_W} solid {BORDER_COLOR};
+    color: {TEXT_COLOR};
+}
+/* ContextMenu rows: flat, left-aligned entries that highlight like menu rows. */
+QPushButton[class~="MenuRow"] {
+    text-align: left;
+    padding: 0 {TEXT_INSET};
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: {TEXT_COLOR};
+}
+QPushButton[class~="MenuRow"]:hover {
+    background-color: {BUTTON_HOVER};
+    color: {TEXT_HOVER};
+}
+QPushButton[class~="MenuRow"]:disabled {
+    background: transparent;
+    color: {TEXT_DISABLED};
+}
 QLineEdit {
     background-color: {WIDGET_BACKGROUND};
     color: {TEXT_COLOR};
@@ -1313,6 +1341,20 @@ QFrame#menuFrame {
 QFrame#menuFrame:hover {
     background-color: {WINDOW_BACKGROUND};
     border: {BORDER_W} solid {BORDER_COLOR};
+}
+
+/* A ContextMenu is a Menu, but an opaque one -- see MENU_BACKGROUND.  Both
+   rules sit after `Menu, MainWindow` (equal specificity: the later wins), and
+   the frame is addressed through a descendant selector so it outranks the
+   plain `QFrame#menuFrame` id rule above. */
+ContextMenu {
+    background-color: {MENU_BACKGROUND};
+    border: {BORDER_W} solid {BORDER_COLOR};
+    color: {TEXT_COLOR};
+}
+ContextMenu QFrame#menuFrame {
+    background-color: {MENU_BACKGROUND};
+    border: none;
 }
 
 /* Footer Styling */

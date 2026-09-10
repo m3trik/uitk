@@ -48,6 +48,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/collapsableGroup.py`](#widgets--collapsableGroup)
 - [`widgets/colorSwatch.py`](#widgets--colorSwatch)
 - [`widgets/comboBox.py`](#widgets--comboBox)
+- [`widgets/context_menu.py`](#widgets--context_menu) — A popup context menu whose rows can expand into sub-rows.
 - [`widgets/delegates/centered_icon.py`](#widgets--delegates--centered_icon) — Centered icon painting for item-view cells.
 - [`widgets/delegates/choice_capture.py`](#widgets--delegates--choice_capture) — In-cell choice (dropdown) capture for item views.
 - [`widgets/delegates/row_selection.py`](#widgets--delegates--row_selection) — Opt-in delegate for views whose cells carry their own background.
@@ -914,7 +915,7 @@ Test isolation for every suite in the ecosystem — keep test runs off live user
   - `AlignedComboBox.get_stylesheet_property(self, property_name)` — Extract a numeric property value from the widget's stylesheet.
   - `AlignedComboBox.format_current_display_text(self, text: str) -> str` — Compose the text painted for the *current* selection only.
   - `AlignedComboBox.paintEvent(self, event)` — Custom paint event to draw header text when no selection.
-- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L443)** — QComboBox with automatic Menu and OptionBox integration.
+- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L599)** — QComboBox with automatic Menu and OptionBox integration.
   - `ComboBox.clear(self)`
   - `ComboBox.addItem(self, *args, **kwargs)`
   - `ComboBox.addItems(self, *args, **kwargs)`
@@ -936,6 +937,16 @@ Test isolation for every suite in the ecosystem — keep test runs off live user
   - `ComboBox.mousePressEvent(self, event)`
   - `ComboBox.mouseDoubleClickEvent(self, event)`
   - `ComboBox.begin_rename(self)` — Enter edit mode on the current item, text selected, ready to retype.
+  - `ComboBox.set_cells(self, spec, cell_format=None) -> None` — Declare the cells a row of this combo is made of.
+  - `ComboBox.cell_spec(self) -> list` *(property)*
+  - `ComboBox.format_cell(spec: dict, value) -> str` *(static)* — One cell's display text per its spec (``format``), ``""`` for None.
+  - `ComboBox.cell_text(self, cells: dict) -> str` — The display text a row with *cells* gets (see :meth:`set_cells`).
+  - `ComboBox.add_cells(self, cells: dict, data=None) -> int` — Append a row made of *cells*;
+  - `ComboBox.item_cells(self, index: int)` — The ``{key: value}`` cells of row *index*, or ``None``.
+  - `ComboBox.set_item_cells(self, index: int, cells: dict) -> None` — Merge *cells* into row *index* and refresh its display text.
+  - `ComboBox.begin_cell_edit(self, index=None) -> None` — Open the inline cell editor on row *index* (the current row).
+  - `ComboBox.cell_editing(self) -> bool` *(property)* — Whether the inline cell editor is open.
+  - `ComboBox.resizeEvent(self, event)`
   - `ComboBox.focusOutEvent(self, event)`
   - `ComboBox.editable(self)` *(property)* — Whether the combo is editable (mirrors Qt's editable property).
   - `ComboBox.setEditable(self, editable, emit_signal=True)`
@@ -946,6 +957,28 @@ Test isolation for every suite in the ecosystem — keep test runs off live user
   - `ComboBox.removeItem(self, index=None)`
   - `ComboBox.showPopup(self)`
   - `ComboBox.keyPressEvent(self, event)`
+
+<a id="widgets--context_menu"></a>
+### `widgets/context_menu.py`
+
+A popup context menu whose rows can expand into sub-rows.
+
+- **[`class MenuRow(QtWidgets.QPushButton, OptionBoxMixin)`](uitk/uitk/widgets/context_menu.py#L42)** — One clickable row of a :class:`ContextMenu`.
+  - `MenuRow.has_flyout(self) -> bool` *(property)* — Whether this row owns a POPULATED flyout.
+  - `MenuRow.add_option_menu(self, tooltip: str = 'Options', **menu_config)` — Overlay a settings button on this row and return its ``Menu``.
+  - `MenuRow.option_menu(self)` *(property)* — The settings menu :meth:`add_option_menu` built, or ``None``.
+  - `MenuRow.resizeEvent(self, event) -> None`
+  - `MenuRow.sizeHint(self) -> QtCore.QSize`
+  - `MenuRow.paintEvent(self, event) -> None`
+- **[`class ContextMenu(Menu)`](uitk/uitk/widgets/context_menu.py#L184)** — A :class:`Menu` whose rows can expand into flyouts of sub-rows.
+  - `ContextMenu.list(self) -> ExpandableList` *(property)* — The root :class:`ExpandableList` holding the rows.
+  - `ContextMenu.add(self, x, data=None, *, parent: Optional[QtWidgets.QWidget] = None, callback=None, **kwargs) -> QtWidgets.QWidget` — Add a row (or a sub-row of *parent*) and return it.
+  - `ContextMenu.add_separator(self, title: str = '') -> QtWidgets.QWidget` — Add a section separator;
+  - `ContextMenu.add_entries(self, entries, parent=None) -> list` — Add rows for a widget's own context entries;
+  - `ContextMenu.keyPressEvent(self, event) -> None`
+  - `ContextMenu.popup(self, global_pos: Optional[QtCore.QPoint] = None) -> None` — Show the menu at *global_pos* (the cursor by default), non-blocking.
+  - `ContextMenu.exec_(self, global_pos: Optional[QtCore.QPoint] = None, dispose: bool = True) -> None` — Show the menu and block until it is dismissed.
+  - `ContextMenu.dispose(self) -> None` — Tear the menu down: flyouts are reparented top-levels, so they
 
 <a id="widgets--delegates--centered_icon"></a>
 ### `widgets/delegates/centered_icon.py`
@@ -1142,6 +1175,7 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `ExpandableList.setSublistYOffset(self, value: int) -> None` — Set the vertical offset applied to sublists.
   - `ExpandableList.setOpenDelay(self, value: int) -> None` — Set the hover-intent dwell (ms) before the starting flyout opens.
   - `ExpandableList.apply_preset(self, preset_name)` — Apply a named preset to configure expansion behavior.
+  - `ExpandableList.contains_items(self) -> bool` *(property)* — Whether this list holds any row of its OWN (O(1)).
   - `ExpandableList.get_items(self)` — Get all items in the list and its sublists.
   - `ExpandableList.get_item_text(self, widget)` — Get the textual representation of a widget.
   - `ExpandableList.get_parent_item_text(self, widget)` — Get the text attribute of the parent item of a widget's sublist.
@@ -2202,7 +2236,7 @@ MarkerItem — named marker on the timeline with drag and context menu.
 
 Range-related overlay items: static ranges, gap hatching, and highlights.
 
-- **[`class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_overlays.py#L529)** — A semi-transparent rectangle highlighting a time range on the timeline.
+- **[`class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_overlays.py#L565)** — A semi-transparent rectangle highlighting a time range on the timeline.
   - `RangeHighlightItem.start(self) -> float` *(property)*
   - `RangeHighlightItem.end(self) -> float` *(property)*
   - `RangeHighlightItem.set_range(self, start: float, end: float)`
@@ -2304,7 +2338,7 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.clear_range_highlight(self)` — Remove the range highlight from the timeline.
   - `SequencerWidget.add_range_overlay(self, start: float, end: float, color: str = '#888888', alpha: int = 15)` — Add a non-interactive range overlay (e.g.
   - `SequencerWidget.clear_range_overlays(self)` — Remove all non-interactive range overlays.
-  - `SequencerWidget.add_gap_overlay(self, start: float, end: float, color: str = '#555555', alpha: int = 120, locked: bool = False, tail: bool = False)` — Add a diagonal-hatch overlay for a gap between shots.
+  - `SequencerWidget.add_gap_overlay(self, start: float, end: float, color: str = '#555555', alpha: int = 120, locked: bool = False, tail: bool = False, head: bool = False)` — Add a diagonal-hatch overlay for a gap between shots.
   - `SequencerWidget.clear_gap_overlays(self)` — Remove all gap overlays.
   - `SequencerWidget.set_all_gap_overlays_locked(self, locked: bool)` — Set the locked state on every gap overlay.
   - `SequencerWidget.set_shot_blocks(self, blocks: list) -> None` — Show coloured shot-block indicators on the ruler.
@@ -2387,7 +2421,8 @@ Timeline view, scene, and track-header widgets.
   - `TimelineView.mouseDoubleClickEvent(self, event)`
   - `TimelineView.paintEvent(self, event)`
   - `TimelineView.contextMenuEvent(self, event)`
-  - `TimelineView.add_default_context_actions(self, menu, t: float)` — Append the timeline's own actions to *menu*;
+  - `TimelineView.default_context_entries(self, t: float) -> list` — The timeline's own context-menu entries at time *t*, as data.
+  - `TimelineView.add_default_context_actions(self, menu, t: float)` — Append the timeline's own actions to a QMenu;
   - `TimelineView.content_time_bounds(self) -> tuple` — ``(min_time, max_time)`` spanned by everything the scene draws.
   - `TimelineView.drawBackground(self, painter: QtGui.QPainter, rect: QtCore.QRectF)`
 

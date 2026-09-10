@@ -281,6 +281,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         fixed_item_height=None,
         sublist_x_offset=0,
         sublist_y_offset=0,
+        menu_surface=False,
         **kwargs,
     ):
         super().__init__(parent)
@@ -296,6 +297,9 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         self.fixed_item_height = fixed_item_height
         self.sublist_x_offset = sublist_x_offset
         self.sublist_y_offset = sublist_y_offset
+        # Whether this list paints an opaque menu surface (see
+        # _setup_widget_properties); inherited by every sublist.
+        self.menu_surface = menu_surface
         self.kwargs = kwargs
 
         # Sublist activation mode ("hover" | "click"); authoritative on the
@@ -340,6 +344,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         )
         self.installEventFilter(self)
         self.setProperty("class", self.__class__.__name__)
+        if self.menu_surface:
+            # A flyout is reparented to the top-level window and shown as its
+            # own frameless Tool window, so it has no ancestor to inherit a
+            # background from -- it came up transparent, showing the desktop
+            # through a menu whose root was solid. The property is the QSS
+            # hook; WA_StyledBackground is what makes a plain QWidget subclass
+            # honour a background-color rule at all (no paintEvent of its own).
+            self.setProperty("menuSurface", True)
+            self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.set_attributes(**self.kwargs)
 
     # -- Qt Designer properties ----------------------------------------------
@@ -495,6 +508,59 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
             )
 
+    @staticmethod
+    def _unwrap_item(widget):
+        """The row a layout slot holds, seen through an option-box wrap.
+
+        ``OptionBox.wrap`` stands a container in for the row in this layout
+        (the row becomes the container's child), so every walk of
+        ``_layout`` must look through it, or the wrapped row -- its sublist,
+        its interaction filter -- goes missing: a release on it no longer
+        reads as an item, and its flyout is never collapsed or cleared.
+        """
+        box = getattr(widget, "_option_box", None)
+        wrapped = getattr(box, "wrapped_widget", None)
+        return wrapped if wrapped is not None else widget
+
+    @classmethod
+    def _anchor_item(cls, widget):
+        """The layout slot *widget* occupies -- the inverse of :meth:`_unwrap_item`.
+
+        ``OptionBox.wrap`` stands a container in for the row in this list's
+        layout and makes the row its child, so the row now ends where its
+        settings button begins.  A flyout positioned from the ROW therefore
+        opens straight over that button, and the settings box of a row that
+        also expands could not be clicked at all.  Measure and place from the
+        container instead; identical when the row is unwrapped.
+        """
+        parent = widget.parentWidget()
+        box = getattr(parent, "_option_box", None)
+        if box is not None and getattr(box, "wrapped_widget", None) is widget:
+            return parent
+        return widget
+
+    def _row_widgets(self):
+        """This list's own rows in layout order, wrapped rows unwrapped."""
+        rows = []
+        for i in range(self._layout.count()):
+            w = self._layout.itemAt(i).widget()
+            if w is not None:
+                rows.append(self._unwrap_item(w))
+        return rows
+
+    @property
+    def contains_items(self) -> bool:
+        """Whether this list holds any row of its OWN (O(1)).
+
+        The cheap question ``get_items()`` answers expensively: that walk
+        recurses into every nested sublist, so asking it on a hot path (a
+        row's ``paint`` / ``sizeHint``, to know whether it owns a populated
+        flyout) costs a full traversal of the tree per call.  Named for
+        ``Menu.contains_items``, the same predicate on the sibling
+        container.
+        """
+        return self._layout is not None and self._layout.count() > 0
+
     def get_items(self):
         """Get all items in the list and its sublists.
 
@@ -503,7 +569,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         Returns:
             list: A list of all QWidget items in the list and its sublists.
         """
-        items = [self._layout.itemAt(i).widget() for i in range(self._layout.count())]
+        items = self._row_widgets()
         for item in items:
             if hasattr(item, "sublist"):
                 items.extend(item.sublist.get_items())
@@ -620,7 +686,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
 
         # Process widgets in reverse order to avoid index errors
         for i in reversed(range(self._layout.count())):
-            widget = self._layout.itemAt(i).widget()
+            slot = self._layout.itemAt(i).widget()
+            widget = self._unwrap_item(slot)
             if widget:
                 # Recursively clear, then destroy, the reparented sublist widget.
                 sublist = getattr(widget, "sublist", None)
@@ -637,10 +704,11 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 # which clear()s on every show mid-hover).
                 self._cancel_sublist_hide(widget)
 
-                # Remove and clean up the item itself
-                self._layout.removeWidget(widget)
-                widget.setParent(None)
-                widget.deleteLater()
+                # Remove and clean up the item itself (the wrap container,
+                # when there is one, takes the row down with it).
+                self._layout.removeWidget(slot)
+                slot.setParent(None)
+                slot.deleteLater()
 
         # Reset the widget_data dictionary
         self.widget_data.clear()
@@ -784,6 +852,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             "min_item_height": self.min_item_height,
             "max_item_height": self.max_item_height,
             "fixed_item_height": self.fixed_item_height,
+            "menu_surface": self.menu_surface,
             **self.kwargs,
         }
 
@@ -954,6 +1023,12 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             sublist.setWindowFlags(flags)
         # After reparenting so it survives the native-handle recreation.
         sublist.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
+        # Deliberately NOT WA_TranslucentBackground, which Menu._setup_as_popup
+        # does set: a Menu's ground is the translucent WINDOW_BACKGROUND, while
+        # a menu_surface list paints the opaque MENU_BACKGROUND.  Setting it
+        # here cleared the backing store to transparent and let the desktop
+        # through wherever the fill did not reach, which is what made a
+        # fanned-out flyout read as having no background at all.
 
     def _is_layout_managed(self):
         """Whether a parent layout owns this widget's geometry.
@@ -1099,9 +1174,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         force-hidden with it, so a hidden first level implies a fully
         collapsed chain.
         """
-        for i in range(self._layout.count()):
-            w = self._layout.itemAt(i).widget()
-            if w and hasattr(w, "sublist") and w.sublist.isVisible():
+        for w in self._row_widgets():
+            if hasattr(w, "sublist") and w.sublist.isVisible():
                 return True
         return False
 
@@ -1294,9 +1368,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         """
         if self.isVisible() and self.rect().contains(self.mapFromGlobal(cursor_pos)):
             return True
-        for i in range(self._layout.count()):
-            w = self._layout.itemAt(i).widget()
-            if w and hasattr(w, "sublist") and w.sublist.isVisible():
+        for w in self._row_widgets():
+            if hasattr(w, "sublist") and w.sublist.isVisible():
                 if w.sublist._is_cursor_in_hierarchy(cursor_pos):
                     return True
         return False
@@ -1314,9 +1387,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         set, so the clear must be unconditional. Hiding an already-hidden widget
         is a no-op, so the extra calls are harmless.
         """
-        for i in range(self._layout.count()):
-            w = self._layout.itemAt(i).widget()
-            if w and hasattr(w, "sublist"):
+        for w in self._row_widgets():
+            if hasattr(w, "sublist"):
                 w.sublist._force_hide_all()
                 # Bypass ExpandableList.hide()'s chained-children guard by
                 # calling QWidget.hide() directly. ``super(ExpandableList,
@@ -1627,9 +1699,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         so the previously-open sublist disappears as the new one shows,
         rather than lingering for the full hide-delay window.
         """
-        for i in range(self._layout.count()):
-            sibling = self._layout.itemAt(i).widget()
-            if sibling is None or sibling is keep_widget:
+        for sibling in self._row_widgets():
+            if sibling is keep_widget:
                 continue
             if not (hasattr(sibling, "sublist") and sibling.sublist.isVisible()):
                 continue
@@ -1695,11 +1766,14 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         widget.sublist.resize(target_width, hint.height())
         widget.updateGeometry()
 
-        # Get dimensions
+        # Get dimensions.  Measured from the layout slot, not the raw row: an
+        # option-box wrap puts a container in the slot and the row inside it
+        # (see _anchor_item).
+        anchor = self._anchor_item(widget)
         parent_list_width = self.width()
         parent_list_height = self.height()
-        child_widget_width = widget.width()
-        child_widget_height = widget.height()
+        child_widget_width = anchor.width()
+        child_widget_height = anchor.height()
         new_list_width = widget.sublist.width()
         new_list_height = widget.sublist.height()
 
@@ -1720,7 +1794,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # skipped. Hover-mode sublists are window children and keep the
         # parent-relative math.
         parent = widget.sublist.parent()
-        base_point = widget.mapToGlobal(QtCore.QPoint(0, 0))
+        base_point = anchor.mapToGlobal(QtCore.QPoint(0, 0))
 
         if parent and not widget.sublist.isWindow():
             parent_origin = parent.mapToGlobal(QtCore.QPoint(0, 0))

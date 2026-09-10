@@ -5762,12 +5762,15 @@ class TestShotSizeChangeRefreshesTheExtent(BaseTestCase):
 
 
 class TestShotLaneCoversTheWholeColumn(BaseTestCase):
-    """Right-clicking a shot means the shot, at any height.
+    """Right-clicking a shot over its TRACKS means the shot.
 
     The refinement used to apply only inside the ruler strip, so a
-    right-click over the TRACKS -- which is most of the shot -- reported
+    right-click over the tracks -- which is most of the shot -- reported
     "tracks" and the consumer answered with the widget's own marker menu:
-    no edit, no delete, nothing about the shot under the cursor.
+    no edit, no delete, nothing about the shot under the cursor.  The RULER
+    is the other way round: it is the timeline itself, and it keeps its own
+    zone so the timeline's menu has somewhere to open that does not depend
+    on finding a spot no shot covers.
     """
 
     def setUp(self):
@@ -5809,8 +5812,13 @@ class TestShotLaneCoversTheWholeColumn(BaseTestCase):
         self._right_click(80.0, self._empty_track_y())
         self.assertEqual([z for z, _t in self.zones], ["shot_lane"])
 
-    def test_a_click_over_the_ruler_inside_a_shot_is_still_the_shot_lane(self):
+    def test_a_click_over_the_ruler_is_the_ruler_even_inside_a_shot(self):
         self._right_click(80.0, 4)
+        self.assertEqual([z for z, _t in self.zones], ["ruler"])
+
+    def test_the_shot_band_itself_is_always_the_shot_lane(self):
+        """Between the ruler and the tracks: the band the shot is drawn in."""
+        self._right_click(80.0, int(self.w._content_top) - 4)
         self.assertEqual([z for z, _t in self.zones], ["shot_lane"])
 
     def test_a_click_outside_every_shot_is_still_the_tracks(self):
@@ -6455,7 +6463,7 @@ class TestKeyContextMenuAndTangentHandles(BaseTestCase):
         self.assertEqual(groups, [{"clip_id": clip.clip_id, "times": [50]}])
         self.assertTrue(key.isSelected(), "an unselected key becomes the selection")
         labels = [a.text() for a in menu.actions() if not a.isSeparator()]
-        self.assertEqual(labels, ["Delete Key"], "the widget owns Delete")
+        self.assertEqual(labels, [], "the widget adds nothing of its own")
 
     def test_right_click_on_a_selected_key_keeps_the_whole_selection(self):
         from unittest.mock import patch
@@ -6471,7 +6479,7 @@ class TestKeyContextMenuAndTangentHandles(BaseTestCase):
             k.contextMenuEvent(self._ctx_event(k))
         self.assertEqual(sorted(got[0][0]["times"]), [10, 50, 90])
 
-    def test_the_consumer_s_actions_come_before_delete(self):
+    def test_the_menu_holds_only_what_the_consumer_added(self):
         from unittest.mock import patch
         from qtpy import QtWidgets
 
@@ -6489,24 +6497,24 @@ class TestKeyContextMenuAndTangentHandles(BaseTestCase):
         ):
             k = item._keyframe_items[0]
             k.contextMenuEvent(self._ctx_event(k))
-        labels = [t for t, sep in seen[0] if not sep]
-        self.assertEqual(labels, ["Flat", "Delete Keys (3)"])
-        self.assertTrue(seen[0][1][1], "kept visually apart")
+        self.assertEqual([t for t, sep in seen[0] if not sep], ["Flat"])
+        self.assertFalse(any(sep for _t, sep in seen[0]), "nothing to separate from")
 
-    def test_delete_from_the_menu_emits_keys_deleted(self):
-        from unittest.mock import patch
-        from qtpy import QtWidgets
-
+    def test_no_consumer_actions_means_no_menu(self):
+        """The widget adds nothing of its own, so an unhandled key selection
+        must not open an empty popup."""
         clip, item = self._clip()
-        key = item._keyframe_items[0]
+        item._keyframe_items[0].setSelected(True)
+        self.assertFalse(self.w.show_key_menu(QtCore.QPoint(0, 0)))
+
+    def test_the_delete_shortcut_emits_keys_deleted(self):
+        """Deleting is the Delete KEY's job, not a menu row's -- it acts on
+        the same selection the menu would have."""
+        clip, item = self._clip()
+        item._keyframe_items[0].setSelected(True)
         deleted = []
         self.w.keys_deleted.connect(lambda cid, times: deleted.append((cid, times)))
-
-        def _pick_delete(menu, *_a, **_k):
-            return next(a for a in menu.actions() if a.text().startswith("Delete"))
-
-        with patch.object(QtWidgets.QMenu, "exec_", _pick_delete):
-            key.contextMenuEvent(self._ctx_event(key))
+        self.w._delete_selected_keys()
         self.assertEqual(deleted, [(clip.clip_id, [10])])
 
     def test_a_read_only_key_has_no_menu(self):
@@ -6623,7 +6631,15 @@ class TestKeyContextMenuAndTangentHandles(BaseTestCase):
         for ki in item._keyframe_items:
             ki.setSelected(True)
         got, clips, zones = [], [], []
-        self.w.key_menu_requested.connect(lambda m, g: got.append(g))
+
+        def _on_key_menu(menu, groups):
+            got.append(groups)
+            # A consumer with an editable selection always offers something;
+            # with an EMPTY menu the click falls through by design (see
+            # test_no_consumer_actions_means_no_menu).
+            menu.addAction("Flat")
+
+        self.w.key_menu_requested.connect(_on_key_menu)
         self.w.clip_menu_requested.connect(lambda m, c: clips.append(c))
         self.w.zone_context_menu_requested.connect(lambda *a: zones.append(a))
 
@@ -7292,3 +7308,156 @@ class TestTangentHandleDrag(BaseTestCase):
         self.assertEqual(
             item._handle_pen("#FF6600", middle, 1).style(), QtCore.Qt.SolidLine
         )
+
+
+from qtpy import QtCore  # noqa: E402
+
+
+class TestShotBoundCaps(BaseTestCase):
+    """The head/tail overlays are the first/last shot's own bound handles:
+    each sits just OUTSIDE its bound (as a real gap's edge handle does), so
+    the active shot's own handle keeps the pixels inside the bound, and its
+    drag reads as a bound move, not a slide."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 300)
+        self.w.add_track("T")
+        self.tl = self.w._timeline
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _cap(self, **kw):
+        self.w.add_gap_overlay(100, 100, **kw)
+        return self.w._gap_overlays[-1]
+
+    def test_tail_strip_starts_at_the_bound(self):
+        item = self._cap(tail=True)
+        r = item._rect()
+        self.assertAlmostEqual(r.left(), self.tl.time_to_x(100), places=3)
+        self.assertEqual(r.width(), item._MIN_PX)
+
+    def test_head_strip_ends_at_the_bound(self):
+        item = self._cap(head=True)
+        r = item._rect()
+        self.assertAlmostEqual(r.right(), self.tl.time_to_x(100), places=3)
+        self.assertEqual(r.width(), item._MIN_PX)
+
+    def test_caps_expose_one_edge_each(self):
+        self.assertEqual(self._cap(tail=True)._hit_zone(QtCore.QPointF(0, 0)), "left")
+        self.assertEqual(self._cap(head=True)._hit_zone(QtCore.QPointF(0, 0)), "right")
+
+    def test_caps_never_lock(self):
+        head = self._cap(head=True, locked=True)
+        tail = self._cap(tail=True, locked=True)
+        self.w.add_gap_overlay(10, 20)
+        self.w.set_all_gap_overlays_locked(True)
+        self.assertFalse(head._locked)
+        self.assertFalse(tail._locked)
+        self.assertTrue(self.w._gap_overlays[-1]._locked)
+
+    def test_a_plain_cap_drag_reads_as_a_resize(self):
+        for kw in ({"tail": True}, {"head": True}):
+            item = self._cap(**kw)
+            item._drag_mode = "left" if kw.get("tail") else "right"
+            self.w.record_press_modifiers(QtCore.Qt.NoModifier)
+            self.assertTrue(item._gap_drag_label().startswith("Resize "), kw)
+            self.w.record_press_modifiers(QtCore.Qt.ControlModifier)
+            self.assertTrue(item._gap_drag_label().startswith("Trim "), kw)
+            self.w.record_press_modifiers(QtCore.Qt.ShiftModifier)
+            self.assertTrue(item._gap_drag_label().startswith("Retime "), kw)
+        gap = self.w.add_gap_overlay(10, 20) or self.w._gap_overlays[-1]
+        gap._drag_mode = "left"
+        self.w.record_press_modifiers(QtCore.Qt.NoModifier)
+        self.assertTrue(gap._gap_drag_label().startswith("Slide "))
+
+    def test_a_head_cap_can_be_dragged_both_ways(self):
+        item = self._cap(head=True)
+        item._drag_mode = "right"
+        item._drag_origin_x = self.tl.time_to_x(100)
+        item._drag_origin_start = item._drag_origin_end = 100.0
+        item._undo_captured = True
+        item._grab_armed = True
+        dx = self.tl.time_to_x(80) - self.tl.time_to_x(100)
+
+        class _Ev:
+            def __init__(self, x):
+                self._x = x
+
+            def scenePos(self):
+                return QtCore.QPointF(self._x, 0)
+
+            def accept(self):
+                pass
+
+        item.mouseMoveEvent(_Ev(item._drag_origin_x + dx))
+        self.assertAlmostEqual(item._end, 80.0, places=3, msg="grew backwards")
+        self.assertAlmostEqual(item._start, 80.0, places=3)
+
+    def test_gesture_context_calls_a_cap_a_shot_bound(self):
+        seen = []
+        self.w.shortcut_overlay_visible = True
+        self.w._set_gesture_context = seen.append
+        item = self._cap(tail=True)
+        self.w.add_gap_overlay(10, 20)
+        gap = self.w._gap_overlays[-1]
+        self.w.show()
+        for overlay, expected in ((item, "Shot bounds"), (gap, "Gaps")):
+            view_pos = self.tl.mapFromScene(overlay._rect().center())
+            self.assertIs(self.tl.itemAt(view_pos), overlay)
+            self.tl._sync_gesture_context(view_pos)
+            self.assertEqual(seen[-1], expected)
+
+
+class TestDefaultContextEntries(BaseTestCase):
+    """The timeline describes its own context-menu entries as data, and the
+    QMenu path renders that same list."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tl = self.w._timeline
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_entries_shape(self):
+        entries = self.tl.default_context_entries(42.0)
+        labels = [e["label"] for e in entries if e is not None]
+        self.assertEqual(labels[0], "Add Marker at 42\u2026")
+        self.assertIn(None, entries, "a separator after the marker entry")
+        self.assertEqual(
+            labels[1:], ["Show Shot Ranges", "Show Active Range", "Show Gap Overlays"]
+        )
+        for e in entries[2:]:
+            self.assertTrue(e["checkable"])
+            self.assertTrue(e["checked"], "every display toggle starts on")
+
+    def test_a_toggle_callback_drives_the_widget(self):
+        entries = self.tl.default_context_entries(0.0)
+        gaps = next(e for e in entries if e and e["label"] == "Show Gap Overlays")
+        gaps["callback"](False)
+        self.assertFalse(self.w.show_gap_overlays)
+        self.assertFalse(self.tl.default_context_entries(0.0)[-1]["checked"])
+        gaps["callback"](True)
+        self.assertTrue(self.w.show_gap_overlays)
+
+    def test_qmenu_rendering_matches_the_entries(self):
+        from qtpy import QtWidgets
+
+        menu = QtWidgets.QMenu()
+        handled = self.tl.add_default_context_actions(menu, 7.0)
+        acts = [a for a in menu.actions() if not a.isSeparator()]
+        self.assertEqual(
+            [a.text() for a in acts],
+            [e["label"] for e in self.tl.default_context_entries(7.0) if e],
+        )
+        gap_act = acts[-1]
+        self.assertTrue(gap_act.isCheckable() and gap_act.isChecked())
+        gap_act.setChecked(False)
+        self.assertTrue(handled(gap_act))
+        self.assertFalse(self.w.show_gap_overlays)
+        self.assertFalse(handled(None))
+        menu.deleteLater()

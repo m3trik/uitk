@@ -133,6 +133,11 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     the LAST shot, which has no following shot to form a real gap with.
     It exposes only the left edge — i.e. that shot's ``end`` — so the final
     shot gets the same drag handle every other shot already has.
+    ``head=True`` is its twin before the FIRST shot: right edge only, that
+    shot's ``start``.  Both are shot BOUNDS, not gaps: the strip sits just
+    outside the shot (a real gap's edge handle does too), so the active
+    shot's own bound handle keeps the pixels inside the bound, and a
+    consumer treats a drag on either as a bound move, never a slide.
     """
 
     _EDGE_WIDTH = 6  # px from each edge that triggers resize cursor
@@ -146,22 +151,24 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         alpha: int,
         locked: bool = False,
         tail: bool = False,
+        head: bool = False,
     ):
         super().__init__()
         self._timeline = timeline
         self._start = start
         self._end = end
         self._tail = tail
+        self._head = head
         self._base_alpha = alpha
         self._color = QtGui.QColor(color)
         self._color.setAlpha(alpha)
         self._line_color = QtGui.QColor(color)
         self._line_color.setAlpha(min(255, alpha + 40))
         self._hovered = False
-        # A tail handle is not a gap — it has no right-hand shot to key a
-        # lock on, and a locked tail would leave the LAST shot without its
-        # only end handle.  Locking is refused at the source.
-        self._locked = locked and not tail
+        # A head/tail handle is not a gap — it has no second shot to key a
+        # lock on, and a locked one would leave the first/last shot without
+        # its only outer handle.  Locking is refused at the source.
+        self._locked = locked and not (tail or head)
         self._drag_mode: Optional[str] = None  # "left", "right", "move", or None
         self._drag_origin_x: float = 0.0
         self._drag_origin_start: float = 0.0
@@ -180,7 +187,15 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             frame = int(round(self._start))
             self.setToolTip(
                 f"Shot end: frame {frame}{lock_label}"
-                "\nDrag to resize the last shot"
+                "\nDrag to move the last shot's end (keys stay)"
+                "\nRight-click for options"
+            )
+            return
+        if self._head:
+            frame = int(round(self._end))
+            self.setToolTip(
+                f"Shot start: frame {frame}{lock_label}"
+                "\nDrag to move the first shot's start (keys stay)"
                 "\nRight-click for options"
             )
             return
@@ -208,7 +223,15 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         x0 = tl.time_to_x(self._start)
         x1 = tl.time_to_x(self._end)
         w = x1 - x0
-        if w < self._MIN_PX:
+        if self._tail:
+            # The strip sits just PAST the bound, where a real gap's edge
+            # handle sits: centred on it, it covered the pixels inside the
+            # bound that the active shot's own handle owns, and a press on
+            # the last shot's end went to the wrong handle.
+            x0, w = x1, self._MIN_PX
+        elif self._head:
+            x0, w = x0 - self._MIN_PX, self._MIN_PX
+        elif w < self._MIN_PX:
             mid = (x0 + x1) * 0.5
             x0 = mid - self._MIN_PX * 0.5
             w = self._MIN_PX
@@ -223,9 +246,12 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     def _hit_zone(self, pos: QtCore.QPointF) -> str:
         # A tail handle has no following shot, so "right" (move the next
         # shot's start) and "body" (slide the whole gap) have no target --
-        # every press on it is a drag of the preceding shot's end.
+        # every press on it is a drag of the preceding shot's end; a head
+        # handle is the mirror, every press drags the first shot's start.
         if self._tail:
             return "left"
+        if self._head:
+            return "right"
         r = self._rect()
         local_x = pos.x() - r.left()
         if local_x <= self._EDGE_WIDTH:
@@ -328,7 +354,15 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             new_end = DraggableItemMixin.snap_time(
                 self._drag_origin_end + dt, self._timeline
             )
-            if new_end >= self._start:
+            if self._head:
+                # A head handle has no left edge to clamp against (it IS the
+                # start of the timeline); both edges follow the cursor so the
+                # first shot can grow backwards as well as shrink.
+                self.prepareGeometryChange()
+                self._start = self._end = new_end
+                self._update_tooltip()
+                self.update()
+            elif new_end >= self._start:
                 self.prepareGeometryChange()
                 self._end = new_end
                 self._update_tooltip()
@@ -376,10 +410,12 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         sq = self._timeline.parent_sequencer
         if self._drag_mode == "move":
             verb = "Slide gap"
-        elif sq.ctrl_held_at_press:
-            verb = "Trim"
         elif sq.shift_held_at_press:
             verb = "Retime"
+        elif sq.ctrl_held_at_press:
+            verb = "Trim"
+        elif self._tail or self._head:
+            verb = "Resize"  # a shot bound: the bound moves, nothing slides
         else:
             verb = "Slide"
         return f"{verb} {FrameTooltip.format_frame(self._gap_drag_frame())}"
@@ -438,10 +474,10 @@ class _GapOverlayItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
     def contextMenuEvent(self, event):
         menu = MenuUtils._styled_menu()
         act_lock = act_lock_all = act_unlock_all = None
-        if not self._tail:
-            # A tail handle exposes no lock actions — it is a shot-end
-            # handle, not a gap, and a "locked" tail would be an inert
-            # last-shot handle backed by no persistable store state.
+        if not (self._tail or self._head):
+            # A head/tail handle exposes no lock actions — it is a shot-bound
+            # handle, not a gap, and a "locked" one would be an inert
+            # first/last-shot handle backed by no persistable store state.
             act_lock = menu.addAction("Unlock Gap" if self._locked else "Lock Gap")
             menu.addSeparator()
             act_lock_all = menu.addAction("Lock All Gaps")
