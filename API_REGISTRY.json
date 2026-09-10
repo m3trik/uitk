@@ -5755,7 +5755,7 @@
               "kind": "method",
               "signature": "(self, title: str = '') -> QtWidgets.QWidget",
               "summary": "Add a section separator;",
-              "line": 328,
+              "line": 332,
               "deprecated": false
             },
             {
@@ -5764,7 +5764,7 @@
               "kind": "method",
               "signature": "(self, entries, parent=None) -> list",
               "summary": "Add rows for a widget's own context entries;",
-              "line": 336,
+              "line": 340,
               "deprecated": false
             },
             {
@@ -5773,7 +5773,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 384,
+              "line": 388,
               "deprecated": false
             },
             {
@@ -5782,7 +5782,7 @@
               "kind": "method",
               "signature": "(self, global_pos: Optional[QtCore.QPoint] = None) -> None",
               "summary": "Show the menu at *global_pos* (the cursor by default), non-blocking.",
-              "line": 393,
+              "line": 397,
               "deprecated": false
             },
             {
@@ -5791,7 +5791,7 @@
               "kind": "method",
               "signature": "(self, global_pos: Optional[QtCore.QPoint] = None, dispose: bool = True) -> None",
               "summary": "Show the menu and block until it is dismissed.",
-              "line": 399,
+              "line": 403,
               "deprecated": false
             },
             {
@@ -5800,7 +5800,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Tear the menu down: flyouts are reparented top-levels, so they",
-              "line": 423,
+              "line": 427,
               "deprecated": false
             }
           ]
