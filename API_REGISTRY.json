@@ -7008,7 +7008,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether this list holds any row of its OWN (O(1)).",
-              "line": 552,
+              "line": 564,
               "deprecated": false
             },
             {
@@ -7017,7 +7017,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get all items in the list and its sublists.",
-              "line": 564,
+              "line": 576,
               "deprecated": false
             },
             {
@@ -7026,7 +7026,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Get the textual representation of a widget.",
-              "line": 595,
+              "line": 613,
               "deprecated": false
             },
             {
@@ -7035,7 +7035,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Get the text attribute of the parent item of a widget's sublist.",
-              "line": 613,
+              "line": 631,
               "deprecated": false
             },
             {
@@ -7044,7 +7044,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Get data associated with a widget in the list or its sublists.",
-              "line": 627,
+              "line": 645,
               "deprecated": false
             },
             {
@@ -7053,7 +7053,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Get the data associated with the parent item of a widget's sublist.",
-              "line": 638,
+              "line": 656,
               "deprecated": false
             },
             {
@@ -7062,7 +7062,7 @@
               "kind": "method",
               "signature": "(self, widget, data)",
               "summary": "Set data associated with a widget in the list or its sublists.",
-              "line": 652,
+              "line": 670,
               "deprecated": false
             },
             {
@@ -7071,7 +7071,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clear all items in the list and its sublists.",
-              "line": 664,
+              "line": 682,
               "deprecated": false
             },
             {
@@ -7080,7 +7080,7 @@
               "kind": "method",
               "signature": "(self, x, data=None, **kwargs)",
               "summary": "Add an item or multiple items to the list or its sublists.",
-              "line": 805,
+              "line": 823,
               "deprecated": false
             },
             {
@@ -7089,7 +7089,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Hide this list and collapse every still-open sublist.",
-              "line": 1204,
+              "line": 1222,
               "deprecated": false
             },
             {
@@ -7098,7 +7098,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "On the root list's show, size to content and retroactively",
-              "line": 1222,
+              "line": 1240,
               "deprecated": false
             },
             {
@@ -7107,7 +7107,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Ensure all sublists are closed when this list is hidden.",
-              "line": 1299,
+              "line": 1317,
               "deprecated": false
             },
             {
@@ -7116,7 +7116,7 @@
               "kind": "staticmethod",
               "signature": "(widget)",
               "summary": "Get the padding values around a widget.",
-              "line": 1556,
+              "line": 1574,
               "deprecated": false
             },
             {
@@ -7125,7 +7125,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the recommended size for the widget.",
-              "line": 1575,
+              "line": 1593,
               "deprecated": false
             },
             {
@@ -7134,7 +7134,7 @@
               "kind": "method",
               "signature": "(self, widget, event)",
               "summary": "Filter events for the ExpandableList.",
-              "line": 1816,
+              "line": 1834,
               "deprecated": false
             },
             {
@@ -7143,7 +7143,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the cursor leaving this list widget.",
-              "line": 1926,
+              "line": 1953,
               "deprecated": false
             }
           ]
