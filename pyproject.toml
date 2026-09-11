@@ -23,7 +23,7 @@ dependencies = [
     # 0.9.25 is the floor for ptk.StatusBadge's module-coverage badge gate
     # (discover_module_names / module_of / is_import_standin / gate) that
     # test/run_tests.py stamps through -- 0.9.24 ships the class without them.
-    "pythontk>=0.9.39",
+    "pythontk>=0.9.40",
     "qtpy>=2.0",  # PySide6 support landed in 2.0
     # Reading a provider's pyproject.toml is how external apps are
     # discovered from a source checkout (no installed metadata). tomllib
