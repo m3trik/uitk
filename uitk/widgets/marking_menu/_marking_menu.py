@@ -82,9 +82,12 @@ class MarkingMenu(
     # nav targets through a shared cache dispatches into the old instance's
     # hollowed native-menu wrappers ("MenuButtons stop launching").
     _submenu_cache: dict = {}
-    # Every not-yet-retired instance in this process. A new instance retires
-    # the others at construction — see retire().
+    # Fallback registry for a process with no QApplication yet (test fixtures
+    # that bypass __init__). Production instances go through _live_registry().
     _live_instances: "weakref.WeakSet" = weakref.WeakSet()
+    # Attribute under which the process-wide registry lives on the QApplication.
+    # A plain constant, so both class generations across a reload agree on it.
+    _LIVE_REGISTRY_ATTR = "_uitk_marking_menu_live_instances"
     _retired: bool = False
     _last_ui_history_check: QtWidgets.QWidget = None
     _pending_show_timer: QtCore.QTimer = None
@@ -337,10 +340,11 @@ class MarkingMenu(
         # activation GlobalShortcut otherwise keeps servicing the gesture with
         # stale caches — wrappers whose native-menu content this instance's
         # builds re-wrap — so a chord release is consumed but launches nothing.
-        for _other in list(MarkingMenu._live_instances):
+        registry = self._live_registry()
+        for _other in list(registry):
             if _other is not self:
                 _other.retire()
-        MarkingMenu._live_instances.add(self)
+        registry.add(self)
 
         # Optional scoped preloading: warm the binding-target menus once the
         # host's event loop spins, so the FIRST activation behaves exactly
@@ -350,21 +354,82 @@ class MarkingMenu(
         if preload:
             self.preload_menus()
 
+    @classmethod
+    def _live_registry(cls) -> "weakref.WeakSet":
+        """Every not-yet-retired instance in this PROCESS.
+
+        Anchored on the ``QApplication`` rather than on the class, because a
+        class attribute does not survive a module reload: ``importlib.reload``
+        re-executes the class body, so the post-reload generation would start
+        with an EMPTY registry and never retire the instance built before it —
+        two armed activation shortcuts on the same host widget, which Qt
+        resolves as ambiguous, so the menu stops opening until the DCC is
+        restarted. That is the ``Settings > Reload Scripts`` path in tentacle.
+        The QApplication outlives every reload, so both generations resolve the
+        same set (the same reason tentacle's Blender event pump caches its
+        generation token there).
+
+        Falls back to the class-level set only when there is no QApplication —
+        test fixtures that bypass ``__init__``; a production instance is a
+        QWidget and so always has one.
+        """
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return cls._live_instances
+        registry = getattr(app, cls._LIVE_REGISTRY_ATTR, None)
+        if registry is None:
+            registry = weakref.WeakSet()
+            setattr(app, cls._LIVE_REGISTRY_ATTR, registry)
+        return registry
+
+    @classmethod
+    def retire_all(cls) -> list:
+        """Retire every live instance in the process; returns those instances.
+
+        The teardown hook a host calls BEFORE reloading the ecosystem packages,
+        so no pre-reload instance is left servicing the activation gesture with
+        caches the reload has invalidated. Reaches instances of any class
+        generation — see :meth:`_live_registry`.
+
+        Returning the instances rather than a count is what lets the caller
+        dispose of them once their replacement is up (tentacle's
+        ``Tcl.dispose_retired``) without reaching into the private registry.
+        """
+        instances = list(cls._live_registry())
+        for instance in instances:
+            try:
+                instance.retire()
+            except Exception:  # a dead C++ side is already inert — keep going
+                pass
+        return instances
+
     def retire(self) -> None:
         """Deactivate this instance because a newer MarkingMenu now owns
         activation input (re-instantiation in the same process — the dev-reload
         situation).
 
-        Disposes the activation ``GlobalShortcut``, cancels pending timers,
-        and ends any live gesture (``hide`` releases grabs); the activation
-        callbacks become no-ops. Irreversible by design — construct a new
-        instance rather than reviving a retired one.
+        Disposes the activation ``GlobalShortcut`` AND every shortcut this
+        instance's Switchboard registered, cancels pending timers, and ends any
+        live gesture (``hide`` releases grabs); the activation callbacks become
+        no-ops. Irreversible by design — construct a new instance rather than
+        reviving a retired one.
+
+        The Switchboard sweep is what keeps a rebuild from stacking bindings:
+        application-scoped shortcuts are parented to the HOST window, so Qt keeps
+        them armed after this instance is gone, and the replacement's copies then
+        ambiguate with them until the host restarts (see
+        ``Switchboard.dispose_shortcuts``). Retiring is the moment this instance
+        stops owning input — all of it, not just the activation key.
         """
         if self._retired:
             return
         self._retired = True
-        MarkingMenu._live_instances.discard(self)
+        self._live_registry().discard(self)
         self._dispose_activation_shortcut()
+        try:
+            self.sb.dispose_shortcuts()
+        except Exception:  # a skewed/absent switchboard must not block retiring
+            self.logger.debug("retire: shortcut disposal failed", exc_info=True)
         self._cancel_chord_release_timer()
         if self._pending_show_timer is not None:
             self._pending_show_timer.stop()
@@ -677,8 +742,9 @@ class MarkingMenu(
         """QSettings key for the activation key the USER chose, host-namespaced
         like :meth:`_binding_store_key` (and by the same shared suffix helper,
         so the two stores can't disagree on a host's identity)."""
-        return "marking_menu_user_activation_key" + ShortcutManager.host_namespace_suffix(
-            context_tags
+        return (
+            "marking_menu_user_activation_key"
+            + ShortcutManager.host_namespace_suffix(context_tags)
         )
 
     @property
@@ -716,7 +782,9 @@ class MarkingMenu(
             stored = getattr(configurable, cls._user_key_store_key(context_tags)).get(
                 None
             )
-        except Exception:  # unreadable/corrupt store — the caller falls back to its default
+        except (
+            Exception
+        ):  # unreadable/corrupt store — the caller falls back to its default
             return None
         # The write path stores only validated Qt key names, so anything else is
         # tampering/corruption. Declining it here matters: a host launches on this

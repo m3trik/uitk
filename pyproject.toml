@@ -25,6 +25,11 @@ dependencies = [
     # test/run_tests.py stamps through -- 0.9.24 ships the class without them.
     "pythontk>=0.9.39",
     "qtpy>=2.0",  # PySide6 support landed in 2.0
+    # Reading a provider's pyproject.toml is how external apps are
+    # discovered from a source checkout (no installed metadata). tomllib
+    # is 3.11+, and without the backport below that discovery degrades to
+    # finding nothing -- quietly, which is the failure it exists to end.
+    "tomli>=1.1; python_version < '3.11'",
 ]
 
 [project.urls]

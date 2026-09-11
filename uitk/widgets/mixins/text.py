@@ -8,9 +8,21 @@ render it — :class:`RichText` and :class:`TextOverlay` — plus the
 :class:`TextTruncation` font-metrics helper.
 """
 
+import re
 from typing import Optional, Union
 
 from qtpy import QtWidgets, QtCore, QtGui
+
+#: A region whose newlines HTML already honours, so a ``<br>`` would double
+#: them. Captured (not consumed) so :func:`re.split` hands the block back.
+_PRESERVED_REGION = re.compile(r"(<pre\b.*?</pre>)", re.IGNORECASE | re.DOTALL)
+
+#: A newline an explicit ``<br>`` already accounts for, either side of it.
+#: ``[^\S\n]`` is "whitespace that is not the newline itself", so only the
+#: indentation between the tag and the break is absorbed.
+_REDUNDANT_NEWLINE = re.compile(
+    r"(<br\s*/?>)[^\S\n]*\n|\n[^\S\n]*(?=<br\s*/?>)", re.IGNORECASE
+)
 
 
 class RichTextFormatter:
@@ -102,6 +114,43 @@ class RichTextFormatter:
             string = string.replace(bare, styled)
         return string
 
+    @classmethod
+    def apply_line_breaks(cls, string: str) -> str:
+        """Render each newline as a line break instead of collapsing it.
+
+        Both consumers set ``Qt.RichText``, and HTML collapses whitespace, so
+        a newline in a message body renders as a SPACE and every intended
+        break is lost silently. Measured across the six packages 2026-09-10:
+        667 rich-text strings carry a real newline, 665 of which want the
+        break. The two that do not are one ``__main__`` demo, whose newlines
+        sit inside ``<pre>`` where HTML already honours them.
+
+        Two things are therefore left alone: a ``<pre>`` region, and a newline
+        an author already wrote a ``<br>`` for (three extapps tooltips wrap
+        their SOURCE that way, and converting would give them a blank line).
+
+        Line endings are normalised first. ``TextViewBox`` shows captured
+        subprocess output, which on Windows arrives CRLF, and absorbing before
+        normalising would leave the bare CR to become a second break of its
+        own -- a blank line between every line of a build log.
+
+        Parameters:
+            string: Raw HTML or plain text, mid-pipeline.
+
+        Returns:
+            The same string with every free newline rendered as ``<br>``.
+        """
+        if "\n" not in string and "\r" not in string:
+            return string
+        parts = _PRESERVED_REGION.split(string)
+        # split() with one capturing group alternates outside/inside, starting
+        # outside, so the even indices are everything not inside a <pre>.
+        for i in range(0, len(parts), 2):
+            normalised = parts[i].replace("\r\n", "\n").replace("\r", "\n")
+            absorbed = _REDUNDANT_NEWLINE.sub(lambda m: m.group(1) or "", normalised)
+            parts[i] = absorbed.replace("\n", "<br>")
+        return "".join(parts)
+
     @staticmethod
     def wrap_font_color(string: str, color: str) -> str:
         return f"<font color={color}>{string}</font>"
@@ -142,8 +191,9 @@ class RichTextFormatter:
         """Apply the standard uitk HTML pipeline to a string.
 
         Wraps in an alignment ``<div>`` (when no ``align=`` is already
-        present), substitutes prefix tokens and known tags, then optionally
-        wraps in ``<font color>`` / ``<font size>``.
+        present), substitutes prefix tokens and known tags, renders newlines
+        as line breaks (:meth:`apply_line_breaks`), then optionally wraps in
+        ``<font color>`` / ``<font size>``.
 
         Parameters:
             string: Raw HTML or plain text.
@@ -156,6 +206,7 @@ class RichTextFormatter:
             string = f"<div align='{align}'>{string}</div>"
         s = cls.apply_prefix_styles(string)
         s = cls.apply_inline_styles(s)
+        s = cls.apply_line_breaks(s)
         if font_color:
             s = cls.wrap_font_color(s, font_color)
         if font_size is not None:

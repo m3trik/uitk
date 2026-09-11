@@ -383,5 +383,59 @@ class TestFlakyGatedReporting(RunnerTestCase):
         self.assertNotIn("Flaky-gated", output)
 
 
+class TestModuleScoping(RunnerTestCase):
+    """``--modules`` selects by module, including one that will not import.
+
+    The scoping exists to bisect a cross-module interaction, so the two things
+    that must not happen are selecting the wrong module and silently selecting
+    NOTHING.
+    """
+
+    def _stem(self, test):
+        return self.runner.TestSuiteRunner._module_stem(test)
+
+    def test_a_normal_test_resolves_to_its_module_stem(self):
+        class Sample(unittest.TestCase):
+            def test_x(self):
+                pass
+
+        Sample.__module__ = "test_sequencer"
+        self.assertEqual(self._stem(Sample("test_x")), "sequencer")
+
+    def test_an_unimportable_module_is_still_matched_by_name(self):
+        """Regression: a module that fails to IMPORT must stay selectable.
+
+        ``unittest`` represents it as a synthetic ``_FailedTest`` whose
+        ``__module__`` is ``unittest.loader``; the module's own name lives in
+        the METHOD name. Reading the leading segment of ``id()`` instead yields
+        ``"unittest"``, so the scoped run drops the import error and reports
+        the module as having no failures -- silently green on a module that
+        never loaded.
+        """
+        from unittest.loader import _make_failed_import_test
+
+        made = _make_failed_import_test("test_broken_module", unittest.TestSuite)
+        suite = made[0] if isinstance(made, tuple) else made
+        failed = list(suite)[0]
+
+        self.assertEqual(type(failed).__module__, "unittest.loader")
+        self.assertEqual(self._stem(failed), "broken_module")
+
+    def test_the_test_prefix_is_optional(self):
+        runner = self.runner.TestSuiteRunner(modules=["sequencer", "test_widgets"])
+        self.assertEqual(runner.modules, {"sequencer", "widgets"})
+
+    def test_no_modules_means_the_whole_suite(self):
+        self.assertIsNone(self.runner.TestSuiteRunner().modules)
+        self.assertIsNone(self.runner.TestSuiteRunner(modules=[]).modules)
+
+    def test_an_unknown_module_name_is_a_hard_error(self):
+        """A typo must not read as "those tests all passed"."""
+        runner = self.runner.TestSuiteRunner(modules=["definitely_not_a_module"])
+        with self.assertRaises(SystemExit) as caught:
+            runner.discover_tests()
+        self.assertEqual(caught.exception.code, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

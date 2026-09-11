@@ -685,6 +685,45 @@ class SwitchboardShortcutMixin:
                 f"({ShortcutManager.context_to_scope_name(target_context)})"
             )
 
+    def dispose_shortcuts(self) -> int:
+        """Destroy every shortcut this Switchboard registered; returns the count.
+
+        Application-scoped shortcuts are parented to the HOST window rather than
+        to the tool's own UI (see :meth:`_create_switchboard_shortcut`) so they
+        keep firing while the tool is hidden. The consequence is that Qt, not
+        this Switchboard, owns their lifetime: dropping the Switchboard and its
+        slot instances leaves them armed on that host forever, because a
+        parented QObject does not die with the Python wrapper that made it.
+
+        That is only a leak until the UI is rebuilt in the same session — the
+        dev-reload path (tentacle's ``Settings > Reload Scripts``). Then the
+        rebuild arms a SECOND shortcut on the same sequence and the same parent,
+        which Qt reports as an ambiguous overload and answers by firing NEITHER.
+        The binding dies silently and stays dead until the host restarts.
+        Measured in a live Maya: one reload took two user hotkeys from one armed
+        shortcut each to three each.
+
+        So a host tearing down a Switchboard has to say so, and this is that
+        call — see ``MarkingMenu.retire``, which makes it part of retiring an
+        instance. Idempotent: a second call finds nothing left and returns 0.
+        """
+        disposed = 0
+        for slots_instance in self.slot_instances.values():
+            bound = getattr(slots_instance, "_connected_shortcuts", None)
+            if not bound:
+                continue
+            for shortcut in list(bound.values()):
+                self._dispose_shortcut(shortcut)
+                disposed += 1
+            bound.clear()
+
+        for shortcut in list(self._command_shortcuts.values()):
+            self._dispose_shortcut(shortcut)
+            disposed += 1
+        self._command_shortcuts.clear()
+
+        return disposed
+
     @staticmethod
     def _dispose_shortcut(shortcut) -> None:
         """Tear down a QShortcut/GlobalShortcut created by this mixin.

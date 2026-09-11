@@ -11,7 +11,7 @@ Run standalone: python -m test.test_rich_text_formatter
 """
 import unittest
 
-from conftest import BaseTestCase
+from conftest import BaseTestCase, QtBaseTestCase
 
 from uitk.widgets.mixins.text import RichTextFormatter
 
@@ -123,6 +123,95 @@ class TestFormat(BaseTestCase):
         out = RichTextFormatter.format("Error: <b>bad</b>", font_color="")
         self.assertIn('<b style="font-weight: bold;">bad</b>', out)
         self.assertIn(">Error:</hl>", out)
+
+
+class TestLineBreaks(BaseTestCase):
+    """A newline must render as a line break, not collapse to a space.
+
+    Both bodies are ``Qt.RichText`` and HTML collapses whitespace, so every
+    intended break was silently lost. Measured 2026-09-10 across the six
+    packages: of 667 rich-text strings carrying a real newline, 654 are plain
+    text that wants the break and 11 pair one with inline tags; only a single
+    ``__main__`` demo pairs one with block-level HTML, and its newlines sit
+    inside ``<pre>``.
+    """
+
+    def test_a_newline_becomes_a_break(self):
+        out = RichTextFormatter.format("one\ntwo", font_color="")
+        self.assertEqual(out, "<div align='left'>one<br>two</div>")
+
+    def test_text_without_a_newline_is_untouched(self):
+        self.assertEqual(
+            RichTextFormatter.format("one two", font_color=""),
+            "<div align='left'>one two</div>",
+        )
+
+    def test_an_explicit_break_does_not_double(self):
+        """``<br>`` then a newline is how three extapps tooltips wrap SOURCE."""
+        out = RichTextFormatter.format("<b>Title</b><br>\nbody", font_color="")
+        self.assertEqual(out.count("<br>"), 1)
+
+    def test_a_newline_before_an_explicit_break_does_not_double(self):
+        out = RichTextFormatter.format("a\n<br>b", font_color="")
+        self.assertEqual(out.count("<br>"), 1)
+
+    def test_a_CRLF_line_ending_makes_ONE_break(self):
+        """`TextViewBox` shows captured subprocess output, which is CRLF on
+        Windows -- a stray CR would become a second break, i.e. a blank line
+        between every line of a build log."""
+        out = RichTextFormatter.format("one\r\ntwo", font_color="")
+        self.assertEqual(out, "<div align='left'>one<br>two</div>")
+
+    def test_a_bare_CR_still_breaks(self):
+        out = RichTextFormatter.format("one\rtwo", font_color="")
+        self.assertEqual(out, "<div align='left'>one<br>two</div>")
+
+    def test_an_explicit_break_absorbs_a_CRLF_too(self):
+        out = RichTextFormatter.format("a<br>\r\nb", font_color="")
+        self.assertEqual(out.count("<br>"), 1)
+
+    def test_preformatted_newlines_are_left_alone(self):
+        """HTML already honours a newline inside ``<pre>``; a break doubles it."""
+        out = RichTextFormatter.format("<pre>a\nb</pre>", font_color="")
+        self.assertNotIn("<br>", out)
+        self.assertIn("a\nb", out)
+
+    def test_text_outside_a_pre_block_still_converts(self):
+        out = RichTextFormatter.format(
+            "head\n<pre>a\nb</pre>\ntail", font_color=""
+        )
+        self.assertEqual(out.count("<br>"), 2)
+        self.assertIn("a\nb", out)
+
+
+class TestLineBreaksRender(QtBaseTestCase):
+    """The reported symptom, measured through Qt's own layout engine.
+
+    ``blockCount`` is NOT the metric: ``<br>`` opens a line inside the current
+    block, not a new block, so it reads 1 either way. What moves is the laid
+    out text and the height -- measured offscreen, 22 px before and 36 px
+    after on the same two words.
+    """
+
+    @staticmethod
+    def _document(html):
+        from qtpy import QtGui
+
+        doc = QtGui.QTextDocument()
+        doc.setHtml(html)
+        doc.setTextWidth(400)
+        return doc
+
+    def test_an_unconverted_newline_collapses_to_a_space(self):
+        """The defect itself, so the test below cannot pass vacuously."""
+        doc = self._document("<div align='left'>one\ntwo</div>")
+        self.assertEqual(doc.toPlainText(), "one two")
+
+    def test_a_formatted_newline_survives_qt_layout(self):
+        before = self._document("<div align='left'>one\ntwo</div>")
+        after = self._document(RichTextFormatter.format("one\ntwo", font_color=""))
+        self.assertEqual(after.toPlainText(), "one\ntwo")
+        self.assertGreater(after.size().height(), before.size().height())
 
 
 class TestPaletteOverride(BaseTestCase):

@@ -24,6 +24,7 @@ Direct registration is still available for ad-hoc / out-of-band apps::
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -139,9 +140,11 @@ class ExternalAppHandler(BaseHandler):
     # self-describing apps installed in the current environment.
     # Mapping is group -> default mode. The app's pyproject.toml
     # declares which group it belongs to; hosts don't need to know.
+    IN_PROCESS_GROUP: str = "uitk.external_apps.in_process"
+
     DISCOVERY_GROUPS: Dict[str, str] = {
         "uitk.external_apps": "subprocess",
-        "uitk.external_apps.in_process": "in_process",
+        IN_PROCESS_GROUP: "in_process",
     }
 
     # Entry-point group hosts use to advertise *provider packages* — a
@@ -215,20 +218,6 @@ class ExternalAppHandler(BaseHandler):
         count = 0
         for group, mode in scan.items():
             for ep in self._entry_points(group):
-                try:
-                    module = ep.module  # left of ':' — never imports
-                    attr = ep.attr  # right of ':'
-                    extras = list(ep.extras) if getattr(ep, "extras", None) else []
-                except Exception:
-                    self.logger.warning(
-                        f"[discover] could not parse entry point {ep!r}",
-                        exc_info=True,
-                    )
-                    continue
-                # Split extras: ``hide_<host>`` extras are host-visibility
-                # gates (exclusion semantics, never displayed); everything
-                # else is a plain semantic tag for the browser filter.
-                tags, hidden_in = self._partition_extras(extras)
                 # The app's distribution name *is* its install spec — read
                 # it straight off the entry point so a missing package can
                 # self-install on first launch with zero host bookkeeping.
@@ -236,21 +225,174 @@ class ExternalAppHandler(BaseHandler):
                 # fakes) simply yield no spec and fall back to the provider
                 # mechanism / a manual ``install_spec``.
                 spec = getattr(getattr(ep, "dist", None), "name", None)
-                self.register(
-                    ep.name,
-                    module=module,
-                    entry=attr,
-                    install_spec=spec,
-                    tags=tags or None,
-                    hidden_in=hidden_in or None,
-                    mode=mode,
-                )
-                count += 1
+                count += int(self._register_entry_point(ep, mode, install_spec=spec))
+        count += self._discover_source_providers(scan)
         if count:
             self.logger.debug(
                 f"[discover] registered {count} app(s) from groups {list(scan)}"
             )
         return count
+
+    def _register_entry_point(
+        self, ep, mode: str, install_spec: Optional[str] = None
+    ) -> bool:
+        """Register the app one entry point describes; True if it registered.
+
+        Shared by the metadata scan and the source-tree fallback: both are
+        handed a ``name = "module:Class [tag,...]"`` declaration and have to
+        read it identically, so the only thing that differs between an
+        installed app and a checked-out one stays *where it was declared*.
+        """
+        try:
+            module = ep.module  # left of ':' — never imports
+            attr = ep.attr  # right of ':'
+            extras = list(ep.extras) if getattr(ep, "extras", None) else []
+        except Exception:
+            self.logger.warning(
+                f"[discover] could not parse entry point {ep!r}",
+                exc_info=True,
+            )
+            return False
+        # Split extras: ``hide_<host>`` extras are host-visibility gates
+        # (exclusion semantics, never displayed); everything else is a plain
+        # semantic tag for the browser filter.
+        tags, hidden_in = self._partition_extras(extras)
+        self.register(
+            ep.name,
+            module=module,
+            entry=attr,
+            install_spec=install_spec,
+            tags=tags or None,
+            hidden_in=hidden_in or None,
+            mode=mode,
+        )
+        return True
+
+    def _discover_source_providers(self, scan: Dict[str, str]) -> int:
+        """Register a provider's apps from the ``pyproject.toml`` beside the
+        code that will actually import. Returns the count registered.
+
+        Entry points are read from an INSTALLED distribution, and a package
+        put on ``PYTHONPATH`` as a source checkout has none — which is how
+        the ecosystem normally reaches a DCC host, since pip-installing into
+        the host's own interpreter is the thing we avoid. Every symptom of
+        that points elsewhere: the package imports, the provider probe finds
+        it present so nothing is installed, and its apps are simply absent
+        from a registry that reports no error at all.
+
+        The declaration is taken from wherever the provider RESOLVES, which
+        is what makes this safe in both directions. A wheel in
+        ``site-packages`` has no pyproject beside it, so a release build
+        reads its own metadata and nothing else. A checkout does, and it is
+        also the copy that will be imported — including under an editable
+        install, where metadata generated at install time can be older than
+        the source and hide an app that is right there on disk.
+        """
+        loads = self._toml_loader()
+        if not self._providers:
+            return 0
+        if loads is None:
+            # Only reachable below Python 3.11 with the `tomli` backport
+            # absent -- a state whose whole symptom is apps missing quietly.
+            self.logger.debug(
+                "[discover] no TOML reader; source checkouts are not scanned."
+            )
+            return 0
+        from importlib.metadata import EntryPoint
+
+        count = 0
+        for spec, prov in self._providers.items():
+            name = self._base_pkg_name(spec)
+            path, data = self._source_project(
+                prov.get("probe_module") or name, name, loads
+            )
+            if not data:
+                continue
+            tables = (data.get("project") or {}).get("entry-points") or {}
+            registered = 0
+            for group, mode in scan.items():
+                for ep_name, value in (tables.get(group) or {}).items():
+                    registered += int(
+                        self._register_entry_point(
+                            EntryPoint(ep_name, value, group), mode, install_spec=name
+                        )
+                    )
+            if registered:
+                self.logger.info(
+                    f"[discover] {name!r} resolves to a source checkout — "
+                    f"registered {registered} app(s) from {path}."
+                )
+            count += registered
+        return count
+
+    def _source_project(self, module: str, dist_name: str, loads) -> tuple:
+        """The parsed ``pyproject.toml`` of *module*'s checkout: (path, data).
+
+        ``(None, None)`` when there is no readable, matching one.
+
+        ``find_spec`` locates the package without importing it, so a heavy
+        or broken provider can neither slow discovery nor break it. The
+        search then climbs: a flat checkout puts the file one level above
+        the package, a ``src/`` layout two, and stopping at one would fail
+        the second kind silently -- the exact failure mode this whole path
+        exists to end.
+
+        Climbing can only overshoot into a file describing some OTHER
+        project, so a ``[project] name`` that disagrees with the provider is
+        rejected rather than read. A file that declares no name at all is
+        accepted: a dynamic name is legal, and refusing it would put us back
+        to failing quietly.
+        """
+        try:
+            import importlib.util
+
+            spec = importlib.util.find_spec(module)
+        except Exception:
+            return (None, None)
+        origin = getattr(spec, "origin", None) if spec is not None else None
+        if not origin:
+            return (None, None)
+        wanted = self._normalize_dist_name(dist_name)
+        directory = os.path.dirname(os.path.dirname(origin))
+        for _ in range(2):  # <root>/<package>/, and one more for src/ layouts
+            path = os.path.join(directory, "pyproject.toml")
+            if os.path.isfile(path):
+                try:
+                    with open(path, "rb") as handle:
+                        data = loads(handle.read().decode("utf-8"))
+                except Exception:
+                    self.logger.debug(f"[discover] unreadable {path}", exc_info=True)
+                    return (None, None)
+                declared = (data.get("project") or {}).get("name")
+                if not declared or self._normalize_dist_name(declared) == wanted:
+                    return (path, data)
+                return (None, None)  # a different project's file — not ours
+            parent = os.path.dirname(directory)
+            if parent == directory:
+                break
+            directory = parent
+        return (None, None)
+
+    @staticmethod
+    def _normalize_dist_name(name: str) -> str:
+        """PEP 503 name comparison: case- and separator-insensitive."""
+        return re.sub(r"[-_.]+", "-", str(name)).lower()
+
+    @staticmethod
+    def _toml_loader():
+        """``tomllib.loads`` (3.11+), the ``tomli`` backport, or None.
+
+        None on a runtime with neither: installed metadata still resolves,
+        only the source-checkout fallback goes quiet.
+        """
+        import importlib
+
+        for name in ("tomllib", "tomli"):
+            try:
+                return importlib.import_module(name).loads
+            except ImportError:
+                continue
+        return None
 
     @staticmethod
     def _entry_points(group: str) -> list:
@@ -689,6 +831,34 @@ class ExternalAppHandler(BaseHandler):
             return still_running
         return False
 
+    def _unresolvable_message(self, name: Optional[str]) -> str:
+        """Say why *name* could not be launched, and what to do about it.
+
+        The old text was ``launch() requires a registered name or module=
+        kwarg``, which describes the signature rather than the situation.
+        What actually produces it is a host calling ``launch("x")`` for an
+        app the registry never picked up, and the causes are few enough to
+        name: a typo, a declaration missing from the provider's entry-point
+        table, or a package that is not a declared provider at all -- in
+        which case discovery never looks at it, installed or not.
+
+        The registered names are listed because that settles the first two
+        at a glance, and an empty list points straight at the third.
+        """
+        if not name:
+            return "launch() needs an app name, or module= for an ad-hoc app."
+        known = sorted(self._apps)
+        listed = ", ".join(known) if known else "none"
+        return (
+            f"No app named '{name}' is registered. Registered: {listed}.\n"
+            f"Apps are read from a provider's installed metadata, or from its "
+            f"pyproject.toml when the provider is on the path as a source "
+            f"checkout. So either the name is wrong, '{name}' is missing from "
+            f'that package\'s [project.entry-points."{self.IN_PROCESS_GROUP}"] '
+            f"table, or the package is not declared as a provider (an entry "
+            f"point in the '{self.PROVIDER_GROUP}' group)."
+        )
+
     def launch(
         self,
         name: Optional[str] = None,
@@ -749,7 +919,7 @@ class ExternalAppHandler(BaseHandler):
                 cfg = _resolve()
 
         if not cfg.get("module"):
-            raise ValueError("launch() requires a registered name or module= kwarg.")
+            raise ValueError(self._unresolvable_message(name))
 
         run_mode = cfg.get("mode", "subprocess")
         py = (

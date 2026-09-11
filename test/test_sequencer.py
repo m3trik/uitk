@@ -7310,7 +7310,7 @@ class TestTangentHandleDrag(BaseTestCase):
         )
 
 
-from qtpy import QtCore  # noqa: E402
+from qtpy import QtCore, QtWidgets  # noqa: E402
 
 
 class TestShotBoundCaps(BaseTestCase):
@@ -7461,3 +7461,422 @@ class TestDefaultContextEntries(BaseTestCase):
         self.assertFalse(self.w.show_gap_overlays)
         self.assertFalse(handled(None))
         menu.deleteLater()
+
+
+class _MouseEvent:
+    """The few accessors the sequencer's graphics items ask a mouse event for."""
+
+    def __init__(self, scene_x, scene_y=0.0, local=None, modifiers=None):
+        self._scene = QtCore.QPointF(scene_x, scene_y)
+        self._local = local if local is not None else QtCore.QPointF(0.0, 0.0)
+        self._modifiers = modifiers or QtCore.Qt.NoModifier
+        self.accepted = False
+        self.ignored = False
+
+    def scenePos(self):
+        return self._scene
+
+    def screenPos(self):
+        return QtCore.QPoint(int(self._scene.x()), int(self._scene.y()))
+
+    def pos(self):
+        return self._local
+
+    def modifiers(self):
+        return self._modifiers
+
+    def button(self):
+        return QtCore.Qt.LeftButton
+
+    def accept(self):
+        self.accepted = True
+
+    def ignore(self):
+        self.ignored = True
+
+
+_PREVIEW = {
+    "keys": [(0.0, 0.0), (10.0, 1.0), (20.0, 0.0)],
+    "segments": [{}, {}],
+    "val_min": 0.0,
+    "val_max": 1.0,
+}
+
+
+class TestExpandedTrackClipIsNotSelectable(BaseTestCase):
+    """Expanding a track takes selection away from its merged bar.
+
+    With every key on screen as its own dot, the bar above them is only a
+    summary of them -- selecting it hands a consumer the whole span when the
+    thing on screen the user is working on is a key.  Collapsing gives it
+    back.
+    """
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("A")
+        self.cid = self.w.add_clip(self.tid, 0, 20, label="bar")
+        self.item = self.w._clip_items[self.cid]
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _expand(self):
+        self.w.expand_track(
+            self.tid,
+            [("translateX", [(0, 20, "tx", "#8888ff", {"curve_preview": _PREVIEW})])],
+        )
+
+    def test_a_collapsed_tracks_clip_is_selectable(self):
+        self.assertTrue(self.item.is_selectable())
+        self.assertTrue(self.item.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable)
+
+    def test_expanding_revokes_selectability(self):
+        self._expand()
+        self.assertFalse(self.item.is_selectable())
+        self.assertFalse(self.item.flags() & QtWidgets.QGraphicsItem.ItemIsSelectable)
+
+    def test_expanding_drops_a_selection_it_revokes(self):
+        self.item.setSelected(True)
+        self._expand()
+        self.assertFalse(self.item.isSelected())
+        self.assertEqual(self.w.selected_clips(), [])
+
+    def test_the_dropped_selection_is_reported_once(self):
+        self.item.setSelected(True)
+        seen = []
+        self.w.selection_changed.connect(seen.append)
+        self._expand()
+        self.assertEqual(seen, [[]])
+
+    def test_a_click_cannot_select_it_while_expanded(self):
+        self._expand()
+        self.item.mousePressEvent(_MouseEvent(0.0))
+        self.assertFalse(self.item.isSelected())
+
+    def test_collapsing_gives_selectability_back(self):
+        self._expand()
+        self.w.collapse_track(self.tid)
+        self.assertTrue(self.item.is_selectable())
+        self.item.setSelected(True)
+        self.assertEqual(self.w.selected_clips(), [self.cid])
+
+    def test_sub_row_and_locked_clips_are_still_refused(self):
+        self._expand()
+        subs = [i for i in self.w._clip_items.values() if i.clip_data.sub_row]
+        self.assertTrue(subs)
+        self.assertFalse(subs[0].is_selectable())
+        self.w.collapse_track(self.tid)
+        self.w.set_clip_locked(self.cid, True)
+        self.assertFalse(self.item.is_selectable())
+
+
+class TestGroupEdgeDragScalesTheSelection(BaseTestCase):
+    """An edge drag with several clips selected retimes the SET as one unit.
+
+    The selection keeps its shape and its internal spacing; only its overall
+    length changes, about the far edge of the whole selection.  A lone clip
+    still resizes exactly as it did.
+    """
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.t0 = self.w.add_track("A")
+        self.t1 = self.w.add_track("B")
+        self.a = self.w.add_clip(self.t0, 0, 10, label="a")
+        self.b = self.w.add_clip(self.t1, 20, 10, label="b")
+        self.ia = self.w._clip_items[self.a]
+        self.ib = self.w._clip_items[self.b]
+        self.tl = self.w._timeline
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _drag_right_edge(self, to_time):
+        local = QtCore.QPointF(self.ia.rect().width() - 1, 5.0)
+        self.ia.mousePressEvent(_MouseEvent(self.tl.time_to_x(10.0), local=local))
+        self.ia.mouseMoveEvent(_MouseEvent(self.tl.time_to_x(to_time)))
+        self.ia.mouseReleaseEvent(_MouseEvent(self.tl.time_to_x(to_time)))
+
+    def test_a_lone_clip_resizes_alone(self):
+        self.ia.setSelected(True)
+        got = []
+        self.w.clip_resized.connect(lambda *a: got.append(a))
+        batched = []
+        self.w.clips_batch_resized.connect(batched.append)
+        self._drag_right_edge(5.0)
+        self.assertEqual(batched, [])
+        self.assertEqual(got, [(self.a, 0.0, 5.0)])
+        self.assertEqual(self.w.get_clip(self.b).start, 20)
+
+    def test_two_selected_clips_scale_together(self):
+        self.ia.setSelected(True)
+        self.ib.setSelected(True)
+        self._drag_right_edge(5.0)
+        # Halved about the selection's earliest start (frame 0).
+        self.assertAlmostEqual(self.w.get_clip(self.a).start, 0.0)
+        self.assertAlmostEqual(self.w.get_clip(self.a).duration, 5.0)
+        self.assertAlmostEqual(self.w.get_clip(self.b).start, 10.0)
+        self.assertAlmostEqual(self.w.get_clip(self.b).duration, 5.0)
+
+    def test_the_group_scale_is_one_payload(self):
+        self.ia.setSelected(True)
+        self.ib.setSelected(True)
+        got = []
+        self.w.clips_batch_resized.connect(got.append)
+        single = []
+        self.w.clip_resized.connect(lambda *a: single.append(a))
+        self._drag_right_edge(5.0)
+        self.assertEqual(single, [])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(len(got[0]), 2)
+
+    def test_a_shrink_is_ordered_nearest_the_fixed_edge_first(self):
+        self.ia.setSelected(True)
+        self.ib.setSelected(True)
+        got = []
+        self.w.clips_batch_resized.connect(got.append)
+        self._drag_right_edge(5.0)
+        self.assertEqual([row[0] for row in got[0]], [self.a, self.b])
+
+    def test_a_stretch_is_ordered_farthest_from_the_fixed_edge_first(self):
+        self.ia.setSelected(True)
+        self.ib.setSelected(True)
+        got = []
+        self.w.clips_batch_resized.connect(got.append)
+        self._drag_right_edge(20.0)
+        self.assertEqual([row[0] for row in got[0]], [self.b, self.a])
+
+    def test_no_member_shrinks_below_the_minimum_duration(self):
+        self.ia.setSelected(True)
+        self.ib.setSelected(True)
+        self._drag_right_edge(0.0)
+        for cid in (self.a, self.b):
+            self.assertGreaterEqual(
+                self.w.get_clip(cid).duration, _MIN_CLIP_DURATION - 1e-9
+            )
+
+    def test_escape_restores_every_member(self):
+        self.ia.setSelected(True)
+        self.ib.setSelected(True)
+        local = QtCore.QPointF(self.ia.rect().width() - 1, 5.0)
+        self.ia.mousePressEvent(_MouseEvent(self.tl.time_to_x(10.0), local=local))
+        self.ia.mouseMoveEvent(_MouseEvent(self.tl.time_to_x(5.0)))
+        self.assertTrue(self.w._cancel_active_drag())
+        self.assertAlmostEqual(self.w.get_clip(self.a).duration, 10.0)
+        self.assertAlmostEqual(self.w.get_clip(self.b).start, 20.0)
+        self.assertAlmostEqual(self.w.get_clip(self.b).duration, 10.0)
+
+    def _stretch_b_left_edge(self, a_start, a_dur):
+        """Grab the LATER clip's left edge while *a* is the selection's lead.
+
+        The lead is what the frame-0 ceiling is measured from, and it is not
+        the clip under the hand -- which is the only way the requested scale
+        can exceed that ceiling.
+        """
+        self.w.get_clip(self.a).start = a_start
+        self.w.get_clip(self.a).duration = a_dur
+        self.ia._sync_geometry()
+        self.w.get_clip(self.b).start = 10
+        self.w.get_clip(self.b).duration = 20
+        self.ib._sync_geometry()
+        self.ia.setSelected(True)
+        self.ib.setSelected(True)
+        local = QtCore.QPointF(self.ib.rect().left() + 1.0, 5.0)
+        self.ib.mousePressEvent(_MouseEvent(self.tl.time_to_x(10.0), local=local))
+        self.assertEqual(self.ib._pending_zone, "resize_left")
+        self.ib.mouseMoveEvent(_MouseEvent(self.tl.time_to_x(0.0)))
+
+    def test_the_lead_is_held_at_frame_zero_when_it_starts_there(self):
+        self._stretch_b_left_edge(0, 5)
+        # Anchor is 30 (b's end); the lead sits on 0, so the set may not
+        # stretch past a ratio of 1 without pushing it below the timeline.
+        self.assertAlmostEqual(self.w.get_clip(self.a).start, 0.0)
+        self.assertAlmostEqual(self.w.get_clip(self.b).start, 10.0)
+        self.assertTrue(self.ib.cancel_drag())
+
+    def test_a_lead_already_before_frame_zero_does_not_pin_the_scale(self):
+        """The ceiling is for a selection that sits at or after frame 0.
+
+        Measuring it from a lead that is already negative turned a requested
+        STRETCH into a shrink -- the set collapsed toward the fixed edge on
+        the first move.
+        """
+        self._stretch_b_left_edge(-10, 5)
+        self.assertAlmostEqual(self.w.get_clip(self.b).start, 0.0)
+        self.assertAlmostEqual(self.w.get_clip(self.b).duration, 30.0)
+        self.assertAlmostEqual(self.w.get_clip(self.a).start, -30.0)
+        self.assertTrue(self.ib.cancel_drag())
+
+    def test_a_locked_clip_is_not_taken_along(self):
+        self.w.set_clip_locked(self.b, True)
+        self.ia.setSelected(True)
+        self._drag_right_edge(5.0)
+        self.assertEqual(self.w.get_clip(self.b).start, 20)
+        self.assertEqual(self.w.get_clip(self.b).duration, 10)
+
+
+class TestShiftRaisesKeyScaleHandles(BaseTestCase):
+    """Shift over a key selection brackets it with a scale bar.
+
+    A key drag translates a selection rigidly; this is the only gesture that
+    changes its LENGTH.  The bar exists only while Shift is held and only
+    over a selection a scale means something for.
+    """
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.tid = self.w.add_track("A")
+        self.w.expand_track(
+            self.tid,
+            [
+                (
+                    "translateX",
+                    [
+                        (
+                            0,
+                            20,
+                            "tx",
+                            "#8888ff",
+                            {
+                                "curve_preview": _PREVIEW,
+                                "obj": "pCube1",
+                                "attr_name": "translateX",
+                            },
+                        )
+                    ],
+                )
+            ],
+        )
+        self.sub = [i for i in self.w._clip_items.values() if i.clip_data.sub_row][0]
+        self.keys = self.sub._keyframe_items
+        self.tl = self.w._timeline
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _select_all_keys(self):
+        for k in self.keys:
+            k.setSelected(True)
+
+    def test_no_handles_without_shift(self):
+        self._select_all_keys()
+        self.assertEqual(self.w._key_scale_handles, [])
+
+    def test_shift_over_a_key_selection_raises_two_handles(self):
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        self.assertEqual(len(self.w._key_scale_handles), 2)
+        self.assertEqual(sorted(h.time for h in self.w._key_scale_handles), [0.0, 20.0])
+
+    def test_shift_alone_raises_nothing(self):
+        self.w.set_shift_held(True)
+        self.assertEqual(self.w._key_scale_handles, [])
+
+    def test_one_key_is_not_a_span(self):
+        self.keys[0].setSelected(True)
+        self.w.set_shift_held(True)
+        self.assertEqual(self.w._key_scale_handles, [])
+
+    def test_releasing_shift_takes_them_away(self):
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        self.w.set_shift_held(False)
+        self.assertEqual(self.w._key_scale_handles, [])
+
+    def test_losing_the_selection_takes_them_away(self):
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        self.w._timeline._scene.clearSelection()
+        self.assertEqual(self.w._key_scale_handles, [])
+
+    def test_the_pointer_leaving_the_timeline_takes_them_away(self):
+        """Shift is only meaningful while the pointer is over the timeline.
+
+        Qt delivers no KeyRelease once the widget has lost the pointer, so the
+        held state is cleared on the way out instead.  Without it the bars
+        stay bracketing a selection the user has walked away from, and the
+        next click anywhere on them starts a scale nobody asked for.
+        """
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        self.assertEqual(len(self.w._key_scale_handles), 2)
+        self.tl.leaveEvent(QtCore.QEvent(QtCore.QEvent.Leave))
+        self.assertEqual(self.w._key_scale_handles, [])
+
+    def _drag(self, side, to_time, from_time=None):
+        handle = next(h for h in self.w._key_scale_handles if h.side == side)
+        origin = handle.time if from_time is None else from_time
+        handle.mousePressEvent(_MouseEvent(self.tl.time_to_x(origin)))
+        handle.mouseMoveEvent(_MouseEvent(self.tl.time_to_x(to_time)))
+        handle.mouseReleaseEvent(_MouseEvent(self.tl.time_to_x(to_time)))
+        return handle
+
+    def test_dragging_the_right_handle_scales_about_the_left(self):
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        got = []
+        self.w.keys_moved.connect(lambda cid, ch: got.append((cid, list(ch))))
+        self._drag("right", 10.0)
+        self.assertEqual([k._time for k in self.keys], [0.0, 5.0, 10.0])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(
+            sorted(tuple(pair) for pair in got[0][1]), [(10.0, 5.0), (20.0, 10.0)]
+        )
+
+    def test_dragging_the_left_handle_scales_about_the_right(self):
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        self._drag("left", 10.0)
+        self.assertEqual([k._time for k in self.keys], [10.0, 15.0, 20.0])
+
+    def test_a_shrink_reports_the_keys_nearest_the_fixed_end_first(self):
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        got = []
+        self.w.keys_moved.connect(lambda cid, ch: got.append(list(ch)))
+        self._drag("right", 10.0)
+        self.assertEqual([tuple(pair) for pair in got[0]], [(10.0, 5.0), (20.0, 10.0)])
+
+    def test_a_stretch_reports_the_keys_farthest_from_it_first(self):
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        got = []
+        self.w.keys_moved.connect(lambda cid, ch: got.append(list(ch)))
+        self._drag("right", 40.0)
+        self.assertEqual([tuple(pair) for pair in got[0]], [(20.0, 40.0), (10.0, 20.0)])
+
+    def test_a_zero_motion_drag_reports_nothing(self):
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        got = []
+        self.w.keys_moved.connect(lambda cid, ch: got.append(ch))
+        self.w.keys_batch_moved.connect(got.append)
+        self._drag("right", 20.0)
+        self.assertEqual(got, [])
+
+    def test_escape_restores_the_key_times(self):
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        handle = next(h for h in self.w._key_scale_handles if h.side == "right")
+        handle.mousePressEvent(_MouseEvent(self.tl.time_to_x(20.0)))
+        handle.mouseMoveEvent(_MouseEvent(self.tl.time_to_x(10.0)))
+        self.assertTrue(self.w._cancel_active_drag())
+        self.assertEqual([k._time for k in self.keys], [0.0, 10.0, 20.0])
+
+    def test_a_read_only_row_keeps_its_keys(self):
+        self.sub._data.data["read_only"] = True
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        self.assertEqual(self.w._key_scale_handles, [])
+
+    def test_clearing_the_widget_takes_the_handles_away(self):
+        self._select_all_keys()
+        self.w.set_shift_held(True)
+        self.w.clear()
+        self.assertEqual(self.w._key_scale_handles, [])

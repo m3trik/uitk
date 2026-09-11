@@ -2,6 +2,9 @@
 
 _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a name; for full signatures/docs, slice [API_REGISTRY.md](API_REGISTRY.md) (never Read it whole)._
 
+### `__init__.py` — UITK - User Interface Toolkit for Qt/PySide applications.
+- constants: DEFAULT_INCLUDE
+
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
   - methods: configure_high_dpi
@@ -19,6 +22,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: params_module, template_dir, make_bridge, optional_packages, optional_package_available, ensure_optional_package, make_preset_store, list_template_modes, b000, resolve_scope_objects, empty_scope_message, scoped_objects, select_initial_template_index, default_output_dir, template_description, format_param_tooltip, register_log_link_handler, ensure_bridge_temp_dir, bridge, peek_bridge, panel_log, resolved_output_dir, require_output_dir, live_param_tooltips, live_param_tooltip_blocks, set_param_enabled, param_supersessions, collect_param_values, cmb000_init, refresh_templates, header_menu_items, help_spec, docs_url, header_init, reveal_folder, open_templates_folder, clear_log
 
 ### `bridge/spec.py` — Attribute spec + kind-handler registry for parameterised forms.
+- constants: INT_MIN, INT_MAX, FLOAT_MIN, FLOAT_MAX
 - `class AttributeSpec`
   - methods: from_value, display_label
 - `class KindHandler`
@@ -30,12 +34,14 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: format_param_tooltip, template_description
 
 ### `compile.py` — Compile Qt Designer .ui files to switchboard-augmented _ui.py modules.
+- constants: UIC_TIMEOUT_SECONDS, UIC_BINDINGS
 - `class PrecompileJob`
   - methods: is_alive
 - `class UiCompiler(_UiCompilerInternal)`
   - methods: hash_ui_source, compiled_path_for, read_embedded_hash, read_embedded_tags, read_embedded_base_class, read_embedded_form_class, is_compiled_fresh, extract_metadata, compile_ui, ensure_compiled, precompile_async, main
 
 ### `designer/_designer.py` — Publish uitk widgets to Qt Designer's widget box.
+- constants: PLUGIN_PATH_ENV
 - `class DesignerWidget(NamedTuple)`
   - methods: xml
 - `class DesignerPlugin(_DesignerPluginInternal)`
@@ -98,6 +104,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: available, pip_python, default_install, install, ensure, version_tuple, split_requirement
 
 ### `managers/preset_manager.py`
+- constants: PRESETS_ROOT_ENV_VAR
 - `class PresetManager(ptk.LoggingMixin)`
   - methods: from_widgets, setup, preset_dir, on_change, scope, exclude, include, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, delete, rename, exists, read, refresh_combo, make_preset_combo, wire_combo, QStandardPaths_writableLocation, QStandardPaths_genericConfigLocation, get_presets_root
 
@@ -113,10 +120,12 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: get_base_dir, resolve_path, create, contains_location, get_container, list_containers, remove_container
 
 ### `managers/settings_manager.py`
+- constants: DEFAULT_ORG_NAME, DEFAULT_APP_NAME
 - `class SettingsManager`
   - methods: branch, set_defaults, value, decode_stored_value, encode_stored_value, setValue, on_change, keys, setByteArray, getByteArray, remove, clear, sync
 
 ### `managers/shortcut_manager.py` — Generic keyboard-shortcut primitives, usable by any Qt widget.
+- constants: SCOPE_NAME_TO_CONTEXT, SCOPE_CONTEXT_TO_NAME
 - `class GlobalShortcut(QtCore.QObject)`
   - methods: eventFilter, setEnabled, isEnabled, setKey, setContext, dispose
 - `class ShortcutManager`
@@ -152,7 +161,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 ### `switchboard/shortcuts.py` — Switchboard-side keyboard shortcut machinery.
 - `class Shortcut`
 - `class SwitchboardShortcutMixin`
-  - methods: register_slots_shortcuts, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut, register_command, unregister_command, get_command_registry, set_command_shortcut, set_binding_hidden, set_binding_editable
+  - methods: register_slots_shortcuts, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut, dispose_shortcuts, register_command, unregister_command, get_command_registry, set_command_shortcut, set_binding_hidden, set_binding_editable
 
 ### `switchboard/slots.py`
 - `class Signals`
@@ -213,6 +222,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: list, add, add_separator, add_entries, keyPressEvent, popup, exec_, dispose
 
 ### `widgets/delegates/centered_icon.py` — Centered icon painting for item-view cells.
+- constants: ICON_OPACITY_ROLE, ACTION_NONINTERACTIVE_ROLE
 - `class CenteredIconActionDelegate(RowSelectionBorderDelegate)`
   - methods: fill_cell_background, suppress_hover_if_noninteractive, paint_centered_icon, paint
 
@@ -250,6 +260,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class ManagerSwitchboardFacade(RegistrySwitchboardFacade)`
 
 ### `widgets/editors/shortcut_editor/registry_editor.py`
+- constants: USER_SCOPES, SCOPE_LABELS, SCOPE_ICONS, SCOPE_TOOLTIPS
 - `class CollisionConflict`
 - `class ShortcutEditor(EditorPanel)`
   - methods: export_preset_data, import_preset_data, export_shortcuts, import_shortcuts, showEvent, refresh_ui_list, populate, open_over_facade, set_columns_hidden, reset_shortcut, scope_at, scope_interactive, add_collision_checker, remove_collision_checker
@@ -259,10 +270,12 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: get_ui, convert_to_legal_name, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut
 
 ### `widgets/editors/style_editor.py`
+- constants: BUILTIN_THEMES_DIR, BASIC_TOKENS, LENGTH_TOKENS, ROW_H, CELL_EDITOR_H
 - `class StyleEditor(EditorPanel)`
   - methods: theme, set_tier, export_preset_data, import_preset_data, populate, on_color_changed, on_length_changed, reset_variable, reset_all, refresh_row
 
 ### `widgets/editors/switchboard_browser.py` — Searchable, tag-filtered launcher for any handler-exposed entry.
+- constants: PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT, PERSISTENCE_CONTEXT, PERSISTENCE_DEFAULT, PERSISTENCE_CHOICES, SHOW_VISIBLE, SHOW_HIDDEN, SHOW_ALL, SCOPE_NAME, SCOPE_TAGS, SCOPE_BOTH, SCOPES, SCOPE_ICONS
 - `class LaunchOptions`
 - `class SwitchboardBrowserModel(QtCore.QAbstractTableModel)`
   - methods: refresh_after_launch, rowCount, columnCount, headerData, data, flags, setData, set_entry_filter, entry_for_name, all_unique_tags
@@ -310,9 +323,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/marking_menu/_marking_menu.py`
 - `class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`
-  - methods: retire, instance, stored_activation_key, default_bindings, bindings, on_bindings_changed, menu_theme, window_theme, resolve_hosted_theme, ui_handler, get, set_activation_key, start_menu_names, hosts_ui, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
+  - methods: retire_all, retire, instance, stored_activation_key, default_bindings, bindings, on_bindings_changed, menu_theme, window_theme, resolve_hosted_theme, ui_handler, get, set_activation_key, start_menu_names, hosts_ui, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
 
 ### `widgets/marking_menu/_resolver.py` — Pure menu-resolution logic for the MarkingMenu.
+- constants: LEFT_BUTTON, RIGHT_BUTTON, MIDDLE_BUTTON, SHIFT_MOD, CTRL_MOD, ALT_MOD, META_MOD
 - `class MenuResolver`
   - methods: normalize_key, build_state_key, priority_button, count_buttons, resolve_target_menu, parse_binding_keys
 
@@ -383,6 +397,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: eventFilter
 
 ### `widgets/mixins/size_grip.py` — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
+- constants: QWIDGETSIZE_MAX
 - `class CornerSizeGrip(QtWidgets.QSizeGrip)`
   - methods: enterEvent, event, mousePressEvent, leaveEvent, getBaseColor, setBaseColor, getHoverColor, setHoverColor, paintEvent
 - `class SizeGripMixin`
@@ -396,7 +411,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/mixins/text.py` — Text rendering for uitk widgets.
 - `class RichTextFormatter`
-  - methods: prefix_styles, apply_prefix_styles, apply_inline_styles, wrap_font_color, wrap_font_size, resolve_background, format
+  - methods: prefix_styles, apply_prefix_styles, apply_inline_styles, apply_line_breaks, wrap_font_color, wrap_font_size, resolve_background, format
 - `class TextTruncation`
   - methods: calculate_text_truncation, calculate_character_truncation, calculate_word_truncation, calculate_path_truncation, apply_text_truncation, create_truncated_button, create_truncated_label, update_widget_text_truncation
 - `class RichText`
@@ -420,6 +435,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: adjusting, mousePressEvent, mouseReleaseEvent, keyPressEvent, focusOutEvent
 
 ### `widgets/optionBox/_optionBox.py` — OptionBox - Plugin-based container for wrapping widgets with action buttons.
+- constants: DEFAULT_OPTION_ORDER
 - `class OptionBoxContainer(QtWidgets.QWidget)`
   - methods: changeEvent, showEvent, eventFilter
 - `class OptionBox`
@@ -445,6 +461,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: set_menu, set_wrapped_widget
 
 ### `widgets/optionBox/options/affix.py` — Affix-mode picker option for OptionBox.
+- constants: AFFIX_MODE_VALUES, BUILTIN_AFFIX_MODES
 - `class AffixMode`
   - methods: resolve, text, convention
 - `class AffixOption(PersistedOption, ButtonOption)`
@@ -464,6 +481,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: held_value, setup_widget
 
 ### `widgets/optionBox/options/filter.py` — Filter option for OptionBox — turns a text widget into a filter field.
+- constants: NEGATE_PREFIX
 - `class FilterOption(BinaryToggleOption)`
   - methods: is_compatible, to_patterns, patterns, scope_action, scope, set_scope, text_key, scope_key
 
@@ -516,6 +534,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: visible_on_mouse_over, setVisibleOnMouseOver, hide_top_level_children, show_top_level_children, enterEvent, leaveEvent, hideEvent, childEvent
 
 ### `widgets/scriptOutput.py` — Host-agnostic script-output console widget.
+- constants: PARAGRAPH_BREAK_RE, COLOR_COMMENT, COLOR_WARNING, COLOR_ERROR, COLOR_RESULT, COLOR_INFO
 - `class ScriptHighlightRule`
 - `class ScriptBlockRule`
   - methods: starts, continues
@@ -530,9 +549,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/sequencer/_clip.py` — ClipItem — draggable, resizable clip rectangle on the timeline.
 - `class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`
-  - methods: clip_data, keys_editable, boundingRect, paint, hoverMoveEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent, mouseDoubleClickEvent
+  - methods: clip_data, is_selectable, sync_selectable, keys_editable, boundingRect, paint, hoverMoveEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent, mouseDoubleClickEvent
 
 ### `widgets/sequencer/_data.py` — Data models and shared constants for the sequencer widget.
+- constants: HATCH_DENSE, HATCH_MEDIUM, HATCH_SPARSE, SELECTED_ACCENT
 - `class PatternSpec`
   - methods: brush
 - `class ClipData`
@@ -560,6 +580,8 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: time, value, paint, boundingRect, itemChange, is_broken, shape, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent
 - `class TangentHandleItem(QtWidgets.QGraphicsEllipseItem)`
   - methods: side, key, slot, control_point, paint, shape, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent
+- `class KeyScaleHandleItem(QtWidgets.QGraphicsRectItem)`
+  - methods: side, time, set_span, shape, boundingRect, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, cancel_drag
 
 ### `widgets/sequencer/_markers.py` — MarkerItem — named marker on the timeline with drag and context menu.
 - `class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`
@@ -585,7 +607,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class AttributeColorDialog(ColorMappingDialog)`
   - methods: load_color_map
 - `class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`
-  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, selected_shot, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, ctrl_held_at_press, record_press_modifiers, shortcut_overlay, shortcut_overlay_visible, attribute_colors, set_attribute_color, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips, selected_keys, select_keys, show_key_menu
+  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, selected_shot, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, ctrl_held_at_press, record_press_modifiers, shortcut_overlay, shortcut_overlay_visible, attribute_colors, set_attribute_color, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips, selected_keys, select_keys, show_key_menu, refresh_key_scale_handles, clear_key_scale_handles, set_shift_held
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`
@@ -593,7 +615,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class TimelineScene(QtWidgets.QGraphicsScene)`
   - methods: ruler, playhead
 - `class TimelineView(QtWidgets.QGraphicsView)`
-  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, mousePressEvent, mouseMoveEvent, leaveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, default_context_entries, add_default_context_actions, content_time_bounds, drawBackground
+  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, focusOutEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, mousePressEvent, mouseMoveEvent, leaveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, default_context_entries, add_default_context_actions, content_time_bounds, drawBackground
 
 ### `widgets/sequencer/_transport_controls.py` — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - `class PlayController(Protocol)`

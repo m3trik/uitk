@@ -44,6 +44,11 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         self._drag_origin_start = 0.0
         self._drag_origin_duration = 0.0
         self._drag_peers: list = []  # [(ClipItem, original_start), ...]
+        # Group resize: [(ClipItem, original_start, original_duration), ...]
+        # plus the fixed edge the whole selection scales about.
+        self._resize_peers: list = []
+        self._scale_anchor: float = 0.0
+        self._scale_limits: tuple = (0.0, float("inf"))
         self._drag_tooltip = FrameTooltip()
         self._waveform_pixmap: Optional[QtGui.QPixmap] = None
         self._waveform_pixmap_size: Optional[tuple] = None
@@ -54,16 +59,8 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         self._keys_dragging = False  # True while any child KeyframeItem is mid-drag
         self._press_modifiers = QtCore.Qt.NoModifier  # chord of the live press
         self.setAcceptHoverEvents(True)
-        self.setFlags(
-            QtWidgets.QGraphicsItem.ItemSendsGeometryChanges
-            # Sub-row clips are not directly selectable — interaction is
-            # via KeyframeItem children.  Locked clips are also non-selectable.
-            | (
-                QtWidgets.QGraphicsItem.ItemIsSelectable
-                if not (clip_data.sub_row or clip_data.locked)
-                else QtWidgets.QGraphicsItem.GraphicsItemFlags(0)
-            )
-        )
+        self.setFlags(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges)
+        self.sync_selectable()
         # Dimmed (non-active shot) clips sit behind active clips
         if clip_data.data.get("dimmed"):
             self.setZValue(-0.5)
@@ -79,6 +76,32 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
     @property
     def clip_data(self) -> ClipData:
         return self._data
+
+    def is_selectable(self) -> bool:
+        """Whether a click or a marquee may select this clip.
+
+        Three things take the flag away, and all three say the same thing --
+        "this bar is not the handle for what you are pointing at":
+
+        * a **sub-row** clip, whose interaction is its
+          :class:`~uitk.widgets.sequencer._keyframe.KeyframeItem` children;
+        * a **locked** clip, which refuses every edit;
+        * a clip on an **expanded** track.  Expanding puts every key of that
+          object on screen as its own dot, and the merged bar above them is
+          then only a summary: selecting it hands the consumer the WHOLE
+          span when the visible thing the user is working on is a key.
+        """
+        cd = self._data
+        if cd.sub_row or cd.locked:
+            return False
+        return not self._timeline.parent_sequencer.is_track_expanded(cd.track_id)
+
+    def sync_selectable(self) -> None:
+        """Re-apply :meth:`is_selectable`, dropping a selection it revokes."""
+        selectable = self.is_selectable()
+        self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, selectable)
+        if not selectable and self.isSelected():
+            self.setSelected(False)
 
     @property
     def keys_editable(self) -> bool:
@@ -147,15 +170,20 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
 
             sq = self._timeline.parent_sequencer
             sq._selection_suppressed += 1
+            # Detach BOTH lists before retiring anything.  Taking a selected
+            # dot out of the scene can reach back into this clip -- a tangent
+            # resync, a repaint -- and whatever it finds must be the NEW
+            # (empty) state, never a list still naming items that are on
+            # their way out.  Walking one of those was a read of an object
+            # Qt had already finished with.
+            retiring = self._tangent_handle_items + self._keyframe_items
+            self._tangent_handle_items = []
+            self._keyframe_items = []
             try:
-                for item in self._tangent_handle_items:
-                    ItemRetirement.retire(item)
-                self._tangent_handle_items.clear()
-                for item in self._keyframe_items:
+                for item in retiring:
                     ItemRetirement.retire(item)
             finally:
                 sq._selection_suppressed -= 1
-            self._keyframe_items.clear()
 
             # Create new items
             for idx, key_data in enumerate(keys):
@@ -197,6 +225,10 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         wanted = []
         if not self._keys_dragging:
             for idx, ki in enumerate(self._keyframe_items):
+                # A dot already out of the scene is on its way to being
+                # destroyed; asking it anything is a read of a dead object.
+                if ki.scene() is None:
+                    continue
                 if not ki.isSelected() or not ki.isVisible():
                     continue
                 for side, seg_i, cp_key in ki._tangent_slots(idx):
@@ -806,6 +838,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             self._press_screen_pos = event.screenPos()
             self._drag_mode = None
             self._drag_peers = []
+            self._resize_peers = []
             self._drag_origin_x = event.scenePos().x()
             self._drag_origin_start = self._data.start
             self._drag_origin_duration = self._data.duration
@@ -832,6 +865,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         # selection, and this is the set the drag actually moves.  Nothing
         # has moved yet, so their origins are still the pre-drag values.
         self._drag_peers = []
+        self._resize_peers = []
         if self._drag_mode == "move" and self.isSelected():
             for item in self._timeline._scene.selectedItems():
                 if (
@@ -845,9 +879,100 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                     item._drag_mode = "move"
                     item._drag_origin_start = item._data.start
                     item._drag_origin_duration = item._data.duration
+        elif self._drag_mode in ("resize_left", "resize_right") and self.isSelected():
+            self._arm_group_scale()
         CursorManager.push(self, QtCore.Qt.ClosedHandCursor)
         self.update()  # repaint to show drag frame labels
         self._show_clip_drag_tooltip(event.scenePos())
+
+    def _arm_group_scale(self) -> None:
+        """Prepare an edge drag to scale the WHOLE selection as one unit.
+
+        Dragging one clip's edge while several are selected is a request to
+        retime the selection, not to resize the one clip under the hand: the
+        set keeps its shape and its internal spacing, and only its overall
+        length changes.  The fixed point is the selection's FAR edge (its
+        earliest start for a right-edge drag, its latest end for a left-edge
+        one), so the grabbed edge is the one that travels.
+
+        Nothing is armed for a lone clip -- :meth:`mouseMoveEvent` then takes
+        the single-clip path unchanged.
+        """
+        members = [
+            item
+            for item in self._timeline._scene.selectedItems()
+            if isinstance(item, ClipItem)
+            and item is not self
+            and not item._data.locked
+            and not item._data.sub_row
+        ]
+        if not members:
+            return
+        self._resize_peers = [(m, m._data.start, m._data.duration) for m in members]
+        starts = [self._drag_origin_start] + [o for _m, o, _d in self._resize_peers]
+        ends = [self._drag_origin_start + self._drag_origin_duration] + [
+            o + d for _m, o, d in self._resize_peers
+        ]
+        self._scale_anchor = (
+            min(starts) if self._drag_mode == "resize_right" else max(ends)
+        )
+        # Legal scale range: no member may shrink below the minimum clip
+        # duration, and a left-edge drag may not pull the earliest member
+        # back through frame 0.
+        durations = [self._drag_origin_duration] + [
+            d for _m, _o, d in self._resize_peers
+        ]
+        lo = max([_MIN_CLIP_DURATION / d for d in durations if d > 1e-9] or [0.0])
+        hi = float("inf")
+        if self._drag_mode == "resize_left":
+            lead = min(starts)
+            reach = self._scale_anchor - lead
+            # Only a selection that currently sits at or after frame 0 gets
+            # the frame-0 ceiling -- the same clamp the single-clip path
+            # applies.  A shot padded before 0 already reaches back there,
+            # and measuring the ceiling from ITS lead would pin the scale at
+            # its floor and collapse the whole group on the first move.
+            if lead >= 0.0 and reach > 1e-9:
+                hi = self._scale_anchor / reach
+        self._scale_limits = (lo, max(lo, hi))
+        # Peers paint their drag state too, so their curve previews lock to
+        # pre-drag positions the way a group MOVE already makes them.
+        for m, _o, _d in self._resize_peers:
+            m._drag_mode = self._drag_mode
+            m._drag_origin_start = m._data.start
+            m._drag_origin_duration = m._data.duration
+
+    def _apply_group_scale(self) -> None:
+        """Scale the selection about :attr:`_scale_anchor` from this clip's edge.
+
+        The grabbed edge sets the ratio -- it has already been snapped,
+        aligned and clamped by the single-clip path -- and every member,
+        this one included, is then re-derived from that one number so the
+        set cannot drift out of proportion over a long drag.
+        """
+        anchor = self._scale_anchor
+        right = self._drag_mode == "resize_right"
+        if right:
+            denom = self._drag_origin_start + self._drag_origin_duration - anchor
+            reach = self._data.start + self._data.duration - anchor
+        else:
+            denom = anchor - self._drag_origin_start
+            reach = anchor - self._data.start
+        if abs(denom) < 1e-9:
+            return
+        lo, hi = self._scale_limits
+        scale = min(max(reach / denom, lo), hi)
+        for item, o_start, o_dur in [
+            (self, self._drag_origin_start, self._drag_origin_duration)
+        ] + self._resize_peers:
+            if right:
+                item._data.start = anchor + (o_start - anchor) * scale
+            else:
+                item._data.start = anchor - (anchor - o_start) * scale
+            item._data.duration = o_dur * scale
+            if item is not self:
+                item._sync_geometry()
+                item.update()
 
     def mouseMoveEvent(self, event):
         if self._drag_mode is None:
@@ -931,6 +1056,8 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             new_dur = max(_MIN_CLIP_DURATION, snapped_end - self._data.start)
             self._data.duration = new_dur
 
+        if self._resize_peers:
+            self._apply_group_scale()
         self._sync_geometry()
         self.update()
         self._refresh_align_guides()
@@ -1016,10 +1143,17 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             peer._drag_mode = None
             peer._sync_geometry()
             peer.update()
+        for peer, origin_start, origin_duration in self._resize_peers:
+            peer._data.start = origin_start
+            peer._data.duration = origin_duration
+            peer._drag_mode = None
+            peer._sync_geometry()
+            peer.update()
         self._drag_mode = None
         self._pending_zone = None  # an unarmed press is cancelled too
         self._press_screen_pos = None
         self._drag_peers = []
+        self._resize_peers = []
         self._sync_geometry()
         CursorManager.pop(self)
 
@@ -1068,14 +1202,19 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         if event.button() == QtCore.Qt.LeftButton and self._drag_mode:
             mode = self._drag_mode
             peers = self._drag_peers
+            scaled = self._resize_peers
             self._drag_mode = None
             self._drag_peers = []
+            self._resize_peers = []
             CursorManager.pop(self)
             self.update()  # repaint to hide drag frame labels
             self._drag_tooltip.hide()
             # Clear drag state on peers so their curve previews
             # switch back to live data after release.
             for peer, _ in peers:
+                peer._drag_mode = None
+                peer.update()
+            for peer, _o, _d in scaled:
                 peer._drag_mode = None
                 peer.update()
             widget = self._timeline.parent_sequencer
@@ -1117,6 +1256,28 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                         )
                     else:
                         widget.clip_moved.emit(self._data.clip_id, self._data.start)
+                elif scaled:
+                    # The gesture retimed a SELECTION: one payload, so the
+                    # consumer commits it as one edit and one undo step.
+                    members = [(self, self._drag_origin_start)] + [
+                        (peer, origin) for peer, origin, _dur in scaled
+                    ]
+                    spans = {
+                        item._data.clip_id: (
+                            item._data.start,
+                            item._data.duration,
+                        )
+                        for item, _origin in members
+                    }
+                    order = self._collision_free_order(
+                        [
+                            (origin, item._data.clip_id, item._data.start)
+                            for item, origin in members
+                        ]
+                    )
+                    widget.clips_batch_resized.emit(
+                        [(cid, *spans[cid]) for cid, _new_start in order]
+                    )
                 else:
                     widget.clip_resized.emit(
                         self._data.clip_id, self._data.start, self._data.duration

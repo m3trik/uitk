@@ -22,7 +22,7 @@ import faulthandler
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import pythontk as ptk
 
@@ -90,10 +90,18 @@ class TestSuiteRunner:
         verbosity: int = 2,
         log_to_file: bool = False,
         update_badge: bool = True,
+        modules: Optional[Sequence[str]] = None,
     ):
         self.verbosity = verbosity
         self.log_to_file = log_to_file
         self.update_badge = update_badge
+        # Bare stems, `test_` prefix optional: {"sequencer", "test_sequencer"}
+        # both select `test_sequencer.py`.
+        self.modules = (
+            {m[5:] if m.startswith("test_") else m for m in modules}
+            if modules
+            else None
+        )
         self.results: list[TestResult] = []
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
@@ -142,7 +150,17 @@ class TestSuiteRunner:
             self.log_file_path = None
 
     def discover_tests(self) -> unittest.TestSuite:
-        """Discover all test modules in the test directory."""
+        """Discover all test modules in the test directory.
+
+        With ``modules`` set, the discovered suite is FILTERED rather than
+        re-discovered: keeping ``loader.discover``'s own module order is the
+        whole point of a scoped run here, since the runs worth scoping are the
+        ones chasing a cross-module interaction, and re-ordering the survivors
+        would change the very thing under investigation. The badge is refused
+        for such a run by ``StatusBadge.gate``, which compares the modules that
+        ran against the ``test_*.py`` files on disk -- so no extra gating is
+        needed here.
+        """
         self.logger.info(f"Discovering tests in: {TEST_DIR}")
 
         loader = unittest.TestLoader()
@@ -152,11 +170,46 @@ class TestSuiteRunner:
             top_level_dir=str(TEST_DIR),
         )
 
-        # Count tests
+        if self.modules:
+            # One walk, one stem per test: validate the names BEFORE building
+            # the filtered suite, so a typo costs nothing and reports fully.
+            stems = [(self._module_stem(t), t) for t in self._iter_tests(suite)]
+            found = {s for s, _ in stems}
+            missing = sorted(self.modules - found)
+            if missing:
+                # Loud, because a typo would otherwise read as "those tests all
+                # pass" -- the failure mode a scoped run can least afford.
+                self.logger.error(
+                    f"--modules named {len(missing)} unknown module(s): "
+                    f"{', '.join(missing)}. Known: {', '.join(sorted(found))}"
+                )
+                raise SystemExit(2)
+            suite = unittest.TestSuite(t for s, t in stems if s in self.modules)
+            self.logger.info(f"Scoped to: {', '.join(sorted(self.modules))}")
+
         test_count = sum(1 for _ in self._iter_tests(suite))
         self.logger.info(f"Discovered {test_count} tests")
 
         return suite
+
+    @staticmethod
+    def _module_stem(test) -> str:
+        """``test_sequencer.TestX.test_y`` -> ``sequencer``.
+
+        Reads the class's ``__module__``, with one special case that matters: a
+        module that fails to IMPORT is represented by a synthetic
+        ``unittest.loader._FailedTest`` whose ``__module__`` is therefore
+        ``unittest.loader``, and whose id is
+        ``unittest.loader._FailedTest.<module>`` -- so the module name lives in
+        the METHOD name, not the leading segment. Get this wrong and a scoped
+        run silently drops the very import error it was called to look at,
+        reporting "0 failures" for a module that never loaded.
+        """
+        mod = type(test).__module__
+        if mod == "unittest.loader":  # _FailedTest: the module did not import
+            mod = getattr(test, "_testMethodName", "") or test.id()
+        mod = mod.rsplit(".", 1)[-1]
+        return mod[5:] if mod.startswith("test_") else mod
 
     def _iter_tests(self, suite):
         """Iterate over all tests in a suite recursively."""
@@ -323,6 +376,24 @@ class TestSuiteRunner:
             self.logger.info("✓ All tests passed!")
         else:
             self.logger.warning("✗ Some tests failed")
+
+            # Repeat the platform caveat HERE, next to the failures it explains.
+            # __main__ already warns before the run, but that line is hundreds
+            # of lines of dots away from the summary a reader actually acts on,
+            # and a redirected run is usually read by tailing the end. Measured
+            # 2026-09-10: a native-platform run reported
+            # `test_the_card_stays_translucent_under_the_theme` as failing and
+            # it was taken for a real defect, logged, and bisected across the
+            # suite before the unset variable was noticed -- the startup warning
+            # was present in both logs and read by nobody.
+            if not os.environ.get("QT_QPA_PLATFORM"):
+                self.logger.warning(
+                    "   NOTE: QT_QPA_PLATFORM is unset, so this ran on the "
+                    "NATIVE platform style. The rendering tests expect "
+                    "'offscreen' (Fusion + light palette) and report failures "
+                    "that are NOT in the code. Re-run with "
+                    "QT_QPA_PLATFORM=offscreen before believing the list below."
+                )
 
             if result.failures:
                 self.logger.info("")
@@ -529,6 +600,17 @@ def parse_args():
         action="store_true",
         help="Skip updating the README badge",
     )
+    parser.add_argument(
+        "--modules",
+        nargs="+",
+        metavar="NAME",
+        help=(
+            "Run only these test modules, in the suite's own discovery order "
+            "(bare stem or test_ prefix: 'sequencer' == 'test_sequencer'). "
+            "For bisecting a cross-module interaction; the badge is refused "
+            "for a partial run."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -549,6 +631,7 @@ def main():
         verbosity=verbosity,
         log_to_file=args.log,
         update_badge=not args.no_badge,
+        modules=args.modules,
     )
 
     success = runner.run()
@@ -573,64 +656,25 @@ def main():
     except Exception:
         pass
 
-    _hard_exit(0 if success else 1)
-
-
-def _hard_exit(code: int) -> None:
-    """Exit immediately, preserving *code* as the process exit status.
-
-    Plain interpreter shutdown — and even ``os._exit`` on Windows (which still
-    runs ``DLL_PROCESS_DETACH``, executing Qt's static destructors) — can
-    segfault tearing down leaked Qt objects, replacing the exit code with
-    0xC0000005. ``TerminateProcess`` skips detach callbacks entirely.
-    """
-    sys.stdout.flush()
-    sys.stderr.flush()
-    if os.name == "nt":
-        import ctypes
-
-        # HANDLE must be typed: ctypes' default c_int restype truncates
-        # GetCurrentProcess()'s 64-bit pseudo-handle (-1) to 32 bits, and the
-        # untyped round-trip handed TerminateProcess 0x00000000FFFFFFFF — an
-        # invalid handle, so the kill failed DETERMINISTICALLY (returned 0 on
-        # every probe run) and every run fell through to os._exit's
-        # DLL_PROCESS_DETACH, the exact segfault surface this function exists
-        # to skip. That's why green runs kept exiting 5 (0xC0000005's low
-        # byte) despite both earlier parking fixes: the park was unreachable.
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
-        kernel32.TerminateProcess.argtypes = (ctypes.c_void_p, ctypes.c_uint)
-        kernel32.TerminateProcess.restype = ctypes.c_int
-        kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint)
-        kernel32.WaitForSingleObject.restype = ctypes.c_uint
-        if kernel32.TerminateProcess(kernel32.GetCurrentProcess(), code):
-            # TerminateProcess is asynchronous — it can return to this
-            # thread while the kill is still in flight. Falling through to
-            # os._exit here re-enters DLL_PROCESS_DETACH (the exact segfault
-            # this function exists to skip) and clobbers the exit code with
-            # 0xC0000005 (observed live: a green run reported as failed).
-            # Park until the kill lands — with a SINGLE never-returning wait,
-            # not a Sleep loop: the loop re-entered Python bytecode + ctypes
-            # marshalling once per second inside the dying process, and that
-            # execution surface is where an access violation clobbered a
-            # green run's exit code with 0xC0000005 (shell-reported as 5)
-            # despite this parking (observed live 2026-07-25).
-            INFINITE = 0xFFFFFFFF
-            while True:
-                # Looped only against a spurious return (e.g. WAIT_FAILED):
-                # falling through to os._exit would re-enter the detach
-                # callbacks this function exists to skip.
-                kernel32.WaitForSingleObject(kernel32.GetCurrentProcess(), INFINITE)
-        # Only reachable when TerminateProcess reported failure (the park
-        # never returns). Announce it — the untyped-handle bug hid behind
-        # this silent fallback for two fix cycles.
-        print(
-            f"_hard_exit: TerminateProcess failed "
-            f"(WinError {ctypes.get_last_error()}); falling back to os._exit — "
-            "the exit code may be clobbered by DLL_PROCESS_DETACH teardown.",
-            flush=True,
-        )
-    os._exit(code)
+    # Skips DLL_PROCESS_DETACH, where Qt's static destructors tear down leaked
+    # objects and replaced a GREEN run's status with 0xC0000005 (observed live
+    # 2026-07-25). os._exit does NOT skip it on Windows. The mechanics, and the
+    # typed-HANDLE and single-wait lessons this file paid for, now live in the
+    # shared primitive so every DCC-hosted runner gets them.
+    #
+    # Looked up defensively: `import pythontk` at module scope only proves SOME
+    # pythontk is importable, and this runner is the release gate -- it
+    # routinely runs against whichever build is installed. One predating
+    # ProcessExit would raise AttributeError from the last statement of a
+    # FINISHED run, reporting a green suite as a crash. Degrade to the old
+    # behaviour instead; the exit code still stands, only the detach
+    # suppression is lost.
+    code = 0 if success else 1
+    try:
+        hard_exit = ptk.ProcessExit.hard_exit
+    except AttributeError:
+        os._exit(code)
+    hard_exit(code)
 
 
 if __name__ == "__main__":

@@ -101,6 +101,13 @@ class AttributeSpec:
             referenced by the same templates as the spec it follows. Ignored on
             the first spec of a registry (nothing to attach to) and on the first
             spec of a section (a section's opening row is its own).
+        placeholder: Grey text shown while a text field is EMPTY, on the
+            line-edit kinds (``"str"``, ``"path"``, ``"file"``). For what
+            happens if it is left that way -- an empty field that prompts on
+            use, or one that falls back to a computed default -- which is
+            unreadable from the row otherwise: the control looks unset and
+            unexplained, and a tooltip only says so once the user suspects
+            there is something to ask about. Never restate the label here.
     """
 
     key: str
@@ -115,6 +122,11 @@ class AttributeSpec:
     tooltip: str = ""
     section: str = ""
     inline: bool = False
+    # Appended, not inserted beside `tooltip` where it reads best: this is a
+    # published dataclass, so every field's POSITION is part of the contract
+    # and a new one in the middle silently re-points a positional caller's
+    # `section` at it.
+    placeholder: str = ""
 
     def __post_init__(self):
         # An empty key produces a widget with empty objectName that can't be
@@ -288,6 +300,8 @@ class _KindFactoryInternal(object):
         w = QtWidgets.QLineEdit(parent)
         if spec.default is not None:
             w.setText(str(spec.default))
+        if spec.placeholder:
+            w.setPlaceholderText(spec.placeholder)
         return w
 
     @staticmethod
@@ -370,37 +384,105 @@ class _KindFactoryInternal(object):
 
     @staticmethod
     def _build_path(spec, parent):
-        container = QtWidgets.QWidget(parent)
-        hl = QtWidgets.QHBoxLayout(container)
-        hl.setContentsMargins(0, 0, 0, 0)
-        hl.setSpacing(2)
-        edit = QtWidgets.QLineEdit("" if spec.default is None else str(spec.default))
-        # Name the inner edit (mirrors make_widget's container objectName == spec.key)
-        # so preset capture keys it: consumers that snapshot the value-bearing child
-        # rather than the container (e.g. the DCC bridges substitute ``_line_edit``
-        # into their managed set) skip empty-objectName widgets, silently dropping
-        # path fields from saved widget-state presets.
+        """A line edit that browses for a DIRECTORY."""
+        return _KindFactoryInternal._build_browse_row(spec, parent, "directory")
+
+    @staticmethod
+    def _build_file(spec, parent):
+        """A line edit that browses for one FILE, filtered by *spec.choices*.
+
+        Registered as its own kind rather than folded into ``path`` behind a
+        flag because every panel that wanted a file field hand-rolled the row
+        instead (the Marmoset and Unity panels each carry a private
+        ``_build_model_row`` that is the same twenty lines with a different
+        filter), and a third copy is what this registry exists to prevent.
+
+        *spec.choices* carries the filter as glob patterns -- ``["*.fbx",
+        "*.glb"]`` -- reusing the field the way the ``action`` kind does
+        rather than widening the frozen dataclass for one kind. Empty offers
+        all files.
+        """
+        return _KindFactoryInternal._build_browse_row(spec, parent, "file")
+
+    @staticmethod
+    def _build_browse_row(spec, parent, mode):
+        """A line edit carrying option-box CLEAR and BROWSE icon buttons.
+
+        The two path-ish kinds differ only in what the dialog picks, so they
+        are one row: ``path`` browses for a directory, ``file`` for a file
+        filtered by ``spec.choices``. Both used to hand-roll a ``QLineEdit``
+        beside a ``"..."`` push button and drive ``QFileDialog`` themselves,
+        which is the option box's whole job -- and the copies had already
+        drifted, only one of them anchoring the dialog on the current value.
+
+        The plugins bring what a private copy does not: the clear button
+        hides itself while the field is empty, so a row cannot offer to clear
+        nothing, and BOTH buttons are icons sized to the row rather than a
+        text button that reads as a third value. Every path shape a caller
+        might type still survives a round trip -- the widget reads and writes
+        plain text, so a UNC path or an unexpanded variable is preserved.
+
+        ``uitk``'s own :class:`~uitk.widgets.lineEdit.LineEdit` rather than a
+        bare ``QLineEdit``: ``option_box`` is a property of the mixin it
+        carries (the QWidget patch is applied by ``Switchboard``, so a bare
+        field only has it once one exists), and it keeps the standard editing
+        chords with the field when a DCC host binds the same sequence.
+        """
+        from uitk.widgets.lineEdit import LineEdit
+
+        edit = LineEdit()
+        edit.setText("" if spec.default is None else str(spec.default))
+        # Name the inner edit (mirrors make_widget's container objectName ==
+        # spec.key) so preset capture keys it: consumers that snapshot the
+        # value-bearing child rather than the container (e.g. the DCC bridges
+        # substitute ``_line_edit`` into their managed set) skip
+        # empty-objectName widgets, silently dropping path fields from saved
+        # widget-state presets.
         edit.setObjectName(spec.key)
         edit.setMinimumHeight(19)
         edit.setMaximumHeight(19)
-        browse = QtWidgets.QPushButton("...")
-        browse.setFixedWidth(22)
-        browse.setMinimumHeight(19)
-        browse.setMaximumHeight(19)
-        hl.addWidget(edit, 1)
-        hl.addWidget(browse)
-        container._line_edit = edit  # noqa: SLF001 — intentional public attr on container
+        if spec.placeholder:
+            edit.setPlaceholderText(spec.placeholder)
 
-        def _on_browse():
-            start = edit.text() or ""
-            path = QtWidgets.QFileDialog.getExistingDirectory(
-                container, "Select directory", start
-            )
-            if path:
-                edit.setText(path)
+        directory = mode == "directory"
+        patterns = [str(c) for c in (spec.choices or [])]
+        edit.option_box.enable_clear()
+        edit.option_box.browse(
+            file_types=(
+                None
+                if directory
+                else (
+                    f"Supported ({' '.join(patterns)});;All files (*)"
+                    if patterns
+                    else "All files (*)"
+                )
+            ),
+            # The dialog is titled with the row it belongs to; two open file
+            # dialogs from one panel are otherwise indistinguishable.
+            title=spec.display_label
+            or ("Select directory" if directory else "Select file"),
+            mode=mode,
+            tooltip="Browse for a folder" if directory else "Browse for a file",
+        )
 
-        browse.clicked.connect(_on_browse)
+        container = edit.option_box.container
+        container.setParent(parent)
+        container._line_edit = edit  # noqa: SLF001 — intentional public attr
         return container
+
+    @staticmethod
+    def _read_file(widget):
+        return widget._line_edit.text()
+
+    @staticmethod
+    def _write_file(widget, value):
+        widget._line_edit.setText("" if value is None else str(value))
+
+    @staticmethod
+    def _connect_file(widget, callback):
+        widget._line_edit.textChanged.connect(
+            lambda *_: callback(_KindFactoryInternal._read_file(widget))
+        )
 
     @staticmethod
     def _read_path(widget):
@@ -1187,6 +1269,15 @@ KindFactory.register_kind(
         _KindFactoryInternal._read_path,
         _KindFactoryInternal._write_path,
         connect=_KindFactoryInternal._connect_path,
+    ),
+)
+KindFactory.register_kind(
+    "file",
+    KindHandler(
+        _KindFactoryInternal._build_file,
+        _KindFactoryInternal._read_file,
+        _KindFactoryInternal._write_file,
+        connect=_KindFactoryInternal._connect_file,
     ),
 )
 KindFactory.register_kind(

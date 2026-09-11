@@ -166,6 +166,8 @@ _GESTURE_DEFS = (
     ("Gaps", "Right-click", "Lock / unlock the gap"),
     ("Clips & keys", "Drag", "Move keys (ripple)"),
     ("Clips & keys", "Drag edge", "Scale the clip's keys"),
+    ("Clips & keys", "Drag edge (multi)", "Scale the whole selection as one"),
+    ("Clips & keys", "Shift (keys selected)", "Scale bar: drag an end to retime"),
     ("Clips & keys", "Shift+Drag", "Cross shot bounds, bounds stay"),
     ("Clips & keys", "Ctrl", "Snap to whole frames"),
     ("Clips & keys", "Right-click", "Tangents, lock, Move to Shot"),
@@ -186,6 +188,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         Emitted when multiple clips are moved together.  Args: ``[(clip_id, new_start), ...]``.
     clip_resized(int, float, float)
         Emitted when a clip edge is dragged.  Args: ``(clip_id, new_start, new_duration)``.
+    clips_batch_resized(list)
+        Emitted when an edge drag scaled a SELECTION of clips as one unit.
+        Args: ``[(clip_id, new_start, new_duration), ...]``.
     clip_selected(int)
         Emitted when a clip is clicked.  Args: ``(clip_id,)``.
     playhead_moved(float)
@@ -199,6 +204,12 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     clips_batch_moved = QtCore.Signal(list)
     clips_reordered = QtCore.Signal(int, int)  # (clip_id_a, clip_id_b) swap request
     clip_resized = QtCore.Signal(int, float, float)
+    # An edge drag with SEVERAL clips selected scales the whole selection as
+    # one unit -- [(clip_id, start, duration), ...], ordered so a consumer
+    # committing them one at a time never lands a clip on a span another has
+    # not left yet (``ClipItem._collision_free_order``).  ``clip_resized``
+    # still carries a lone clip's own resize.
+    clips_batch_resized = QtCore.Signal(list)
     clip_selected = QtCore.Signal(int)
     clip_renamed = QtCore.Signal(int, str)  # (clip_id, new_label)
     clip_locked = QtCore.Signal(int, bool)  # (clip_id, is_locked)
@@ -307,6 +318,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._show_gap_overlays: bool = True  # toggle for gap overlays
         self._show_range_highlight: bool = True  # toggle for active shot highlight
         self._bg_curve_previews: Dict[tuple, dict] = {}  # (track_id, sub_row) → preview
+        # Shift + a key selection raises a scale bar over it; see
+        # ``refresh_key_scale_handles``.
+        self._key_scale_handles: list = []
+        self._shift_held: bool = False
         self._window_shortcuts: bool = False  # shortcuts active at window level
         # Top-level window the ShortcutOverride filter is installed on.
         # Tracked by identity (not a bool) so a reparent — e.g. Maya
@@ -796,12 +811,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         cd.locked = locked
         item = self._clip_items.get(clip_id)
         if item:
-            item.setFlag(
-                QtWidgets.QGraphicsItem.ItemIsSelectable,
-                not locked and not cd.sub_row,
-            )
-            if locked and item.isSelected():
-                item.setSelected(False)
+            item.sync_selectable()
             item.update()
 
     def remove_track(self, track_id: int):
@@ -976,6 +986,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             self.clear_gap_overlays()
             self.clear_shot_blocks()
             self.clear_snap_guides()
+            self.clear_key_scale_handles()
         finally:
             self._selection_suppressed -= 1
         self._timeline._refresh_all()
@@ -1795,6 +1806,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                     **extra,
                 )
 
+        self._sync_track_selectability(track_id)
         idx = self._track_index(track_id)
         if idx is not None:
             self._header.set_track_expanded(idx, sub_names, self._sub_row_height)
@@ -1838,11 +1850,39 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         ]
         for cid in to_remove:
             self.remove_clip(cid)
+        self._sync_track_selectability(track_id)
         idx = self._track_index(track_id)
         if idx is not None:
             self._header.set_track_collapsed(idx)
         self._timeline._refresh_all()
         self.track_collapsed.emit(track_id)
+
+    def _sync_track_selectability(self, track_id: int) -> None:
+        """Re-apply every main-row clip's selectable flag for *track_id*.
+
+        A main-row clip on an expanded track is only a summary of the key
+        dots below it (:meth:`ClipItem.is_selectable`), so expansion revokes
+        its selection and collapse gives it back.  A selection actually
+        dropped is reported once, as a real selection change: the consumer
+        mirrors the widget's selection into its host app and would otherwise
+        keep showing a bar the user can no longer pick.
+        """
+        dropped = False
+        for cd in self._clips.values():
+            if cd.track_id != track_id or cd.sub_row:
+                continue
+            item = self._clip_items.get(cd.clip_id)
+            if item is None:
+                continue
+            was_selected = item.isSelected()
+            self._selection_suppressed += 1
+            try:
+                item.sync_selectable()
+            finally:
+                self._selection_suppressed -= 1
+            dropped = dropped or (was_selected and not item.isSelected())
+        if dropped and not self._selection_suppressed:
+            self._on_scene_selection()
 
     def is_track_expanded(self, track_id: int) -> bool:
         """Return True if the track is currently expanded."""
@@ -2002,6 +2042,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
 
         # Emit key-level selection info for graph-editor sync.
         self.key_selection_changed.emit(self.selected_keys())
+        # The Shift scale bar brackets the SELECTION, so it follows it.
+        self.refresh_key_scale_handles()
 
     def show_key_menu(self, global_pos) -> bool:
         """Open the key menu for the current key selection; ``False`` if empty.
@@ -2036,6 +2078,89 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             return False
         menu.exec_(global_pos)
         return True
+
+    # -- key scale handles --------------------------------------------------
+    def _scalable_keys(self) -> list:
+        """Selected key dots that a scale may retime.
+
+        The selection minus the dots on a clip that refuses key edits
+        (:attr:`ClipItem.keys_editable`) -- the same gate the key menu and
+        Delete take, for the same reason: a marquee can sweep a locked or
+        read-only row, and an edit from here would be written straight into
+        the host.
+        """
+        from uitk.widgets.sequencer._keyframe import KeyframeItem
+
+        try:
+            items = self._timeline._scene.selectedItems()
+        except RuntimeError:
+            return []
+        return [
+            item
+            for item in items
+            if isinstance(item, KeyframeItem) and item._parent_clip.keys_editable
+        ]
+
+    def _key_scale_span(self, keys) -> Optional[tuple]:
+        """``(lo, hi, top, bottom)`` the scale bar should bracket, or None.
+
+        None whenever a scale is meaningless -- fewer than two keys, or every
+        key on one frame, where no ratio exists to scale by.
+        """
+        times = [k._time for k in keys]
+        if len(keys) < 2 or (max(times) - min(times)) < 1e-6:
+            return None
+        tops, bottoms = [], []
+        for k in keys:
+            rect = k._parent_clip.rect()
+            tops.append(rect.top())
+            bottoms.append(rect.bottom())
+        return min(times), max(times), min(tops), max(bottoms)
+
+    def refresh_key_scale_handles(self) -> None:
+        """Show or hide the Shift scale bar over the current key selection.
+
+        Held Shift plus a key selection is the request; anything else --
+        Shift let go, the selection gone or collapsed onto one frame, a
+        scale already in flight -- takes the bar away again.  Called from
+        the timeline's key handling and from every key-selection change, so
+        the bar tracks both halves of the condition.
+        """
+        from uitk.widgets.sequencer._keyframe import KeyScaleHandleItem
+
+        if any(h._is_drag_active() for h in self._key_scale_handles):
+            return
+        span = None
+        if self._shift_held:
+            span = self._key_scale_span(self._scalable_keys())
+        if span is None:
+            self.clear_key_scale_handles()
+            return
+        lo, hi, top, bottom = span
+        if not self._key_scale_handles:
+            self._key_scale_handles = [
+                KeyScaleHandleItem(self, "left"),
+                KeyScaleHandleItem(self, "right"),
+            ]
+            for h in self._key_scale_handles:
+                self._timeline._scene.addItem(h)
+        for h in self._key_scale_handles:
+            h.set_span(lo if h.side == "left" else hi, top, bottom)
+
+    def clear_key_scale_handles(self) -> None:
+        """Remove the scale bar, cancelling a drag it still owns."""
+        for h in self._key_scale_handles:
+            h.cancel_drag()
+            ItemRetirement.retire(h)
+        self._key_scale_handles = []
+
+    def set_shift_held(self, held: bool) -> None:
+        """Record whether Shift is down and re-evaluate the scale bar."""
+        held = bool(held)
+        if held == self._shift_held:
+            return
+        self._shift_held = held
+        self.refresh_key_scale_handles()
 
     def _editable_key_groups(self) -> List[dict]:
         """:meth:`selected_keys` minus the clips that refuse key edits.
