@@ -30,6 +30,7 @@ Every module in `API_INDEX.md` must match exactly one home via longest-prefix ma
 
 | Prefix | Primary doc | Note |
 |:--|:--|:--|
+| `__init__.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | `DEFAULT_INCLUDE` — the lazy-exposure map, documented in the `bootstrap_package` section; API_REFERENCE.md points at it too |
 | `_bootstrap.py` | [API_REFERENCE.md](API_REFERENCE.md) | `Bootstrap` (high-DPI) row — ARCHITECTURE §4 covers lazy symbol exposure, not this class |
 | `bridge/` | [BRIDGE.md](BRIDGE.md) | dedicated subsystem doc |
 | `compile.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | §12 UI loading & compilation |

@@ -3,6 +3,23 @@
   "source_root": "uitk/uitk",
   "modules": [
     {
+      "relpath": "__init__.py",
+      "summary": "UITK - User Interface Toolkit for Qt/PySide applications.",
+      "functions": [],
+      "classes": [],
+      "constants": [
+        {
+          "name": "DEFAULT_INCLUDE",
+          "qualname": "DEFAULT_INCLUDE",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 50,
+          "deprecated": false
+        }
+      ]
+    },
+    {
       "relpath": "_bootstrap.py",
       "summary": "Standalone-process bootstrap helpers.",
       "functions": [],
@@ -24,7 +41,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "bridge/formatters.py",
@@ -77,7 +95,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "bridge/parameters.py",
@@ -157,7 +176,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "bridge/slots.py",
@@ -178,7 +198,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "",
-              "line": 258,
+              "line": 271,
               "deprecated": false
             },
             {
@@ -187,7 +207,7 @@
               "kind": "property",
               "signature": "(self) -> Path",
               "summary": "",
-              "line": 262,
+              "line": 275,
               "deprecated": false
             },
             {
@@ -196,7 +216,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return a fresh bridge instance.",
-              "line": 265,
+              "line": 278,
               "deprecated": false
             },
             {
@@ -205,7 +225,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "This panel's :class:`OptionalPackageManager` (built once, lazily).",
-              "line": 274,
+              "line": 287,
               "deprecated": false
             },
             {
@@ -214,7 +234,7 @@
               "kind": "staticmethod",
               "signature": "(spec: str, import_name: str = None) -> bool",
               "summary": "Is an optional package importable in THIS interpreter? Silent.",
-              "line": 293,
+              "line": 306,
               "deprecated": false
             },
             {
@@ -223,7 +243,7 @@
               "kind": "method",
               "signature": "(self, spec: str, import_name: str = None, *, feature: str = None) -> bool",
               "summary": "Make an optional package importable, offering to install it on demand.",
-              "line": 304,
+              "line": 317,
               "deprecated": false
             },
             {
@@ -232,7 +252,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Hook: return a :class:`pythontk.PresetStore` to switch presets into",
-              "line": 326,
+              "line": 339,
               "deprecated": false
             },
             {
@@ -241,7 +261,7 @@
               "kind": "method",
               "signature": "(self) -> List[Tuple[str, str]]",
               "summary": "",
-              "line": 344,
+              "line": 357,
               "deprecated": false
             },
             {
@@ -250,7 +270,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Implement the per-bridge send action.",
-              "line": 347,
+              "line": 360,
               "deprecated": false
             },
             {
@@ -259,7 +279,7 @@
               "kind": "method",
               "signature": "(self, scope: str)",
               "summary": "Hook: turn a ``SCOPE`` value into host objects.",
-              "line": 352,
+              "line": 365,
               "deprecated": false
             },
             {
@@ -268,7 +288,7 @@
               "kind": "staticmethod",
               "signature": "(scope: str) -> str",
               "summary": "The message shown when a scope resolves to nothing.",
-              "line": 366,
+              "line": 379,
               "deprecated": false
             },
             {
@@ -277,7 +297,7 @@
               "kind": "method",
               "signature": "(self, params, warn: bool = True)",
               "summary": "Objects for the ``SCOPE`` in *params*;",
-              "line": 381,
+              "line": 394,
               "deprecated": false
             },
             {
@@ -286,7 +306,7 @@
               "kind": "method",
               "signature": "(self, pairs: List[Tuple[str, str]]) -> int",
               "summary": "Return the index of the preferred initial entry in *pairs*.",
-              "line": 395,
+              "line": 408,
               "deprecated": false
             },
             {
@@ -295,7 +315,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Hook: fallback path when the user leaves Output Dir blank.",
-              "line": 403,
+              "line": 416,
               "deprecated": false
             },
             {
@@ -304,7 +324,7 @@
               "kind": "method",
               "signature": "(self, template_path: Path) -> Optional[str]",
               "summary": "Hook: extract a brief description from a template file.",
-              "line": 412,
+              "line": 425,
               "deprecated": false
             },
             {
@@ -313,7 +333,7 @@
               "kind": "method",
               "signature": "(self, spec: AttributeSpec) -> str",
               "summary": "Hook: build the rich-text tooltip for one parameter spec.",
-              "line": 416,
+              "line": 429,
               "deprecated": false
             },
             {
@@ -322,7 +342,7 @@
               "kind": "staticmethod",
               "signature": "(handler: Callable) -> None",
               "summary": "Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel",
-              "line": 423,
+              "line": 436,
               "deprecated": false
             },
             {
@@ -331,7 +351,7 @@
               "kind": "staticmethod",
               "signature": "(tag: str) -> str",
               "summary": "Create (once per host process) and return a temp Output Dir for *tag*.",
-              "line": 436,
+              "line": 449,
               "deprecated": false
             },
             {
@@ -340,7 +360,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-instantiated bridge (caches a single instance per slot).",
-              "line": 515,
+              "line": 528,
               "deprecated": false
             },
             {
@@ -349,7 +369,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "The bridge if it can be built, else ``None`` — never raises.",
-              "line": 536,
+              "line": 549,
               "deprecated": false
             },
             {
@@ -358,7 +378,7 @@
               "kind": "method",
               "signature": "(self, message: str, level: str = 'info') -> None",
               "summary": "Log to the panel, working whether or not the engine exists.",
-              "line": 559,
+              "line": 572,
               "deprecated": false
             },
             {
@@ -367,7 +387,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Return the current Output Dir text trimmed of whitespace.",
-              "line": 703,
+              "line": 716,
               "deprecated": false
             },
             {
@@ -376,7 +396,7 @@
               "kind": "method",
               "signature": "(self, mode: Optional[str] = None) -> Optional[str]",
               "summary": "Return the Output Dir for a run in *mode*, or log an error on empty.",
-              "line": 713,
+              "line": 726,
               "deprecated": false
             },
             {
@@ -385,7 +405,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Callable[[], str]]",
               "summary": "Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.",
-              "line": 904,
+              "line": 917,
               "deprecated": false
             },
             {
@@ -394,7 +414,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Callable[[], str]]",
               "summary": "Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.",
-              "line": 933,
+              "line": 946,
               "deprecated": false
             },
             {
@@ -403,7 +423,7 @@
               "kind": "method",
               "signature": "(self, key: str, enabled: bool, reason: str = '') -> None",
               "summary": "Grey out (or re-enable) one parameter row, with *reason* as its tooltip.",
-              "line": 1058,
+              "line": 1071,
               "deprecated": false
             },
             {
@@ -412,7 +432,7 @@
               "kind": "method",
               "signature": "(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]",
               "summary": "The ``(trigger, governed, reason)`` triples in effect for this panel.",
-              "line": 1118,
+              "line": 1131,
               "deprecated": false
             },
             {
@@ -421,7 +441,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Any]",
               "summary": "Snapshot every widget's current value, regardless of visibility.",
-              "line": 1168,
+              "line": 1181,
               "deprecated": false
             },
             {
@@ -430,7 +450,7 @@
               "kind": "method",
               "signature": "(self, widget) -> None",
               "summary": "Switchboard hook: populate the template combobox + wire change handler.",
-              "line": 1379,
+              "line": 1392,
               "deprecated": false
             },
             {
@@ -439,7 +459,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Re-scan disk and rebuild the template combo + parameter UI.",
-              "line": 1421,
+              "line": 1437,
               "deprecated": false
             },
             {
@@ -448,7 +468,7 @@
               "kind": "method",
               "signature": "(self) -> Tuple[Tuple[str, str, str, str], ...]",
               "summary": "Hook: the header-menu items.",
-              "line": 1568,
+              "line": 1584,
               "deprecated": false
             },
             {
@@ -457,7 +477,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[Dict[str, Any]]",
               "summary": "Hook: the ``fmt()`` keyword dict for the header help, or ``None``.",
-              "line": 1572,
+              "line": 1588,
               "deprecated": false
             },
             {
@@ -466,7 +486,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Hook: the panel's documentation URL, or ``\"\"`` for no docs link.",
-              "line": 1579,
+              "line": 1595,
               "deprecated": false
             },
             {
@@ -475,7 +495,7 @@
               "kind": "method",
               "signature": "(self, widget) -> None",
               "summary": "Default header menu: a \"Utilities\" separator, the declared",
-              "line": 1586,
+              "line": 1602,
               "deprecated": false
             },
             {
@@ -484,7 +504,7 @@
               "kind": "method",
               "signature": "(self, path) -> bool",
               "summary": "Open *path* in the OS file manager (logs + returns False if missing).",
-              "line": 1614,
+              "line": 1630,
               "deprecated": false
             },
             {
@@ -493,7 +513,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Reveal :attr:`template_dir` in the OS file manager.",
-              "line": 1630,
+              "line": 1646,
               "deprecated": false
             },
             {
@@ -502,12 +522,13 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear the log panel (wired by subclass header menus).",
-              "line": 1634,
+              "line": 1650,
               "deprecated": false
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "bridge/spec.py",
@@ -526,7 +547,7 @@
               "kind": "classmethod",
               "signature": "(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'",
               "summary": "Build a minimal spec from a Python value (AttributeWindow style).",
-              "line": 126,
+              "line": 138,
               "deprecated": false
             },
             {
@@ -535,7 +556,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "",
-              "line": 136,
+              "line": 148,
               "deprecated": false
             }
           ]
@@ -543,14 +564,14 @@
         {
           "name": "KindHandler",
           "summary": "Bundle of callables that build / read / write a widget kind.",
-          "line": 141,
+          "line": 153,
           "bases": [],
           "members": []
         },
         {
           "name": "KindFactory",
           "summary": "Build / read / write Qt widgets by ``kind``, backed by the registry.",
-          "line": 938,
+          "line": 1020,
           "bases": [
             "_KindFactoryInternal"
           ],
@@ -561,7 +582,7 @@
               "kind": "staticmethod",
               "signature": "(value: Any) -> str",
               "summary": "Map a Python value to one of the built-in kinds.",
-              "line": 953,
+              "line": 1035,
               "deprecated": false
             },
             {
@@ -570,7 +591,7 @@
               "kind": "staticmethod",
               "signature": "(name: str, handler: KindHandler) -> None",
               "summary": "Register a new kind (or override an existing one).",
-              "line": 978,
+              "line": 1060,
               "deprecated": false
             },
             {
@@ -579,7 +600,7 @@
               "kind": "staticmethod",
               "signature": "(kind: str) -> KindHandler",
               "summary": "Return the handler for *kind* (raises KeyError if unregistered).",
-              "line": 983,
+              "line": 1065,
               "deprecated": false
             },
             {
@@ -588,7 +609,7 @@
               "kind": "staticmethod",
               "signature": "(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget",
               "summary": "Build a Qt widget for *spec*.",
-              "line": 993,
+              "line": 1075,
               "deprecated": false
             },
             {
@@ -597,7 +618,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget) -> Optional[str]",
               "summary": "The kind stamped on *widget*, or ``None`` if this factory didn't build it.",
-              "line": 1009,
+              "line": 1091,
               "deprecated": false
             },
             {
@@ -606,7 +627,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget) -> Any",
               "summary": "Return the current value of a factory-built widget.",
-              "line": 1025,
+              "line": 1107,
               "deprecated": false
             },
             {
@@ -615,7 +636,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Set the value of a factory-built widget.",
-              "line": 1032,
+              "line": 1114,
               "deprecated": false
             },
             {
@@ -624,7 +645,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget, choices: ChoicesSeq) -> None",
               "summary": "Repopulate a choice-driven widget's entries after it was built.",
-              "line": 1039,
+              "line": 1121,
               "deprecated": false
             },
             {
@@ -633,7 +654,7 @@
               "kind": "staticmethod",
               "signature": "(spec: AttributeSpec, value: Any) -> Any",
               "summary": "The scalar stand-in *value* substitutes as, for a composite kind.",
-              "line": 1059,
+              "line": 1141,
               "deprecated": false
             },
             {
@@ -642,7 +663,7 @@
               "kind": "staticmethod",
               "signature": "(value: Any, *, default: str = 'prefix') -> Tuple[str, str]",
               "summary": "``(prefix, suffix)`` for an ``affix``-kind value.",
-              "line": 1082,
+              "line": 1164,
               "deprecated": false
             },
             {
@@ -651,10 +672,48 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None",
               "summary": "Wire the widget's value-change signal to ``callback(new_value)``.",
-              "line": 1110,
+              "line": 1192,
               "deprecated": false
             }
           ]
+        }
+      ],
+      "constants": [
+        {
+          "name": "INT_MIN",
+          "qualname": "INT_MIN",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 43,
+          "deprecated": false
+        },
+        {
+          "name": "INT_MAX",
+          "qualname": "INT_MAX",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 44,
+          "deprecated": false
+        },
+        {
+          "name": "FLOAT_MIN",
+          "qualname": "FLOAT_MIN",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 45,
+          "deprecated": false
+        },
+        {
+          "name": "FLOAT_MAX",
+          "qualname": "FLOAT_MAX",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 46,
+          "deprecated": false
         }
       ]
     },
@@ -691,7 +750,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "compile.py",
@@ -833,6 +893,26 @@
             }
           ]
         }
+      ],
+      "constants": [
+        {
+          "name": "UIC_TIMEOUT_SECONDS",
+          "qualname": "UIC_TIMEOUT_SECONDS",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 30,
+          "deprecated": false
+        },
+        {
+          "name": "UIC_BINDINGS",
+          "qualname": "UIC_BINDINGS",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 33,
+          "deprecated": false
+        }
       ]
     },
     {
@@ -931,6 +1011,17 @@
               "deprecated": false
             }
           ]
+        }
+      ],
+      "constants": [
+        {
+          "name": "PLUGIN_PATH_ENV",
+          "qualname": "PLUGIN_PATH_ENV",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 51,
+          "deprecated": false
         }
       ]
     },
@@ -1050,7 +1141,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "examples/example.py",
@@ -1139,7 +1231,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "handlers/base_handler.py",
@@ -1221,7 +1314,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "handlers/external_app_handler.py",
@@ -1231,7 +1325,7 @@
         {
           "name": "ExternalAppHandler",
           "summary": "Switchboard handler for launching external Python apps.",
-          "line": 98,
+          "line": 99,
           "bases": [
             "BaseHandler"
           ],
@@ -1242,7 +1336,7 @@
               "kind": "method",
               "signature": "(self, groups: Optional[Iterable[str]] = None) -> int",
               "summary": "Auto-register every app advertised under a uitk entry-point group.",
-              "line": 186,
+              "line": 189,
               "deprecated": false
             },
             {
@@ -1251,7 +1345,7 @@
               "kind": "method",
               "signature": "(self, install_spec: str, *, probe_module: Optional[str] = None, group: Optional[str] = None, python: Optional[str] = None) -> None",
               "summary": "Register a provider package that ships discoverable apps.",
-              "line": 356,
+              "line": 498,
               "deprecated": false
             },
             {
@@ -1260,7 +1354,7 @@
               "kind": "method",
               "signature": "(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None) -> None",
               "summary": "Pre-register an app so it can be launched by name.",
-              "line": 470,
+              "line": 612,
               "deprecated": false
             },
             {
@@ -1269,7 +1363,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 536,
+              "line": 678,
               "deprecated": false
             },
             {
@@ -1278,7 +1372,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Remove an app.",
-              "line": 539,
+              "line": 681,
               "deprecated": false
             },
             {
@@ -1287,7 +1381,7 @@
               "kind": "method",
               "signature": "(self) -> Iterable[HandlerEntry]",
               "summary": "Yield one :class:`HandlerEntry` per registered app.",
-              "line": 548,
+              "line": 690,
               "deprecated": false
             },
             {
@@ -1296,7 +1390,7 @@
               "kind": "method",
               "signature": "(self, name: str, tags: Iterable[str]) -> None",
               "summary": "Persist *tags* for *name* in the handler's config branch.",
-              "line": 625,
+              "line": 767,
               "deprecated": false
             },
             {
@@ -1305,7 +1399,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Hide an in-process widget;",
-              "line": 649,
+              "line": 791,
               "deprecated": false
             },
             {
@@ -1314,7 +1408,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 675,
+              "line": 817,
               "deprecated": false
             },
             {
@@ -1323,12 +1417,13 @@
               "kind": "method",
               "signature": "(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None, show: bool = True, **_options)",
               "summary": "Launch a registered app, or an ad-hoc app from kwargs.",
-              "line": 692,
+              "line": 862,
               "deprecated": false
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "handlers/handler_entry.py",
@@ -1361,7 +1456,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "handlers/ui_handler.py",
@@ -1567,7 +1663,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "loaders/compiled.py",
@@ -1609,7 +1706,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "loaders/runtime.py",
@@ -1651,7 +1749,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "managers/cancel_manager.py",
@@ -1809,7 +1908,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "managers/cursor_manager.py",
@@ -1996,7 +2096,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "managers/icon_manager.py",
@@ -2119,7 +2220,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "managers/optional_package_manager.py",
@@ -2199,7 +2301,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "managers/preset_manager.py",
@@ -2450,6 +2553,17 @@
             }
           ]
         }
+      ],
+      "constants": [
+        {
+          "name": "PRESETS_ROOT_ENV_VAR",
+          "qualname": "PRESETS_ROOT_ENV_VAR",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 2167,
+          "deprecated": false
+        }
       ]
     },
     {
@@ -2580,7 +2694,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "managers/registry_manager.py",
@@ -2689,7 +2804,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "managers/settings_manager.py",
@@ -2820,6 +2936,26 @@
               "deprecated": false
             }
           ]
+        }
+      ],
+      "constants": [
+        {
+          "name": "DEFAULT_ORG_NAME",
+          "qualname": "DEFAULT_ORG_NAME",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 15,
+          "deprecated": false
+        },
+        {
+          "name": "DEFAULT_APP_NAME",
+          "qualname": "DEFAULT_APP_NAME",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 16,
+          "deprecated": false
         }
       ]
     },
@@ -3080,6 +3216,26 @@
             }
           ]
         }
+      ],
+      "constants": [
+        {
+          "name": "SCOPE_NAME_TO_CONTEXT",
+          "qualname": "SCOPE_NAME_TO_CONTEXT",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 26,
+          "deprecated": false
+        },
+        {
+          "name": "SCOPE_CONTEXT_TO_NAME",
+          "qualname": "SCOPE_CONTEXT_TO_NAME",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 32,
+          "deprecated": false
+        }
       ]
     },
     {
@@ -3110,7 +3266,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Context manager that temporarily suppresses QSettings writes.",
-              "line": 229,
+              "line": 268,
               "deprecated": false
             },
             {
@@ -3119,7 +3275,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any = None) -> None",
               "summary": "Save the current value of the widget to QSettings.",
-              "line": 270,
+              "line": 309,
               "deprecated": false
             },
             {
@@ -3128,7 +3284,7 @@
               "kind": "method",
               "signature": "(self, key: str, value: Any) -> None",
               "summary": "Serialize and persist ``value`` at an explicit state ``key``.",
-              "line": 304,
+              "line": 343,
               "deprecated": false
             },
             {
@@ -3137,7 +3293,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Load the saved value from QSettings and apply it to the widget.",
-              "line": 351,
+              "line": 390,
               "deprecated": false
             },
             {
@@ -3146,7 +3302,7 @@
               "kind": "method",
               "signature": "(self, block_signals: bool = False) -> None",
               "summary": "Reset all widgets with stored defaults to their original values.",
-              "line": 380,
+              "line": 419,
               "deprecated": false
             },
             {
@@ -3155,7 +3311,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Reset a widget to its default value.",
-              "line": 442,
+              "line": 481,
               "deprecated": false
             },
             {
@@ -3164,7 +3320,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Removes the stored state for the widget from QSettings.",
-              "line": 489,
+              "line": 528,
               "deprecated": false
             },
             {
@@ -3173,7 +3329,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> bool",
               "summary": "Check if a widget has a stored default value.",
-              "line": 496,
+              "line": 535,
               "deprecated": false
             },
             {
@@ -3182,7 +3338,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Capture the current widget value as its default.",
-              "line": 535,
+              "line": 574,
               "deprecated": false
             },
             {
@@ -3191,7 +3347,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Explicitly set a widget's default value.",
-              "line": 568,
+              "line": 607,
               "deprecated": false
             },
             {
@@ -3200,7 +3356,7 @@
               "kind": "method",
               "signature": "(self, key: str, value: Any) -> None",
               "summary": "Persist an arbitrary key/value pair through QSettings.",
-              "line": 586,
+              "line": 625,
               "deprecated": false
             },
             {
@@ -3209,7 +3365,7 @@
               "kind": "method",
               "signature": "(self, key: str, default: Any = None) -> Any",
               "summary": "Retrieve a previously stored custom key/value pair.",
-              "line": 603,
+              "line": 642,
               "deprecated": false
             },
             {
@@ -3218,12 +3374,13 @@
               "kind": "method",
               "signature": "(self, key: str) -> None",
               "summary": "Remove a single custom key from storage.",
-              "line": 618,
+              "line": 657,
               "deprecated": false
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "managers/value_manager.py",
@@ -3292,7 +3449,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "switchboard/_core.py",
@@ -3481,7 +3639,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "switchboard/editors.py",
@@ -3505,7 +3664,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "switchboard/history.py",
@@ -3574,7 +3734,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "switchboard/names.py",
@@ -3670,7 +3831,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "switchboard/namespace.py",
@@ -3684,7 +3846,8 @@
           "bases": [],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "switchboard/shortcuts.py",
@@ -3741,12 +3904,21 @@
               "deprecated": false
             },
             {
+              "name": "dispose_shortcuts",
+              "qualname": "SwitchboardShortcutMixin.dispose_shortcuts",
+              "kind": "method",
+              "signature": "(self) -> int",
+              "summary": "Destroy every shortcut this Switchboard registered;",
+              "line": 688,
+              "deprecated": false
+            },
+            {
               "name": "register_command",
               "qualname": "SwitchboardShortcutMixin.register_command",
               "kind": "method",
               "signature": "(self, name: str, callback: Optional[Callable] = None, *, label: Optional[str] = None, sequence: str = '', scope: str = 'application', doc: str = '', hidden: bool = False, editable: bool = True, bind: bool = True, clearable: bool = True, on_rebind: Optional[Callable[[str, str], None]] = None, value_getter: Optional[Callable[[], str]] = None) -> str",
               "summary": "Register a UI-less, shortcut-bindable command.",
-              "line": 737,
+              "line": 776,
               "deprecated": false
             },
             {
@@ -3755,7 +3927,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Remove a command and tear down its live shortcut, if any.",
-              "line": 822,
+              "line": 861,
               "deprecated": false
             },
             {
@@ -3764,7 +3936,7 @@
               "kind": "method",
               "signature": "(self) -> List[Dict[str, Any]]",
               "summary": "Registry entries for every command, in the slot-shortcut entry shape.",
-              "line": 853,
+              "line": 892,
               "deprecated": false
             },
             {
@@ -3773,7 +3945,7 @@
               "kind": "method",
               "signature": "(self, name: str, sequence: str, scope: Optional[str] = None) -> None",
               "summary": "Persist a command's override and live-rebind it (the command twin of",
-              "line": 887,
+              "line": 926,
               "deprecated": false
             },
             {
@@ -3782,7 +3954,7 @@
               "kind": "method",
               "signature": "(self, name: str, hidden: bool = True) -> None",
               "summary": "Hide/show command *name* in the shortcut editor's default view.",
-              "line": 933,
+              "line": 972,
               "deprecated": false
             },
             {
@@ -3791,12 +3963,13 @@
               "kind": "method",
               "signature": "(self, name: str, editable: bool = True) -> None",
               "summary": "Allow/forbid the user rebinding command *name* in the editor.",
-              "line": 941,
+              "line": 980,
               "deprecated": false
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "switchboard/slots.py",
@@ -3950,7 +4123,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "switchboard/style.py",
@@ -3974,7 +4148,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "switchboard/utils.py",
@@ -4313,7 +4488,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "switchboard/widgets.py",
@@ -4490,7 +4666,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "testing.py",
@@ -4544,7 +4721,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "themes/style_sheet.py",
@@ -4706,7 +4884,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/attributeWindow/_attributeWindow.py",
@@ -4876,7 +5055,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/checkBox.py",
@@ -4942,7 +5122,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/collapsableGroup.py",
@@ -5032,7 +5213,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/colorSwatch.py",
@@ -5159,7 +5341,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/comboBox.py",
@@ -5651,7 +5834,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/context_menu.py",
@@ -5805,7 +5989,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/delegates/centered_icon.py",
@@ -5857,6 +6042,26 @@
               "deprecated": false
             }
           ]
+        }
+      ],
+      "constants": [
+        {
+          "name": "ICON_OPACITY_ROLE",
+          "qualname": "ICON_OPACITY_ROLE",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 31,
+          "deprecated": false
+        },
+        {
+          "name": "ACTION_NONINTERACTIVE_ROLE",
+          "qualname": "ACTION_NONINTERACTIVE_ROLE",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 40,
+          "deprecated": false
         }
       ]
     },
@@ -5930,7 +6135,8 @@
           ],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/delegates/row_selection.py",
@@ -5965,7 +6171,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/delegates/shortcut_capture.py",
@@ -6065,7 +6272,8 @@
           ],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/doubleSpinBox.py",
@@ -6098,7 +6306,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/editors/color_mapping_editor.py",
@@ -6197,7 +6406,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/editors/editor_panel.py",
@@ -6286,7 +6496,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/editors/shortcut_editor/manager_facade.py",
@@ -6302,7 +6513,8 @@
           ],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/editors/shortcut_editor/registry_editor.py",
@@ -6452,6 +6664,44 @@
             }
           ]
         }
+      ],
+      "constants": [
+        {
+          "name": "USER_SCOPES",
+          "qualname": "USER_SCOPES",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 21,
+          "deprecated": false
+        },
+        {
+          "name": "SCOPE_LABELS",
+          "qualname": "SCOPE_LABELS",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 22,
+          "deprecated": false
+        },
+        {
+          "name": "SCOPE_ICONS",
+          "qualname": "SCOPE_ICONS",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 23,
+          "deprecated": false
+        },
+        {
+          "name": "SCOPE_TOOLTIPS",
+          "qualname": "SCOPE_TOOLTIPS",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 24,
+          "deprecated": false
+        }
       ]
     },
     {
@@ -6512,7 +6762,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/editors/style_editor.py",
@@ -6618,6 +6869,53 @@
               "deprecated": false
             }
           ]
+        }
+      ],
+      "constants": [
+        {
+          "name": "BUILTIN_THEMES_DIR",
+          "qualname": "BUILTIN_THEMES_DIR",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 15,
+          "deprecated": false
+        },
+        {
+          "name": "BASIC_TOKENS",
+          "qualname": "BASIC_TOKENS",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 21,
+          "deprecated": false
+        },
+        {
+          "name": "LENGTH_TOKENS",
+          "qualname": "LENGTH_TOKENS",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 48,
+          "deprecated": false
+        },
+        {
+          "name": "ROW_H",
+          "qualname": "ROW_H",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 59,
+          "deprecated": false
+        },
+        {
+          "name": "CELL_EDITOR_H",
+          "qualname": "CELL_EDITOR_H",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 60,
+          "deprecated": false
         }
       ]
     },
@@ -6806,6 +7104,125 @@
             }
           ]
         }
+      ],
+      "constants": [
+        {
+          "name": "PERSISTENCE_STICKY",
+          "qualname": "PERSISTENCE_STICKY",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 51,
+          "deprecated": false
+        },
+        {
+          "name": "PERSISTENCE_TRANSIENT",
+          "qualname": "PERSISTENCE_TRANSIENT",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 52,
+          "deprecated": false
+        },
+        {
+          "name": "PERSISTENCE_CONTEXT",
+          "qualname": "PERSISTENCE_CONTEXT",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 53,
+          "deprecated": false
+        },
+        {
+          "name": "PERSISTENCE_DEFAULT",
+          "qualname": "PERSISTENCE_DEFAULT",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 54,
+          "deprecated": false
+        },
+        {
+          "name": "PERSISTENCE_CHOICES",
+          "qualname": "PERSISTENCE_CHOICES",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 56,
+          "deprecated": false
+        },
+        {
+          "name": "SHOW_VISIBLE",
+          "qualname": "SHOW_VISIBLE",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 610,
+          "deprecated": false
+        },
+        {
+          "name": "SHOW_HIDDEN",
+          "qualname": "SHOW_HIDDEN",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 611,
+          "deprecated": false
+        },
+        {
+          "name": "SHOW_ALL",
+          "qualname": "SHOW_ALL",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 612,
+          "deprecated": false
+        },
+        {
+          "name": "SCOPE_NAME",
+          "qualname": "SCOPE_NAME",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 614,
+          "deprecated": false
+        },
+        {
+          "name": "SCOPE_TAGS",
+          "qualname": "SCOPE_TAGS",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 615,
+          "deprecated": false
+        },
+        {
+          "name": "SCOPE_BOTH",
+          "qualname": "SCOPE_BOTH",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 616,
+          "deprecated": false
+        },
+        {
+          "name": "SCOPES",
+          "qualname": "SCOPES",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 623,
+          "deprecated": false
+        },
+        {
+          "name": "SCOPE_ICONS",
+          "qualname": "SCOPE_ICONS",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 624,
+          "deprecated": false
+        }
       ]
     },
     {
@@ -6905,7 +7322,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/expandableList.py",
@@ -7148,7 +7566,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/footer.py",
@@ -7488,7 +7907,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/formPanel.py",
@@ -7676,7 +8096,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/header.py",
@@ -8147,7 +8568,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/label.py",
@@ -8185,7 +8607,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/lineEdit.py",
@@ -8332,7 +8755,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mainWindow.py",
@@ -8685,7 +9109,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/marking_menu/_marking_menu.py",
@@ -8704,12 +9129,21 @@
           ],
           "members": [
             {
+              "name": "retire_all",
+              "qualname": "MarkingMenu.retire_all",
+              "kind": "classmethod",
+              "signature": "(cls) -> list",
+              "summary": "Retire every live instance in the process;",
+              "line": 386,
+              "deprecated": false
+            },
+            {
               "name": "retire",
               "qualname": "MarkingMenu.retire",
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Deactivate this instance because a newer MarkingMenu now owns",
-              "line": 353,
+              "line": 406,
               "deprecated": false
             },
             {
@@ -8718,7 +9152,7 @@
               "kind": "classmethod",
               "signature": "(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'",
               "summary": "",
-              "line": 583,
+              "line": 648,
               "deprecated": false
             },
             {
@@ -8727,7 +9161,7 @@
               "kind": "classmethod",
               "signature": "(cls, context_tags=None) -> Optional[str]",
               "summary": "The activation key the USER chose for a host context (``\"Key_F11\"``), or ``None``.",
-              "line": 693,
+              "line": 759,
               "deprecated": false
             },
             {
@@ -8736,7 +9170,7 @@
               "kind": "property",
               "signature": "(self) -> dict",
               "summary": "The original bindings passed at construction time.",
-              "line": 747,
+              "line": 815,
               "deprecated": false
             },
             {
@@ -8745,7 +9179,7 @@
               "kind": "property",
               "signature": "(self) -> dict",
               "summary": "Get bindings from persistent storage.",
-              "line": 752,
+              "line": 820,
               "deprecated": false
             },
             {
@@ -8754,7 +9188,7 @@
               "kind": "method",
               "signature": "(self, callback) -> None",
               "summary": "Subscribe to binding changes on this menu's persistent store.",
-              "line": 761,
+              "line": 829,
               "deprecated": false
             },
             {
@@ -8763,7 +9197,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Theme applied to the radial startmenu / submenu pages.",
-              "line": 789,
+              "line": 857,
               "deprecated": false
             },
             {
@@ -8772,7 +9206,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Theme applied to standalone tool windows.",
-              "line": 798,
+              "line": 866,
               "deprecated": false
             },
             {
@@ -8781,7 +9215,7 @@
               "kind": "method",
               "signature": "(self, ui) -> str",
               "summary": "Theme for *ui* by hosted style — menu page vs standalone window.",
-              "line": 806,
+              "line": 874,
               "deprecated": false
             },
             {
@@ -8790,7 +9224,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Accessor for the UI handler.",
-              "line": 841,
+              "line": 909,
               "deprecated": false
             },
             {
@@ -8799,7 +9233,7 @@
               "kind": "method",
               "signature": "(self, name: str, **kwargs) -> QtWidgets.QWidget",
               "summary": "Get a UI widget by name.",
-              "line": 845,
+              "line": 913,
               "deprecated": false
             },
             {
@@ -8808,7 +9242,7 @@
               "kind": "method",
               "signature": "(self, new_key: str) -> None",
               "summary": "Rebind the marking menu's activation key across every chord.",
-              "line": 994,
+              "line": 1062,
               "deprecated": false
             },
             {
@@ -8817,7 +9251,7 @@
               "kind": "method",
               "signature": "(self, short: bool = True) -> list",
               "summary": "Available ``#startmenu`` UI names, sorted.",
-              "line": 1039,
+              "line": 1107,
               "deprecated": false
             },
             {
@@ -8826,7 +9260,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "True when *name* is a stacked page (startmenu/submenu) this menu hosts.",
-              "line": 1051,
+              "line": 1119,
               "deprecated": false
             },
             {
@@ -8835,7 +9269,7 @@
               "kind": "method",
               "signature": "(self, buttons=()) -> str",
               "summary": "Full target menu (…#startmenu) bound to the activation key + *buttons*",
-              "line": 1113,
+              "line": 1181,
               "deprecated": false
             },
             {
@@ -8844,7 +9278,7 @@
               "kind": "method",
               "signature": "(self, buttons, menu: str) -> None",
               "summary": "Bind the activation key + *buttons* gesture to *menu* (a …#startmenu UI",
-              "line": 1125,
+              "line": 1193,
               "deprecated": false
             },
             {
@@ -8853,7 +9287,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Add a widget to the MarkingMenu window.",
-              "line": 1207,
+              "line": 1275,
               "deprecated": false
             },
             {
@@ -8862,7 +9296,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[QtWidgets.QWidget]",
               "summary": "Get the currently active widget.",
-              "line": 1215,
+              "line": 1283,
               "deprecated": false
             },
             {
@@ -8871,7 +9305,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, *, anchor: Optional[QtCore.QPoint] = None) -> None",
               "summary": "Set the current widget and position its center at the given anchor.",
-              "line": 1223,
+              "line": 1291,
               "deprecated": false
             },
             {
@@ -8880,7 +9314,7 @@
               "kind": "method",
               "signature": "(self, index: int) -> None",
               "summary": "Set the current widget index (compatibility method).",
-              "line": 1298,
+              "line": 1366,
               "deprecated": false
             },
             {
@@ -8889,7 +9323,7 @@
               "kind": "method",
               "signature": "(self, names=None, *, defer: bool = True) -> None",
               "summary": "Warm the menus the bindings can reach so the FIRST activation",
-              "line": 1380,
+              "line": 1448,
               "deprecated": false
             },
             {
@@ -8898,7 +9332,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse press: route through the central state-sync.",
-              "line": 2097,
+              "line": 2165,
               "deprecated": false
             },
             {
@@ -8907,7 +9341,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle key press for non-activation key bindings.",
-              "line": 2157,
+              "line": 2225,
               "deprecated": false
             },
             {
@@ -8916,7 +9350,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 2182,
+              "line": 2250,
               "deprecated": false
             },
             {
@@ -8925,7 +9359,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse release: dispatch click action or sync menu state.",
-              "line": 2372,
+              "line": 2440,
               "deprecated": false
             },
             {
@@ -8934,7 +9368,7 @@
               "kind": "method",
               "signature": "(self, ui: Optional[str] = None, pos=None, force: bool = False, **kwargs) -> QtWidgets.QWidget",
               "summary": "Central hub for showing any UI component.",
-              "line": 2483,
+              "line": 2551,
               "deprecated": false
             },
             {
@@ -8943,7 +9377,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Override hide to properly reset stacked widget state.",
-              "line": 2826,
+              "line": 2894,
               "deprecated": false
             },
             {
@@ -8952,7 +9386,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Clean up on hide - relinquishes input control even if hide() was bypassed.",
-              "line": 2886,
+              "line": 2954,
               "deprecated": false
             },
             {
@@ -8961,7 +9395,7 @@
               "kind": "method",
               "signature": "(self, path: Optional[str] = None, level='DEBUG') -> str",
               "summary": "Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.",
-              "line": 3006,
+              "line": 3074,
               "deprecated": false
             },
             {
@@ -8970,7 +9404,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Stop the file logging started by :meth:`enable_input_logging`.",
-              "line": 3026,
+              "line": 3094,
               "deprecated": false
             },
             {
@@ -8979,7 +9413,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Fade every background window and menu, once per hold.",
-              "line": 3092,
+              "line": 3160,
               "deprecated": false
             },
             {
@@ -8988,7 +9422,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore everything dimmed by the last :meth:`dim_other_windows`.",
-              "line": 3111,
+              "line": 3179,
               "deprecated": false
             },
             {
@@ -8997,7 +9431,7 @@
               "kind": "method",
               "signature": "(self, widgets) -> None",
               "summary": "Initialize child widgets with an event filter.",
-              "line": 3138,
+              "line": 3206,
               "deprecated": false
             },
             {
@@ -9006,7 +9440,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the enter event for child widgets.",
-              "line": 3211,
+              "line": 3279,
               "deprecated": false
             },
             {
@@ -9015,7 +9449,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the leave event for child widgets.",
-              "line": 3249,
+              "line": 3317,
               "deprecated": false
             },
             {
@@ -9024,12 +9458,13 @@
               "kind": "method",
               "signature": "(self, w, event) -> bool",
               "summary": "Dispatch (or forward) a release delivered to a *grabbed* child.",
-              "line": 3258,
+              "line": 3326,
               "deprecated": false
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/marking_menu/_resolver.py",
@@ -9097,6 +9532,71 @@
               "deprecated": false
             }
           ]
+        }
+      ],
+      "constants": [
+        {
+          "name": "LEFT_BUTTON",
+          "qualname": "LEFT_BUTTON",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 17,
+          "deprecated": false
+        },
+        {
+          "name": "RIGHT_BUTTON",
+          "qualname": "RIGHT_BUTTON",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 18,
+          "deprecated": false
+        },
+        {
+          "name": "MIDDLE_BUTTON",
+          "qualname": "MIDDLE_BUTTON",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 19,
+          "deprecated": false
+        },
+        {
+          "name": "SHIFT_MOD",
+          "qualname": "SHIFT_MOD",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 21,
+          "deprecated": false
+        },
+        {
+          "name": "CTRL_MOD",
+          "qualname": "CTRL_MOD",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 22,
+          "deprecated": false
+        },
+        {
+          "name": "ALT_MOD",
+          "qualname": "ALT_MOD",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 23,
+          "deprecated": false
+        },
+        {
+          "name": "META_MOD",
+          "qualname": "META_MOD",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 24,
+          "deprecated": false
         }
       ]
     },
@@ -9331,7 +9831,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/menu.py",
@@ -9932,7 +10433,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/menuButton.py",
@@ -10013,7 +10515,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/messageBox.py",
@@ -10103,7 +10606,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/attributes.py",
@@ -10163,7 +10667,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/convert.py",
@@ -10223,7 +10728,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/docking.py",
@@ -10387,7 +10893,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/feedback.py",
@@ -10411,7 +10918,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/icon_states.py",
@@ -10489,7 +10997,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/menu_mixin.py",
@@ -10522,7 +11031,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/option_box_mixin.py",
@@ -10564,7 +11074,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/shortcut_guard.py",
@@ -10652,7 +11163,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/size_grip.py",
@@ -10794,6 +11306,17 @@
             }
           ]
         }
+      ],
+      "constants": [
+        {
+          "name": "QWIDGETSIZE_MAX",
+          "qualname": "QWIDGETSIZE_MAX",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 10,
+          "deprecated": false
+        }
       ]
     },
     {
@@ -10898,7 +11421,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/text.py",
@@ -10908,7 +11432,7 @@
         {
           "name": "RichTextFormatter",
           "summary": "Stateless HTML pipeline shared by uitk's rich-text widgets.",
-          "line": 16,
+          "line": 28,
           "bases": [],
           "members": [
             {
@@ -10917,7 +11441,7 @@
               "kind": "classmethod",
               "signature": "(cls) -> dict",
               "summary": "Map each level-prefix token to its coloured ``<hl>`` span.",
-              "line": 84,
+              "line": 96,
               "deprecated": false
             },
             {
@@ -10926,7 +11450,7 @@
               "kind": "classmethod",
               "signature": "(cls, string: str) -> str",
               "summary": "Replace level-prefix tokens (``Error:``, ``Warning:`` ...) with styled spans.",
-              "line": 92,
+              "line": 104,
               "deprecated": false
             },
             {
@@ -10935,7 +11459,16 @@
               "kind": "classmethod",
               "signature": "(cls, string: str) -> str",
               "summary": "Replace bare HTML tags with their style-bearing equivalents.",
-              "line": 99,
+              "line": 111,
+              "deprecated": false
+            },
+            {
+              "name": "apply_line_breaks",
+              "qualname": "RichTextFormatter.apply_line_breaks",
+              "kind": "classmethod",
+              "signature": "(cls, string: str) -> str",
+              "summary": "Render each newline as a line break instead of collapsing it.",
+              "line": 118,
               "deprecated": false
             },
             {
@@ -10944,7 +11477,7 @@
               "kind": "staticmethod",
               "signature": "(string: str, color: str) -> str",
               "summary": "",
-              "line": 106,
+              "line": 155,
               "deprecated": false
             },
             {
@@ -10953,7 +11486,7 @@
               "kind": "staticmethod",
               "signature": "(string: str, size) -> str",
               "summary": "",
-              "line": 110,
+              "line": 159,
               "deprecated": false
             },
             {
@@ -10962,7 +11495,7 @@
               "kind": "classmethod",
               "signature": "(cls, background) -> Optional[str]",
               "summary": "Convert a background parameter to a CSS colour string or ``None``.",
-              "line": 114,
+              "line": 163,
               "deprecated": false
             },
             {
@@ -10971,7 +11504,7 @@
               "kind": "classmethod",
               "signature": "(cls, string: str, *, align: str = 'left', font_color: str = 'white', font_size: Union[int, str, None] = None) -> str",
               "summary": "Apply the standard uitk HTML pipeline to a string.",
-              "line": 134,
+              "line": 183,
               "deprecated": false
             }
           ]
@@ -10979,7 +11512,7 @@
         {
           "name": "TextTruncation",
           "summary": "Mixin providing reusable text truncation functionality for UI widgets.",
-          "line": 166,
+          "line": 217,
           "bases": [],
           "members": [
             {
@@ -10988,7 +11521,7 @@
               "kind": "method",
               "signature": "(self, text, container_width=None, reserved_width=0, min_text_width=100, elide_mode=QtCore.Qt.ElideMiddle, font=None, custom_suffix='...')",
               "summary": "Calculate truncated text that fits within available width using Qt font metrics.",
-              "line": 169,
+              "line": 220,
               "deprecated": false
             },
             {
@@ -10997,7 +11530,7 @@
               "kind": "method",
               "signature": "(self, text, max_chars, elide_mode=QtCore.Qt.ElideMiddle, suffix='...')",
               "summary": "Truncate text by character count (not pixel-based).",
-              "line": 228,
+              "line": 279,
               "deprecated": false
             },
             {
@@ -11006,7 +11539,7 @@
               "kind": "method",
               "signature": "(self, text, max_chars, elide_mode=QtCore.Qt.ElideMiddle, suffix='...', word_boundary=True)",
               "summary": "Truncate text respecting word boundaries.",
-              "line": 264,
+              "line": 315,
               "deprecated": false
             },
             {
@@ -11015,7 +11548,7 @@
               "kind": "method",
               "signature": "(self, path, max_chars, preserve_filename=True, preserve_extension=True, suffix='...')",
               "summary": "Truncate file/directory paths intelligently.",
-              "line": 335,
+              "line": 386,
               "deprecated": false
             },
             {
@@ -11024,7 +11557,7 @@
               "kind": "method",
               "signature": "(self, widget, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel')",
               "summary": "Apply text truncation to an existing widget.",
-              "line": 462,
+              "line": 513,
               "deprecated": false
             },
             {
@@ -11033,7 +11566,7 @@
               "kind": "method",
               "signature": "(self, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel', **button_kwargs)",
               "summary": "Create a QPushButton with properly truncated text.",
-              "line": 515,
+              "line": 566,
               "deprecated": false
             },
             {
@@ -11042,7 +11575,7 @@
               "kind": "method",
               "signature": "(self, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel', **label_kwargs)",
               "summary": "Create a QLabel with properly truncated text.",
-              "line": 548,
+              "line": 599,
               "deprecated": false
             },
             {
@@ -11051,7 +11584,7 @@
               "kind": "method",
               "signature": "(self, widget, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel')",
               "summary": "Update an existing widget's text with proper truncation.",
-              "line": 577,
+              "line": 628,
               "deprecated": false
             }
           ]
@@ -11059,7 +11592,7 @@
         {
           "name": "RichText",
           "summary": "Rich-text support mixin for widgets.",
-          "line": 607,
+          "line": 658,
           "bases": [],
           "members": [
             {
@@ -11068,7 +11601,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Returns a list containing any rich text labels that have been created.",
-              "line": 642,
+              "line": 693,
               "deprecated": false
             },
             {
@@ -11077,7 +11610,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Returns a list containing the sizeHint any rich text labels that have been created.",
-              "line": 657,
+              "line": 708,
               "deprecated": false
             },
             {
@@ -11086,7 +11619,7 @@
               "kind": "method",
               "signature": "(self, index=0)",
               "summary": "The richTextSizeHint is the sizeHint of the actual widget if it were containing the text.",
-              "line": 671,
+              "line": 722,
               "deprecated": false
             },
             {
@@ -11095,7 +11628,7 @@
               "kind": "method",
               "signature": "(self, index=0, textColor='white')",
               "summary": "Set the stylesheet for a QLabel.",
-              "line": 699,
+              "line": 750,
               "deprecated": false
             },
             {
@@ -11104,7 +11637,7 @@
               "kind": "method",
               "signature": "(self, index=0)",
               "summary": "",
-              "line": 716,
+              "line": 767,
               "deprecated": false
             },
             {
@@ -11113,7 +11646,7 @@
               "kind": "method",
               "signature": "(self, index=None)",
               "summary": "Returns:",
-              "line": 740,
+              "line": 791,
               "deprecated": false
             },
             {
@@ -11122,7 +11655,7 @@
               "kind": "method",
               "signature": "(self, text, index=0)",
               "summary": "If the text string contains rich text formatting:",
-              "line": 766,
+              "line": 817,
               "deprecated": false
             },
             {
@@ -11131,7 +11664,7 @@
               "kind": "method",
               "signature": "(self, alignment='AlignLeft', index=0)",
               "summary": "Override setAlignment to accept string alignment arguments as well as QtCore.Qt.AlignmentFlags.",
-              "line": 801,
+              "line": 852,
               "deprecated": false
             }
           ]
@@ -11139,7 +11672,7 @@
         {
           "name": "TextOverlay",
           "summary": "",
-          "line": 814,
+          "line": 865,
           "bases": [],
           "members": [
             {
@@ -11148,7 +11681,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Return a QLabel inside a QHBoxLayout.",
-              "line": 820,
+              "line": 871,
               "deprecated": false
             },
             {
@@ -11157,7 +11690,7 @@
               "kind": "method",
               "signature": "(self, text, color=None, alignment=None)",
               "summary": "If the text string contains rich text formatting:",
-              "line": 839,
+              "line": 890,
               "deprecated": false
             },
             {
@@ -11166,7 +11699,7 @@
               "kind": "method",
               "signature": "(self, alignment='AlignLeft')",
               "summary": "Override setAlignment to accept string alignment arguments as well as QtCore.Qt.AlignmentFlags.",
-              "line": 858,
+              "line": 909,
               "deprecated": false
             },
             {
@@ -11175,12 +11708,13 @@
               "kind": "method",
               "signature": "(self, color)",
               "summary": "Set the stylesheet for a QLabel.",
-              "line": 869,
+              "line": 920,
               "deprecated": false
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/tooltip_mixin.py",
@@ -11287,7 +11821,8 @@
           "bases": [],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/mixins/wheel_step.py",
@@ -11364,7 +11899,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/_optionBox.py",
@@ -11478,6 +12014,17 @@
               "deprecated": false
             }
           ]
+        }
+      ],
+      "constants": [
+        {
+          "name": "DEFAULT_OPTION_ORDER",
+          "qualname": "DEFAULT_OPTION_ORDER",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 53,
+          "deprecated": false
         }
       ]
     },
@@ -11651,7 +12198,8 @@
           "bases": [],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/_persistence.py",
@@ -11684,7 +12232,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/action.py",
@@ -11766,7 +12315,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/affix.py",
@@ -11909,6 +12459,26 @@
             }
           ]
         }
+      ],
+      "constants": [
+        {
+          "name": "AFFIX_MODE_VALUES",
+          "qualname": "AFFIX_MODE_VALUES",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 68,
+          "deprecated": false
+        },
+        {
+          "name": "BUILTIN_AFFIX_MODES",
+          "qualname": "BUILTIN_AFFIX_MODES",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 207,
+          "deprecated": false
+        }
       ]
     },
     {
@@ -11962,7 +12532,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/clear.py",
@@ -12024,7 +12595,8 @@
           ],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/disable.py",
@@ -12059,7 +12631,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/filter.py",
@@ -12148,6 +12721,17 @@
             }
           ]
         }
+      ],
+      "constants": [
+        {
+          "name": "NEGATE_PREFIX",
+          "qualname": "NEGATE_PREFIX",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 49,
+          "deprecated": false
+        }
       ]
     },
     {
@@ -12211,7 +12795,8 @@
           ],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/pin_values.py",
@@ -12426,7 +13011,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/recent_values.py",
@@ -12615,7 +13201,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/reset.py",
@@ -12669,7 +13256,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/toggle.py",
@@ -12733,7 +13321,8 @@
           ],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/options/value.py",
@@ -12795,7 +13384,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/optionBox/utils.py",
@@ -13172,7 +13762,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/progressBar.py",
@@ -13332,7 +13923,8 @@
           "bases": [],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/pushButton.py",
@@ -13353,7 +13945,8 @@
           ],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/region.py",
@@ -13444,7 +14037,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/scriptOutput.py",
@@ -13622,6 +14216,62 @@
             }
           ]
         }
+      ],
+      "constants": [
+        {
+          "name": "PARAGRAPH_BREAK_RE",
+          "qualname": "PARAGRAPH_BREAK_RE",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 40,
+          "deprecated": false
+        },
+        {
+          "name": "COLOR_COMMENT",
+          "qualname": "COLOR_COMMENT",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 45,
+          "deprecated": false
+        },
+        {
+          "name": "COLOR_WARNING",
+          "qualname": "COLOR_WARNING",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 46,
+          "deprecated": false
+        },
+        {
+          "name": "COLOR_ERROR",
+          "qualname": "COLOR_ERROR",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 47,
+          "deprecated": false
+        },
+        {
+          "name": "COLOR_RESULT",
+          "qualname": "COLOR_RESULT",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 48,
+          "deprecated": false
+        },
+        {
+          "name": "COLOR_INFO",
+          "qualname": "COLOR_INFO",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 49,
+          "deprecated": false
+        }
       ]
     },
     {
@@ -13694,7 +14344,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_clip.py",
@@ -13716,7 +14367,25 @@
               "kind": "property",
               "signature": "(self) -> ClipData",
               "summary": "",
+              "line": 77,
+              "deprecated": false
+            },
+            {
+              "name": "is_selectable",
+              "qualname": "ClipItem.is_selectable",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "Whether a click or a marquee may select this clip.",
               "line": 80,
+              "deprecated": false
+            },
+            {
+              "name": "sync_selectable",
+              "qualname": "ClipItem.sync_selectable",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-apply :meth:`is_selectable`, dropping a selection it revokes.",
+              "line": 99,
               "deprecated": false
             },
             {
@@ -13725,7 +14394,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "False when this clip is locked or read-only.",
-              "line": 84,
+              "line": 107,
               "deprecated": false
             },
             {
@@ -13734,7 +14403,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 212,
+              "line": 244,
               "deprecated": false
             },
             {
@@ -13743,7 +14412,7 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, option, widget=None)",
               "summary": "",
-              "line": 351,
+              "line": 383,
               "deprecated": false
             },
             {
@@ -13752,7 +14421,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 700,
+              "line": 732,
               "deprecated": false
             },
             {
@@ -13761,7 +14430,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 717,
+              "line": 749,
               "deprecated": false
             },
             {
@@ -13770,7 +14439,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 791,
+              "line": 823,
               "deprecated": false
             },
             {
@@ -13779,7 +14448,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 852,
+              "line": 977,
               "deprecated": false
             },
             {
@@ -13788,7 +14457,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1059,
+              "line": 1193,
               "deprecated": false
             },
             {
@@ -13797,7 +14466,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1129,
+              "line": 1290,
               "deprecated": false
             },
             {
@@ -13806,12 +14475,13 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1191,
+              "line": 1352,
               "deprecated": false
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_data.py",
@@ -13911,7 +14581,7 @@
         {
           "name": "PatternRegistry",
           "summary": "Registry of tile-painters + cached tiled brushes for background fills.",
-          "line": 289,
+          "line": 302,
           "bases": [],
           "members": [
             {
@@ -13920,7 +14590,7 @@
               "kind": "staticmethod",
               "signature": "(name: str, painter: PatternPainter) -> None",
               "summary": "Register (or override) a tile-painter for :meth:`pattern_brush`.",
-              "line": 299,
+              "line": 312,
               "deprecated": false
             },
             {
@@ -13929,7 +14599,7 @@
               "kind": "staticmethod",
               "signature": "(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush",
               "summary": "Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for…",
-              "line": 346,
+              "line": 359,
               "deprecated": false
             },
             {
@@ -13938,10 +14608,48 @@
               "kind": "staticmethod",
               "signature": "(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None",
               "summary": "Fill ``rect`` with ``spec``;",
-              "line": 379,
+              "line": 392,
               "deprecated": false
             }
           ]
+        }
+      ],
+      "constants": [
+        {
+          "name": "HATCH_DENSE",
+          "qualname": "HATCH_DENSE",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 16,
+          "deprecated": false
+        },
+        {
+          "name": "HATCH_MEDIUM",
+          "qualname": "HATCH_MEDIUM",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 17,
+          "deprecated": false
+        },
+        {
+          "name": "HATCH_SPARSE",
+          "qualname": "HATCH_SPARSE",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 18,
+          "deprecated": false
+        },
+        {
+          "name": "SELECTED_ACCENT",
+          "qualname": "SELECTED_ACCENT",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 116,
+          "deprecated": false
         }
       ]
     },
@@ -14003,7 +14711,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_draggable.py",
@@ -14062,17 +14771,18 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_keyframe.py",
-      "summary": "KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row.",
+      "summary": "The interactive items of an expanded attribute sub-row.",
       "functions": [],
       "classes": [
         {
           "name": "KeyframeItem",
           "summary": "An interactive keyframe indicator inside a sub-row :class:`ClipItem`.",
-          "line": 19,
+          "line": 24,
           "bases": [
             "DraggableItemMixin",
             "QtWidgets.QGraphicsEllipseItem"
@@ -14084,7 +14794,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "",
-              "line": 74,
+              "line": 79,
               "deprecated": false
             },
             {
@@ -14093,7 +14803,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "",
-              "line": 78,
+              "line": 83,
               "deprecated": false
             },
             {
@@ -14102,7 +14812,7 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, option, widget=None)",
               "summary": "",
-              "line": 83,
+              "line": 88,
               "deprecated": false
             },
             {
@@ -14111,7 +14821,7 @@
               "kind": "method",
               "signature": "(self) -> QtCore.QRectF",
               "summary": "",
-              "line": 102,
+              "line": 107,
               "deprecated": false
             },
             {
@@ -14120,7 +14830,7 @@
               "kind": "method",
               "signature": "(self, change, value)",
               "summary": "",
-              "line": 106,
+              "line": 111,
               "deprecated": false
             },
             {
@@ -14129,7 +14839,7 @@
               "kind": "method",
               "signature": "(self, index: Optional[int] = None) -> bool",
               "summary": "True when this key's tangents are broken (IN and OUT independent).",
-              "line": 157,
+              "line": 162,
               "deprecated": false
             },
             {
@@ -14138,7 +14848,7 @@
               "kind": "method",
               "signature": "(self) -> QtGui.QPainterPath",
               "summary": "Larger hit area for easier clicking.",
-              "line": 227,
+              "line": 232,
               "deprecated": false
             },
             {
@@ -14147,7 +14857,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 236,
+              "line": 241,
               "deprecated": false
             },
             {
@@ -14156,7 +14866,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 240,
+              "line": 245,
               "deprecated": false
             },
             {
@@ -14165,7 +14875,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 246,
+              "line": 251,
               "deprecated": false
             },
             {
@@ -14174,7 +14884,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 305,
+              "line": 310,
               "deprecated": false
             },
             {
@@ -14183,7 +14893,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 410,
+              "line": 415,
               "deprecated": false
             },
             {
@@ -14192,7 +14902,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Right-click a key: the key menu, for the selected keys (this one",
-              "line": 458,
+              "line": 463,
               "deprecated": false
             }
           ]
@@ -14200,7 +14910,7 @@
         {
           "name": "TangentHandleItem",
           "summary": "The grab point of a selected key's IN or OUT tangent handle.",
-          "line": 518,
+          "line": 523,
           "bases": [
             "QtWidgets.QGraphicsEllipseItem"
           ],
@@ -14211,7 +14921,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "",
-              "line": 557,
+              "line": 562,
               "deprecated": false
             },
             {
@@ -14220,7 +14930,7 @@
               "kind": "property",
               "signature": "(self) -> KeyframeItem",
               "summary": "",
-              "line": 561,
+              "line": 566,
               "deprecated": false
             },
             {
@@ -14229,7 +14939,7 @@
               "kind": "method",
               "signature": "(self) -> tuple",
               "summary": "``(key, side, segment index, control-point key)`` -- what this",
-              "line": 564,
+              "line": 569,
               "deprecated": false
             },
             {
@@ -14238,7 +14948,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[tuple]",
               "summary": "",
-              "line": 569,
+              "line": 574,
               "deprecated": false
             },
             {
@@ -14247,7 +14957,7 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, option, widget=None)",
               "summary": "",
-              "line": 587,
+              "line": 592,
               "deprecated": false
             },
             {
@@ -14256,7 +14966,7 @@
               "kind": "method",
               "signature": "(self) -> QtGui.QPainterPath",
               "summary": "",
-              "line": 596,
+              "line": 601,
               "deprecated": false
             },
             {
@@ -14265,7 +14975,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 604,
+              "line": 609,
               "deprecated": false
             },
             {
@@ -14274,7 +14984,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 608,
+              "line": 613,
               "deprecated": false
             },
             {
@@ -14283,7 +14993,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 614,
+              "line": 619,
               "deprecated": false
             },
             {
@@ -14292,7 +15002,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 622,
+              "line": 627,
               "deprecated": false
             },
             {
@@ -14301,7 +15011,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 639,
+              "line": 644,
               "deprecated": false
             },
             {
@@ -14310,12 +15020,132 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 660,
+              "line": 665,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "KeyScaleBoxItem",
+          "summary": "The scale box Shift raises around a key selection.",
+          "line": 670,
+          "bases": [
+            "DraggableItemMixin",
+            "QtWidgets.QGraphicsRectItem"
+          ],
+          "members": [
+            {
+              "name": "lo",
+              "qualname": "KeyScaleBoxItem.lo",
+              "kind": "property",
+              "signature": "(self) -> float",
+              "summary": "Frame of the box's left edge.",
+              "line": 744,
+              "deprecated": false
+            },
+            {
+              "name": "hi",
+              "qualname": "KeyScaleBoxItem.hi",
+              "kind": "property",
+              "signature": "(self) -> float",
+              "summary": "Frame of the box's right edge.",
+              "line": 749,
+              "deprecated": false
+            },
+            {
+              "name": "side",
+              "qualname": "KeyScaleBoxItem.side",
+              "kind": "property",
+              "signature": "(self) -> str",
+              "summary": "Which handle is being dragged, or ``\"\"`` when none is.",
+              "line": 754,
+              "deprecated": false
+            },
+            {
+              "name": "set_span",
+              "qualname": "KeyScaleBoxItem.set_span",
+              "kind": "method",
+              "signature": "(self, lo: float, hi: float, top: float, bottom: float) -> None",
+              "summary": "Place the box around a selection spanning *lo*-*hi* over those rows.",
+              "line": 758,
+              "deprecated": false
+            },
+            {
+              "name": "shape",
+              "qualname": "KeyScaleBoxItem.shape",
+              "kind": "method",
+              "signature": "(self) -> QtGui.QPainterPath",
+              "summary": "Only the two grips.",
+              "line": 794,
+              "deprecated": false
+            },
+            {
+              "name": "boundingRect",
+              "qualname": "KeyScaleBoxItem.boundingRect",
+              "kind": "method",
+              "signature": "(self) -> QtCore.QRectF",
+              "summary": "",
+              "line": 803,
+              "deprecated": false
+            },
+            {
+              "name": "paint",
+              "qualname": "KeyScaleBoxItem.paint",
+              "kind": "method",
+              "signature": "(self, painter: QtGui.QPainter, option, widget=None)",
+              "summary": "",
+              "line": 808,
+              "deprecated": false
+            },
+            {
+              "name": "hoverEnterEvent",
+              "qualname": "KeyScaleBoxItem.hoverEnterEvent",
+              "kind": "method",
+              "signature": "(self, event)",
+              "summary": "",
+              "line": 831,
+              "deprecated": false
+            },
+            {
+              "name": "hoverLeaveEvent",
+              "qualname": "KeyScaleBoxItem.hoverLeaveEvent",
+              "kind": "method",
+              "signature": "(self, event)",
+              "summary": "",
+              "line": 838,
+              "deprecated": false
+            },
+            {
+              "name": "mousePressEvent",
+              "qualname": "KeyScaleBoxItem.mousePressEvent",
+              "kind": "method",
+              "signature": "(self, event)",
+              "summary": "",
+              "line": 846,
+              "deprecated": false
+            },
+            {
+              "name": "mouseMoveEvent",
+              "qualname": "KeyScaleBoxItem.mouseMoveEvent",
+              "kind": "method",
+              "signature": "(self, event)",
+              "summary": "",
+              "line": 903,
+              "deprecated": false
+            },
+            {
+              "name": "mouseReleaseEvent",
+              "qualname": "KeyScaleBoxItem.mouseReleaseEvent",
+              "kind": "method",
+              "signature": "(self, event)",
+              "summary": "",
+              "line": 942,
               "deprecated": false
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_markers.py",
@@ -14441,7 +15271,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_overlays.py",
@@ -14603,7 +15434,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_playhead.py",
@@ -14656,7 +15488,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_ruler.py",
@@ -14754,7 +15587,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_scrub_player.py",
@@ -14861,7 +15695,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_sequencer.py",
@@ -14890,7 +15725,7 @@
         {
           "name": "SequencerWidget",
           "summary": "A split-view NLE sequencer widget.",
-          "line": 178,
+          "line": 181,
           "bases": [
             "QtWidgets.QSplitter",
             "AttributesMixin"
@@ -14902,7 +15737,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "When ``True``, sequencer shortcuts are active whenever the",
-              "line": 447,
+              "line": 463,
               "deprecated": false
             },
             {
@@ -14911,7 +15746,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QShowEvent) -> None",
               "summary": "",
-              "line": 476,
+              "line": 492,
               "deprecated": false
             },
             {
@@ -14920,7 +15755,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QResizeEvent) -> None",
               "summary": "",
-              "line": 484,
+              "line": 500,
               "deprecated": false
             },
             {
@@ -14929,7 +15764,7 @@
               "kind": "method",
               "signature": "(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool",
               "summary": "Intercept ShortcutOverride on the window when window_shortcuts is on.",
-              "line": 544,
+              "line": 560,
               "deprecated": false
             },
             {
@@ -14938,7 +15773,7 @@
               "kind": "method",
               "signature": "(self, event: QtCore.QEvent) -> bool",
               "summary": "",
-              "line": 593,
+              "line": 609,
               "deprecated": false
             },
             {
@@ -14947,7 +15782,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Dispatch registered shortcuts when focus is on a non-timeline child.",
-              "line": 616,
+              "line": 632,
               "deprecated": false
             },
             {
@@ -14956,7 +15791,7 @@
               "kind": "method",
               "signature": "(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: Optional[str] = None, text_color: Optional[str] = None) -> int",
               "summary": "Add a new track row.",
-              "line": 640,
+              "line": 656,
               "deprecated": false
             },
             {
@@ -14965,7 +15800,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Suppress per-add scene-rect recomputation during a rebuild.",
-              "line": 698,
+              "line": 714,
               "deprecated": false
             },
             {
@@ -14974,7 +15809,7 @@
               "kind": "method",
               "signature": "(self, track_id: int, start: float, duration: float, label: str = '', color: Optional[str] = None, sub_row: str = '', locked: bool = False, **data) -> int",
               "summary": "Add a clip to an existing track.",
-              "line": 720,
+              "line": 736,
               "deprecated": false
             },
             {
@@ -14983,7 +15818,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int)",
               "summary": "Remove a clip by id.",
-              "line": 771,
+              "line": 787,
               "deprecated": false
             },
             {
@@ -14992,7 +15827,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int, label: str)",
               "summary": "Set the display label for a clip.",
-              "line": 781,
+              "line": 797,
               "deprecated": false
             },
             {
@@ -15001,7 +15836,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int, locked: bool)",
               "summary": "Lock or unlock a clip, preventing drag/resize/rename/selection.",
-              "line": 791,
+              "line": 807,
               "deprecated": false
             },
             {
@@ -15010,7 +15845,7 @@
               "kind": "method",
               "signature": "(self, track_id: int)",
               "summary": "Remove a track and all its clips.",
-              "line": 807,
+              "line": 818,
               "deprecated": false
             },
             {
@@ -15019,7 +15854,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int) -> Optional[ClipData]",
               "summary": "Return the data for a clip, or None.",
-              "line": 853,
+              "line": 864,
               "deprecated": false
             },
             {
@@ -15028,7 +15863,7 @@
               "kind": "method",
               "signature": "(self, track_id: int) -> Optional[TrackData]",
               "summary": "Return the data for a track, or None.",
-              "line": 857,
+              "line": 868,
               "deprecated": false
             },
             {
@@ -15037,7 +15872,7 @@
               "kind": "method",
               "signature": "(self) -> List[TrackData]",
               "summary": "Return a list of all track data.",
-              "line": 864,
+              "line": 875,
               "deprecated": false
             },
             {
@@ -15046,7 +15881,7 @@
               "kind": "method",
               "signature": "(self, track_id: Optional[int] = None) -> List[ClipData]",
               "summary": "Return clip data, optionally filtered by track.",
-              "line": 868,
+              "line": 879,
               "deprecated": false
             },
             {
@@ -15055,7 +15890,7 @@
               "kind": "method",
               "signature": "(self, clip_id_a: int, clip_id_b: int) -> None",
               "summary": "Swap the timeline positions of two clips and emit ``clips_reordered``.",
-              "line": 874,
+              "line": 885,
               "deprecated": false
             },
             {
@@ -15064,7 +15899,7 @@
               "kind": "method",
               "signature": "(self, time: float)",
               "summary": "Move the playhead to a specific time.",
-              "line": 912,
+              "line": 923,
               "deprecated": false
             },
             {
@@ -15073,7 +15908,7 @@
               "kind": "method",
               "signature": "(self, path: str, fps: float = 24.0) -> bool",
               "summary": "Bind an audio file (typically a composite WAV) for scrub playback.",
-              "line": 918,
+              "line": 929,
               "deprecated": false
             },
             {
@@ -15082,7 +15917,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Drop the bound audio source and stop any in-flight scrub.",
-              "line": 932,
+              "line": 943,
               "deprecated": false
             },
             {
@@ -15091,7 +15926,7 @@
               "kind": "method",
               "signature": "(self, *, keep_range_highlight: bool = False)",
               "summary": "Remove all tracks, clips, and markers.",
-              "line": 942,
+              "line": 953,
               "deprecated": false
             },
             {
@@ -15100,7 +15935,7 @@
               "kind": "method",
               "signature": "(self, *, keep_range_highlight: bool = False)",
               "summary": "Remove markers, overlays, and shot lane without touching tracks or clips.",
-              "line": 983,
+              "line": 995,
               "deprecated": false
             },
             {
@@ -15109,7 +15944,7 @@
               "kind": "method",
               "signature": "(self, time: float, note: str = '', color: Optional[str] = None, draggable: bool = True, style: str = 'triangle', line_style: str = 'dashed', opacity: float = 1.0) -> int",
               "summary": "Add a marker at *time*.",
-              "line": 1007,
+              "line": 1019,
               "deprecated": false
             },
             {
@@ -15118,7 +15953,7 @@
               "kind": "method",
               "signature": "(self, marker_id: int)",
               "summary": "Remove a marker by id.",
-              "line": 1039,
+              "line": 1051,
               "deprecated": false
             },
             {
@@ -15127,7 +15962,7 @@
               "kind": "method",
               "signature": "(self, marker_id: int) -> Optional[MarkerData]",
               "summary": "Return marker data, or None.",
-              "line": 1058,
+              "line": 1070,
               "deprecated": false
             },
             {
@@ -15136,7 +15971,7 @@
               "kind": "method",
               "signature": "(self) -> List[MarkerData]",
               "summary": "Return all markers.",
-              "line": 1062,
+              "line": 1074,
               "deprecated": false
             },
             {
@@ -15145,7 +15980,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove all markers.",
-              "line": 1066,
+              "line": 1078,
               "deprecated": false
             },
             {
@@ -15154,7 +15989,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float, color: Optional[str] = None, alpha: int = 30)",
               "summary": "Show or update a translucent highlight over a time range.",
-              "line": 1075,
+              "line": 1087,
               "deprecated": false
             },
             {
@@ -15163,7 +15998,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove the range highlight from the timeline.",
-              "line": 1106,
+              "line": 1118,
               "deprecated": false
             },
             {
@@ -15172,7 +16007,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float, color: str = '#888888', alpha: int = 15)",
               "summary": "Add a non-interactive range overlay (e.g.",
-              "line": 1112,
+              "line": 1124,
               "deprecated": false
             },
             {
@@ -15181,7 +16016,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove all non-interactive range overlays.",
-              "line": 1126,
+              "line": 1138,
               "deprecated": false
             },
             {
@@ -15190,7 +16025,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float, color: str = '#555555', alpha: int = 120, locked: bool = False, tail: bool = False, head: bool = False)",
               "summary": "Add a diagonal-hatch overlay for a gap between shots.",
-              "line": 1132,
+              "line": 1144,
               "deprecated": false
             },
             {
@@ -15199,7 +16034,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove all gap overlays.",
-              "line": 1166,
+              "line": 1178,
               "deprecated": false
             },
             {
@@ -15208,7 +16043,7 @@
               "kind": "method",
               "signature": "(self, locked: bool)",
               "summary": "Set the locked state on every gap overlay.",
-              "line": 1172,
+              "line": 1184,
               "deprecated": false
             },
             {
@@ -15217,7 +16052,7 @@
               "kind": "method",
               "signature": "(self, blocks: list) -> None",
               "summary": "Show coloured shot-block indicators on the ruler.",
-              "line": 1193,
+              "line": 1205,
               "deprecated": false
             },
             {
@@ -15226,7 +16061,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[dict]",
               "summary": "The shot block currently marked ``active``, or ``None``.",
-              "line": 1206,
+              "line": 1218,
               "deprecated": false
             },
             {
@@ -15235,7 +16070,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove all shot-block indicators from the ruler.",
-              "line": 1216,
+              "line": 1228,
               "deprecated": false
             },
             {
@@ -15244,7 +16079,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[tuple]",
               "summary": "Return ``(start, end)`` of the active highlight, or ``None``.",
-              "line": 1220,
+              "line": 1232,
               "deprecated": false
             },
             {
@@ -15253,7 +16088,7 @@
               "kind": "method",
               "signature": "(self, names: List[str])",
               "summary": "Store a list of hidden track names for the 'show hidden' menu.",
-              "line": 1226,
+              "line": 1238,
               "deprecated": false
             },
             {
@@ -15262,7 +16097,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float)",
               "summary": "Set the active-shot time range painted as a column tint.",
-              "line": 1231,
+              "line": 1243,
               "deprecated": false
             },
             {
@@ -15271,7 +16106,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove the active-shot column tint.",
-              "line": 1237,
+              "line": 1249,
               "deprecated": false
             },
             {
@@ -15280,7 +16115,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Advance the playhead by one step (snap_interval or 1 frame).",
-              "line": 1271,
+              "line": 1283,
               "deprecated": false
             },
             {
@@ -15289,7 +16124,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Move the playhead back by one step (snap_interval or 1 frame).",
-              "line": 1276,
+              "line": 1288,
               "deprecated": false
             },
             {
@@ -15298,7 +16133,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to the next clip boundary.",
-              "line": 1309,
+              "line": 1321,
               "deprecated": false
             },
             {
@@ -15307,7 +16142,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to the previous clip boundary.",
-              "line": 1317,
+              "line": 1329,
               "deprecated": false
             },
             {
@@ -15316,7 +16151,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to frame 0.",
-              "line": 1325,
+              "line": 1337,
               "deprecated": false
             },
             {
@@ -15325,7 +16160,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to the end of the last clip.",
-              "line": 1329,
+              "line": 1341,
               "deprecated": false
             },
             {
@@ -15334,7 +16169,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Add a marker at the current playhead position.",
-              "line": 1333,
+              "line": 1345,
               "deprecated": false
             },
             {
@@ -15343,7 +16178,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Zoom and scroll the timeline to frame the active shot range.",
-              "line": 1339,
+              "line": 1351,
               "deprecated": false
             },
             {
@@ -15352,7 +16187,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Revert to the previous clip state.",
-              "line": 1415,
+              "line": 1427,
               "deprecated": false
             },
             {
@@ -15361,7 +16196,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Re-apply a previously undone change.",
-              "line": 1428,
+              "line": 1440,
               "deprecated": false
             },
             {
@@ -15370,7 +16205,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "Time-snap interval.",
-              "line": 1441,
+              "line": 1453,
               "deprecated": false
             },
             {
@@ -15379,7 +16214,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Draw a guide (and tint the drag readout) when a drag lands on a",
-              "line": 1451,
+              "line": 1463,
               "deprecated": false
             },
             {
@@ -15388,7 +16223,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Also pull a drag onto a nearby key frame, not just highlight it.",
-              "line": 1463,
+              "line": 1475,
               "deprecated": false
             },
             {
@@ -15397,7 +16232,7 @@
               "kind": "method",
               "signature": "(self, exclude_clip_ids=(), exclude_times=(), exclude_spans=()) -> List[float]",
               "summary": "Sorted, de-duplicated frames that a drag can align to.",
-              "line": 1478,
+              "line": 1490,
               "deprecated": false
             },
             {
@@ -15406,7 +16241,7 @@
               "kind": "method",
               "signature": "(self, time: float, candidates, tolerance: Optional[float] = None) -> Optional[float]",
               "summary": "Return the entry of *candidates* within *tolerance* of *time*.",
-              "line": 1529,
+              "line": 1541,
               "deprecated": false
             },
             {
@@ -15415,7 +16250,7 @@
               "kind": "method",
               "signature": "(self, times) -> None",
               "summary": "Show vertical alignment guides at *times* (empty hides them).",
-              "line": 1551,
+              "line": 1563,
               "deprecated": false
             },
             {
@@ -15424,7 +16259,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove the alignment guides.",
-              "line": 1574,
+              "line": 1586,
               "deprecated": false
             },
             {
@@ -15433,7 +16268,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 1582,
+              "line": 1594,
               "deprecated": false
             },
             {
@@ -15442,7 +16277,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 1592,
+              "line": 1604,
               "deprecated": false
             },
             {
@@ -15451,7 +16286,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 1602,
+              "line": 1614,
               "deprecated": false
             },
             {
@@ -15460,7 +16295,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "When ``True``, right-clicks emit :attr:`zone_context_menu_requested`",
-              "line": 1612,
+              "line": 1624,
               "deprecated": false
             },
             {
@@ -15469,7 +16304,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether Shift was held when the last drag interaction started.",
-              "line": 1631,
+              "line": 1643,
               "deprecated": false
             },
             {
@@ -15478,7 +16313,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether Ctrl was held when the last drag interaction started.",
-              "line": 1640,
+              "line": 1652,
               "deprecated": false
             },
             {
@@ -15487,7 +16322,7 @@
               "kind": "method",
               "signature": "(self, modifiers) -> None",
               "summary": "Bank the modifiers a press carried, for the consumers' gates.",
-              "line": 1652,
+              "line": 1664,
               "deprecated": false
             },
             {
@@ -15496,7 +16331,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "The corner legend (:class:`ShortcutOverlay`), or ``None`` until",
-              "line": 1664,
+              "line": 1676,
               "deprecated": false
             },
             {
@@ -15505,7 +16340,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Show a legend of the drag grammar and keys in the timeline's corner.",
-              "line": 1670,
+              "line": 1682,
               "deprecated": false
             },
             {
@@ -15514,7 +16349,7 @@
               "kind": "property",
               "signature": "(self) -> Dict[str, str]",
               "summary": "Mapping of attribute name to hex color string.",
-              "line": 1695,
+              "line": 1707,
               "deprecated": false
             },
             {
@@ -15523,7 +16358,7 @@
               "kind": "method",
               "signature": "(self, name: str, color: str) -> None",
               "summary": "Set a single attribute's color and repaint.",
-              "line": 1711,
+              "line": 1723,
               "deprecated": false
             },
             {
@@ -15532,7 +16367,7 @@
               "kind": "property",
               "signature": "(self) -> int",
               "summary": "Pixel height of expanded attribute sub-rows (default half track height).",
-              "line": 1726,
+              "line": 1738,
               "deprecated": false
             },
             {
@@ -15541,7 +16376,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Callable providing sub-row data for track expansion.",
-              "line": 1736,
+              "line": 1748,
               "deprecated": false
             },
             {
@@ -15550,7 +16385,7 @@
               "kind": "method",
               "signature": "(self, track_id: int, sub_row_data=None)",
               "summary": "Expand *track_id* to show sub-rows beneath it.",
-              "line": 1751,
+              "line": 1763,
               "deprecated": false
             },
             {
@@ -15559,7 +16394,7 @@
               "kind": "method",
               "signature": "(self, track_id: int, sub_row: str, preview: dict, color: str = '#CCCCCC') -> None",
               "summary": "Set or clear a background curve preview for a sub-row.",
-              "line": 1804,
+              "line": 1817,
               "deprecated": false
             },
             {
@@ -15568,7 +16403,7 @@
               "kind": "method",
               "signature": "(self, track_id: int)",
               "summary": "Collapse a previously expanded track, removing its sub-row clips.",
-              "line": 1824,
+              "line": 1837,
               "deprecated": false
             },
             {
@@ -15577,7 +16412,7 @@
               "kind": "method",
               "signature": "(self, track_id: int) -> bool",
               "summary": "Return True if the track is currently expanded.",
-              "line": 1847,
+              "line": 1888,
               "deprecated": false
             },
             {
@@ -15586,7 +16421,7 @@
               "kind": "method",
               "signature": "(self, track_id: int)",
               "summary": "Toggle expansion state.",
-              "line": 1851,
+              "line": 1892,
               "deprecated": false
             },
             {
@@ -15595,7 +16430,7 @@
               "kind": "method",
               "signature": "(self) -> List[int]",
               "summary": "Return clip IDs for all currently selected clips.",
-              "line": 1923,
+              "line": 1964,
               "deprecated": false
             },
             {
@@ -15604,7 +16439,7 @@
               "kind": "method",
               "signature": "(self) -> List[dict]",
               "summary": "Selected keyframe dots grouped by clip: ``[{clip_id, times}, ...]``.",
-              "line": 1931,
+              "line": 1972,
               "deprecated": false
             },
             {
@@ -15613,7 +16448,7 @@
               "kind": "method",
               "signature": "(self, wanted: List[dict], replace: bool = True) -> int",
               "summary": "Select keyframe dots by clip data and time;",
-              "line": 1952,
+              "line": 1993,
               "deprecated": false
             },
             {
@@ -15622,12 +16457,40 @@
               "kind": "method",
               "signature": "(self, global_pos) -> bool",
               "summary": "Open the key menu for the current key selection;",
-              "line": 2006,
+              "line": 2049,
+              "deprecated": false
+            },
+            {
+              "name": "refresh_key_scale_box",
+              "qualname": "SequencerWidget.refresh_key_scale_box",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Show or hide the Shift scale box around the current key selection.",
+              "line": 2121,
+              "deprecated": false
+            },
+            {
+              "name": "clear_key_scale_box",
+              "qualname": "SequencerWidget.clear_key_scale_box",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Remove the scale box, cancelling a drag it still owns.",
+              "line": 2146,
+              "deprecated": false
+            },
+            {
+              "name": "set_shift_held",
+              "qualname": "SequencerWidget.set_shift_held",
+              "kind": "method",
+              "signature": "(self, held: bool) -> None",
+              "summary": "Record whether Shift is down and re-evaluate the scale box.",
+              "line": 2159,
               "deprecated": false
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_timeline.py",
@@ -15767,7 +16630,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 436,
+              "line": 440,
               "deprecated": false
             },
             {
@@ -15776,7 +16639,16 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 443,
+              "line": 449,
+              "deprecated": false
+            },
+            {
+              "name": "focusOutEvent",
+              "qualname": "TimelineView.focusOutEvent",
+              "kind": "method",
+              "signature": "(self, event)",
+              "summary": "",
+              "line": 459,
               "deprecated": false
             },
             {
@@ -15785,7 +16657,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "",
-              "line": 449,
+              "line": 465,
               "deprecated": false
             },
             {
@@ -15794,7 +16666,7 @@
               "kind": "method",
               "signature": "(self, t: float) -> float",
               "summary": "",
-              "line": 457,
+              "line": 473,
               "deprecated": false
             },
             {
@@ -15803,7 +16675,7 @@
               "kind": "method",
               "signature": "(self, x: float) -> float",
               "summary": "",
-              "line": 460,
+              "line": 476,
               "deprecated": false
             },
             {
@@ -15812,7 +16684,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 464,
+              "line": 480,
               "deprecated": false
             },
             {
@@ -15821,7 +16693,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 475,
+              "line": 491,
               "deprecated": false
             },
             {
@@ -15830,7 +16702,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 658,
+              "line": 674,
               "deprecated": false
             },
             {
@@ -15839,7 +16711,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 766,
+              "line": 782,
               "deprecated": false
             },
             {
@@ -15847,8 +16719,8 @@
               "qualname": "TimelineView.leaveEvent",
               "kind": "method",
               "signature": "(self, event)",
-              "summary": "",
-              "line": 824,
+              "summary": "The pointer has left: no gesture context, and Shift is no longer held.",
+              "line": 840,
               "deprecated": false
             },
             {
@@ -15857,7 +16729,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 828,
+              "line": 857,
               "deprecated": false
             },
             {
@@ -15866,7 +16738,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 882,
+              "line": 911,
               "deprecated": false
             },
             {
@@ -15875,7 +16747,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 906,
+              "line": 935,
               "deprecated": false
             },
             {
@@ -15884,7 +16756,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 920,
+              "line": 949,
               "deprecated": false
             },
             {
@@ -15893,7 +16765,7 @@
               "kind": "method",
               "signature": "(self, t: float) -> list",
               "summary": "The timeline's own context-menu entries at time *t*, as data.",
-              "line": 975,
+              "line": 1004,
               "deprecated": false
             },
             {
@@ -15902,7 +16774,7 @@
               "kind": "method",
               "signature": "(self, menu, t: float)",
               "summary": "Append the timeline's own actions to a QMenu;",
-              "line": 1028,
+              "line": 1057,
               "deprecated": false
             },
             {
@@ -15911,7 +16783,7 @@
               "kind": "method",
               "signature": "(self) -> tuple",
               "summary": "``(min_time, max_time)`` spanned by everything the scene draws.",
-              "line": 1110,
+              "line": 1141,
               "deprecated": false
             },
             {
@@ -15920,12 +16792,13 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, rect: QtCore.QRectF)",
               "summary": "",
-              "line": 1188,
+              "line": 1219,
               "deprecated": false
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/sequencer/_transport_controls.py",
@@ -16104,7 +16977,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/shortcut_overlay.py",
@@ -16175,7 +17049,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/slider.py",
@@ -16194,7 +17069,8 @@
           ],
           "members": []
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/spinBox.py",
@@ -16273,7 +17149,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/tableWidget.py",
@@ -16914,7 +17791,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/table_actions.py",
@@ -16965,7 +17843,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/textEdit.py",
@@ -17012,7 +17891,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/textEditLogHandler.py",
@@ -17074,7 +17954,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/textViewBox.py",
@@ -17136,7 +18017,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/toolBox.py",
@@ -17191,7 +18073,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/treeWidget.py",
@@ -17707,7 +18590,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/widgetComboBox.py",
@@ -17913,7 +18797,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/windowPanel.py",
@@ -18111,7 +18996,8 @@
             }
           ]
         }
-      ]
+      ],
+      "constants": []
     }
   ]
 }

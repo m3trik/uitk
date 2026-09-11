@@ -560,6 +560,134 @@ class TestPathWidgetPresetPersistence(BaseTestCase):
         self.assertEqual(w._line_edit.objectName(), "render_output")
 
 
+class TestBrowseRowUsesTheOptionBox(BaseTestCase):
+    """The ``path`` and ``file`` rows are one row with two dialog modes.
+
+    Both used to hand-roll a line edit beside a ``"..."`` push button and
+    drive ``QFileDialog`` themselves -- which is the option box's entire job,
+    and the two copies had already drifted, only one anchoring the dialog on
+    the current value. What the plugins bring is not only less code: the
+    clear button hides itself while the field is empty, so a row cannot offer
+    to clear nothing, and both controls are icons sized to the row rather
+    than a text button that reads as a third value.
+    """
+
+    KINDS = ("path", "file")
+
+    def _row(self, **kwargs):
+        widget = KindFactory.make_widget(AttributeSpec(key="src", **kwargs))
+        self.addCleanup(widget.deleteLater)
+        return widget
+
+    @staticmethod
+    def _buttons(row):
+        return {
+            button.objectName().rsplit("_", 1)[-1]: button
+            for button in row.findChildren(QtWidgets.QAbstractButton)
+        }
+
+    def test_both_kinds_carry_a_clear_and_a_browse(self):
+        for kind in self.KINDS:
+            with self.subTest(kind=kind):
+                self.assertEqual(
+                    set(self._buttons(self._row(kind=kind))),
+                    {"ClearOption", "BrowseOption"},
+                )
+
+    def test_the_buttons_carry_real_icons(self):
+        # A misspelled icon name yields an EMPTY QIcon and the button paints
+        # blank -- with no error, which is why this is asserted and not seen.
+        for kind in self.KINDS:
+            for name, button in self._buttons(self._row(kind=kind)).items():
+                with self.subTest(kind=kind, button=name):
+                    self.assertFalse(button.icon().isNull())
+
+    def test_the_browse_tooltip_says_which_dialog_opens(self):
+        # The two rows are identical on screen; the icon cannot say whether
+        # it will ask for a folder or a file.
+        folder = self._buttons(self._row(kind="path"))["BrowseOption"]
+        chooser = self._buttons(self._row(kind="file"))["BrowseOption"]
+        self.assertIn("folder", folder.toolTip().lower())
+        self.assertIn("file", chooser.toolTip().lower())
+        self.assertNotEqual(folder.toolTip(), chooser.toolTip())
+
+    def test_clear_appears_only_when_there_is_something_to_clear(self):
+        row = self._row(kind="file")
+        row.show()
+        self.addCleanup(row.hide)
+        clear = self._buttons(row)["ClearOption"]
+        QtWidgets.QApplication.processEvents()
+        self.assertFalse(clear.isVisible(), "an empty field offered to clear itself")
+
+        row._line_edit.setText("C:/assets/hero.glb")
+        QtWidgets.QApplication.processEvents()
+        self.assertTrue(clear.isVisible())
+
+    def test_clicking_clear_empties_the_field(self):
+        row = self._row(kind="file")
+        row.show()
+        self.addCleanup(row.hide)
+        row._line_edit.setText("C:/assets/hero.glb")
+        QtWidgets.QApplication.processEvents()
+        # Clicked rather than inspected: the button is wired by the plugin,
+        # and reading its existence proves nothing about what it does.
+        self._buttons(row)["ClearOption"].click()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(KindFactory.read_value(row), "")
+
+    def test_the_browse_button_is_always_offered(self):
+        # Unlike clear, an empty field is exactly when browse is wanted.
+        row = self._row(kind="file")
+        row.show()
+        self.addCleanup(row.hide)
+        QtWidgets.QApplication.processEvents()
+        self.assertTrue(self._buttons(row)["BrowseOption"].isVisible())
+
+    def test_the_inner_edit_keeps_the_key_as_its_objectname(self):
+        # Same contract as before the rewrite: preset capture skips a child
+        # with an empty objectName, so an unnamed edit drops the param.
+        for kind in self.KINDS:
+            with self.subTest(kind=kind):
+                self.assertEqual(self._row(kind=kind)._line_edit.objectName(), "src")
+
+
+class TestPlaceholderExplainsAnEmptyField(BaseTestCase):
+    """``AttributeSpec.placeholder`` reaches every line-edit kind.
+
+    A field that does something specific when left empty -- prompts on use,
+    or falls back to a computed default -- looks merely unset without it, and
+    a tooltip only helps a user who already suspects there is something to
+    ask about.
+    """
+
+    CASES = (("str", False), ("path", True), ("file", True))
+
+    def test_the_placeholder_reaches_the_editable_field(self):
+        for kind, composite in self.CASES:
+            with self.subTest(kind=kind):
+                widget = KindFactory.make_widget(
+                    AttributeSpec(key="src", kind=kind, placeholder="asked on use")
+                )
+                edit = widget._line_edit if composite else widget
+                self.assertEqual(edit.placeholderText(), "asked on use")
+
+    def test_no_placeholder_leaves_the_field_bare(self):
+        # The default must not invent text: an empty grey string still paints.
+        for kind, composite in self.CASES:
+            with self.subTest(kind=kind):
+                widget = KindFactory.make_widget(AttributeSpec(key="src", kind=kind))
+                edit = widget._line_edit if composite else widget
+                self.assertEqual(edit.placeholderText(), "")
+
+    def test_a_placeholder_is_not_a_value(self):
+        # It must never be read back as one -- a push would receive the
+        # explanation as a path.
+        widget = KindFactory.make_widget(
+            AttributeSpec(key="src", kind="file", placeholder="asked on use")
+        )
+        self.assertEqual(KindFactory.read_value(widget), "")
+
+
 class TestKindWidgetPresetRoundTrip(BaseTestCase):
     """Every kind the bridges build must survive a widget-state preset.
 
@@ -573,6 +701,7 @@ class TestKindWidgetPresetRoundTrip(BaseTestCase):
 
     CASES = (
         ("render_output", dict(kind="path"), "C:/renders/hero.png"),
+        ("source_file", dict(kind="file"), "C:/assets/hero.glb"),
         ("scripts", dict(kind="check_list", choices=["a", "b", "c"]), ["a", "c"]),
         ("meshes", dict(kind="file_list"), ["C:/m/a.fbx", "C:/m/b.fbx"]),
         ("scale", dict(kind="float", default=1.0), 2.5),
@@ -609,6 +738,7 @@ class TestKindWidgetPresetRoundTrip(BaseTestCase):
     def test_every_kind_round_trips(self):
         empties = {
             "path": "",
+            "file": "",
             "check_list": [],
             "file_list": [],
             "float": 0.0,
@@ -740,6 +870,7 @@ class TestActionKindIconButtons(BaseTestCase):
         for key, button in widget._action_buttons.items():
             with self.subTest(action=key):
                 self.assertFalse(button.isEnabled())
+
     def test_a_leading_icon_entry_still_gets_a_labelled_primary(self):
         """An all-icon row would have no option-box host and no label."""
         w = KindFactory.make_widget(
@@ -770,17 +901,13 @@ class TestAffixKind(BaseTestCase):
 
     def test_reads_text_and_mode(self):
         w = self._widget({"text": "hero_", "mode": "prefix"})
-        self.assertEqual(
-            KindFactory.read_value(w), {"text": "hero_", "mode": "prefix"}
-        )
+        self.assertEqual(KindFactory.read_value(w), {"text": "hero_", "mode": "prefix"})
 
     def test_write_accepts_a_bare_string_as_auto(self):
         """A preset written before this kind existed carries a plain str."""
         w = self._widget()
         KindFactory.set_value(w, "_hero")
-        self.assertEqual(
-            KindFactory.read_value(w), {"text": "_hero", "mode": "auto"}
-        )
+        self.assertEqual(KindFactory.read_value(w), {"text": "_hero", "mode": "auto"})
 
     def test_an_unknown_mode_falls_back_to_auto(self):
         w = self._widget()
@@ -860,6 +987,7 @@ class TestAffixKind(BaseTestCase):
     def test_the_value_bearing_child_is_named_for_preset_capture(self):
         """A widget with an empty objectName is skipped by preset capture."""
         self.assertEqual(self._widget()._line_edit.objectName(), "affix")
+
     def test_a_scalar_kind_is_unchanged_by_the_literal_hook(self):
         spec = AttributeSpec(key="n", kind="int", default=0)
         self.assertEqual(KindFactory.to_literal(spec, 7), 7)
@@ -1187,9 +1315,7 @@ class TestLiveParamTooltipBlocks(BaseTestCase):
         slot = self._built({"SET": lambda: "<i>live</i>"})
         button = slot._param_widgets["SET"]._action_buttons["do_set"]
         TestLiveParamTooltips._hover(button)
-        self.assertIn(
-            "capture the selection<br>from the viewport", button.toolTip()
-        )
+        self.assertIn("capture the selection<br>from the viewport", button.toolTip())
 
     def test_rebinding_does_not_stack_the_block(self):
         """The tooltip surface writes its computed text back onto the widget.
@@ -1218,6 +1344,7 @@ class TestLiveParamTooltipBlocks(BaseTestCase):
         self.assertEqual(
             slot._as_tooltip_html("<b>already rich</b>"), "<b>already rich</b>"
         )
+
     def test_a_value_row_gets_the_block_under_its_formatted_help(self):
         slot = self._built({"SET": lambda: "<i>live</i>"}, kind="str")
         widget = slot._param_widgets["SET"]
@@ -1236,6 +1363,7 @@ class TestLiveParamTooltipBlocks(BaseTestCase):
         before = button.toolTip()
         TestLiveParamTooltips._hover(button)
         self.assertEqual(button.toolTip(), before)
+
 
 class TestInlineParamRows(BaseTestCase):
     """``AttributeSpec.inline`` -- a compact modifier beside the value it governs.
@@ -1834,8 +1962,6 @@ class TestSharedSpecs(BaseTestCase):
         self.assertEqual(
             Parameters.shader_type_spec(section="Import").section, "Import"
         )
-
-
 
     def test_carrier_vocabulary_is_pythontk_s_own(self):
         """The carrier choice renders pythontk's CARRIER_EXTENSIONS vocabulary --

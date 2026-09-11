@@ -550,6 +550,38 @@ class TestExternalAppHandlerRegistry(unittest.TestCase):
         with self.assertRaises(ValueError):
             sb.handlers.external_app.launch("nonexistent")
 
+    def test_the_unknown_name_error_names_the_places_it_looked(self):
+        """The old message ("launch() requires a registered name or module=
+        kwarg") described the signature rather than the situation.
+
+        An app reaches the registry from a provider's installed metadata or,
+        for a checkout on the path, from its pyproject. So a name that will
+        not launch is a typo, a declaration missing from the entry-point
+        table, or a package no one declared as a provider -- and the message
+        has to name the last two, because neither raises anywhere else and
+        both leave the app importing perfectly by hand. Listing what IS
+        registered settles the typo, and an empty list points at the third.
+        """
+        sb = _make_sb()
+        sb.handlers.external_app.register(
+            "mytool", module="mytool.app", entry="MyToolUI"
+        )
+        with self.assertRaises(ValueError) as caught:
+            sb.handlers.external_app.launch("mytoool")
+        message = str(caught.exception)
+        self.assertIn("mytoool", message)
+        self.assertIn("mytool", message)  # what IS registered
+        self.assertIn(ExternalAppHandler.IN_PROCESS_GROUP, message)
+        self.assertIn(ExternalAppHandler.PROVIDER_GROUP, message)
+
+    def test_launch_with_no_name_at_all_says_so(self):
+        sb = _make_sb()
+        with self.assertRaises(ValueError) as caught:
+            sb.handlers.external_app.launch(None)
+        # A different situation, so a different sentence: there is no name to
+        # report as unregistered, and no entry-point table would have helped.
+        self.assertNotIn(ExternalAppHandler.PROVIDER_GROUP, str(caught.exception))
+
 
 class TestExternalAppHandlerLaunch(unittest.TestCase):
     def setUp(self):
@@ -1104,6 +1136,243 @@ class TestIsImportable(unittest.TestCase):
             result = ExternalAppHandler._is_importable("foo", "/other/python")
         run.assert_called_once()
         self.assertTrue(result)
+
+
+class TestSourceCheckoutDiscovery(unittest.TestCase):
+    """A provider on the path as SOURCE must still surface its apps.
+
+    Entry points are read from an installed distribution. Put the same
+    package on ``PYTHONPATH`` instead — which is how the ecosystem reaches
+    a DCC host, since pip-installing into the host's own interpreter is the
+    thing we avoid — and it imports perfectly while every app it ships is
+    invisible. Nothing raises on the way there either: the provider probe
+    finds the package present, so install-on-demand installs nothing, and
+    the registry simply answers "no app by that name" for all of them.
+
+    So discovery reads the checkout's ``pyproject.toml`` when a provider
+    has no installed metadata.
+    """
+
+    def setUp(self):
+        self.pkg = "src_checkout_provider_demo"
+        self.root = os.path.join(
+            os.path.dirname(__file__), "temp_tests", self.pkg + "_src"
+        )
+        self._lay_out_package()
+        self._write_pyproject(
+            '[project.entry-points."uitk.external_apps.in_process"]\n'
+            'demo_panel = "{pkg}.panel:DemoUI [textures,hide_maya]"\n'
+            "\n"
+            '[project.entry-points."uitk.external_apps"]\n'
+            'demo_tool = "{pkg}.tool:DemoTool"\n'.format(pkg=self.pkg)
+        )
+
+    def tearDown(self):
+        import shutil
+
+        for entry in {self.root, getattr(self, "_on_path", self.root)}:
+            while entry in sys.path:
+                sys.path.remove(entry)
+        sys.modules.pop(self.pkg, None)
+        shutil.rmtree(self.root, ignore_errors=True)
+        self._reset(_make_sb().handlers.external_app)
+
+    @staticmethod
+    def _reset(handler):
+        """Put the shared handler back to empty.
+
+        ``Switchboard`` hands out ONE handler per process, so a provider or
+        a host context left behind here reaches every later test -- and a
+        context tag is the quiet one, since it filters the app out of
+        ``entries()`` while ``is_registered`` still says yes.
+        """
+        handler._apps.clear()
+        handler._providers.clear()
+        handler._bootstrapped.clear()
+        handler.sb.context_tags = set()
+
+    def _lay_out_package(self, subdir=""):
+        """Put the package on the path, flat or under a ``src/`` directory."""
+        import importlib
+        import shutil
+
+        shutil.rmtree(self.root, ignore_errors=True)
+        parent = os.path.join(self.root, subdir) if subdir else self.root
+        os.makedirs(os.path.join(parent, self.pkg), exist_ok=True)
+        open(os.path.join(parent, self.pkg, "__init__.py"), "w").close()
+        while parent in sys.path:
+            sys.path.remove(parent)
+        sys.path.insert(0, parent)
+        self._on_path = parent
+        # The finder caches a directory's contents; this tree is created and
+        # recreated inside one second, so a stale listing is a real flake.
+        importlib.invalidate_caches()
+
+    def _write_pyproject(self, entry_points_toml):
+        body = (
+            '[project]\nname = "{pkg}"\nversion = "0.0.1"\n\n'.format(pkg=self.pkg)
+            + entry_points_toml
+        )
+        with open(
+            os.path.join(self.root, "pyproject.toml"), "w", encoding="utf-8"
+        ) as fh:
+            fh.write(body)
+
+    def _handler(self):
+        h = _make_sb().handlers.external_app
+        self._reset(h)
+        h.add_provider(self.pkg)
+        return h
+
+    def _entry(self, handler, name):
+        return next((e for e in handler.entries() if e.name == name), None)
+
+    def test_apps_register_from_the_checkout(self):
+        h = self._handler()
+        h.discover()
+        # The declared name is the launch key — the same contract an
+        # installed distribution would have handed over.
+        self.assertTrue(h.is_registered("demo_panel"))
+
+    def test_each_group_keeps_its_own_launch_mode(self):
+        # Read from source, the group a declaration sits under stays the
+        # only thing saying whether an app may share the host's event loop.
+        h = self._handler()
+        h.discover()
+        self.assertEqual(self._entry(h, "demo_panel").kind, "external_in_process")
+        self.assertEqual(self._entry(h, "demo_tool").kind, "external_subprocess")
+
+    def test_extras_split_into_tags_and_host_gates(self):
+        h = self._handler()
+        h.discover()
+        tags = self._entry(h, "demo_panel").inherited_tags
+        # A host gate must not survive as a browser tag — the same split
+        # the metadata path performs.
+        self.assertIn("textures", tags)
+        self.assertNotIn("hide_maya", tags)
+        self.assertNotIn("maya", tags)
+
+    def test_a_host_gate_read_from_source_still_hides_the_app(self):
+        h = self._handler()
+        h.discover()
+        h.sb.context_tags = {"maya"}
+        names = {e.name for e in h.entries()}
+        self.assertNotIn("demo_panel", names)
+        self.assertIn("demo_tool", names)
+
+    def test_a_checkout_is_read_even_when_the_package_is_installed(self):
+        """An editable install's metadata is generated ONCE, at install time.
+
+        Add an entry point to the source afterwards and the app is invisible
+        while the module it names imports perfectly — the same silent state
+        as a host with no metadata at all, reached from the other direction.
+        What a provider declares beside the code that will IMPORT is what
+        describes the run, so it is read either way.
+        """
+        h = self._handler()
+        with patch("importlib.metadata.distribution", return_value=MagicMock()):
+            h.discover()
+        self.assertTrue(h.is_registered("demo_panel"))
+
+    def test_a_provider_with_no_pyproject_is_skipped_quietly(self):
+        """This is also what an ordinary wheel install looks like.
+
+        Nothing marks a release build as "installed"; it simply has no
+        project file beside its package, which is why a checkout on the path
+        can never override one.
+        """
+        os.remove(os.path.join(self.root, "pyproject.toml"))
+        h = self._handler()
+        h.discover()  # must not raise
+        self.assertFalse(h.is_registered("demo_panel"))
+
+    def test_a_malformed_pyproject_is_skipped_quietly(self):
+        # A checkout caught mid-edit degrades to "no apps", never to a host
+        # that cannot construct its handler at all.
+        self._write_pyproject("[project.entry-points.\n")
+        h = self._handler()
+        h.discover()
+        self.assertFalse(h.is_registered("demo_panel"))
+
+    def test_discovery_never_imports_the_provider(self):
+        # Importing a provider to find its path would run every provider's
+        # package __init__ inside the host, at handler construction.
+        h = self._handler()
+        h.discover()
+        self.assertNotIn(self.pkg, sys.modules)
+
+    def test_source_registered_apps_are_launchable_by_name(self):
+        """Registering is only half of it — ``launch`` has to resolve them.
+
+        This is the reported symptom: a host button calls ``launch(name)``
+        and gets ValueError because the registry came up empty.
+        """
+        import types
+        from qtpy import QtWidgets
+
+        h = self._handler()
+        h.discover()
+        module = self.pkg + ".panel"
+        fake = types.ModuleType(module)
+        fake.DemoUI = type("DemoUI", (QtWidgets.QMainWindow,), {})
+        sys.modules[module] = fake
+        try:
+            with patch.object(ExternalAppHandler, "_is_importable", return_value=True):
+                widget = h.launch("demo_panel", show=False)
+            self.assertIsInstance(widget, QtWidgets.QMainWindow)
+        finally:
+            sys.modules.pop(module, None)
+
+    def test_a_src_layout_checkout_is_found_too(self):
+        """``src/`` puts one more directory between package and pyproject.
+
+        Stopping the search at the first level would fail that layout the
+        same silent way -- package imports, no apps, no error.
+        """
+        self._lay_out_package(subdir="src")
+        self._write_pyproject(
+            '[project.entry-points."uitk.external_apps.in_process"]\n'
+            'demo_panel = "{pkg}.panel:DemoUI"\n'.format(pkg=self.pkg)
+        )
+        h = self._handler()
+        h.discover()
+        self.assertTrue(h.is_registered("demo_panel"))
+
+    def test_another_projects_pyproject_is_not_read_as_this_ones(self):
+        """Climbing can overshoot into an unrelated file; that must not count.
+
+        A package directly under a monorepo root whose own pyproject is
+        missing would otherwise be handed the ROOT project's entry points,
+        registering apps that belong to something else entirely.
+        """
+        self._lay_out_package(subdir="src")
+        self._write_pyproject(
+            '[project.entry-points."uitk.external_apps.in_process"]\n'
+            'demo_panel = "{pkg}.panel:DemoUI"\n'.format(pkg=self.pkg)
+        )
+        path = os.path.join(self.root, "pyproject.toml")
+        body = (
+            open(path, encoding="utf-8")
+            .read()
+            .replace(
+                'name = "{pkg}"'.format(pkg=self.pkg), 'name = "some-other-project"'
+            )
+        )
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(body)
+        h = self._handler()
+        h.discover()
+        self.assertFalse(h.is_registered("demo_panel"))
+
+    def test_a_name_that_only_differs_in_separators_still_matches(self):
+        """PEP 503: ``my_app``, ``my-app`` and ``My.App`` are one name.
+
+        Rejecting on that difference would refuse the provider's OWN file.
+        """
+        self.assertEqual(
+            ExternalAppHandler._normalize_dist_name("My_Demo.App"),
+            ExternalAppHandler._normalize_dist_name("my-demo-app"),
+        )
 
 
 if __name__ == "__main__":

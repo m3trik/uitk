@@ -147,6 +147,19 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     # and by :meth:`_log_template_description` to dispatch the extractor.
     TEMPLATE_EXTENSION: str = ".py"
 
+    # Whether ``cmb000``'s context menu carries the template-management rows
+    # (Refresh Templates / Open Templates Folder). True for the bridges that
+    # really do render per-template scripts off disk.
+    #
+    # Set False on a panel whose combo picks a MODE rather than a template file
+    # (unity's copy/manage, the WebXR preview's source). Those panels satisfy
+    # ``template_dir`` with their own package directory as a stand-in for the
+    # no-op description lookup, so the rows offered to re-scan it and to reveal
+    # it in the file manager -- pointing an artist at a folder of .py files and
+    # implying the list came from it. Both are wrong rather than merely idle:
+    # Refresh re-runs a scan that reads nothing, and Open reveals source code.
+    TEMPLATE_MENU: bool = True
+
     # Whether the panel exposes a required "Output Dir" row above the
     # parameter group. Disable for bridges whose roundtrip is in-place
     # (rizom transfers UVs back onto the originals without writing
@@ -205,7 +218,7 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     # Kinds whose widgets are composite (line edit + button, list +
     # buttons, ...) or list-shaped, and must NOT have their parent row
     # clamped to 19px because they are taller than one input line.
-    TALL_KINDS: Tuple[str, ...] = ("path", "file_list", "check_list")
+    TALL_KINDS: Tuple[str, ...] = ("path", "file", "file_list", "check_list")
 
     # ------------------ Header menu (declarative) ---------------------
     # The default :meth:`header_init` builds a "Utilities" separator, the
@@ -1384,6 +1397,9 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         """
         self._populate_template_combo(widget)
         widget.currentIndexChanged.connect(lambda _: self._on_template_changed())
+        if not self.TEMPLATE_MENU:
+            self._on_template_changed()
+            return
         try:
             widget.menu.add(
                 "QPushButton",

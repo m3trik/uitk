@@ -189,6 +189,28 @@ class StateManager(ptk.LoggingMixin):
                     f"Could not apply value '{value}' to widget {widget}: {e}"
                 )
 
+    @staticmethod
+    def _legacy_combo_index(widget: QtWidgets.QWidget, value: Any) -> int:
+        """*value* read as an index saved under the old ``"index"`` mode, or -1.
+
+        Only for the migration in :meth:`_apply_combo_identity`. QSettings' ini
+        backend returns everything as text, so a stored index arrives as
+        ``"2"`` rather than ``2`` and both have to be accepted.
+
+        Out of range returns -1 rather than clamping: a list that has SHRUNK
+        since the value was written has no item the old index can honestly mean,
+        and picking a neighbour would be the silent mis-selection this whole
+        mode exists to end. ``bool`` is excluded because it is an ``int``
+        subclass and a checkbox-ish value is not a position.
+        """
+        if isinstance(value, bool) or value is None:
+            return -1
+        try:
+            index = int(str(value).strip())
+        except (TypeError, ValueError):
+            return -1
+        return index if 0 <= index < widget.count() else -1
+
     def _apply_combo_identity(
         self, widget: QtWidgets.QWidget, value: Any, mode: str
     ) -> None:
@@ -201,6 +223,14 @@ class StateManager(ptk.LoggingMixin):
         restore). A value that's no longer present -- e.g. the saved preset was
         deleted between sessions -- is a no-op: the combo keeps its current
         selection rather than being forced to item 0.
+
+        MIGRATION: a value stored while the widget was still on ``"index"``
+        mode is an integer, which no ``findText``/``findData`` can match. Rather
+        than discard every choice already on disk the first time a combo opts
+        in, an unmatched value that is integral and in range is read ONCE as a
+        legacy index; the next save writes the stable identity. Text/data is
+        always tried FIRST, so a combo whose items are literally named "1",
+        "2", ... still matches by name rather than by position.
         """
         # ``None`` is the *absence* of a stored selection, not a request to pick
         # an item literally named "None" (which ``findText(str(None))`` would do).
@@ -212,6 +242,15 @@ class StateManager(ptk.LoggingMixin):
                     index = widget.findText(str(value))
                 else:  # "data"
                     index = widget.findData(value)
+                if index is None or index < 0:
+                    legacy = self._legacy_combo_index(widget, value)
+                    if legacy >= 0:
+                        self.logger.debug(
+                            f"Restore-by-{mode}: {value!r} not found in "
+                            f"{widget.objectName()}; reading it as a legacy "
+                            "index saved under the previous persistence mode."
+                        )
+                        index = legacy
                 if index is not None and index >= 0:
                     widget.setCurrentIndex(index)
                     widget.update()

@@ -1114,5 +1114,89 @@ class TestEditorHiddenVisibility(_SwitchboardFixture):
             self.fail("unbound_cmd row not found in the Commands view")
 
 
+class SwitchboardShortcutDisposal(_SwitchboardFixture):
+    """A Switchboard must be able to destroy every shortcut it registered.
+
+    Application-scoped shortcuts are parented to the HOST window (a DCC main
+    window) on purpose, so they keep firing while the tool is hidden. That also
+    means Qt owns them: when the Switchboard and its slots are replaced — the
+    dev-reload rebuild in tentacle — the old ones stay armed on that same host.
+    Qt treats duplicates of one sequence on one parent as AMBIGUOUS and fires
+    neither, so the binding silently dies until the host is restarted. Measured
+    in a live Maya: one reload took two user hotkeys from one armed shortcut
+    each to three each.
+    """
+
+    def _host(self):
+        host = QtWidgets.QWidget()
+        host.show()
+        self.track_widget(host)
+        return host
+
+    def _armed(self, host, sequence):
+        want = QtGui.QKeySequence(sequence)
+        found = 0
+        for sc in host.findChildren(QtGui.QShortcut):
+            try:
+                if sc.key() == want and sc.isEnabled():
+                    found += 1
+            except RuntimeError:  # C++ side already gone
+                continue
+        return found
+
+    def _bind(self, name, sequence):
+        """Register a command and return the host its shortcut landed on."""
+        self.sb.register_command(name, lambda: None, sequence=sequence)
+        return self.sb._command_host()
+
+    def test_dispose_shortcuts_disarms_command_bindings(self):
+        self._host()  # an always-visible window for the application scope
+        host = self._bind("probe_cmd", "Ctrl+Alt+7")
+        self.assertIsNotNone(host, "no host window resolved — fixture is unsound")
+        self.assertEqual(self._armed(host, "Ctrl+Alt+7"), 1)
+
+        self.sb.dispose_shortcuts()
+        self.assertEqual(
+            self._armed(host, "Ctrl+Alt+7"),
+            0,
+            "a disposed Switchboard must leave no armed shortcut on the host",
+        )
+
+    def test_a_rebuild_after_disposal_leaves_one_armed_shortcut(self):
+        """The invariant that actually matters: rebuild without stacking."""
+        self._host()
+        host = self._bind("probe_cmd", "Ctrl+Alt+8")
+        self.sb.dispose_shortcuts()
+
+        rebuilt = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
+        rebuilt.register_command("probe_cmd", lambda: None, sequence="Ctrl+Alt+8")
+        self.assertEqual(
+            self._armed(host, "Ctrl+Alt+8"),
+            1,
+            "two armed shortcuts on one sequence are ambiguous — neither fires",
+        )
+
+    def test_dispose_shortcuts_also_clears_slot_bindings(self):
+        host = self._host()
+        slots = type("_Slots", (), {})()
+        slots._connected_shortcuts = {
+            "do_thing": self.sb._make_host_shortcut(
+                "Ctrl+Alt+9", host, lambda: None, QtCore.Qt.ApplicationShortcut
+            )
+        }
+        self.sb.slot_instances["probe_ui"] = slots
+        self.assertEqual(self._armed(host, "Ctrl+Alt+9"), 1)
+
+        self.sb.dispose_shortcuts()
+        self.assertEqual(self._armed(host, "Ctrl+Alt+9"), 0)
+        self.assertFalse(slots._connected_shortcuts)
+
+    def test_dispose_shortcuts_is_idempotent(self):
+        self._host()
+        self._bind("probe_cmd", "Ctrl+Alt+6")
+        self.assertEqual(self.sb.dispose_shortcuts(), 1)
+        self.assertEqual(self.sb.dispose_shortcuts(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -417,6 +417,10 @@ class TimelineView(QtWidgets.QGraphicsView):
         return super().event(event)
 
     def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Shift:
+            # Shift over a key selection raises the scale bar; it is not a
+            # shortcut, so the event goes on to whoever else wants it.
+            self.parent_sequencer.set_shift_held(True)
         # Spacebar during marquee: start repositioning the selection area
         if event.key() == QtCore.Qt.Key_Space and self._marquee_active:
             self._space_held = True
@@ -434,6 +438,8 @@ class TimelineView(QtWidgets.QGraphicsView):
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Shift:
+            self.parent_sequencer.set_shift_held(False)
         if event.key() == QtCore.Qt.Key_Space and self._marquee_active:
             self._space_held = False
             event.accept()
@@ -442,7 +448,17 @@ class TimelineView(QtWidgets.QGraphicsView):
 
     def enterEvent(self, event):
         self.setFocus(QtCore.Qt.MouseFocusReason)
+        # Qt delivers no KeyPress for a modifier already down when the
+        # pointer arrives, and no KeyRelease once focus has gone -- so the
+        # live state is read here rather than inferred from the last event.
+        self.parent_sequencer.set_shift_held(
+            bool(QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ShiftModifier)
+        )
         super().enterEvent(event)
+
+    def focusOutEvent(self, event):
+        self.parent_sequencer.set_shift_held(False)
+        super().focusOutEvent(event)
 
     # -- mapper -------------------------------------------------------------
     @property
@@ -822,7 +838,20 @@ class TimelineView(QtWidgets.QGraphicsView):
         sq._set_gesture_context(group)
 
     def leaveEvent(self, event):
-        self.parent_sequencer._set_gesture_context(None)
+        """The pointer has left: no gesture context, and Shift is no longer held.
+
+        Both belong in ONE handler.  Qt binds the last ``leaveEvent`` defined
+        in the class body and silently drops any earlier one, so a second
+        definition further up does not run at all -- which is how the Shift
+        clear was lost the moment it was added beside ``enterEvent``, leaving
+        the key-scale bars bracketing a selection the pointer had walked away
+        from.
+        """
+        sq = self.parent_sequencer
+        sq._set_gesture_context(None)
+        # Qt delivers no KeyRelease once the widget has lost the pointer, so
+        # the held state cannot be inferred from events after this one.
+        sq.set_shift_held(False)
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event):
@@ -1104,6 +1133,8 @@ class TimelineView(QtWidgets.QGraphicsView):
                 item.update()
         self._sync_ruler_pos()
         self._scene.playhead.sync()
+        # The Shift scale box brackets key dots that just moved under it.
+        self.parent_sequencer.refresh_key_scale_box()
         self._update_scene_rect()
         self.viewport().update()
 

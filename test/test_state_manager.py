@@ -367,5 +367,91 @@ class TestDefaultSurvivesWrapperSwap(QtBaseTestCase):
         )
 
 
+class TestLegacyIndexMigration(_ComboPersistBase):
+    """A combo switched to ``text`` still honours an index saved under the old mode.
+
+    Switching a registry-derived combo from index to text persistence is the
+    right fix -- an index saved against one population selects the WRONG item
+    once the upstream list grows -- but every value already on disk is an
+    integer. Without a migration those users silently lose their saved choice
+    the first time they open the panel, because ``findText("2")`` misses and
+    the combo keeps its default.
+
+    So a stored value that is not present as text, IS integral, and lands in
+    range is read once as a legacy index. The next save writes text, so each
+    stored value is migrated at most once.
+    """
+
+    def test_an_int_saved_under_index_mode_still_selects_its_item(self):
+        c1 = self.make_combo(LIST_ORIG)  # default: index mode
+        c1.setCurrentIndex(2)  # presetB
+        self.sm.save(c1)
+
+        c2 = self.make_combo(LIST_ORIG, restore_by="text")
+        self.sm.load(c2)
+        self.assertEqual(c2.currentText(), "presetB")
+
+    def test_an_out_of_range_legacy_index_is_ignored(self):
+        """A shrunk list must not resolve to a neighbour by accident."""
+        c1 = self.make_combo(LIST_ORIG)
+        c1.setCurrentIndex(2)
+        self.sm.save(c1)
+
+        c2 = self.make_combo({"None": None}, restore_by="text")
+        c2.setCurrentIndex(0)
+        self.sm.load(c2)
+        self.assertEqual(c2.currentText(), "None")
+
+    def test_text_still_wins_over_the_legacy_reading(self):
+        """A combo whose items ARE numbers must match by text, not by index.
+
+        ``findText`` is tried first, so an item literally named "2" is selected
+        as itself rather than being read as index 2.
+        """
+        numeric = {"1": None, "2": None, "3": None}
+        c1 = self.make_combo(numeric, restore_by="text")
+        c1.setCurrentIndex(1)  # the item named "2"
+        self.sm.save(c1)
+
+        c2 = self.make_combo({"9": None, "8": None, "2": None}, restore_by="text")
+        self.sm.load(c2)
+        self.assertEqual(c2.currentText(), "2", "matched by index instead of text")
+
+    def test_a_non_integral_missing_value_is_still_a_no_op(self):
+        """The pre-existing contract: a deleted preset keeps the current item."""
+        c1 = self.make_combo(LIST_ORIG, restore_by="text")
+        c1.setCurrentIndex(1)  # presetA
+        self.sm.save(c1)
+
+        c2 = self.make_combo(LIST_SHRUNK, restore_by="text")
+        c2.setCurrentIndex(1)  # presetB
+        self.sm.load(c2)
+        self.assertEqual(c2.currentText(), "presetB")
+
+
+class TestRestoreByIsSettableDeclaratively(_ComboPersistBase):
+    """``set_attributes(widget, restore_by="text")`` must reach the widget.
+
+    Downstream panels declare persistence in a spec dict rather than in code
+    (mayatk's scene-exporter rows do), so the attribute travels through
+    ``set_attributes``' custom-attribute fallback. If that fallback ever stops
+    applying unknown keys, every such declaration becomes a silent no-op and
+    the combos quietly revert to index persistence -- which is the defect they
+    opted out of.
+    """
+
+    def test_set_attributes_applies_it_and_the_mode_takes_effect(self):
+        c = self.make_combo(LIST_ORIG)
+        self.assertEqual(StateManager._restore_mode(c), "index")
+
+        c.set_attributes(restore_by="text")
+        self.assertEqual(c.restore_by, "text")
+        self.assertEqual(StateManager._restore_mode(c), "text")
+
+        c.setCurrentIndex(2)
+        self.sm.save(c)
+        self.assertEqual(self.store.value("cmb000/currentIndexChanged"), "presetB")
+
+
 if __name__ == "__main__":
     unittest.main()

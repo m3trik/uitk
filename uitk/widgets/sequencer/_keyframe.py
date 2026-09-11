@@ -1,6 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
-"""KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row."""
+"""The interactive items of an expanded attribute sub-row.
+
+``KeyframeItem`` is the key dot itself, ``TangentHandleItem`` the grab point
+of one of its tangents, and ``KeyScaleBoxItem`` the box Shift raises around a
+key selection to retime it as a whole.
+"""
 
 from __future__ import annotations
 
@@ -660,3 +665,346 @@ class TangentHandleItem(QtWidgets.QGraphicsEllipseItem):
     def contextMenuEvent(self, event):
         # The handle belongs to its key; so does the menu.
         self._key.contextMenuEvent(event)
+
+
+class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
+    """The scale box Shift raises around a key selection.
+
+    An outline bracketing every selected key, with a marker at each corner so
+    the extent reads at a glance and one drag handle at the middle of each
+    vertical edge.  Dragging a handle retimes the whole selection about the
+    other edge -- the way the Graph Editor's scale manipulator does.  A key
+    drag translates a selection rigidly; this is the gesture that changes its
+    LENGTH, which no amount of dragging dots can do.
+
+    Only the two middle handles are draggable.  The corners are markers, and
+    the box has no vertical axis to drag: each sub-row maps values with its
+    OWN ``val_min``/``val_max`` and the rows are different attributes in
+    different units, so one box spanning several of them has no single
+    vertical quantity to scale.  :meth:`shape` is therefore just the two
+    grips, and a press anywhere else inside the box falls through to the key
+    dots and the marquee underneath.
+
+    Modifiers during the drag:
+
+    * **Ctrl** -- snap the dragged edge to whole frames (the package-wide
+      idiom, inherited from :meth:`DraggableItemMixin.snap_time`);
+    * **Alt** -- pivot at the PLAYHEAD instead of the far edge, so the
+      selection scales around where the user is parked.  Both edges of the
+      box then move.
+
+    It appears only while Shift is held (:meth:`SequencerWidget.
+    refresh_key_scale_box`), so nothing is added to the timeline for a user
+    who is not asking for it, and it is never selectable -- a marquee sweeps
+    past it to the dots underneath.
+
+    The release reports the gesture through the key-drag signals
+    (``keys_moved`` / ``keys_batch_moved``), so a consumer that already
+    commits a key drag as one undoable step commits a scale the same way,
+    with no second code path.
+    """
+
+    #: Narrowest the selection may be scaled to, in frames.  A scale of 0 is
+    #: reachable in one flick past the pivot, and it stacks every selected key
+    #: on one frame -- which the consumer then merges, losing them with no
+    #: gesture to undo it back.  The floor makes an overshoot a very short
+    #: selection instead of a destroyed one.
+    _MIN_SPAN = 1.0
+    _GRIP_W = 5.0  # drawn width of a middle handle
+    _GRIP_PAD = 5.0  # extra hit width either side of one
+    _CORNER = 3.0  # half-size of a corner marker
+    _MIN_GRIP_H = 8.0
+    _MAX_GRIP_H = 24.0
+
+    def __init__(self, sequencer):
+        super().__init__()
+        self._sq = sequencer
+        self._lo = 0.0
+        self._hi = 0.0
+        self._top = 0.0
+        self._bottom = 0.0
+        self._dragging = False
+        self._side = ""  # "left" / "right" while a drag is live
+        self._pivot = 0.0
+        self._origin_lo = 0.0
+        self._origin_hi = 0.0
+        self._min_scale = 0.0
+        self._max_scale = float("inf")
+        self._keys: List[Tuple["KeyframeItem", float]] = []
+        self._drag_tooltip = FrameTooltip()
+        self.setZValue(6)
+        self.setAcceptHoverEvents(True)
+        self.setAcceptedMouseButtons(QtCore.Qt.LeftButton)
+        self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, False)
+        self.setPen(QtCore.Qt.NoPen)
+        self.setBrush(QtCore.Qt.NoBrush)
+
+    # -- geometry -----------------------------------------------------------
+    @property
+    def lo(self) -> float:
+        """Frame of the box's left edge."""
+        return self._lo
+
+    @property
+    def hi(self) -> float:
+        """Frame of the box's right edge."""
+        return self._hi
+
+    @property
+    def side(self) -> str:
+        """Which handle is being dragged, or ``""`` when none is."""
+        return self._side
+
+    def set_span(self, lo: float, hi: float, top: float, bottom: float) -> None:
+        """Place the box around a selection spanning *lo*-*hi* over those rows."""
+        self._lo, self._hi = float(lo), float(hi)
+        self._top, self._bottom = float(top), float(bottom)
+        self._resync()
+
+    def _resync(self) -> None:
+        # No prepareGeometryChange here: boundingRect is derived from rect(),
+        # and setRect issues one itself.
+        tl = self._sq._timeline
+        x0, x1 = tl.time_to_x(self._lo), tl.time_to_x(self._hi)
+        self.setRect(
+            QtCore.QRectF(x0, self._top, max(x1 - x0, 0.0), self._bottom - self._top)
+        )
+
+    def _grip_rect(self, side: str) -> QtCore.QRectF:
+        """The drawn bar of one middle handle, in scene coordinates."""
+        r = self.rect()
+        h = min(max(r.height() * 0.5, self._MIN_GRIP_H), self._MAX_GRIP_H)
+        h = min(h, r.height())
+        x = r.left() if side == "left" else r.right()
+        return QtCore.QRectF(
+            x - self._GRIP_W / 2.0, r.center().y() - h / 2.0, self._GRIP_W, h
+        )
+
+    def _hit_side(self, pos: QtCore.QPointF) -> str:
+        """Which handle *pos* lands on, or ``""``."""
+        for side in ("left", "right"):
+            if (
+                self._grip_rect(side)
+                .adjusted(-self._GRIP_PAD, 0, self._GRIP_PAD, 0)
+                .contains(pos)
+            ):
+                return side
+        return ""
+
+    def shape(self) -> QtGui.QPainterPath:
+        """Only the two grips.  The box's interior belongs to what is under it."""
+        path = QtGui.QPainterPath()
+        for side in ("left", "right"):
+            path.addRect(
+                self._grip_rect(side).adjusted(-self._GRIP_PAD, 0, self._GRIP_PAD, 0)
+            )
+        return path
+
+    def boundingRect(self) -> QtCore.QRectF:
+        pad = self._GRIP_PAD + self._GRIP_W
+        return self.rect().adjusted(-pad, -pad, pad, pad)
+
+    # -- painting -----------------------------------------------------------
+    def paint(self, painter: QtGui.QPainter, option, widget=None):
+        r = self.rect()
+        if r.width() <= 0 and r.height() <= 0:
+            return
+        color = QtGui.QColor(self._sq.SNAP_GUIDE_COLOR)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        outline = QtGui.QColor(color)
+        outline.setAlpha(150)
+        painter.setPen(QtGui.QPen(outline, 1.0))
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawRect(r)
+
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(color)
+        c = self._CORNER
+        for x in (r.left(), r.right()):
+            for y in (r.top(), r.bottom()):
+                painter.drawRect(QtCore.QRectF(x - c, y - c, 2 * c, 2 * c))
+        for side in ("left", "right"):
+            painter.drawRect(self._grip_rect(side))
+
+    # -- hover --------------------------------------------------------------
+    def hoverEnterEvent(self, event):
+        # Only the grips are in :meth:`shape`, so a hover here is always over
+        # one of them -- same enter/leave pair the key dot and the tangent
+        # handle use.
+        self.setCursor(QtCore.Qt.SizeHorCursor)
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.unsetCursor()
+        super().hoverLeaveEvent(event)
+
+    # -- drag ---------------------------------------------------------------
+    def _playhead_time(self) -> float:
+        return float(self._sq._timeline._scene.playhead.time)
+
+    def mousePressEvent(self, event):
+        side = self._hit_side(event.pos())
+        keys = self._sq._scalable_keys()
+        times = [k._time for k in keys]
+        if not side or len(keys) < 2 or (max(times) - min(times)) < 1e-6:
+            event.ignore()
+            return
+        self._side = side
+        self._origin_lo, self._origin_hi = min(times), max(times)
+        span = self._origin_hi - self._origin_lo
+        self._min_scale = min(1.0, self._MIN_SPAN / span)
+        # Alt pivots at the playhead, so BOTH edges travel; otherwise the far
+        # edge is the fixed point and only the grabbed one moves.
+        if event.modifiers() & QtCore.Qt.AltModifier:
+            self._pivot = self._playhead_time()
+        else:
+            self._pivot = self._origin_hi if side == "left" else self._origin_lo
+        if abs(self._origin_edge() - self._pivot) < 1e-9:
+            # Nothing to measure a ratio against.  Clear the side too: a
+            # refused press must leave no trace of a gesture that never began.
+            self._side = ""
+            event.ignore()
+            return
+        # Ceiling so the EARLIEST key cannot be pushed through frame 0.  Per-key
+        # clamping would answer the same question by collapsing whatever
+        # crossed onto frame 0 -- deforming the selection and stacking keys the
+        # consumer then merges -- which is exactly what the clip-group scale
+        # clamps its ratio to avoid (``ClipItem._arm_group_scale``).  A
+        # selection already reaching before frame 0 gets no ceiling; it is
+        # there, and measuring one from it would pin the scale at its floor.
+        self._max_scale = float("inf")
+        if 0.0 <= self._origin_lo < self._pivot:
+            self._max_scale = max(
+                self._min_scale, self._pivot / (self._pivot - self._origin_lo)
+            )
+        self._keys = [(k, k._time) for k in keys]
+        self._dragging = True
+        for clip in self._affected_clips():
+            clip._keys_dragging = True
+            clip._sync_tangent_handles()
+        self._drag_tooltip.show(
+            self.scene(),
+            event.scenePos(),
+            label=FrameTooltip.format_frame(self._origin_edge()),
+            color=self._sq.SNAP_GUIDE_COLOR,
+        )
+        event.accept()
+
+    def _origin_edge(self) -> float:
+        return self._origin_lo if self._side == "left" else self._origin_hi
+
+    def _affected_clips(self) -> list:
+        seen: dict = {}
+        for key, _origin in self._keys:
+            seen.setdefault(id(key._parent_clip), key._parent_clip)
+        return list(seen.values())
+
+    def mouseMoveEvent(self, event):
+        if not self._dragging:
+            return
+        tl = self._sq._timeline
+        new_edge = self.snap_time(tl.x_to_time(event.scenePos().x()), tl)
+        denom = self._origin_edge() - self._pivot
+        if abs(denom) < 1e-9:
+            event.accept()
+            return
+        scale = min(
+            max((new_edge - self._pivot) / denom, self._min_scale), self._max_scale
+        )
+        clips = self._affected_clips()
+        for clip in clips:
+            clip.prepareGeometryChange()
+        for key, origin in self._keys:
+            # No per-key floor: the RATIO is already clamped so the earliest
+            # key cannot cross frame 0 (see the press).  Clamping here as well
+            # would flatten a selection that legitimately reaches back before
+            # 0 -- a shot padded at the head -- onto frame 0 instead.
+            key._time = self._pivot + (origin - self._pivot) * scale
+            key._reposition()
+        self._lo = self._pivot + (self._origin_lo - self._pivot) * scale
+        self._hi = self._pivot + (self._origin_hi - self._pivot) * scale
+        self._resync()
+        for clip in clips:
+            scene = clip.scene()
+            if scene:
+                scene.invalidate(clip.mapToScene(clip.boundingRect()).boundingRect())
+            else:
+                clip.update()
+        self._drag_tooltip.update(
+            event.scenePos(),
+            label=FrameTooltip.format_frame(
+                self._lo if self._side == "left" else self._hi
+            ),
+        )
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if not self._dragging:
+            event.ignore()
+            return
+        self._dragging = False
+        self._side = ""
+        self._drag_tooltip.hide()
+        for clip in self._affected_clips():
+            clip.prepareGeometryChange()
+            clip._keys_dragging = False
+            clip._sync_tangent_handles()
+        # Order the landings so a consumer committing them one at a time never
+        # writes a key onto a frame another key has not left yet: a shrink
+        # lands nearest the pivot first, a stretch farthest first (the rule
+        # ``ClipItem._collision_free_order`` applies to a clip group, for the
+        # same reason).
+        moved = [
+            (key, origin)
+            for key, origin in self._keys
+            if abs(key._time - origin) > 1e-6
+        ]
+        growing = any(
+            abs(k._time - self._pivot) > abs(o - self._pivot) for k, o in moved
+        )
+        moved.sort(key=lambda pair: abs(pair[1] - self._pivot), reverse=growing)
+        by_clip: dict = {}
+        for key, origin in moved:
+            cid = key._parent_clip._data.clip_id
+            by_clip.setdefault(cid, []).append((origin, key._time))
+        self._keys = []
+        event.accept()
+        if not by_clip:
+            return
+        sq = self._sq
+        if len(by_clip) > 1:
+            sq.keys_batch_moved.emit(list(by_clip.items()))
+        else:
+            clip_id, changes = next(iter(by_clip.items()))
+            sq.keys_moved.emit(clip_id, changes)
+
+    # -- cancellation -------------------------------------------------------
+    def _is_drag_active(self) -> bool:
+        return self._dragging
+
+    def _drag_sequencer(self):
+        """The mixin looks for a ``_timeline``; this item holds the widget."""
+        return self._sq
+
+    def _restore_drag_state(self) -> None:
+        """Put every key back where the press found it.
+
+        Reached by Escape (``SequencerWidget._cancel_active_drag``) and by the
+        mixin's ``UngrabMouse`` handling -- a popup or a grab handoff takes the
+        mouse without ever delivering a release, and the box would otherwise
+        stay mid-drag, with ``refresh_key_scale_box`` refusing to touch one
+        that is, for the rest of the session.
+        """
+        for key, origin in self._keys:
+            key._time = origin
+            key._reposition()
+        for clip in self._affected_clips():
+            clip._keys_dragging = False
+            clip._sync_tangent_handles()
+            clip.update()
+        self._dragging = False
+        self._side = ""
+        self._keys = []
+        self._lo, self._hi = self._origin_lo, self._origin_hi
+        self._resync()
