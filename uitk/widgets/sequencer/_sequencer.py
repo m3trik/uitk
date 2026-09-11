@@ -167,7 +167,8 @@ _GESTURE_DEFS = (
     ("Clips & keys", "Drag", "Move keys (ripple)"),
     ("Clips & keys", "Drag edge", "Scale the clip's keys"),
     ("Clips & keys", "Drag edge (multi)", "Scale the whole selection as one"),
-    ("Clips & keys", "Shift (keys selected)", "Scale bar: drag an end to retime"),
+    ("Clips & keys", "Shift (keys selected)", "Scale box: drag an end to retime"),
+    ("Clips & keys", "Alt+Drag a scale end", "Scale about the playhead instead"),
     ("Clips & keys", "Shift+Drag", "Cross shot bounds, bounds stay"),
     ("Clips & keys", "Ctrl", "Snap to whole frames"),
     ("Clips & keys", "Right-click", "Tangents, lock, Move to Shot"),
@@ -318,9 +319,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._show_gap_overlays: bool = True  # toggle for gap overlays
         self._show_range_highlight: bool = True  # toggle for active shot highlight
         self._bg_curve_previews: Dict[tuple, dict] = {}  # (track_id, sub_row) → preview
-        # Shift + a key selection raises a scale bar over it; see
-        # ``refresh_key_scale_handles``.
-        self._key_scale_handles: list = []
+        # Shift + a key selection raises a scale box around it; see
+        # ``refresh_key_scale_box``.
+        self._key_scale_box = None
         self._shift_held: bool = False
         self._window_shortcuts: bool = False  # shortcuts active at window level
         # Top-level window the ShortcutOverride filter is installed on.
@@ -986,7 +987,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             self.clear_gap_overlays()
             self.clear_shot_blocks()
             self.clear_snap_guides()
-            self.clear_key_scale_handles()
+            self.clear_key_scale_box()
         finally:
             self._selection_suppressed -= 1
         self._timeline._refresh_all()
@@ -2042,8 +2043,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
 
         # Emit key-level selection info for graph-editor sync.
         self.key_selection_changed.emit(self.selected_keys())
-        # The Shift scale bar brackets the SELECTION, so it follows it.
-        self.refresh_key_scale_handles()
+        # The Shift scale box brackets the SELECTION, so it follows it.
+        self.refresh_key_scale_box()
 
     def show_key_menu(self, global_pos) -> bool:
         """Open the key menu for the current key selection; ``False`` if empty.
@@ -2102,7 +2103,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         ]
 
     def _key_scale_span(self, keys) -> Optional[tuple]:
-        """``(lo, hi, top, bottom)`` the scale bar should bracket, or None.
+        """``(lo, hi, top, bottom)`` the scale box should bracket, or None.
 
         None whenever a scale is meaningless -- fewer than two keys, or every
         key on one frame, where no ratio exists to scale by.
@@ -2117,50 +2118,51 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             bottoms.append(rect.bottom())
         return min(times), max(times), min(tops), max(bottoms)
 
-    def refresh_key_scale_handles(self) -> None:
-        """Show or hide the Shift scale bar over the current key selection.
+    def refresh_key_scale_box(self) -> None:
+        """Show or hide the Shift scale box around the current key selection.
 
         Held Shift plus a key selection is the request; anything else --
         Shift let go, the selection gone or collapsed onto one frame, a
-        scale already in flight -- takes the bar away again.  Called from
+        scale already in flight -- takes the box away again.  Called from
         the timeline's key handling and from every key-selection change, so
-        the bar tracks both halves of the condition.
+        the box tracks both halves of the condition.
         """
-        from uitk.widgets.sequencer._keyframe import KeyScaleHandleItem
+        from uitk.widgets.sequencer._keyframe import KeyScaleBoxItem
 
-        if any(h._is_drag_active() for h in self._key_scale_handles):
+        box = self._key_scale_box
+        if box is not None and box._is_drag_active():
             return
         span = None
         if self._shift_held:
             span = self._key_scale_span(self._scalable_keys())
         if span is None:
-            self.clear_key_scale_handles()
+            self.clear_key_scale_box()
             return
-        lo, hi, top, bottom = span
-        if not self._key_scale_handles:
-            self._key_scale_handles = [
-                KeyScaleHandleItem(self, "left"),
-                KeyScaleHandleItem(self, "right"),
-            ]
-            for h in self._key_scale_handles:
-                self._timeline._scene.addItem(h)
-        for h in self._key_scale_handles:
-            h.set_span(lo if h.side == "left" else hi, top, bottom)
+        if box is None:
+            box = self._key_scale_box = KeyScaleBoxItem(self)
+            self._timeline._scene.addItem(box)
+        box.set_span(*span)
 
-    def clear_key_scale_handles(self) -> None:
-        """Remove the scale bar, cancelling a drag it still owns."""
-        for h in self._key_scale_handles:
-            h.cancel_drag()
-            ItemRetirement.retire(h)
-        self._key_scale_handles = []
+    def clear_key_scale_box(self) -> None:
+        """Remove the scale box, cancelling a drag it still owns.
+
+        Cheap when there is nothing up: this runs from ``_refresh_all``, on
+        every zoom, scroll and rebuild.
+        """
+        box = self._key_scale_box
+        if box is None:
+            return
+        box.cancel_drag()
+        ItemRetirement.retire(box)
+        self._key_scale_box = None
 
     def set_shift_held(self, held: bool) -> None:
-        """Record whether Shift is down and re-evaluate the scale bar."""
+        """Record whether Shift is down and re-evaluate the scale box."""
         held = bool(held)
         if held == self._shift_held:
             return
         self._shift_held = held
-        self.refresh_key_scale_handles()
+        self.refresh_key_scale_box()
 
     def _editable_key_groups(self) -> List[dict]:
         """:meth:`selected_keys` minus the clips that refuse key edits.

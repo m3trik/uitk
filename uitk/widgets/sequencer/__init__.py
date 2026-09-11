@@ -51,7 +51,7 @@ _EXPORT_SOURCES = {
     "_drag_tooltip": ("FrameTooltip",),
     "_draggable": ("DraggableItemMixin", "ItemRetirement"),
     "_clip": ("ClipItem",),
-    "_keyframe": ("KeyframeItem", "TangentHandleItem", "KeyScaleHandleItem"),
+    "_keyframe": ("KeyframeItem", "TangentHandleItem", "KeyScaleBoxItem"),
     "_overlays": (
         "_StaticRangeOverlay",
         "_GapOverlayItem",

@@ -114,7 +114,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/sequencer/_data.py`](#widgets--sequencer--_data) — Data models and shared constants for the sequencer widget.
 - [`widgets/sequencer/_drag_tooltip.py`](#widgets--sequencer--_drag_tooltip) — Floating scene-text that tracks the cursor during timeline drags.
 - [`widgets/sequencer/_draggable.py`](#widgets--sequencer--_draggable) — Shared drag infrastructure for sequencer graphics items.
-- [`widgets/sequencer/_keyframe.py`](#widgets--sequencer--_keyframe) — KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row.
+- [`widgets/sequencer/_keyframe.py`](#widgets--sequencer--_keyframe) — The interactive items of an expanded attribute sub-row.
 - [`widgets/sequencer/_markers.py`](#widgets--sequencer--_markers) — MarkerItem — named marker on the timeline with drag and context menu.
 - [`widgets/sequencer/_overlays.py`](#widgets--sequencer--_overlays) — Range-related overlay items: static ranges, gap hatching, and highlights.
 - [`widgets/sequencer/_playhead.py`](#widgets--sequencer--_playhead) — PlayheadItem — vertical playhead line with frame-number badge.
@@ -2221,7 +2221,7 @@ Data models and shared constants for the sequencer widget.
   - `CurveUtils.make_value_mapper(rect_top: float, rect_height: float, val_min: float, val_max: float)` *(static)* — Return ``(map_y, is_flat)`` — the canonical value→pixel mapping.
   - `CurveUtils.unmap_value(rect_top: float, rect_height: float, val_min: float, val_max: float, y: float) -> float` *(static)* — The value a pixel row *y* stands for -- :meth:`make_value_mapper`
   - `CurveUtils.build_curve_path(segments, map_x, map_y) -> QtGui.QPainterPath` *(static)* — Build a QPainterPath from curve *segments*.
-- **[`class PatternRegistry`](uitk/uitk/widgets/sequencer/_data.py#L289)** — Registry of tile-painters + cached tiled brushes for background fills.
+- **[`class PatternRegistry`](uitk/uitk/widgets/sequencer/_data.py#L302)** — Registry of tile-painters + cached tiled brushes for background fills.
   - `PatternRegistry.register_pattern(name: str, painter: PatternPainter) -> None` *(static)* — Register (or override) a tile-painter for :meth:`pattern_brush`.
   - `PatternRegistry.pattern_brush(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush` *(static)* — Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for…
   - `PatternRegistry.paint_pattern(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None` *(static)* — Fill ``rect`` with ``spec``;
@@ -2253,9 +2253,9 @@ Shared drag infrastructure for sequencer graphics items.
 <a id="widgets--sequencer--_keyframe"></a>
 ### `widgets/sequencer/_keyframe.py`
 
-KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row.
+The interactive items of an expanded attribute sub-row.
 
-- **[`class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L19)** — An interactive keyframe indicator inside a sub-row :class:`ClipItem`.
+- **[`class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L24)** — An interactive keyframe indicator inside a sub-row :class:`ClipItem`.
   - `KeyframeItem.time(self) -> float` *(property)*
   - `KeyframeItem.value(self) -> float` *(property)*
   - `KeyframeItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
@@ -2269,7 +2269,7 @@ KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row.
   - `KeyframeItem.mouseMoveEvent(self, event)`
   - `KeyframeItem.mouseReleaseEvent(self, event)`
   - `KeyframeItem.contextMenuEvent(self, event)` — Right-click a key: the key menu, for the selected keys (this one
-- **[`class TangentHandleItem(QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L518)** — The grab point of a selected key's IN or OUT tangent handle.
+- **[`class TangentHandleItem(QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L523)** — The grab point of a selected key's IN or OUT tangent handle.
   - `TangentHandleItem.side(self) -> str` *(property)*
   - `TangentHandleItem.key(self) -> KeyframeItem` *(property)*
   - `TangentHandleItem.slot(self) -> tuple` — ``(key, side, segment index, control-point key)`` -- what this
@@ -2282,18 +2282,19 @@ KeyframeItem — selectable, draggable keyframe dot on an attribute sub-row.
   - `TangentHandleItem.mouseMoveEvent(self, event)`
   - `TangentHandleItem.mouseReleaseEvent(self, event)`
   - `TangentHandleItem.contextMenuEvent(self, event)`
-- **[`class KeyScaleHandleItem(QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L665)** — One end of the scale bar that Shift raises over a key selection.
-  - `KeyScaleHandleItem.side(self) -> str` *(property)*
-  - `KeyScaleHandleItem.time(self) -> float` *(property)*
-  - `KeyScaleHandleItem.set_span(self, time: float, top: float, bottom: float) -> None` — Place the bar at *time*, spanning the rows the selection covers.
-  - `KeyScaleHandleItem.shape(self) -> QtGui.QPainterPath`
-  - `KeyScaleHandleItem.boundingRect(self) -> QtCore.QRectF`
-  - `KeyScaleHandleItem.hoverEnterEvent(self, event)`
-  - `KeyScaleHandleItem.hoverLeaveEvent(self, event)`
-  - `KeyScaleHandleItem.mousePressEvent(self, event)`
-  - `KeyScaleHandleItem.mouseMoveEvent(self, event)`
-  - `KeyScaleHandleItem.mouseReleaseEvent(self, event)`
-  - `KeyScaleHandleItem.cancel_drag(self) -> bool`
+- **[`class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L670)** — The scale box Shift raises around a key selection.
+  - `KeyScaleBoxItem.lo(self) -> float` *(property)* — Frame of the box's left edge.
+  - `KeyScaleBoxItem.hi(self) -> float` *(property)* — Frame of the box's right edge.
+  - `KeyScaleBoxItem.side(self) -> str` *(property)* — Which handle is being dragged, or ``""`` when none is.
+  - `KeyScaleBoxItem.set_span(self, lo: float, hi: float, top: float, bottom: float) -> None` — Place the box around a selection spanning *lo*-*hi* over those rows.
+  - `KeyScaleBoxItem.shape(self) -> QtGui.QPainterPath` — Only the two grips.
+  - `KeyScaleBoxItem.boundingRect(self) -> QtCore.QRectF`
+  - `KeyScaleBoxItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
+  - `KeyScaleBoxItem.hoverEnterEvent(self, event)`
+  - `KeyScaleBoxItem.hoverLeaveEvent(self, event)`
+  - `KeyScaleBoxItem.mousePressEvent(self, event)`
+  - `KeyScaleBoxItem.mouseMoveEvent(self, event)`
+  - `KeyScaleBoxItem.mouseReleaseEvent(self, event)`
 
 <a id="widgets--sequencer--_markers"></a>
 ### `widgets/sequencer/_markers.py`
@@ -2388,7 +2389,7 @@ An NLE-style timeline sequencer widget.
 
 - **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L65)** — Dialog for configuring attribute-type color mappings.
   - `AttributeColorDialog.load_color_map() -> Dict[str, str]` *(static)* — Return the persisted attribute color map without opening a dialog.
-- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L180)** — A split-view NLE sequencer widget.
+- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L181)** — A split-view NLE sequencer widget.
   - `SequencerWidget.window_shortcuts(self) -> bool` *(property)* — When ``True``, sequencer shortcuts are active whenever the
   - `SequencerWidget.showEvent(self, event: QtGui.QShowEvent) -> None`
   - `SequencerWidget.resizeEvent(self, event: QtGui.QResizeEvent) -> None`
@@ -2470,9 +2471,9 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.selected_keys(self) -> List[dict]` — Selected keyframe dots grouped by clip: ``[{clip_id, times}, ...]``.
   - `SequencerWidget.select_keys(self, wanted: List[dict], replace: bool = True) -> int` — Select keyframe dots by clip data and time;
   - `SequencerWidget.show_key_menu(self, global_pos) -> bool` — Open the key menu for the current key selection;
-  - `SequencerWidget.refresh_key_scale_handles(self) -> None` — Show or hide the Shift scale bar over the current key selection.
-  - `SequencerWidget.clear_key_scale_handles(self) -> None` — Remove the scale bar, cancelling a drag it still owns.
-  - `SequencerWidget.set_shift_held(self, held: bool) -> None` — Record whether Shift is down and re-evaluate the scale bar.
+  - `SequencerWidget.refresh_key_scale_box(self) -> None` — Show or hide the Shift scale box around the current key selection.
+  - `SequencerWidget.clear_key_scale_box(self) -> None` — Remove the scale box, cancelling a drag it still owns.
+  - `SequencerWidget.set_shift_held(self, held: bool) -> None` — Record whether Shift is down and re-evaluate the scale box.
 
 <a id="widgets--sequencer--_timeline"></a>
 ### `widgets/sequencer/_timeline.py`

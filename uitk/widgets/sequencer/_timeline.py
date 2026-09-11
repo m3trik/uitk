@@ -1133,8 +1133,8 @@ class TimelineView(QtWidgets.QGraphicsView):
                 item.update()
         self._sync_ruler_pos()
         self._scene.playhead.sync()
-        # The Shift scale bar brackets key dots that just moved under it.
-        self.parent_sequencer.refresh_key_scale_handles()
+        # The Shift scale box brackets key dots that just moved under it.
+        self.parent_sequencer.refresh_key_scale_box()
         self._update_scene_rect()
         self.viewport().update()
 

@@ -229,6 +229,19 @@ class CurveUtils:
         path = QtGui.QPainterPath()
         if not segments:
             return path
+        # A segment that does not carry its own endpoints cannot be drawn, and
+        # RAISING over it is not an option: this runs inside
+        # ``QGraphicsItem.paint``, where a Python exception leaves the painter
+        # half-built and Qt goes on to fault the host process.  Measured
+        # 2026-09-11: one segment missing ``t0`` took an offscreen render down
+        # with an access violation, not a traceback -- which is the whole
+        # distance between a missing curve and a lost Maya session.  Draw the
+        # segments that are well formed and skip the rest.
+        segments = [
+            seg for seg in segments if all(k in seg for k in ("t0", "v0", "t1", "v1"))
+        ]
+        if not segments:
+            return path
         first_seg = segments[0]
         path.moveTo(map_x(first_seg["t0"]), map_y(first_seg["v0"]))
         for seg in segments:

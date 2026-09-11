@@ -168,8 +168,6 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             # selectionChanged which must not read as a user deselection.
             from uitk.widgets.sequencer._draggable import ItemRetirement
 
-            sq = self._timeline.parent_sequencer
-            sq._selection_suppressed += 1
             # Detach BOTH lists before retiring anything.  Taking a selected
             # dot out of the scene can reach back into this clip -- a tangent
             # resync, a repaint -- and whatever it finds must be the NEW
@@ -179,6 +177,8 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             retiring = self._tangent_handle_items + self._keyframe_items
             self._tangent_handle_items = []
             self._keyframe_items = []
+            sq = self._timeline.parent_sequencer
+            sq._selection_suppressed += 1
             try:
                 for item in retiring:
                     ItemRetirement.retire(item)
