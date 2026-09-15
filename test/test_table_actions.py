@@ -4,8 +4,9 @@
 
 import unittest
 
-from qtpy import QtWidgets
-from conftest import setup_qt_application
+from qtpy import QtCore, QtWidgets
+from qtpy.QtTest import QTest
+from conftest import QtBaseTestCase, setup_qt_application
 
 from uitk.widgets.tableWidget import TableWidget
 from uitk.widgets.delegates.centered_icon import ACTION_NONINTERACTIVE_ROLE
@@ -89,6 +90,113 @@ class TestNonInteractiveStateSuppressesHover(unittest.TestCase):
         self.table.actions.set(0, 1, "active")
         item = self.table.item(0, 1)
         self.assertFalse(item.data(ACTION_NONINTERACTIVE_ROLE))
+
+
+class TestAltPressReachesTheAction(QtBaseTestCase):
+    """An Alt press or Alt-drag on an action column fires the action like a plain one.
+
+    Panels read Alt as "clear" (the Channels Lock / Key columns: a press sets,
+    Alt+press clears, a drag applies either to every row it crosses), reading
+    the modifier from ``QApplication.keyboardModifiers()`` inside the action.
+    So Alt must stay out of the modifiers that turn a drag into a selection
+    gesture -- a Shift / Ctrl drag fires nothing.
+    """
+
+    ROWS = 4
+
+    def setUp(self):
+        super().setUp()
+        self.hits = []
+        table = self.track_widget(TableWidget())
+        table.setColumnCount(2)
+        table.setRowCount(self.ROWS)
+        table.actions.add(1, states=self._states())
+        for row in range(self.ROWS):
+            table.setItem(row, 0, QtWidgets.QTableWidgetItem(f"row{row}"))
+            table.actions.set(row, 1, "on")
+        table.resize(300, 260)
+        table.show()
+        app.processEvents()
+        self.table = table
+
+    def _states(self):
+        return {
+            "on": {"icon": "lock", "action": self._record},
+            "off": {"icon": "unlock"},  # no action -> inert
+        }
+
+    def _record(self, row, _col):
+        alt = QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.AltModifier
+        self.hits.append((row, bool(alt)))
+
+    def _center(self, row):
+        return self.table.visualRect(self.table.model().index(row, 1)).center()
+
+    def _drag(self, rows, modifier):
+        viewport = self.table.viewport()
+        QTest.mousePress(
+            viewport, QtCore.Qt.LeftButton, modifier, self._center(rows[0])
+        )
+        for row in rows[1:]:
+            QTest.mouseMove(viewport, self._center(row))
+        QTest.mouseRelease(
+            viewport, QtCore.Qt.LeftButton, modifier, self._center(rows[-1])
+        )
+        app.processEvents()
+
+    def test_alt_click_fires_the_action_with_alt_held(self):
+        QTest.mouseClick(
+            self.table.viewport(),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.AltModifier,
+            self._center(1),
+        )
+        app.processEvents()
+        self.assertEqual(self.hits, [(1, True)])
+
+    def test_alt_drag_fires_every_crossed_row_with_alt_held(self):
+        self._drag([0, 1, 2], QtCore.Qt.AltModifier)
+        self.assertEqual(self.hits, [(0, True), (1, True), (2, True)])
+
+    def test_plain_drag_fires_every_crossed_row(self):
+        self._drag([0, 1, 2], QtCore.Qt.NoModifier)
+        self.assertEqual(self.hits, [(0, False), (1, False), (2, False)])
+
+    def test_ctrl_drag_fires_nothing(self):
+        self._drag([0, 1, 2], QtCore.Qt.ControlModifier)
+        self.assertEqual(self.hits, [])
+
+    def _add_drag_action(self):
+        batches = []
+        self.table.actions.add(
+            1,
+            states=self._states(),
+            drag_action=lambda rows, col: batches.append(rows),
+        )
+        return batches
+
+    def test_a_drag_action_gets_every_crossed_row_in_one_call(self):
+        batches = self._add_drag_action()
+        self._drag([0, 1, 2], QtCore.Qt.AltModifier)
+        self.assertEqual(batches, [[0, 1, 2]])
+        self.assertEqual(self.hits, [], "the per-row actions must not fire too")
+
+    def test_a_drag_action_leaves_out_rows_without_an_action(self):
+        batches = self._add_drag_action()
+        self.table.actions.set(1, 1, "off")
+        self._drag([0, 1, 2], QtCore.Qt.NoModifier)
+        self.assertEqual(batches, [[0, 2]])
+
+    def test_a_click_still_fires_the_state_action(self):
+        batches = self._add_drag_action()
+        QTest.mouseClick(
+            self.table.viewport(),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+            self._center(2),
+        )
+        app.processEvents()
+        self.assertEqual((self.hits, batches), ([(2, False)], []))
 
 
 if __name__ == "__main__":

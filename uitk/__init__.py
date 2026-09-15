@@ -96,6 +96,15 @@ DEFAULT_INCLUDE = {
     "widgets.checkBox": "CheckBox",
     "widgets.collapsableGroup": "CollapsableGroup",
     "widgets.colorSwatch": "ColorSwatch",
+    "widgets.gradient_slider": "GradientSlider",
+    "widgets.editors.color_editor": [
+        "ColorEditor",
+        "ColorEditorPopup",
+        "ColorRampEditor",
+        "RampPreview",
+        "PulseWaveform",
+        "FadeWaveform",
+    ],
     "widgets.editors.color_mapping_editor": [
         "ColorMappingEditor",
         "ColorMappingDialog",
@@ -116,6 +125,7 @@ DEFAULT_INCLUDE = {
     "widgets.menu": "Menu",
     "widgets.menuButton": "MenuButton",
     "widgets.messageBox": "MessageBox",
+    "widgets.overflow_indicator": "OverflowIndicator",
     "widgets.optionBox._optionBox": [
         "OptionBox",
         "OptionBoxContainer",
@@ -182,6 +192,9 @@ DEFAULT_INCLUDE = {
     # Standalone services (uitk.managers / uitk.themes)
     "managers.cancel_manager": ["CancelManager", "CancelProvider"],
     "managers.cursor_manager": ["CursorManager", "OverrideCursorGuard"],
+    "managers.color_model": "ColorModel",
+    "managers.field_visibility": "FieldVisibility",
+    "managers.window_height": "WindowHeight",
     "managers.icon_manager": "IconManager",
     "managers.optional_package_manager": "OptionalPackageManager",
     "managers.preset_manager": "PresetManager",
@@ -190,6 +203,7 @@ DEFAULT_INCLUDE = {
     "managers.settings_manager": "SettingsManager",
     "managers.shortcut_manager": "ShortcutManager",
     "managers.state_manager": "StateManager",
+    "managers.reset_gesture": "ResetGesture",
     "managers.value_manager": "ValueManager",
     "themes.style_sheet": "StyleSheet",
 }

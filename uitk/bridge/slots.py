@@ -48,6 +48,7 @@ from uitk.widgets.comboBox import ComboBox
 from uitk.widgets.textEditLogHandler import TextEditLogHandler
 from uitk.widgets.separator import Separator
 from uitk.managers.preset_manager import PresetManager
+from uitk.managers.field_visibility import FieldVisibility
 
 from uitk.bridge.spec import AttributeSpec, KindFactory
 from uitk.bridge.tooltip import Tooltip
@@ -496,7 +497,9 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         self._semantic_presets = False
         self._preset_combo: Optional[ComboBox] = None
         self._output_dir_edit: Optional[QtWidgets.QLineEdit] = None
-        self._param_visibility_settled = False
+        # Built in _build_param_widgets from the dicts above; the rows stay
+        # the tooltip and value code's index, this is only the visibility.
+        self._param_fields: Optional[FieldVisibility] = None
         self._param_group: Optional[QtWidgets.QGroupBox] = None
 
         if self.REQUIRE_OUTPUT_DIR:
@@ -859,6 +862,17 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         parent_layout.insertWidget(insert_at, grp)
         self._param_group = grp
 
+        # Everything the panel shows conditionally, in one registry. The
+        # dividers and the group are registered WITH the rows rather than
+        # chased separately at refresh time, which is the bookkeeping this
+        # used to carry by hand.
+        fields = FieldVisibility()
+        for key, row in self._param_rows.items():
+            fields.register(key, row, section=self._param_section.get(key))
+        for section, sep in self._section_separators.items():
+            fields.divider(section, sep)
+        self._param_fields = fields.group(grp)
+
     def _make_param_widget(
         self,
         spec: AttributeSpec,
@@ -1215,32 +1229,13 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
 
         Delegates the "which keys are relevant?" decision to
         :meth:`_relevant_param_keys` so subclasses can drive visibility from a
-        template file (default) or a run mode without re-implementing the
-        row-toggling + height-fit bookkeeping.
+        template file (default) or a run mode; the row toggling, the dividers,
+        the empty group and the height re-fit are :class:`FieldVisibility`.
         """
         used = self._relevant_param_keys()
-        if used is None:
+        if used is None or self._param_fields is None:
             return
-
-        for key, row in self._param_rows.items():
-            row.setVisible(key in used)
-        # A category divider shows only while at least one of its params does,
-        # so a section that's fully hidden for the mode doesn't leave a stray rule.
-        for section, sep in self._section_separators.items():
-            sep.setVisible(
-                any(
-                    self._param_section.get(k) == section and k in used
-                    for k in self._param_rows
-                )
-            )
-        if self._param_group is not None:
-            self._param_group.setVisible(bool(used))
-
-        if self._param_visibility_settled:
-            fit = getattr(self.ui, "fit_height_to_content", None)
-            if callable(fit):
-                QtCore.QTimer.singleShot(0, fit)
-        self._param_visibility_settled = True
+        self._param_fields.show(used)
 
     # ------------------ Preset controls -------------------------------
 

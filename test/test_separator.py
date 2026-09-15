@@ -109,3 +109,52 @@ class TestSeparatorSizeHint(QtBaseTestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestSeparatorDisclosure(QtBaseTestCase):
+    """A checkable separator is a section header that opens and closes."""
+
+    def test_a_checkable_separator_toggles_on_click_and_says_so(self):
+        from qtpy import QtCore, QtTest
+
+        sep = self.track_widget(Separator(title="Advanced", checkable=True))
+        sep.resize(200, sep.height())
+        sep.show()
+        seen = []
+        sep.toggled.connect(seen.append)
+        self.assertFalse(sep.isChecked())
+        QtTest.QTest.mouseClick(sep, QtCore.Qt.LeftButton)
+        self.assertTrue(sep.isChecked())
+        QtTest.QTest.mouseClick(sep, QtCore.Qt.LeftButton)
+        self.assertFalse(sep.isChecked())
+        self.assertEqual(seen, [True, False])
+
+    def test_a_plain_separator_stays_transparent_to_the_mouse(self):
+        from qtpy import QtCore
+
+        sep = self.track_widget(Separator(title="Path Management"))
+        transparent = QtCore.Qt.WA_TransparentForMouseEvents
+        self.assertTrue(sep.testAttribute(transparent))
+        sep.setCheckable(True)
+        self.assertFalse(sep.testAttribute(transparent), "a disclosure takes the click")
+        sep.setCheckable(False)
+        self.assertTrue(sep.testAttribute(transparent))
+
+    def test_the_chevron_reserves_room_before_the_caption(self):
+        plain = self.track_widget(Separator(title="Advanced"))
+        disclosure = self.track_widget(Separator(title="Advanced", checkable=True))
+        self.assertEqual(
+            disclosure._title_label.x() - plain._title_label.x(), Separator._ARROW_W
+        )
+        self.assertEqual(
+            disclosure.sizeHint().width() - plain.sizeHint().width(),
+            Separator._ARROW_W,
+        )
+
+    def test_set_checked_emits_once_per_change(self):
+        sep = self.track_widget(Separator(title="Advanced", checkable=True))
+        seen = []
+        sep.toggled.connect(seen.append)
+        sep.setChecked(True)
+        sep.setChecked(True)
+        self.assertEqual(seen, [True])

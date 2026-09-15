@@ -211,6 +211,19 @@ class TestEnableWhen(_Base):
         cmb.setCurrentIndex(1)
         self.assertFalse(out.isEnabled())
 
+    def test_a_name_that_shadows_a_qwidget_method_still_resolves_to_the_widget(self):
+        """``getattr(ui, 'size')`` is ``QWidget.size``: the MainWindow refuses
+        to bind such a name (it warns), so the pattern resolver read the
+        METHOD and handed it to a rule (2026-09-14). The registry knows the
+        widget; the resolver reads it there."""
+        chk = self._add(QtWidgets.QCheckBox, "chk_master", setChecked=False)
+        spin = self._add(QtWidgets.QSpinBox, "size")
+        self.assertEqual(self.sb.get_widgets_by_string_pattern(self.ui, "size"), [spin])
+        self.sb.enable_when(self.ui, "size", "chk_master")
+        self.assertFalse(spin.isEnabled())
+        chk.setChecked(True)
+        self.assertTrue(spin.isEnabled())
+
     def test_a_conflicting_second_rule_is_reported_not_silently_dropped(self):
         """Re-wiring the same pair is a no-op by design (an `_init` that
         re-runs must not stack rules) -- but a rule with DIFFERENT semantics
@@ -280,6 +293,111 @@ class TestEnableWhen(_Base):
         self.assertEqual([s.isEnabled() for s in spins], [False] * 3)
         chk.setChecked(True)
         self.assertEqual([s.isEnabled() for s in spins], [True] * 3)
+
+
+class TestShowWhen(_Base):
+    """``show_when`` is ``enable_when``'s visibility twin (2026-09-14): a
+    setting the current choices make irrelevant is HIDDEN rather than greyed.
+    A plain widget hides itself; an option-menu row goes through its
+    ``WidgetComboBox``'s FieldVisibility, so a section whose every row is
+    hidden takes its titled separator down with it."""
+
+    def test_a_plain_widget_hides_and_shows_with_its_trigger(self):
+        chk = self._add(QtWidgets.QCheckBox, "chk_master", setChecked=False)
+        spin = self._add(QtWidgets.QSpinBox, "s_dep")
+        self.sb.show_when(self.ui, "s_dep", "chk_master")
+        self.assertTrue(spin.isHidden())
+        chk.setChecked(True)
+        self.assertFalse(spin.isHidden())
+        self.assertTrue(spin.isEnabled(), "visibility, not enablement")
+
+    def test_an_option_menu_row_hides_with_its_section_divider(self):
+        from uitk.widgets.separator import Separator
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        fmt = self._add(QtWidgets.QComboBox, "cmb_fmt")
+        fmt.addItem("FBX", "fbx")
+        fmt.addItem("GLB", "glb")
+        cmb = self._add(WidgetComboBox, "cmb_tasks")
+        sep = Separator(title="GLB")
+        rdo = QtWidgets.QCheckBox("rdo")
+        rdo.setObjectName("rdo")
+        size = QtWidgets.QCheckBox("ceiling")
+        size.setObjectName("ceiling")
+        keep = QtWidgets.QCheckBox("keep")
+        keep.setObjectName("keep")
+        other = Separator(title="Other")
+        cmb.add(
+            [
+                (sep, "GLB"),
+                (rdo, "rdo"),
+                (size, "size"),
+                (other, "Other"),
+                (keep, "keep"),
+            ]
+        )
+        for w in (rdo, size, keep):
+            self.ui.register_widget(w)
+        self.sb.show_when(self.ui, "rdo,ceiling", "cmb_fmt", "glb")
+        self.assertFalse(cmb.is_row_visible(rdo))
+        self.assertFalse(cmb.is_row_visible(size))
+        self.assertFalse(cmb.is_row_visible(sep), "the section is empty")
+        self.assertTrue(cmb.is_row_visible(keep), "an unruled row is untouched")
+        self.assertTrue(cmb.is_row_visible(other), "its section still shows")
+        fmt.setCurrentIndex(1)
+        self.assertTrue(cmb.is_row_visible(rdo))
+        self.assertTrue(cmb.is_row_visible(sep))
+
+    def test_refresh_dependencies_reaches_show_when_rules(self):
+        chk = self._add(QtWidgets.QCheckBox, "chk_master", setChecked=True)
+        spin = self._add(QtWidgets.QSpinBox, "s_dep")
+        self.sb.show_when(self.ui, "s_dep", "chk_master")
+        self.assertFalse(spin.isHidden())
+        chk.blockSignals(True)
+        chk.setChecked(False)
+        chk.blockSignals(False)
+        self.sb.refresh_dependencies(self.ui)
+        self.assertTrue(spin.isHidden())
+
+    def test_a_hidden_target_stays_hidden_through_its_groups_collapse(self):
+        """Expanding a CollapsableGroup re-shows its contents; a target the
+        rule hid must not come back with them."""
+        from uitk.widgets.collapsableGroup import CollapsableGroup
+
+        chk = self._add(QtWidgets.QCheckBox, "chk_master", setChecked=False)
+        group = CollapsableGroup("Options", self.central)
+        group.restore_state = False
+        QtWidgets.QVBoxLayout(group)
+        self.layout.addWidget(group)
+        spin = QtWidgets.QSpinBox(group)
+        spin.setObjectName("s_dep")
+        group.layout().addWidget(spin)
+        self.ui.register_widget(spin)
+        self.sb.show_when(self.ui, "s_dep", "chk_master")
+        group.setChecked(False)
+        group.setChecked(True)
+        self.assertTrue(spin.isHidden())
+        chk.setChecked(True)
+        self.assertFalse(spin.isHidden(), "and the rule can still bring it back")
+
+    def test_a_plain_target_does_not_search_the_ui_for_a_host(self):
+        """Asking each ancestor for ``fields`` reached the MainWindow, whose
+        ``__getattr__`` answers an unknown name with a whole-UI ``findChild``
+        -- once per target, per firing of the rule."""
+        from unittest import mock
+
+        chk = self._add(QtWidgets.QCheckBox, "chk_master", setChecked=False)
+        self._add(QtWidgets.QSpinBox, "s_dep")
+        self.sb.show_when(self.ui, "s_dep", "chk_master")
+        searched = []
+        search = self.sb._get_widget_from_ui
+        with mock.patch.object(
+            self.sb,
+            "_get_widget_from_ui",
+            side_effect=lambda ui, name: searched.append(name) or search(ui, name),
+        ):
+            chk.setChecked(True)
+        self.assertNotIn("fields", searched)
 
 
 class TestTextFrom(_Base):

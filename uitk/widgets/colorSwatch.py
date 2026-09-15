@@ -167,7 +167,9 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
                 "Attempting to load settings for a ColorSwatch widget without an objectName set.",
                 RuntimeWarning,
             )
-            return False  # Early return to avoid attempting to load without an objectName
+            return (
+                False  # Early return to avoid attempting to load without an objectName
+            )
 
         colorValue = self.settings.value(f"colorSwatch/{self.objectName()}/color", None)
 
@@ -214,67 +216,39 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
         )
 
     def mouseDoubleClickEvent(self, event):
-        """Open a color dialog on double click to select a new color."""
+        """Open the colour editor on double click.
+
+        Routed through :class:`ColorEditorPopup` rather than ``QColorDialog``:
+        the swatch is the one entry point every other consumer of this widget
+        already goes through -- the style editor, the colour-mapping editor and
+        the DCC Color ID palettes -- so this is where they all pick up the new
+        picker without an edit of their own.
+
+        Imported inside the handler, not at module scope: the editor pulls in
+        the slider and the shared model, and a swatch must stay importable
+        (and paintable) wherever those are not wanted.
+        """
         if event.button() != QtCore.Qt.LeftButton:
             super().mouseDoubleClickEvent(event)
             return
 
-        # Don't call super — it internally calls mousePressEvent which
+        # Don't call super -- it internally calls mousePressEvent which
         # would toggle the checked state a second time on double-click.
         event.accept()
 
-        colorDialog = QtWidgets.QColorDialog(self._color, self)
-        colorDialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, True)
-        colorDialog.setStyleSheet(
-            """
-            QDialog {
-                background-color: #555;
-                color: #eee;
-            }
-            QPushButton {
-                background-color: #444;
-                border: 1px solid black;
-                padding: 5px;
-                border-radius: 2px;
-                color: #eee;
-            }
-            QPushButton:hover {
-                background-color: #666;
-            }
-            QPushButton:pressed {
-                background-color: #777;
-            }
-            QLabel, QSpinBox, QLineEdit {
-                color: #eee;
-            }
-            QSpinBox::up-button, QSpinBox::down-button {
-                subcontrol-origin: border;
-                subcontrol-position: top right;
-                border-left: 1px solid darkgray;
-            }
-            QSpinBox::up-arrow, QSpinBox::down-arrow {
-                width: 7px;
-                height: 7px;
-            }
-        """
+        from uitk.widgets.editors.color_editor import ColorEditorPopup
+
+        popup = ColorEditorPopup(
+            color=self._color, parent=self, title="Colour", advanced=("rgb", "alpha")
         )
-
-        # Store original color for revert on Cancel
-        original_color = self._color
-
-        # Enable live updates
-        def update_live(color):
-            self.color = color
-
-        colorDialog.currentColorChanged.connect(update_live)
-
-        if colorDialog.exec_():
-            self.color = colorDialog.selectedColor()
-        else:
-            # Revert to original color on Cancel (unless we want to keep "Apply" effect?
-            # Standard dialog behavior is Cancel reverts everything.
-            # "Apply" usually commits. but since we only have live update...)
-            self.color = original_color
+        # Live: the swatch IS the preview, so the colour lands as it is dragged
+        # rather than on a confirmation the popup has no room for.
+        popup.editor.colorChanged.connect(lambda c: setattr(self, "color", c))
+        popup.exec_() if hasattr(popup, "exec_") else popup.exec()
+        self.color = popup.qcolor()
+        # Parented to the swatch, so it would live as long as the swatch does:
+        # one hidden dialog per double-click.
+        popup.deleteLater()
 
 
 # -----------------------------------------------------------------------------

@@ -27,6 +27,7 @@ from qtpy import QtWidgets, QtGui, QtCore  # noqa: E402
 
 from uitk.widgets.collapsableGroup import CollapsableGroup  # noqa: E402
 from uitk.widgets.mixins.size_grip import SizeGripMixin  # noqa: E402
+from uitk.managers.window_height import WindowHeight  # noqa: E402
 
 
 class TestCollapsableGroupIndicatorHidden(QtBaseTestCase):
@@ -177,16 +178,16 @@ class TestCollapsedStatePersistenceScope(QtBaseTestCase):
 
 
 class TestFallbackWindowResizeFloor(QtBaseTestCase):
-    """``_fallback_window_resize`` (non-``MainWindow`` hosts) clamps to the
-    content's REAL minimum, using the same rule ``MainWindow`` does.
+    """A non-``MainWindow`` host clamps to the content's REAL minimum, using
+    the same rule ``MainWindow`` does -- because it is now the same code.
 
     Qt's ``qSmartMinSize`` replaces a container's layout-computed minimum with
     any explicit ``setMinimumSize`` — even one SMALLER than the content needs —
     so a stale ``minimumSize`` drags the *window's* hint below the real content
     height, and a resize to that value packs fixed-height rows into overlap.
-    ``MainWindow`` has always guarded this; the fallback used the bare window
-    hint, so the two floors could diverge. Both now call
-    ``SizeGripMixin.content_min_height``.
+    ``MainWindow`` has always guarded this; the hand-kept copy this group used
+    for other hosts could diverge from it, so both paths now run
+    ``WindowHeight.adjust_by``.
     """
 
     def _host(self):
@@ -247,7 +248,7 @@ class TestFallbackWindowResizeFloor(QtBaseTestCase):
         floor = SizeGripMixin.content_min_height(win)
         self.assertGreater(floor, win.minimumSizeHint().height())
 
-        CollapsableGroup._fallback_window_resize(win, win.height(), -10_000)
+        WindowHeight.adjust_by(win, -10_000, baseline=win.height())
         QtWidgets.QApplication.processEvents()
 
         self.assertGreaterEqual(
@@ -346,6 +347,69 @@ class TestCollapseExpandRoundTripWhenClamped(QtBaseTestCase):
             [],
             "expand grew a window whose collapse never shrank it",
         )
+
+
+class TestExpandLeavesRuleHiddenFieldsHidden(QtBaseTestCase):
+    """Expanding re-shows the group's contents -- never a field a visibility
+    rule hid. Live (Blendshape Animator): the edit-mode combo shows only
+    ``le001`` (wrapped by its option box) or ``s003``, both directly in the
+    Edit group, and collapsing then expanding Edit brought both back."""
+
+    def _edit_group(self):
+        """An Edit group holding an option-boxed Weights field and a Frame
+        field, one mode each, laid out the way the animator's form is."""
+        from uitk.managers.field_visibility import FieldVisibility
+        from uitk.widgets.optionBox._optionBox import OptionBox
+
+        host = self.track_widget(QtWidgets.QWidget())
+        QtWidgets.QVBoxLayout(host)
+        group = CollapsableGroup("Edit")
+        group.restore_state = False
+        g_lay = QtWidgets.QVBoxLayout(group)
+        weights = QtWidgets.QLineEdit()
+        frame = QtWidgets.QSpinBox()
+        g_lay.addWidget(weights)
+        g_lay.addWidget(frame)
+        host.layout().addWidget(group)
+        box = OptionBox(options=[]).wrap(weights)
+        fields = FieldVisibility(fit=lambda: None)
+        fields.define("weight", [weights])
+        fields.define("frame", [frame])
+        host.show()
+        return group, fields, weights, box, frame
+
+    @staticmethod
+    def _collapse_then_expand(group, while_collapsed=None):
+        group.setChecked(False)
+        if while_collapsed is not None:
+            while_collapsed()
+        group.setChecked(True)
+
+    def test_a_field_the_mode_hid_stays_hidden(self):
+        group, fields, weights, box, frame = self._edit_group()
+        fields.mode = "weight"
+        self._collapse_then_expand(group)
+        self.assertTrue(frame.isHidden(), "Frame is not in this mode")
+        self.assertFalse(weights.isHidden())
+        self.assertFalse(box.isHidden())
+
+    def test_an_option_boxed_field_stays_hidden_with_its_box(self):
+        """The box stands in for its field in the layout, so it has to stay
+        down with it: re-shown, it is an empty row holding the field's space."""
+        group, fields, weights, box, frame = self._edit_group()
+        fields.mode = "frame"
+        self._collapse_then_expand(group)
+        self.assertTrue(weights.isHidden())
+        self.assertTrue(box.isHidden(), "an empty option-box row")
+        self.assertFalse(frame.isHidden())
+
+    def test_a_mode_switched_while_collapsed_is_the_mode_that_expands(self):
+        group, fields, weights, box, frame = self._edit_group()
+        fields.mode = "weight"
+        self._collapse_then_expand(group, lambda: setattr(fields, "mode", "frame"))
+        self.assertEqual((box.isHidden(), frame.isHidden()), (True, False))
+        self._collapse_then_expand(group, lambda: setattr(fields, "mode", "weight"))
+        self.assertEqual((box.isHidden(), frame.isHidden()), (False, True))
 
 
 if __name__ == "__main__":

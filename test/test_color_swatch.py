@@ -146,9 +146,9 @@ class TestColorSwatchClickBehavior(QtBaseTestCase):
         swatch.click()
         self.assertFalse(swatch.isChecked())
 
-    @patch("uitk.widgets.colorSwatch.QtWidgets.QColorDialog")
+    @patch("uitk.widgets.editors.color_editor.ColorEditorPopup")
     def test_single_click_does_not_open_dialog(self, mock_dialog_cls):
-        """Single click must NOT open the color dialog."""
+        """Single click must NOT open the colour editor."""
         from uitk.widgets.colorSwatch import ColorSwatch
 
         swatch = self.track_widget(
@@ -162,9 +162,15 @@ class TestColorSwatchClickBehavior(QtBaseTestCase):
         swatch.click()
         mock_dialog_cls.assert_not_called()
 
-    @patch("uitk.widgets.colorSwatch.QtWidgets.QColorDialog")
-    def test_double_click_opens_color_dialog(self, mock_dialog_cls):
-        """Double click should open the color dialog."""
+    @patch("uitk.widgets.editors.color_editor.ColorEditorPopup")
+    def test_double_click_opens_the_colour_editor(self, mock_dialog_cls):
+        """Double click should open uitk's colour editor.
+
+        Patched at its DEFINING module rather than at a name on ``colorSwatch``:
+        the swatch imports it inside the handler, so there is no module-level
+        name to patch. Getting that wrong is not a silent miss -- the real
+        popup opens and ``exec_`` blocks the suite forever.
+        """
         from uitk.widgets.colorSwatch import ColorSwatch
 
         mock_dialog = MagicMock()
@@ -191,6 +197,48 @@ class TestColorSwatchClickBehavior(QtBaseTestCase):
         swatch.mouseDoubleClickEvent(event)
         mock_dialog_cls.assert_called_once()
         mock_dialog.exec_.assert_called_once()
+
+    def test_the_editor_never_opens_modally_in_a_test_run(self):
+        """A guard for the shape of the bug above, not for its instance.
+
+        The swatch is the one entry point every consumer of this widget goes
+        through, so a future edit that reaches a blocking ``exec_`` from it
+        hangs the whole suite with no failing test to point at. This pins that
+        the handler resolves the popup through the module a patch can reach:
+        imported into ``colorSwatch`` at module scope, the name the handler
+        reads is a second binding that a patch at the defining module never
+        replaces.
+        """
+        import uitk.widgets.colorSwatch as swatch_module
+        import uitk.widgets.editors.color_editor as editor_module
+
+        self.assertTrue(hasattr(editor_module, "ColorEditorPopup"), "the patch target")
+        self.assertFalse(
+            hasattr(swatch_module, "ColorEditorPopup"),
+            "colorSwatch binds ColorEditorPopup itself; a patch would miss it",
+        )
+
+    def test_a_double_click_leaves_no_popup_behind(self):
+        """Each pick parented a popup to the swatch and never deleted it, so a
+        swatch kept one hidden dialog per double-click for its whole life."""
+        from uitk.widgets.colorSwatch import ColorSwatch
+        from uitk.widgets.editors.color_editor import ColorEditorPopup
+
+        swatch = self.track_widget(
+            ColorSwatch(color=QtGui.QColor(100, 100, 100), setObjectName="test_leak")
+        )
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonDblClick,
+            QtCore.QPointF(5, 5),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+        with patch.object(ColorEditorPopup, "exec_", return_value=0, create=True):
+            swatch.mouseDoubleClickEvent(event)
+            swatch.mouseDoubleClickEvent(event)
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.assertEqual(swatch.findChildren(ColorEditorPopup), [])
 
 
 # =============================================================================

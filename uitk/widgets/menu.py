@@ -27,6 +27,8 @@ from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
 from uitk.widgets.separator import Separator
 from uitk.themes.style_sheet import StyleSheet
+from uitk.managers.state_manager import StateManager
+from uitk.managers.reset_gesture import ResetGesture
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.convert import ConvertMixin
 
@@ -2637,12 +2639,21 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         """Set up the restore defaults button."""
         config = _ActionButtonConfig(
             text="Restore Defaults",
-            callback=self._restore_menu_defaults,
-            tooltip="Reset all options to their default values",
             visible=self.contains_items,
             fixed_height=18,
         )
         btn = self._button_manager.add_button("defaults", config, index=0)
+        # Click resets, Shift+Click makes the current values the defaults,
+        # Ctrl+Shift+Click returns to factory. The gesture teaches that in the
+        # tooltip and previews it on the button while a modifier is held.
+        # ``released`` matches the menu's other action buttons.
+        self._defaults_gesture = ResetGesture(
+            btn,
+            state=lambda: StateManager.for_widget(self),
+            widgets=self._defaults_scope,
+            signal="released",
+            on_performed=self._sync_restore_defaults,
+        )
 
         # Rename button to allow finding it from other instances for synchronization
         if self.objectName():
@@ -2777,41 +2788,47 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 )
                 continue
 
-    def _restore_menu_defaults(self, from_sync: bool = False):
-        """Reset all menu widgets to their default values."""
-        window = self.window()
-        state = getattr(window, "state", None)
+    def _restore_menu_defaults(
+        self, from_sync: bool = False, action: str = ResetGesture.RESET
+    ):
+        """Apply a defaults *action* (:class:`ResetGesture`) to this menu's fields.
 
-        # Fallback: traverse parents if state not found on window()
-        # This handles cases where Menu acts as a Tool/Popup window and window() returns self
-        if not state:
-            curr = self.parent()
-            while curr:
-                if hasattr(curr, "state"):
-                    state = curr.state
-                    break
-                curr = curr.parent()
-
-        # Last resort: the MainWindow captured during registration. The live
-        # walk above misses it once the menu has reparented to a popup on show
-        # (same reparenting that breaks _register_with_main_window).
-        if not state:
-            window = self._resolve_registration_window()
-            state = getattr(window, "state", None) if window is not None else None
-
-        if not state:
+        Runs through the window ``StateManager`` scoped to
+        :meth:`_defaults_scope`, so a menu resets FIELDS like a panel does:
+        option locks clear first and ``exclude_from_reset`` is honored. The
+        Restore Defaults button reaches the same place through its gesture.
+        """
+        state = StateManager.for_widget(self)
+        if state is None:
             self.logger.debug("_restore_menu_defaults: No state manager found")
             return
-        for widget in self.get_items():
-            state.reset(widget)
-        self.logger.debug("_restore_menu_defaults: Reset complete")
+        ResetGesture.perform(state, action, self._defaults_scope())
+        self.logger.debug(f"_restore_menu_defaults: {action} complete")
 
         if not from_sync:
-            self._sync_restore_defaults()
+            self._sync_restore_defaults(action)
 
-    def _sync_restore_defaults(self):
-        """Synchronize defaults reset across other instances of this menu."""
-        if not self.objectName():
+    def _defaults_scope(self) -> list:
+        """This menu's fields: each item and its descendants.
+
+        An option-box wrap replaces the item in the grid with its container (see
+        :meth:`_is_wrapped_item`), so the fields that carry reset buttons and
+        locks are never grid items themselves.
+        """
+        return [
+            widget
+            for item in self.get_items()
+            for widget in (item, *item.findChildren(QtWidgets.QWidget))
+        ]
+
+    def _sync_restore_defaults(self, action: str = ResetGesture.RESET):
+        """Mirror a defaults *action* onto other instances of this menu.
+
+        A reset or factory reset is mirrored; a save is not. Saved defaults are
+        keyed by field name, which the instances share, so a mirrored save made
+        each one save ITS current values over the ones the user just saved.
+        """
+        if action == ResetGesture.SAVE or not self.objectName():
             return
 
         try:
@@ -2833,7 +2850,7 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
                 parent = widget.parent()
                 while parent:
                     if hasattr(parent, "_restore_menu_defaults"):
-                        parent._restore_menu_defaults(from_sync=True)
+                        parent._restore_menu_defaults(from_sync=True, action=action)
                         break
                     parent = parent.parent()
 

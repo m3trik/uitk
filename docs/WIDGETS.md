@@ -126,6 +126,17 @@ CursorManager.push(self, QtCore.Qt.ClosedHandCursor)  # press
 CursorManager.pop(self)                               # release / cancel
 ```
 
+### Overflow arrows on scroll views
+`OverflowIndicator` (`uitk/widgets/overflow_indicator.py`) marks the vertical edges of a scroll view that have content past them: an arrow at the bottom while more rows lie below, one at the top while the first rows are scrolled out of view, neither once everything fits. It reads the vertical scrollbar's value and range, so hidden rows and filtered models come out right and a popup that hides its bar is served the same. `ComboBox` / `WidgetComboBox` popups, `TreeWidget` and `TableWidget` carry one by default; any other `QAbstractScrollArea` (a text log, a `QScrollArea`) opts in with one call:
+
+```python
+OverflowIndicator.attach(text_edit)          # idempotent; returns the one indicator
+OverflowIndicator.of(view).shown_edges       # () / ("bottom",) / ("top", "bottom") / ("top",)
+OverflowIndicator.of(view).detach()
+```
+
+It is a mouse-transparent sibling stacked above the viewport -- never a viewport child, which `viewport().scroll()` would drag along with the rows -- sized from the view's font and coloured from its palette (band: `Base` fading over the content; arrow: `Text`).
+
 ---
 
 ## The widget catalog
@@ -329,6 +340,8 @@ widget.menu.add_defaults_button = True # "Restore Defaults"
 widget.menu.add_presets = True         # Preset combo + option-box toolbar (Refresh/Save/⋯-menu)
 widget.menu.presets.preset_dir = "~/.myapp/presets"  # custom preset dir
 ```
+
+**Restore Defaults** speaks the grammar every defaults control shares ([`ResetGesture`](../uitk/managers/reset_gesture.py)): **Click** resets the menu's fields to their defaults (saved, else factory); **Shift + Click** makes the current values the defaults (persisted by the window's `StateManager.save_defaults`); **Ctrl + Shift + Click** forgets them — back to factory. The tooltip teaches it, the button text previews the action while a modifier is held, and the result flashes on the button. A per-field `ResetOption` uses the same grammar plus its Alt/Ctrl bypass. To give any button it: `ResetGesture(button, state=window.state, widgets=fields)`.
 
 ### Layout & behavior flags
 

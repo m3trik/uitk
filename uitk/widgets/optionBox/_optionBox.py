@@ -4,6 +4,7 @@
 
 from qtpy import QtWidgets, QtCore
 
+from uitk.managers.field_visibility import FieldVisibility
 from .options.action import MenuOption, ActionOption
 from .options.browse import BrowseOption
 from .options.clear import ClearOption
@@ -267,12 +268,17 @@ class OptionBoxContainer(QtWidgets.QWidget):
                 etype in (QtCore.QEvent.Hide, QtCore.QEvent.HideToParent)
                 and not obj.isHidden()
             )
-            if (
-                obj is not self
-                and not hide_cascade
-                and obj.isHidden() != self.isHidden()
-            ):
-                self.setVisible(not obj.isHidden())
+            if obj is not self and not hide_cascade:
+                # A rule's mark on the field travels with its visibility, so a
+                # container that re-shows its contents (a CollapsableGroup on
+                # expand) leaves this box down with a field a rule hid. Copied
+                # even when the two already agree: a field hidden inside a
+                # collapsed group sends HideToParent with this box hidden too.
+                marked = FieldVisibility.is_hidden_field(obj)
+                if FieldVisibility.is_hidden_field(self) != marked:
+                    self.setProperty(FieldVisibility.HIDDEN_PROPERTY, marked)
+                if obj.isHidden() != self.isHidden():
+                    self.setVisible(not obj.isHidden())
         elif etype == QtCore.QEvent.Resize:
             # Re-square the option buttons to the wrapped widget's new height so
             # they track a height change applied *after* wrap (e.g. a later
@@ -889,7 +895,16 @@ class OptionBox:
             # option buttons.
             wrapped_widget.installEventFilter(container)
             container._sync_option_buttons_enabled()
-            container.show()
+            if FieldVisibility.is_hidden_field(wrapped_widget):
+                # A visibility rule hid the field before this box existed, so
+                # the event filter never saw the hide: start down, carrying the
+                # mark, rather than as an empty row. The mark alone decides it --
+                # ``isHidden()`` is also True for a parentless widget that has
+                # simply never been shown.
+                container.setProperty(FieldVisibility.HIDDEN_PROPERTY, True)
+                container.hide()
+            else:
+                container.show()
         finally:
             if suppress_root:
                 suppress_root.setUpdatesEnabled(prev_updates)

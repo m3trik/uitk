@@ -7,6 +7,7 @@ from typing import Optional, Callable, List, Union, Any, Dict
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
+from uitk.widgets.overflow_indicator import OverflowIndicator
 from uitk.managers.icon_manager import IconManager
 from uitk.switchboard import Signals
 from uitk.managers.settings_manager import SettingsManager
@@ -618,6 +619,8 @@ class TreeWidget(
         self._selection_style = selection_style
         TreeFormatMixin.__init__(self)
         HierarchyIconMixin.__init__(self)
+        # Arrows at the top/bottom edge while rows are scrolled out of view.
+        OverflowIndicator.attach(self)
 
         # Default settings
         self.setProperty("class", self.__class__.__name__)

@@ -8,15 +8,33 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 
 
 class Separator(QtWidgets.QFrame, AttributesMixin):
-    """A simple horizontal separator with optional title and styling."""
+    """A horizontal rule; titled, a section header; checkable, a disclosure.
+
+    Parameters:
+        title: Caption drawn small-caps at the left, the rule running from it
+            to the right edge. Empty draws a plain line.
+        checkable: Make the titled rule a disclosure -- clickable, a chevron
+            before the caption showing whether what follows it is open. The
+            state is :meth:`isChecked` and :attr:`toggled`; what it shows or
+            hides is the consumer's.
+    """
 
     # Qt Designer widget-box entry.
     designer_spec = {"icon": "tree_horizontal", "object_name": "separator"}
 
+    #: Emitted with the new state when a checkable separator is toggled.
+    toggled = QtCore.Signal(bool)
+
     def __init__(
-        self, parent: Optional[QtWidgets.QWidget] = None, title: str = "", **kwargs
+        self,
+        parent: Optional[QtWidgets.QWidget] = None,
+        title: str = "",
+        checkable: bool = False,
+        **kwargs,
     ):
         super().__init__(parent)
+        self._checkable = False
+        self._checked = False
 
         self.setProperty("class", "separator")
         self.setFrameShape(QtWidgets.QFrame.HLine)
@@ -35,6 +53,8 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
 
         if title:
             self.title = title
+        if checkable:
+            self.setCheckable(True)
 
         self.set_attributes(self, **kwargs)
 
@@ -49,6 +69,8 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
     _RULE_GAP_X = 6
     #: Alpha (0-255) of the section rule, drawn in the caption's text colour.
     _RULE_ALPHA = 70
+    #: Width reserved before the caption for a checkable separator's chevron.
+    _ARROW_W = 10
 
     def getTitle(self) -> str:
         """Get the separator title."""
@@ -89,6 +111,77 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
     #: reads and assigns exactly as it did before.
     title = QtCore.Property(str, fget=getTitle, fset=setTitle)
 
+    # ------------------------------------------------------------------
+    # Disclosure: a section header that opens and closes what follows it
+    # ------------------------------------------------------------------
+
+    def isCheckable(self) -> bool:
+        """Whether the caption is a disclosure (see :meth:`setCheckable`)."""
+        return self._checkable
+
+    def setCheckable(self, value: bool) -> None:
+        """Make the caption a disclosure: clickable, a chevron showing its state.
+
+        A titled separator is a section header; a checkable one is a section
+        header that opens and closes what follows it. Same caption, same rule
+        -- the toggle IS the header, not a button beside it -- so a collapsed
+        section reads as a section with its lid down rather than as a stray
+        control between rows. Only the state lives here (:meth:`isChecked`,
+        :attr:`toggled`); showing and hiding is the consumer's.
+        """
+        value = bool(value)
+        if value == self._checkable:
+            return
+        self._checkable = value
+        # Purely visual until now; a disclosure has to take the click.
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, not value)
+        self.setCursor(
+            QtCore.Qt.PointingHandCursor if value else QtCore.Qt.ArrowCursor
+        )
+        self.setProperty("checkable", value)  # the theme's selector
+        self._repolish()
+        self._position_title_label()
+        self.updateGeometry()
+        self.update()
+
+    def isChecked(self) -> bool:
+        """Open (``True``) or closed; meaningful once :meth:`isCheckable`."""
+        return self._checked
+
+    def setChecked(self, value: bool) -> None:
+        """Set the disclosure state, emitting :attr:`toggled` on a change."""
+        value = bool(value)
+        if value == self._checked:
+            return
+        self._checked = value
+        self.update()
+        self.toggled.emit(value)
+
+    def toggle(self) -> None:
+        self.setChecked(not self._checked)
+
+    #: Designer-editable, like ``title``.
+    checkable = QtCore.Property(bool, fget=isCheckable, fset=setCheckable)
+    checked = QtCore.Property(bool, fget=isChecked, fset=setChecked)
+
+    def _repolish(self) -> None:
+        """Re-run the stylesheet: a property selector only reads on polish."""
+        for widget in (self, self._title_label):
+            if widget is not None:
+                widget.style().unpolish(widget)
+                widget.style().polish(widget)
+
+    def mousePressEvent(self, event) -> None:
+        if self._checkable and event.button() == QtCore.Qt.LeftButton:
+            self.toggle()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def _caption_x(self) -> int:
+        """Where the caption starts: after the chevron when there is one."""
+        return self._TITLE_MARGIN_X + (self._ARROW_W if self._checkable else 0)
+
     def _create_title_label(self) -> None:
         """Create the title label widget.
 
@@ -115,7 +208,11 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
         ``isVisible()`` is still False even for un-hidden children.
         """
         if self._title_label and not self._title_label.isHidden():
-            return self._title_label.sizeHint().width() + 2 * self._TITLE_MARGIN_X
+            return (
+                self._title_label.sizeHint().width()
+                + self._caption_x()
+                + self._TITLE_MARGIN_X
+            )
         return 0
 
     def sizeHint(self) -> QtCore.QSize:
@@ -156,7 +253,7 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
         # Bottom-aligned: the surplus height of a titled separator is the
         # breathing room above the caption (see ``_TITLED_HEIGHT``).
         y = max(0, self.height() - self._title_label.height())
-        self._title_label.move(self._TITLE_MARGIN_X, y)
+        self._title_label.move(self._caption_x(), y)
 
     def resizeEvent(self, event) -> None:
         """Position the title label on resize."""
@@ -177,17 +274,41 @@ class Separator(QtWidgets.QFrame, AttributesMixin):
         label = self._title_label
         if label is None or label.isHidden():
             return
+        painter = QtGui.QPainter(self)
+        text = QtGui.QColor(label.palette().color(QtGui.QPalette.WindowText))
+        if self._checkable:
+            self._paint_chevron(painter, label, text)
         x0 = label.x() + label.width() + self._RULE_GAP_X
         x1 = self.width() - self._TITLE_MARGIN_X
-        if x1 <= x0:
-            return
-        y = label.y() + label.height() // 2
-        color = QtGui.QColor(label.palette().color(QtGui.QPalette.WindowText))
-        color.setAlpha(self._RULE_ALPHA)
-        painter = QtGui.QPainter(self)
-        painter.setPen(QtGui.QPen(color, 1))
-        painter.drawLine(x0, y, x1, y)
+        if x1 > x0:
+            y = label.y() + label.height() // 2
+            rule = QtGui.QColor(text)
+            rule.setAlpha(self._RULE_ALPHA)
+            painter.setPen(QtGui.QPen(rule, 1))
+            painter.drawLine(x0, y, x1, y)
         painter.end()
+
+    def _paint_chevron(self, painter, label, color) -> None:
+        """The disclosure state as a small solid triangle before the caption:
+        pointing right while closed, down while open -- the convention every
+        tree view already taught."""
+        cx = self._TITLE_MARGIN_X + self._ARROW_W / 2.0
+        cy = label.y() + label.height() / 2.0
+        half = 3.0
+        path = QtGui.QPainterPath()
+        if self._checked:
+            path.moveTo(cx - half, cy - half / 2.0)
+            path.lineTo(cx + half, cy - half / 2.0)
+            path.lineTo(cx, cy + half)
+        else:
+            path.moveTo(cx - half / 2.0, cy - half)
+            path.lineTo(cx + half, cy)
+            path.lineTo(cx - half / 2.0, cy + half)
+        path.closeSubpath()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(color)
+        painter.drawPath(path)
 
 
 # ----------------------------------------------------------------------------

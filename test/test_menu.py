@@ -311,8 +311,9 @@ class TestMenuHideOnLeave(QtBaseTestCase):
         popup = QtWidgets.QWidget(inner)
         popup.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
         _, far = self._outside_point(menu)
-        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=popup
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=popup),
         ):
             menu._check_cursor_position()
         self.assertTrue(
@@ -329,8 +330,9 @@ class TestMenuHideOnLeave(QtBaseTestCase):
         menu._mouse_has_entered = True
         unrelated = self.track_widget(QtWidgets.QWidget())
         _, far = self._outside_point(menu)
-        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
         ):
             menu._check_cursor_position()
         self.assertFalse(
@@ -354,12 +356,10 @@ class TestMenuHideOnLeave(QtBaseTestCase):
         editing = QtWidgets.QLineEdit(menu)
         unrelated = self.track_widget(QtWidgets.QWidget())  # cursor genuinely off
         _, far = self._outside_point(menu)
-        with patch.object(
-            QtGui.QCursor, "pos", staticmethod(lambda: far)
-        ), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=unrelated
-        ), patch.object(
-            QtWidgets.QApplication, "focusWidget", return_value=editing
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+            patch.object(QtWidgets.QApplication, "focusWidget", return_value=editing),
         ):
             menu._check_cursor_position()
         self.assertTrue(
@@ -378,12 +378,12 @@ class TestMenuHideOnLeave(QtBaseTestCase):
         unrelated = self.track_widget(QtWidgets.QWidget())
         outside_focus = self.track_widget(QtWidgets.QLineEdit())
         _, far = self._outside_point(menu)
-        with patch.object(
-            QtGui.QCursor, "pos", staticmethod(lambda: far)
-        ), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=unrelated
-        ), patch.object(
-            QtWidgets.QApplication, "focusWidget", return_value=outside_focus
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+            patch.object(
+                QtWidgets.QApplication, "focusWidget", return_value=outside_focus
+            ),
         ):
             menu._check_cursor_position()
         self.assertFalse(
@@ -403,12 +403,10 @@ class TestMenuHideOnLeave(QtBaseTestCase):
         button = QtWidgets.QPushButton(menu)  # focused, in subtree, but not text
         unrelated = self.track_widget(QtWidgets.QWidget())
         _, far = self._outside_point(menu)
-        with patch.object(
-            QtGui.QCursor, "pos", staticmethod(lambda: far)
-        ), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=unrelated
-        ), patch.object(
-            QtWidgets.QApplication, "focusWidget", return_value=button
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+            patch.object(QtWidgets.QApplication, "focusWidget", return_value=button),
         ):
             menu._check_cursor_position()
         self.assertFalse(
@@ -436,8 +434,9 @@ class TestMenuHideOnLeave(QtBaseTestCase):
         menu.unentered_grace_samples = 3  # shrink for the test
         unrelated = self.track_widget(QtWidgets.QWidget())
         _, far = self._outside_point(menu)
-        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
         ):
             for _ in range(menu.unentered_grace_samples - 1):
                 menu._check_cursor_position()
@@ -463,7 +462,7 @@ class TestMenuHideOnLeave(QtBaseTestCase):
         from qtpy import QtGui
 
         menu = self.track_widget(Menu(hide_on_leave=True))
-        spin = menu.add("QDoubleSpinBox", setObjectName="s002")
+        menu.add("QDoubleSpinBox", setObjectName="s002")
         menu.show()
         self.assertEqual(
             menu.get_items()[0].focusPolicy(),
@@ -473,8 +472,9 @@ class TestMenuHideOnLeave(QtBaseTestCase):
         menu._mouse_has_entered = True
         unrelated = self.track_widget(QtWidgets.QWidget())
         _, far = self._outside_point(menu)
-        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
         ):
             menu._check_cursor_position()
         self.assertFalse(
@@ -495,9 +495,11 @@ class TestMenuHideOnLeave(QtBaseTestCase):
         spin.setFocus(QtCore.Qt.MouseFocusReason)  # user clicked into it
         unrelated = self.track_widget(QtWidgets.QWidget())
         _, far = self._outside_point(menu)
-        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=unrelated
-        ), patch.object(QtWidgets.QApplication, "focusWidget", return_value=spin):
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+            patch.object(QtWidgets.QApplication, "focusWidget", return_value=spin),
+        ):
             menu._check_cursor_position()
         self.assertTrue(
             menu.isVisible(),
@@ -567,8 +569,9 @@ class TestMenuTransientFamily(QtBaseTestCase):
         sibling = self.track_widget(Menu(parent=host, hide_on_leave=True))
         sibling.show()
         _, far = self._outside_point(menu)
-        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=sibling
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=sibling),
         ):
             self.assertFalse(
                 menu._pointer_in_family(far),
@@ -593,8 +596,9 @@ class TestMenuTransientFamily(QtBaseTestCase):
         child.show()
         menu.adopt_transient(child)
         _, far = self._outside_point(menu)
-        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=child
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=child),
         ):
             menu._check_cursor_position()
         self.assertTrue(
@@ -627,8 +631,9 @@ class TestMenuTransientFamily(QtBaseTestCase):
         menu.adopt_transient(child)
         unrelated = self.track_widget(QtWidgets.QWidget())
         _, far = self._outside_point(menu)
-        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=unrelated
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
         ):
             for _ in range(menu.leave_grace_samples - 1):
                 menu._check_cursor_position()
@@ -666,8 +671,9 @@ class TestMenuTransientFamily(QtBaseTestCase):
         self._drain_qt_events()
         QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
         _, far = self._outside_point(menu)
-        with patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)), patch.object(
-            QtWidgets.QApplication, "widgetAt", return_value=None
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=None),
         ):
             # Must not raise on the deleted child, and must report no family hit.
             self.assertFalse(menu._pointer_in_family(far))
@@ -1623,7 +1629,7 @@ class TestMenuInitializationVisibility(QtBaseTestCase):
             original_showEvent(self_menu, event)
 
         with patch.object(Menu, "showEvent", counting_showEvent):
-            menu = self.track_widget(Menu(hide_on_leave=True))
+            self.track_widget(Menu(hide_on_leave=True))
 
         self.assertEqual(
             len(show_count),
@@ -1947,8 +1953,6 @@ class TestMenuRegistrationSurvivesReparent(QtBaseTestCase):
         parent.show()
         m = self.track_widget(Menu(parent=parent))
 
-        timers_after_init: list[int] = []
-
         def registration_handler(widget):
             # Simulate an init-slot that adds another item mid-drain.
             if widget.objectName() == "b000":
@@ -2057,9 +2061,7 @@ class TestMenuRegistrationSurvivesReparent(QtBaseTestCase):
         m.show()
         # A menu that never becomes visible is a broken menu, not a busy
         # machine: wait on the real condition and FAIL when it is not met.
-        QtWait.until(
-            lambda: m.isVisible(), "Menu.show() never made the menu visible"
-        )
+        QtWait.until(lambda: m.isVisible(), "Menu.show() never made the menu visible")
 
         with patch.object(m._layout, "activate") as mock_activate:
             m.add("QPushButton", setObjectName="b_visible")
@@ -2123,11 +2125,8 @@ class TestHeaderMenuPopup(QtBaseTestCase):
 
         # Menu position should be near the header, not at origin
         menu_pos = header.menu.pos()
-        # The menu should be positioned somewhere near the header's screen position
-        # At minimum, it shouldn't be at (0,0) which is the default unpositioned location
-        header_global = header.mapToGlobal(header.rect().bottomLeft())
-
-        # Allow generous margin for positioning differences, but not at (0,0)
+        # It shouldn't be at (0,0), the default unpositioned location; allow a
+        # generous margin for positioning differences otherwise.
         self.assertFalse(
             menu_pos.x() == 0 and menu_pos.y() == 0,
             "Menu should not be positioned at origin (0,0)",
@@ -2432,9 +2431,10 @@ class TestMenuHideEventFocusRestore(QtBaseTestCase):
 
     def test_skips_hidden_previous_window(self):
         menu, prior = self._menu_with_prior_window(visible=False)
-        with patch.object(prior, "raise_") as raise_spy, patch.object(
-            prior, "activateWindow"
-        ) as activate_spy:
+        with (
+            patch.object(prior, "raise_") as raise_spy,
+            patch.object(prior, "activateWindow") as activate_spy,
+        ):
             menu.hide(force=True)
         raise_spy.assert_not_called()
         activate_spy.assert_not_called()
@@ -2508,9 +2508,7 @@ class TestMenuClearEmptyPlaceholder(QtBaseTestCase):
         # the stale reference _add_empty_placeholder would early-return.
         menu.show()
         self.assertIsNotNone(menu._empty_placeholder)
-        self.assertIs(
-            menu.gridLayout.itemAt(0).widget(), menu._empty_placeholder
-        )
+        self.assertIs(menu.gridLayout.itemAt(0).widget(), menu._empty_placeholder)
         menu.hide()
 
 
@@ -2573,7 +2571,9 @@ class TestMenuAddRow(QtBaseTestCase):
         # so a fresh menu's before-count would be off by one.
         menu.add("QCheckBox", setObjectName="chk_before")
         rows_before = menu.gridLayout.rowCount()
-        menu.add_row([("QCheckBox", {"setObjectName": "chk_t"})], title="Include Types:")
+        menu.add_row(
+            [("QCheckBox", {"setObjectName": "chk_t"})], title="Include Types:"
+        )
         # One separator row + one container row.
         self.assertEqual(menu.gridLayout.rowCount(), rows_before + 2)
 
@@ -2976,9 +2976,7 @@ class TestMenuPopupGrabHandoff(QtBaseTestCase):
         # buttons are delivered to the combo view beneath (measured live over
         # Blender / PySide6 6.11).
         stolen = menu._grab_stolen_from
-        self.assertIsNotNone(
-            stolen, "menu did not record stealing the native grab"
-        )
+        self.assertIsNotNone(stolen, "menu did not record stealing the native grab")
         self.assertIs(stolen(), container)
 
         menu.hide()
@@ -2998,6 +2996,136 @@ class TestMenuPopupGrabHandoff(QtBaseTestCase):
             menu.show_as_popup()
         self.assertIsNone(menu._grab_stolen_from)
         menu.hide()
+
+
+class TestMenuRestoreDefaults(QtBaseTestCase):
+    """The menu's *Restore Defaults* resets FIELDS the way a panel-wide
+    ``StateManager.reset_all`` does, and a per-field reset inside a shown
+    (popup) menu still reaches the host window's StateManager."""
+
+    def setUp(self):
+        super().setUp()
+        from uitk.managers.state_manager import StateManager
+
+        self.host = self.track_widget(QtWidgets.QWidget())
+        settings = QtCore.QSettings("uitk_test", "menu_restore_defaults")
+        settings.clear()
+        self.host.state = StateManager(settings)
+        self.menu = Menu(parent=self.host, add_defaults_button=True)
+
+    def _field(self, name):
+        sb = self.menu.add("QDoubleSpinBox", setObjectName=name)
+        sb.derived_type = QtWidgets.QDoubleSpinBox
+        sb.default_signals = lambda: "valueChanged"
+        sb.restore_state = True
+        self.host.state.capture_default(sb)  # default = 0.0
+        sb.setValue(5.0)
+        return sb
+
+    @staticmethod
+    def _options(sb):
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        mgr = getattr(sb, "_option_box_manager", None)
+        if mgr is None:
+            mgr = sb._option_box_manager = OptionBoxManager(sb)
+        return mgr
+
+    def _locked(self, sb):
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        lock = ToggleOption(initial=False)
+        self._options(sb).add_option(lock)
+        lock.set_on(True)
+        return lock
+
+    def test_restore_defaults_clears_option_state_like_reset_all(self):
+        sb = self._field("s000")
+        lock = self._locked(sb)
+        self.menu._restore_menu_defaults()
+        self.assertEqual(sb.value(), 0.0)
+        self.assertFalse(lock.is_on, "a menu reset must clear the field's lock")
+
+    def test_restore_defaults_honors_exclude_from_reset(self):
+        kept = self._field("s000")
+        kept.exclude_from_reset = True
+        reset = self._field("s001")
+        self.menu._restore_menu_defaults()
+        self.assertEqual(kept.value(), 5.0)
+        self.assertEqual(reset.value(), 0.0)
+
+    def test_field_reset_inside_a_shown_menu_reaches_the_host_state(self):
+        from uitk.widgets.optionBox.options.reset import ResetOption
+
+        sb = self._field("s000")
+        options = self._options(sb).set_reset()
+        self.menu.show()
+        self.assertTrue(self.menu.isWindow(), "precondition: menu is a popup")
+        options.find_option(ResetOption).reset()
+        self.assertEqual(sb.value(), 0.0)
+        self.menu.hide()
+
+    def _defaults_button(self):
+        """The Restore Defaults button, built the way a user meets it: on show."""
+        if not self.menu.isVisible():
+            self.menu.show()  # torn down with the tracked host
+        return self.menu._button_manager.get_button("defaults")
+
+    def _click_defaults(self, modifier=QtCore.Qt.NoModifier):
+        button = self._defaults_button()
+        self.menu._defaults_gesture._modifiers = lambda: modifier
+        button.click()
+
+    def test_defaults_button_tooltip_teaches_the_modifiers(self):
+        self._field("s000")
+        tip = self._defaults_button().toolTip()
+        for text in ("Shift", "Ctrl", "factory defaults"):
+            self.assertIn(text, tip)
+
+    def test_shift_click_makes_the_current_values_the_defaults(self):
+        sb = self._field("s000")  # factory 0, value 5
+        self._click_defaults(QtCore.Qt.ShiftModifier)
+        self.assertEqual(sb.value(), 5.0, "saving leaves the value alone")
+        sb.setValue(9.0)
+        self._click_defaults()
+        self.assertEqual(sb.value(), 5.0, "Restore Defaults now restores the saved")
+
+    def test_ctrl_shift_click_restores_factory_defaults(self):
+        sb = self._field("s000")
+        self._click_defaults(QtCore.Qt.ShiftModifier)
+        sb.setValue(9.0)
+        self._click_defaults(QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier)
+        self.assertEqual(sb.value(), 0.0)
+        self.assertFalse(self.host.state.has_saved_defaults([sb]))
+
+    def _twin(self, name="options_menu"):
+        """A second live instance of this menu -- same objectName, same field
+        -- the way one form shown in two hosts at once is."""
+        self.menu.setObjectName(name)
+        twin = Menu(parent=self.host, add_defaults_button=True)
+        twin.setObjectName(name)
+        field = twin.add("QDoubleSpinBox", setObjectName="s000")
+        field.derived_type = QtWidgets.QDoubleSpinBox
+        field.default_signals = lambda: "valueChanged"
+        field.restore_state = True
+        self.host.state.capture_default(field)
+        field.setValue(9.0)
+        twin.show()  # builds its defaults button, which is what a mirror finds
+        return twin, field
+
+    def test_shift_click_saves_only_the_menu_it_was_clicked_on(self):
+        """A save mirrored to a twin made the twin save ITS values -- over the
+        ones the user had just saved, since the two share saved-default keys."""
+        sb = self._field("s000")  # value 5
+        self._twin()  # value 9
+        self._click_defaults(QtCore.Qt.ShiftModifier)
+        self.assertEqual(self.host.state.default_for(sb), 5.0)
+
+    def test_a_reset_still_reaches_the_menus_twin(self):
+        self._field("s000")
+        _twin, field = self._twin()
+        self._click_defaults()
+        self.assertEqual(field.value(), 0.0)
 
 
 # -----------------------------------------------------------------------------

@@ -18,7 +18,7 @@ from conftest import QtBaseTestCase, setup_qt_application
 
 app = setup_qt_application()
 
-LONG = "O:/Cloud/Projects/jets/c130j/sourceimages/textures/c130j_body_DIFF.png"
+LONG = "D:/Share/Projects/demo/plane/sourceimages/textures/plane_body_DIFF.png"
 
 
 class _TruncationTestCase(QtBaseTestCase):
@@ -62,7 +62,7 @@ class TestColumnTruncationData(_TruncationTestCase):
         table = self._table()
         table.set_column_truncation(1, length=24, mode="start")
         self.assertTrue(
-            table.truncated_column_text(1, LONG).endswith("c130j_body_DIFF.png")
+            table.truncated_column_text(1, LONG).endswith("plane_body_DIFF.png")
         )
 
     def test_path_mode_keeps_whole_components_at_both_ends(self):
@@ -70,7 +70,7 @@ class TestColumnTruncationData(_TruncationTestCase):
         table = self._table()
         table.set_column_truncation(1, length=48, mode="path", insert="…")
         shown = table.truncated_column_text(1, LONG)
-        self.assertEqual(shown, "O:/Cloud/Projects/…/textures/c130j_body_DIFF.png")
+        self.assertEqual(shown, "D:/Share/Projects/…/textures/plane_body_DIFF.png")
         self.assertLessEqual(len(shown), 48)
 
     def test_head_cap_spends_the_budget_on_the_filename_end(self):
@@ -78,7 +78,7 @@ class TestColumnTruncationData(_TruncationTestCase):
         table = self._table()
         table.set_column_truncation(1, length=48, mode="path", insert="…", head=1)
         shown = table.truncated_column_text(1, LONG)
-        self.assertEqual(shown, "O:/…/sourceimages/textures/c130j_body_DIFF.png")
+        self.assertEqual(shown, "D:/…/sourceimages/textures/plane_body_DIFF.png")
         self.assertLessEqual(len(shown), 48)
 
     def test_value_shorter_than_length_is_untouched(self):

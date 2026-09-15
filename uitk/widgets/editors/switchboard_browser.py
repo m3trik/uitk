@@ -663,6 +663,11 @@ class _BrowserState:
     def capture(self, widget, value) -> None:
         self._defaults[widget] = value
 
+    def reset_all(self, block_signals: bool = False, widgets=None) -> None:
+        """``StateManager.reset_all`` contract: reset *widgets* (default: all)."""
+        for widget in list(self._defaults if widgets is None else widgets):
+            self.reset(widget)
+
     def reset(self, widget) -> None:
         if widget not in self._defaults:
             return

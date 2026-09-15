@@ -2,7 +2,8 @@
 # coding=utf-8
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.size_grip import SizeGripMixin
+from uitk.managers.field_visibility import FieldVisibility
+from uitk.managers.window_height import WindowHeight
 from uitk.managers.settings_manager import SettingsManager
 
 
@@ -178,15 +179,18 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
             # collapse was blocked outright) must still suppress the grow.
             delta = self._collapse_shrink
         if window and delta != 0 and not self._suppress_window_resize:
+            # Hand over the height captured BEFORE the content change. Qt may
+            # already have auto-grown the window to meet the new layout
+            # minimum by now, and that growth is this same delta -- re-reading
+            # it inside would double-count. A host that states its own
+            # ``adjust_height_by`` is asked in its own terms (it may override
+            # it); anything else goes straight to the implementation that
+            # method IS, rather than to a copy of it kept in step by hand.
             adjust = getattr(window, "adjust_height_by", None)
             if callable(adjust):
-                # Hand over the height captured BEFORE the content change.
-                # Qt may already have auto-grown the window to meet the new
-                # layout minimum by now, and that growth is this same delta --
-                # re-reading it inside adjust_height_by would double-count.
                 adjust(delta, baseline=old_window_height)
             else:
-                self._fallback_window_resize(window, old_window_height, delta)
+                WindowHeight.adjust_by(window, delta, baseline=old_window_height)
         # Record what the collapse ACTUALLY applied (expand consumes it), or
         # clear it on expand. Outside the resize block so a no-op delta can't
         # strand a stale value from an earlier cycle.
@@ -195,44 +199,6 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
                 None if checked else max(0, old_window_height - window.height())
             )
 
-    @staticmethod
-    def _fallback_window_resize(window, old_window_height, delta):
-        """Mirror MainWindow.adjust_height_by for non-MainWindow hosts."""
-        # Activate the window's own layout and every descendant's layout so
-        # minimumSizeHint reflects the new state. Walking ancestors is wrong
-        # for a top-level window (it has none); the chain that matters is
-        # the descendant tree underneath us.
-        own_layout = window.layout() if callable(getattr(window, "layout", None)) else None
-        if own_layout:
-            own_layout.activate()
-        for child in window.findChildren(QtWidgets.QWidget):
-            layout_attr = getattr(child, "layout", None)
-            if callable(layout_attr):
-                wl = layout_attr()
-            elif isinstance(layout_attr, QtWidgets.QLayout):
-                wl = layout_attr
-            else:
-                wl = None
-            if wl:
-                wl.activate()
-        # Same floor rule MainWindow._content_min_height uses -- a bare
-        # minimumSizeHint under-reports whenever an explicit setMinimumSize
-        # overrides the layout's computed minimum.
-        min_h = SizeGripMixin.content_min_height(window)
-        new_height = max(old_window_height + delta, min_h)
-        # Mirror MainWindow._sync_min_height_to_hint: track the layout hint
-        # explicitly so a stale-high cached minimum can't clamp the resize.
-        # Must track in both directions: once we set an explicit min, Qt
-        # stops auto-raising it on grow, so subsequent expands need us to
-        # raise it back too.
-        if min_h >= 0 and window.minimumHeight() != min_h:
-            window.setMinimumHeight(min_h)
-        # Mirror MainWindow.adjust_height_by's content-max sync: lock the
-        # window max when every remaining visible child is height-fixed (so
-        # the collapse can't leave a dead band), and free it again on expand.
-        SizeGripMixin.sync_window_max_to_content(window)
-        window.resize(window.width(), new_height)  # Qt clamps to synced max
-
     def _set_content_visible(self, visible):
         """Show or hide all child widgets.
 
@@ -240,6 +206,12 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         are visible.  This handles OptionBoxContainer wrappers whose inner
         widgets were hidden during a previous collapse and never un-hidden
         because toggle only touches direct layout children.
+
+        Never re-shows a widget a visibility rule hid -- a mode's
+        ``FieldVisibility`` or a ``show_when`` rule
+        (:meth:`FieldVisibility.is_hidden_field`): the rule decides it, not
+        the group. An option box carries its field's mark, so the box stays
+        down with its field instead of coming back as an empty row.
         """
         if not self.layout():
             return
@@ -249,6 +221,8 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
             w = item.widget() if item else None
             if not w:
                 continue
+            if visible and FieldVisibility.is_hidden_field(w):
+                continue
             w.setVisible(visible)
             # When expanding, ensure children inside wrapper containers
             # (e.g. OptionBoxContainer) are also made visible so that
@@ -257,7 +231,11 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
                 for j in range(w.layout().count()):
                     child_item = w.layout().itemAt(j)
                     child = child_item.widget() if child_item else None
-                    if child and child.isHidden():
+                    if (
+                        child
+                        and child.isHidden()
+                        and not FieldVisibility.is_hidden_field(child)
+                    ):
                         child.setVisible(True)
 
     def setLayout(self, layout):

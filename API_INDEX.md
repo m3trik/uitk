@@ -89,11 +89,19 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class CancelManager`
   - methods: register, provider, reset, new_scope
 
+### `managers/color_model.py` — The observable colour value a picker and its widgets share.
+- `class ColorModel`
+  - methods: hsva, hue, saturation, value, alpha, rgbf, rgbaf, color, hex, mixed, set_hsv, set_rgbf, set_color, to_rgbaf, set_mixed, subscribe, unsubscribe, muted
+
 ### `managers/cursor_manager.py` — One owner for every cursor change in uitk.
 - `class OverrideCursorGuard(QtCore.QObject)`
   - methods: shape, holding, apply, clear, holds, is_stale, notify_stack_drained, reconcile
 - `class CursorManager`
   - methods: pop_stack, push_stack, suspend, drain, release, busy, has_explicit_cursor, push, pop, heal_hover
+
+### `managers/field_visibility.py` — Which fields a container shows, per named mode.
+- `class FieldVisibility`
+  - methods: register, divider, group, define, bind, keys, mode, visible, show, set_visible, set_widget_visible, is_hidden_field
 
 ### `managers/icon_manager.py`
 - `class IconManager`
@@ -119,6 +127,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin)`
   - methods: get_base_dir, resolve_path, create, contains_location, get_container, list_containers, remove_container
 
+### `managers/reset_gesture.py` — ``ResetGesture`` — the click grammar every *Restore Defaults* control shares.
+- `class ResetGesture(QtCore.QObject)`
+  - methods: action_for, modifier_keys, supports_saving, tooltip, perform, trigger, refresh_tooltip, flash, eventFilter
+
 ### `managers/settings_manager.py`
 - constants: DEFAULT_ORG_NAME, DEFAULT_APP_NAME
 - `class SettingsManager`
@@ -133,11 +145,15 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `managers/state_manager.py`
 - `class StateManager(ptk.LoggingMixin)`
-  - methods: apply, suppress_save, save, save_value, load, reset_all, reset, clear, has_default, capture_default, set_default, save_custom, load_custom, clear_custom
+  - methods: apply, suppress_save, save, save_value, load, for_widget, reset_all, reset, clear, has_default, default_for, save_defaults, clear_saved_defaults, has_saved_defaults, capture_default, set_default, save_custom, load_custom, clear_custom
 
 ### `managers/value_manager.py`
 - `class ValueManager`
   - methods: get_value, set_value, get_widget_type_info, is_supported_widget, get_value_by_signal, set_value_by_signal
+
+### `managers/window_height.py` — How a window follows the height of what it is holding.
+- `class WindowHeight`
+  - methods: activate_layouts, sync_min, adjust_by, fit_to_content, fit_host
 
 ### `switchboard/_core.py`
 - `class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardUtilsMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin, SwitchboardNamespaceMixin)`
@@ -177,7 +193,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `switchboard/utils.py`
 - `class SwitchboardUtilsMixin`
-  - methods: busy_cursor, pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, text_from, value_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
+  - methods: busy_cursor, pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, show_when, text_from, value_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
@@ -246,6 +262,20 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class DoubleSpinBox(WheelStepMixin, SpinBoxAdjustingMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`
   - methods: textFromValue
 
+### `widgets/editors/color_editor.py` — An embeddable colour editor, and the popup that is merely one of its hosts.
+- `class ColorEditor(QtWidgets.QWidget, AttributesMixin)`
+  - methods: model, color, qcolor, set_mixed, register_section, section, add_slider
+- `class PulseWaveform`
+  - methods: set_shape, shape, period
+- `class FadeWaveform`
+  - methods: set_shape, shape, period
+- `class RampPreview(QtWidgets.QFrame)`
+  - methods: set_stops, set_shape, shape, waveform, elapsed, set_base, sample, composite, display, showEvent, hideEvent, paintEvent
+- `class ColorRampEditor(QtWidgets.QWidget)`
+  - methods: set_shape, set_reference, labels, editors, editor, colors, decided, set_colors, set_mixed
+- `class ColorEditorPopup(QtWidgets.QDialog)`
+  - methods: keyPressEvent, color, qcolor, get_color
+
 ### `widgets/editors/color_mapping_editor.py` — Reusable color-mapping editor widget.
 - `class ColorMappingEditor(QtWidgets.QWidget)`
   - methods: add_action_button, restore_defaults, color_map, apply_color_map
@@ -302,6 +332,11 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 ### `widgets/formPanel.py` — Themed form window: Header → labelled rows → output log → Footer.
 - `class FormPanel(WindowPanel)`
   - methods: add, clear_rows, set_fields, revalidate, values, set_values, editor, logger, clear_output, set_status, run, apply_pending, pending_commit, arm_apply, disarm_apply, exec_panel, hideEvent, closeEvent, keyPressEvent
+
+### `widgets/gradient_slider.py` — A slider whose track shows the colour it is about to set.
+- constants: STEPS
+- `class GradientSlider(Slider)`
+  - methods: channel, model, bind, refresh, event
 
 ### `widgets/header.py`
 - `class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`
@@ -506,7 +541,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/optionBox/options/reset.py` — Reset option for OptionBox — one-click reset-to-default, with a modifier-gated
 - `class ResetOption(ButtonOption, ptk.LoggingMixin)`
-  - methods: is_bypassed, reset, set_bypassed, setup_widget
+  - methods: is_bypassed, reset, save_as_default, set_bypassed, setup_widget
 
 ### `widgets/optionBox/options/toggle.py` — Toggle option for OptionBox — a persisted binary on/off button.
 - `class BinaryToggleOption(GatingMixin, PersistedOption, ButtonOption)`
@@ -520,6 +555,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 ### `widgets/optionBox/utils.py` — Utilities and helper functions for OptionBox.
 - `class OptionBoxManager(ptk.LoggingMixin)`
   - methods: clear_option, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_affix, affix_mode, resolve_affix, set_reset, browse, enable_clear, disable_clear, clear_options, get_options, restore_option_defaults, find_option, set_order, clear_first, enabled, widget, menu, get_menu, enable_menu, enable_option_menu, disable_menu, add_option, container, remove, add_option_box, add_clear_option, add_menu_option, patch_widget_class, patch_common_widgets
+
+### `widgets/overflow_indicator.py` — Arrows at the edges of a scroll view where its content continues past them.
+- `class OverflowIndicator(QtWidgets.QWidget)`
+  - methods: attach, of, detach, area, shown_edges, refresh, eventFilter, paintEvent
 
 ### `widgets/progressBar.py`
 - `class ProgressBar(QtWidgets.QProgressBar, AttributesMixin)`
@@ -545,7 +584,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/separator.py`
 - `class Separator(QtWidgets.QFrame, AttributesMixin)`
-  - methods: getTitle, setTitle, sizeHint, minimumSizeHint, resizeEvent, paintEvent
+  - methods: getTitle, setTitle, isCheckable, setCheckable, isChecked, setChecked, toggle, mousePressEvent, sizeHint, minimumSizeHint, resizeEvent, paintEvent
 
 ### `widgets/sequencer/_clip.py` — ClipItem — draggable, resizable clip rectangle on the timeline.
 - `class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`
@@ -611,7 +650,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`
-  - methods: set_top_margin, add_track_label, set_track_expanded, set_track_collapsed, eventFilter, selected_names, clear_tracks
+  - methods: set_top_margin, add_track_label, set_track_expanded, set_track_collapsed, selected_sub_rows, eventFilter, selected_names, clear_tracks
 - `class TimelineScene(QtWidgets.QGraphicsScene)`
   - methods: ruler, playhead
 - `class TimelineView(QtWidgets.QGraphicsView)`
@@ -678,7 +717,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/widgetComboBox.py`
 - `class WidgetComboBox(ComboBox)`
-  - methods: setItemText, addWidgetItem, addWidgetAction, widgetAt, takeWidgetAt, currentWidget, item_spacing, actions, action_columns, action_icon_only, show_action_separator, showPopup, hidePopup, arrow_direction, arrow_icon, arrow_alpha, paintEvent, eventFilter, add, add_defaults_button, clear
+  - methods: setItemText, addWidgetItem, addWidgetAction, widgetAt, takeWidgetAt, currentWidget, row_of, row_container, set_row_visible, is_row_visible, field_key, fields, host_of, item_spacing, actions, action_columns, action_icon_only, show_action_separator, showPopup, arrow_direction, arrow_icon, arrow_alpha, paintEvent, add, add_defaults_button, clear
 
 ### `widgets/windowPanel.py` — Themed top-level uitk window: Header → body → Footer.
 - `class WindowPanel(QtWidgets.QWidget, AttributesMixin)`

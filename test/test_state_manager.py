@@ -10,6 +10,7 @@ wrong item -- or, when the list is now shorter, falls out of range and resets
 the combo to item 0 ("resets to None") -- the next session. Persisting by the
 item *text* / *data* survives the list reordering, growing, and shrinking.
 """
+
 import os
 import sys
 import tempfile
@@ -27,8 +28,16 @@ from uitk.widgets.comboBox import ComboBox
 from uitk.managers.state_manager import StateManager
 
 # Item dicts standing in for a directory scan of ``*.fbxexportpreset`` files.
-LIST_ORIG = {"None": None, "presetA": "/a.fbxexportpreset", "presetB": "/b.fbxexportpreset"}
-LIST_REORDERED = {"None": None, "presetB": "/b.fbxexportpreset", "presetA": "/a.fbxexportpreset"}
+LIST_ORIG = {
+    "None": None,
+    "presetA": "/a.fbxexportpreset",
+    "presetB": "/b.fbxexportpreset",
+}
+LIST_REORDERED = {
+    "None": None,
+    "presetB": "/b.fbxexportpreset",
+    "presetA": "/a.fbxexportpreset",
+}
 LIST_SHRUNK = {"None": None, "presetB": "/b.fbxexportpreset"}  # presetA deleted
 
 
@@ -146,7 +155,9 @@ class TestTextMode(_ComboPersistBase):
         self.sm.save(c1)
         self.assertEqual(self.store.value("cmb000/currentIndexChanged"), "presetB")
 
-        empty = self.make_combo({}, restore_by="text")  # no items -> currentText() == ""
+        empty = self.make_combo(
+            {}, restore_by="text"
+        )  # no items -> currentText() == ""
         self.sm.save(empty)
         self.assertEqual(self.store.value("cmb000/currentIndexChanged"), "presetB")
 
@@ -188,7 +199,8 @@ class TestTextWidgetStringRoundTrip(_ComboPersistBase):
             le2 = self.make_lineedit()
             self.sm.load(le2)
             self.assertEqual(
-                le2.text(), text,
+                le2.text(),
+                text,
                 f"line-edit text {text!r} was mangled across save/load",
             )
 
@@ -198,9 +210,7 @@ class TestTextWidgetStringRoundTrip(_ComboPersistBase):
         le = self.make_lineedit()
         le.setText("C:/proj/sourceimages")
         self.sm.save(le)
-        self.assertEqual(
-            self.store.value("le000/textChanged"), "C:/proj/sourceimages"
-        )
+        self.assertEqual(self.store.value("le000/textChanged"), "C:/proj/sourceimages")
 
 
 class TestSettingsManagerBackedStore(QtBaseTestCase):
@@ -451,6 +461,87 @@ class TestRestoreByIsSettableDeclaratively(_ComboPersistBase):
         c.setCurrentIndex(2)
         self.sm.save(c)
         self.assertEqual(self.store.value("cmb000/currentIndexChanged"), "presetB")
+
+
+class TestSavedDefaults(QtBaseTestCase):
+    """Saved defaults layer over the factory ones: save, reset, forget."""
+
+    def setUp(self):
+        super().setUp()
+        self._dir = tempfile.TemporaryDirectory()
+        self.ini = os.path.join(self._dir.name, "state.ini")
+        self.store = QtCore.QSettings(self.ini, QtCore.QSettings.IniFormat)
+        self.sm = StateManager(self.store)
+
+    def tearDown(self):
+        self._dir.cleanup()
+        super().tearDown()
+
+    def spin(self, name="s000", sm=None):
+        """A state-managed spin box: factory default 0.0, current value 5.0."""
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        sb.setObjectName(name)
+        sb.restore_state = True
+        sb.derived_type = QtWidgets.QDoubleSpinBox
+        sb.default_signals = lambda: "valueChanged"
+        (sm or self.sm).capture_default(sb)
+        sb.setValue(5.0)
+        return sb
+
+    def test_a_saved_default_wins_over_the_factory_default(self):
+        sb = self.spin()
+        self.assertEqual(self.sm.save_defaults([sb]), 1)
+        sb.setValue(9.0)
+        self.sm.reset(sb)
+        self.assertEqual(sb.value(), 5.0)
+        sb.setValue(9.0)
+        self.sm.reset_all()
+        self.assertEqual(sb.value(), 5.0)
+
+    def test_saved_defaults_persist_across_sessions(self):
+        self.sm.save_defaults([self.spin()])
+        next_session = StateManager(
+            QtCore.QSettings(self.ini, QtCore.QSettings.IniFormat)
+        )
+        sb = self.spin(sm=next_session)
+        next_session.reset(sb)
+        self.assertEqual(sb.value(), 5.0)
+
+    def test_factory_reset_forgets_the_saved_default(self):
+        sb = self.spin()
+        self.sm.save_defaults([sb])
+        sb.setValue(9.0)
+        self.sm.reset_all(factory=True)
+        self.assertEqual(sb.value(), 0.0)
+        self.assertFalse(self.sm.has_saved_defaults())
+        sb.setValue(9.0)
+        self.sm.reset(sb)
+        self.assertEqual(sb.value(), 0.0, "later resets use the factory default")
+
+    def test_scope_limits_what_is_saved_and_forgotten(self):
+        a, b = self.spin("s000"), self.spin("s001")
+        self.sm.save_defaults([a, b])
+        self.assertEqual(self.sm.clear_saved_defaults([a]), 1)
+        self.assertFalse(self.sm.has_saved_defaults([a]))
+        self.assertTrue(self.sm.has_saved_defaults([b]))
+
+    def test_excluded_widget_is_neither_saved_nor_forgotten(self):
+        sb = self.spin()
+        sb.exclude_from_reset = True
+        self.assertEqual(self.sm.save_defaults(), 0)
+        self.assertFalse(self.sm.has_saved_defaults())
+
+    def test_suppress_save_blocks_saving_defaults(self):
+        sb = self.spin()
+        with self.sm.suppress_save():
+            self.assertEqual(self.sm.save_defaults([sb]), 0)
+        self.assertFalse(self.sm.has_saved_defaults([sb]))
+
+    def test_saving_a_default_leaves_the_session_value_key_alone(self):
+        sb = self.spin()
+        self.sm.save_defaults([sb])
+        self.assertIsNone(self.store.value("s000/valueChanged"))
+        self.assertIsNotNone(self.store.value("defaults/s000/valueChanged"))
 
 
 if __name__ == "__main__":

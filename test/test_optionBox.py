@@ -114,8 +114,10 @@ class TestOptionBoxWrappingVisibility(QtBaseTestCase):
     def test_wrap_does_not_alter_widget_visibility(self):
         """wrap() must not change the widget's explicit visibility state.
 
-        It should always call container.show() and leave the wrapped widget
-        as-is.  Visibility control belongs to the parent (e.g. CollapsableGroup).
+        It shows the container and leaves the wrapped widget as-is: visibility
+        control belongs to the parent (e.g. CollapsableGroup). The exception is
+        a field a visibility rule MARKED hidden (next test); this one is hidden
+        without the mark, which is not the same claim.
         """
         parent = self.track_widget(QtWidgets.QWidget())
         layout = QtWidgets.QVBoxLayout(parent)
@@ -132,8 +134,37 @@ class TestOptionBoxWrappingVisibility(QtBaseTestCase):
 
         # wrap() must NOT un-hide the widget — that's the group's job
         self.assertTrue(btn.isHidden(), "wrap() should not alter widget visibility")
-        # Container itself is always shown by wrap()
+        # An unmarked field's container is shown by wrap()
         self.assertFalse(container.isHidden(), "Container should be shown by wrap()")
+
+    def test_a_box_wrapped_after_a_rule_hid_its_field_starts_hidden(self):
+        """A rule can hide a field before its option box exists -- a mode
+        applied by one widget's ``*_init``, a later init wrapping the field --
+        and wrap() showed the new box anyway: an empty row holding the field's
+        space. The box takes the field's mark and starts hidden, and the rule
+        still brings both back."""
+        from uitk.managers.field_visibility import FieldVisibility
+
+        window = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(window)
+        weights = QtWidgets.QLineEdit("0.25, 0.5")
+        frame = QtWidgets.QSpinBox()
+        layout.addWidget(weights)
+        layout.addWidget(frame)
+        fields = FieldVisibility(fit=lambda: None)
+        fields.define("weight", [weights])
+        fields.define("frame", [frame])
+        fields.mode = "frame"  # the rule runs first
+
+        container = OptionBox(options=[]).wrap(weights)
+        self.track_widget(container)
+        window.show()
+
+        self.assertFalse(container.isVisible(), "an empty option-box row")
+        self.assertTrue(FieldVisibility.is_hidden_field(container))
+        fields.mode = "weight"
+        self.assertTrue(container.isVisible())
+        self.assertTrue(weights.isVisible())
 
     def test_hiding_the_wrapped_widget_hides_the_container(self):
         """A panel toggling a field must not leave its option buttons behind.
@@ -725,17 +756,17 @@ class TestRecentValuesDisplayHelpers(QtBaseTestCase):
 
     def test_smart_path_strips_common_prefix(self):
         values = [
-            "C:/Projects/PRODUCTION/AF/C-5M/Exports/C5_FCS",
-            "C:/Projects/PRODUCTION/AF/C-17A/Exports/SFCS",
-            "C:/Projects/PRODUCTION/AF/C-130/Exports/Flap",
+            "C:/Projects/PRODUCTION/FLEET/WIDEBODY/Exports/WB_FCS",
+            "C:/Projects/PRODUCTION/FLEET/TANKER/Exports/SFCS",
+            "C:/Projects/PRODUCTION/FLEET/TRANSPORT/Exports/Flap",
         ]
         dm = _build_display_map_smart_path(values)
         self.assertIsNotNone(dm)
         for v in values:
             self.assertTrue(dm[v].startswith("\u2026/"))
-        self.assertIn("C-5M", dm[values[0]])
-        self.assertIn("C-17A", dm[values[1]])
-        self.assertIn("C-130", dm[values[2]])
+        self.assertIn("WIDEBODY", dm[values[0]])
+        self.assertIn("TANKER", dm[values[1]])
+        self.assertIn("TRANSPORT", dm[values[2]])
 
     def test_smart_path_single_returns_none(self):
         self.assertIsNone(_build_display_map_smart_path(["C:/only/one"]))
@@ -2204,6 +2235,68 @@ class TestResetOption(QtBaseTestCase):
         opt.widget.click()
         app.processEvents()
         self.assertTrue(opt.is_bypassed)
+
+    # ---- saved defaults (Shift / Ctrl+Shift + click) ---------------------
+
+    def _make_with_state(self):
+        """A spin box (factory default 0, value 5) on a real StateManager window."""
+        from uitk.managers.state_manager import StateManager
+
+        window = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(window)
+        sb = QtWidgets.QDoubleSpinBox()
+        sb.setObjectName("sb")
+        sb.setRange(-100.0, 100.0)
+        sb.derived_type = QtWidgets.QDoubleSpinBox
+        sb.default_signals = lambda: "valueChanged"
+        sb.restore_state = True
+        layout.addWidget(sb)
+        settings = QtCore.QSettings("uitk_test", "reset_option_saved_defaults")
+        settings.clear()
+        window.state = StateManager(settings)
+        window.state.capture_default(sb)
+        sb.setValue(5.0)
+        opt = ResetOption(sb)
+        self.track_widget(OptionBox(options=[opt]).wrap(sb))
+        return sb, opt
+
+    def _click(self, opt, modifier):
+        self._force_modifier(opt, modifier)
+        opt.widget.click()
+        app.processEvents()
+
+    def test_shift_click_makes_the_value_the_default(self):
+        sb, opt = self._make_with_state()
+        self._click(opt, QtCore.Qt.ShiftModifier)
+        self.assertFalse(opt.is_bypassed, "Shift is not a bypass")
+        self.assertEqual(sb.value(), 5.0, "saving leaves the value alone")
+        sb.setValue(9.0)
+        self._click(opt, QtCore.Qt.NoModifier)
+        self.assertEqual(sb.value(), 5.0, "a reset returns to the saved default")
+
+    def test_ctrl_shift_click_returns_to_factory_not_bypass(self):
+        sb, opt = self._make_with_state()
+        self._click(opt, QtCore.Qt.ShiftModifier)
+        sb.setValue(9.0)
+        self._click(opt, QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier)
+        self.assertFalse(opt.is_bypassed, "Ctrl+Shift outranks the Ctrl bypass")
+        self.assertEqual(sb.value(), 0.0)
+        sb.setValue(9.0)
+        self._click(opt, QtCore.Qt.NoModifier)
+        self.assertEqual(sb.value(), 0.0, "the saved default was forgotten")
+
+    def test_tooltip_teaches_save_factory_and_bypass(self):
+        _, opt = self._make_with_state()
+        for text in ("Shift", "factory defaults", "bypass"):
+            self.assertIn(text, opt.widget.toolTip())
+
+    def test_injected_reset_offers_no_saving(self):
+        sb, opt = self._make()  # explicit reset callable: no saved layer
+        self.assertNotIn("Shift", opt.widget.toolTip())
+        self._force_modifier(opt, QtCore.Qt.ShiftModifier)
+        opt.widget.click()
+        app.processEvents()
+        self.assertEqual(sb.value(), 0.0, "Shift on an injected reset just resets")
 
     def test_bypass_snapshots_resets_and_greys_out(self):
         sb, opt = self._make(default=0.0, start=5.0)

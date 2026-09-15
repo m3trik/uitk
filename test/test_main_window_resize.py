@@ -248,13 +248,15 @@ class TestLayoutActivationIsLeavesUp(QtBaseTestCase):
         )
 
     def test_layout_depth_counts_widgets_up_to_the_window(self):
+        from uitk import WindowHeight
+
         win, _log = self._nested_window(depth=3)
         central = win.centralWidget()
-        self.assertEqual(win._layout_depth(central.layout()), 1)
+        self.assertEqual(WindowHeight._depth(win, central.layout()), 1)
         inner = central.findChild(QtWidgets.QWidget)
         self.assertGreater(
-            win._layout_depth(inner.layout()),
-            win._layout_depth(central.layout()),
+            WindowHeight._depth(win, inner.layout()),
+            WindowHeight._depth(win, central.layout()),
         )
 
     def test_a_single_activation_settles_the_window_hint(self):
