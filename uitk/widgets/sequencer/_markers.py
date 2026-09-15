@@ -307,8 +307,11 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         note_action.setDefaultWidget(note_edit)
         menu.addAction(note_action)
 
-        # Inline time editor
-        time_edit = QtWidgets.QLineEdit(f"{self._data.time:.1f}")
+        # Inline time editor. It shows one decimal, so it is applied only when
+        # the text was edited: reading the shown text back moved a marker at
+        # 10.25 to 10.2 whenever its menu was opened.
+        shown_time = f"{self._data.time:.1f}"
+        time_edit = QtWidgets.QLineEdit(shown_time)
         time_edit.setPlaceholderText("Time")
         time_edit.setFixedWidth(140)
         time_action = QtWidgets.QWidgetAction(menu)
@@ -377,17 +380,31 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
             new_time = float(time_edit.text())
         except ValueError:
             new_time = self._data.time
-        if abs(new_time - self._data.time) > 1e-6:
+        if time_edit.text() != shown_time and abs(new_time - self._data.time) > 1e-6:
             self._data.time = max(0.0, new_time)
             self.sync()
             self.update()
             widget.marker_moved.emit(self._data.marker_id, self._data.time)
 
         if chosen == color_action:
-            c = QtWidgets.QColorDialog.getColor(
-                QtGui.QColor(self._data.color), None, "Marker Color"
+            # A marker colour is genuinely a one-shot pick, so this keeps the
+            # popup rather than embedding an editor -- it just gets uitk's
+            # picker instead of the platform dialog. Deliberately minimal
+            # sections: a marker has no alpha and no use for an rgb row.
+            from uitk.widgets.editors.color_editor import ColorEditorPopup
+
+            c = ColorEditorPopup.get_color(
+                self._data.color,
+                parent=None,
+                title="Marker Color",
+                sections=("swatch", "hsv", "hex"),
+                advanced=(),
             )
-            if c.isValid():
+            # ``None`` is a cancelled pick (Escape) or one closed on the opening
+            # colour, and the same colour spelled another way (``#E8A84A`` /
+            # ``#e8a84a``) is no change either: writing it emits
+            # ``marker_changed``, which dirties the consumer's store.
+            if c is not None and c.isValid() and c != QtGui.QColor(self._data.color):
                 self._data.color = c.name()
                 self.update()
                 widget.marker_changed.emit(self._data.marker_id)

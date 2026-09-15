@@ -4,10 +4,10 @@
 
 Run standalone: python -m test.test_widget_combobox
 """
-import unittest
-from unittest.mock import MagicMock
 
-from conftest import QtBaseTestCase, setup_qt_application
+import unittest
+
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
@@ -157,7 +157,8 @@ class TestWidgetComboBoxUniformHeight(QtBaseTestCase):
             for r in range(combo._model.rowCount())
         ]
         self.assertEqual(
-            heights, [target, target],
+            heights,
+            [target, target],
             f"All rows must use uniform height {target}; got {heights}",
         )
 
@@ -199,7 +200,8 @@ class TestWidgetComboBoxUniformHeight(QtBaseTestCase):
         combo.actions.add("Tall Action Button", lambda: None)
         # The original (selectable) row's height must be unchanged.
         self.assertEqual(
-            combo._model.item(0).sizeHint().height(), baseline,
+            combo._model.item(0).sizeHint().height(),
+            baseline,
             "Selectable rows must not grow when an actions section is added",
         )
 
@@ -271,8 +273,7 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
         combo = self.track_widget(WidgetComboBox())
         combo.action_columns = 2
         combo.actions.add(
-            {"A": lambda: None, "B": lambda: None,
-             "C": lambda: None, "D": lambda: None}
+            {"A": lambda: None, "B": lambda: None, "C": lambda: None, "D": lambda: None}
         )
 
         last = combo._model.rowCount() - 1
@@ -305,7 +306,8 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
             "separator row left with an invalid sizeHint (the dead-space bug)",
         )
         self.assertEqual(
-            sep_item.sizeHint().height(), sep_widget.minimumHeight(),
+            sep_item.sizeHint().height(),
+            sep_widget.minimumHeight(),
             "separator row height must match the separator widget's own height",
         )
 
@@ -320,10 +322,14 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
         self.assertTrue(btn.isEnabled())
 
         action.setEnabled(False)
-        self.assertFalse(btn.isEnabled(), "button did not follow action.setEnabled(False)")
+        self.assertFalse(
+            btn.isEnabled(), "button did not follow action.setEnabled(False)"
+        )
 
         action.setEnabled(True)
-        self.assertTrue(btn.isEnabled(), "button did not follow action.setEnabled(True)")
+        self.assertTrue(
+            btn.isEnabled(), "button did not follow action.setEnabled(True)"
+        )
 
     def test_rebuild_does_not_accumulate_action_connections(self):
         """Repeated rebuilds (e.g. preset refresh) must not leave dangling
@@ -345,9 +351,7 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
         combo = self.track_widget(WidgetComboBox())
         combo.action_icon_only = True
         combo.show_action_separator = False
-        combo.actions.add(
-            {"A": lambda: None, "B": lambda: None, "C": lambda: None}
-        )
+        combo.actions.add({"A": lambda: None, "B": lambda: None, "C": lambda: None})
         combo.action_columns = 3
 
         # No separator -> only the button container row is added.
@@ -399,6 +403,172 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
             combo._model.item(0).sizeHint().height(),
             combo._row_target_height(),
         )
+
+
+class TestWidgetComboBoxRowVisibility(QtBaseTestCase):
+    """Rows the current settings make irrelevant are hidden, not greyed
+    (2026-09-14): the model row, its container, and the titled separator
+    over a section whose every row is hidden. The rows register on the
+    combo's own FieldVisibility under their objectNames, so a dependency rule
+    (``sb.show_when``) can decide one key and inherit the bookkeeping."""
+
+    def _combo(self):
+        from uitk.widgets.separator import Separator
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        cmb = self.track_widget(WidgetComboBox())
+        rows = {}
+        for section, keys in (("Textures", ("opt", "rdo")), ("Animation", ("keys",))):
+            sep = Separator(title=section)
+            sep.setObjectName(f"sep_{section}")
+            rows[section] = sep
+            for key in keys:
+                w = QtWidgets.QCheckBox(key)
+                w.setObjectName(key)
+                rows[key] = w
+        cmb.add(
+            [
+                (rows["Textures"], "Textures"),
+                (rows["opt"], "opt"),
+                (rows["rdo"], "rdo"),
+                (rows["Animation"], "Animation"),
+                (rows["keys"], "keys"),
+            ],
+            header="Tasks",
+        )
+        return cmb, rows
+
+    def test_a_hidden_row_hides_its_model_row_and_container(self):
+        cmb, rows = self._combo()
+        self.assertTrue(cmb.is_row_visible(rows["rdo"]))
+        cmb.set_row_visible(rows["rdo"], False)
+        row = cmb.row_of(rows["rdo"])
+        self.assertTrue(cmb.view().isRowHidden(row))
+        self.assertTrue(cmb.row_container(rows["rdo"]).isHidden())
+        self.assertFalse(cmb.is_row_visible(rows["rdo"]))
+        cmb.set_row_visible(rows["rdo"], True)
+        self.assertFalse(cmb.view().isRowHidden(row))
+        self.assertTrue(cmb.is_row_visible(rows["rdo"]))
+
+    def test_the_fields_register_rows_by_name_under_their_section(self):
+        cmb, rows = self._combo()
+        fields = cmb.fields
+        self.assertEqual(set(fields.keys), {"opt", "rdo", "keys"})
+        self.assertEqual(set(fields.visible), {"opt", "rdo", "keys"}, "all on to start")
+        fields.set_visible("rdo", False)
+        self.assertFalse(cmb.is_row_visible(rows["rdo"]))
+        self.assertTrue(cmb.is_row_visible(rows["Textures"]), "opt still shows")
+        fields.set_visible("opt", False)
+        self.assertFalse(
+            cmb.is_row_visible(rows["Textures"]), "a section with nothing showing"
+        )
+        self.assertTrue(cmb.is_row_visible(rows["Animation"]))
+        fields.set_visible("opt", True)
+        self.assertTrue(cmb.is_row_visible(rows["Textures"]))
+        self.assertIs(cmb.fields, fields, "one registry per combo")
+
+    def test_host_of_finds_the_combo_from_a_row_widget(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        cmb, rows = self._combo()
+        self.assertIs(WidgetComboBox.host_of(rows["rdo"]), cmb)
+        self.assertIsNone(WidgetComboBox.host_of(self.track_widget(QtWidgets.QLabel())))
+
+    def test_the_popup_does_not_keep_the_height_of_hidden_rows(self):
+        cmb, rows = self._combo()
+        cmb.show()
+        cmb.showPopup()
+        tall = cmb.view().window().height()
+        cmb.hidePopup()
+        cmb.fields.set_visible("opt", False)
+        cmb.fields.set_visible("rdo", False)  # and the Textures separator with them
+        cmb.showPopup()
+        short = cmb.view().window().height()
+        cmb.hidePopup()
+        self.assertLess(short, tall, f"popup kept the hidden rows' height ({tall})")
+
+    def test_the_action_rows_are_not_fields(self):
+        """The actions section is not a setting. Registered, its button row sat
+        in the last titled section and held that caption up after every real
+        row under it was hidden."""
+        cmb, rows = self._combo()
+        cmb.actions.add("Refresh", lambda: None)
+        fields = cmb.fields
+        self.assertEqual(set(fields.keys), {"opt", "rdo", "keys"})
+        fields.set_visible("keys", False)
+        self.assertFalse(
+            cmb.is_row_visible(rows["Animation"]), "nothing is left under it"
+        )
+
+    def test_a_rebuilt_registry_keeps_the_rows_the_rules_hid(self):
+        """A new row changes the row set, and ``add()`` rebuilds the actions
+        section besides; the registry rebuilt on the next ``fields`` access
+        showed every row, bringing back rows other rules had hidden."""
+        cmb, rows = self._combo()
+        cmb.actions.add("Refresh", lambda: None)
+        cmb.fields.set_visible("rdo", False)
+        late = QtWidgets.QCheckBox("late")
+        late.setObjectName("late")
+        cmb.add([(late, "late")], clear=False)
+        fields = cmb.fields
+        self.assertIn("late", fields.keys, "precondition: the registry was rebuilt")
+        self.assertFalse(cmb.is_row_visible(rows["rdo"]))
+        self.assertNotIn("rdo", fields.visible)
+        self.assertTrue(cmb.is_row_visible(late))
+
+
+class TestWidgetComboBoxOverflowArrows(QtBaseTestCase):
+    """The popup's arrows come from the shared ``OverflowIndicator`` and
+    follow what actually scrolls, not the row count."""
+
+    def _combo(self, rows=30, visible=10):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        cmb = self.track_widget(WidgetComboBox())
+        boxes = [QtWidgets.QCheckBox(f"opt {i}") for i in range(rows)]
+        cmb.add(boxes)
+        cmb.setMaxVisibleItems(visible)
+        cmb.show()
+        return cmb, boxes
+
+    def test_the_popup_arrows_follow_the_scroll_position(self):
+        from uitk.widgets.overflow_indicator import OverflowIndicator
+
+        cmb, _boxes = self._combo()
+        cmb.showPopup()
+        try:
+            view = cmb.view()
+            ind = OverflowIndicator.of(view)
+            self.assertIsNotNone(ind, "showPopup attaches the shared indicator")
+            QtWait.until(
+                lambda: ind.shown_edges == ("bottom",),
+                "only the bottom arrow at the first row",
+            )
+            view.scrollToBottom()
+            QtWait.until(
+                lambda: ind.shown_edges == ("top",), "only the top arrow at the end"
+            )
+        finally:
+            cmb.hidePopup()
+
+    def test_hidden_rows_do_not_make_an_arrow(self):
+        """30 rows over a 25-row popup used to show the arrow by COUNT even
+        with 10 of them hidden -- when nothing is cropped at all."""
+        from uitk.widgets.overflow_indicator import OverflowIndicator
+
+        cmb, boxes = self._combo(rows=30, visible=25)
+        for box in boxes[20:]:
+            cmb.set_row_visible(box, False)
+        cmb.showPopup()
+        try:
+            ind = OverflowIndicator.of(cmb.view())
+            QtWait.pump()
+            self.assertEqual(
+                ind.shown_edges, (), "20 visible rows fit in a 25-row popup"
+            )
+            self.assertFalse(ind.isVisible())
+        finally:
+            cmb.hidePopup()
 
 
 class TestWidgetComboBoxArrowAffordance(QtBaseTestCase):
@@ -493,9 +663,7 @@ class TestWidgetComboBoxRowTracking(QtBaseTestCase):
         combo.addWidgetItem(w0)
         combo.addWidgetItem(w1)
         # Never shown: both index widgets are still deferred (pending flush).
-        self.assertEqual(
-            sorted(r for r, _ in combo._pending_index_widgets), [0, 1]
-        )
+        self.assertEqual(sorted(r for r, _ in combo._pending_index_widgets), [0, 1])
 
         taken = combo.takeWidgetAt(0)
         self.assertIs(taken, w0)
@@ -610,9 +778,7 @@ class TestWidgetComboBoxRowLabels(QtBaseTestCase):
         combo = self._combo_with(field)
 
         self.assertIs(combo.widgetAt(0), field)
-        self.assertIs(
-            combo._row_containers[0].property("_embedded_widget"), field
-        )
+        self.assertIs(combo._row_containers[0].property("_embedded_widget"), field)
         self.assertIn(id(field), combo._widget_defaults)
 
     def test_label_does_not_grow_row_height(self):

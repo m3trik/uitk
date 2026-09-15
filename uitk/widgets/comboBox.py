@@ -11,6 +11,7 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
+from uitk.widgets.overflow_indicator import OverflowIndicator
 
 
 class CustomStyle(QtWidgets.QProxyStyle):
@@ -1516,6 +1517,10 @@ class ComboBox(
         # an item rather than being swallowed re-activating the window.
         self._activate_host_window()
         self._ensure_popup_filters(view)
+        # Arrows at the popup's top/bottom edge while rows are scrolled out
+        # of view past it. Attached here rather than in __init__ because a
+        # subclass may swap the view (WidgetComboBox does); idempotent.
+        OverflowIndicator.attach(view)
         self.before_popup_shown.emit()
         with self._combo_animation_suppressed():
             super().showPopup()

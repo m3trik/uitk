@@ -38,7 +38,7 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from qtpy import QtWidgets, QtGui, QtCore
 
@@ -152,6 +152,7 @@ class TableActions:
         states: Dict[str, Dict[str, Any]],
         header_icon: str | None = None,
         square: bool = True,
+        drag_action: Optional[Callable[[List[int], int], None]] = None,
     ) -> None:
         """Register an action column.
 
@@ -178,11 +179,18 @@ class TableActions:
             Icon name displayed in the column header.
         square : bool
             If ``True`` the column is fixed-width, matching row height.
+        drag_action : callable(rows, col), optional
+            Called ONCE with every row a drag down the column crossed (in
+            crossing order, rows whose state has no ``action`` left out), in
+            place of each row's state action -- so the panel can apply the
+            rows as one undo step with one refresh.  Without it each crossed
+            row is dispatched like a click.
         """
         self._columns[column] = {
             "states": states,
             "header_icon": header_icon,
             "square": square,
+            "drag_action": drag_action,
         }
         self._table.set_column_selectable(column, False)
         self._table.set_column_click_action(column, self._on_click)
@@ -270,15 +278,29 @@ class TableActions:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _action_for(self, row: int, col: int) -> Optional[Callable[[int, int], None]]:
+        """The ``action`` of the state cell (*row*, *col*) is in, or ``None``."""
+        cfg = self._columns.get(col)
+        state = cfg["states"].get(self._cell_states.get((row, col))) if cfg else None
+        return (state or {}).get("action") or None
+
     def _on_click(self, row: int, col: int) -> None:
         """Dispatch a cell click to the current state's action callback."""
-        state_name = self._cell_states.get((row, col))
-        cfg = self._columns.get(col)
-        if not cfg or not state_name:
+        action = self._action_for(row, col)
+        if action:
+            action(row, col)
+
+    def _on_drag(self, rows: List[int], col: int) -> None:
+        """Dispatch a drag across *rows* of *col* (see ``add``'s ``drag_action``)."""
+        live = [row for row in rows if self._action_for(row, col)]
+        if not live:
             return
-        state = cfg["states"].get(state_name)
-        if state and state.get("action"):
-            state["action"](row, col)
+        drag_action = self._columns[col].get("drag_action")
+        if drag_action:
+            drag_action(live, col)
+            return
+        for row in live:
+            self._on_click(row, col)
 
     def _set_header_icon(self, column: int, icon_name: str) -> None:
         header_item = self._table.horizontalHeaderItem(column)

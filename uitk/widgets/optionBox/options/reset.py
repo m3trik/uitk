@@ -3,13 +3,17 @@
 """Reset option for OptionBox — one-click reset-to-default, with a modifier-gated
 "hold at default" (bypass) toggle.
 
-A small icon button beside any value widget. A **plain click resets the wrapped
-widget to its registry default** (a normal, persisted reset). Hold **Alt or
-Ctrl** while clicking to instead **bypass** the parameter: the option snapshots
-the current value, resets to default *transiently* (the persisted value stays
-the user's), and greys the widget out; the icon goes the project "error" red so
-bypassed parameters read at a glance. Clicking a bypassed button restores the
-snapshot and re-enables the widget.
+A small icon button beside any value widget, speaking the same click grammar as
+every *Restore Defaults* control (:class:`~uitk.managers.reset_gesture.ResetGesture`):
+
+* **Click** resets the wrapped widget to its default (a normal, persisted reset).
+* **Shift + Click** makes the current value the field's default.
+* **Ctrl + Shift + Click** forgets that saved default -- back to factory.
+* **Alt or Ctrl + Click** instead **bypasses** the parameter: the option
+  snapshots the current value, resets to default *transiently* (the persisted
+  value stays the user's), and greys the widget out; the icon goes the project
+  "error" red so bypassed parameters read at a glance. Clicking a bypassed
+  button restores the snapshot and re-enables the widget.
 
 Bypass is non-persistent: each session starts un-bypassed, so a panel never
 reopens with parameters mysteriously held at default.
@@ -29,6 +33,8 @@ import pythontk as ptk
 from qtpy import QtCore, QtWidgets
 
 from ._options import ButtonOption
+from uitk.managers.reset_gesture import ResetGesture
+from uitk.managers.state_manager import StateManager
 from uitk.managers.value_manager import ValueManager
 
 
@@ -42,19 +48,23 @@ _DEFAULT_BYPASS_MODIFIER = QtCore.Qt.AltModifier | QtCore.Qt.ControlModifier
 class ResetOption(ButtonOption, ptk.LoggingMixin):
     """Reset-to-default button with a modifier-gated *bypass* toggle.
 
-    Plain click resets the wrapped widget to its default (persisted). Hold a
-    modifier (``Alt`` or ``Ctrl`` by default) while clicking to toggle *bypass*
-    — snapshot the value, reset to default transiently, and grey the widget
-    out; click the bypassed button again to restore.
+    Plain click resets the wrapped widget to its default (persisted); Shift saves
+    the current value as the default and Ctrl+Shift forgets it (see the module
+    docstring). Hold the bypass modifier (``Alt`` or ``Ctrl`` by default) while
+    clicking to toggle *bypass* — snapshot the value, reset to default
+    transiently, and grey the widget out; click the bypassed button again to
+    restore.
 
     Args:
         wrapped_widget: The widget this option resets/bypasses.
         reset: Optional callable applied to put the widget at its default. When
             ``None``, the wrapped widget's window ``StateManager`` is used
-            (``window.state.reset(widget)``).
+            (``window.state.reset(widget)``) — which is also what saving and
+            forgetting a default need; an injected ``reset`` has no saved layer.
         icon: Icon name (theme-coloured normally, ``disabled_color`` while
             bypassed).
-        tooltip: Tooltip while active (plain reset / modifier bypass).
+        tooltip: Tooltip while active. ``None`` builds the grammar tooltip
+            (:meth:`ResetGesture.tooltip`).
         tooltip_bypassed: Tooltip while bypassed (click to restore).
         disabled_color: Hex tint for the icon while bypassed. Defaults to
             ``pythontk.Palette.status()["error"][0]``.
@@ -75,12 +85,18 @@ class ResetOption(ButtonOption, ptk.LoggingMixin):
         *,
         reset: Optional[Callable] = None,
         icon: str = "undo",
-        tooltip: str = "Reset to default.\n\nAlt/Ctrl+click: hold at default (bypass).",
+        tooltip: Optional[str] = None,
         tooltip_bypassed: str = "Held at default (bypassed). Click to restore your value.",
         disabled_color: str = _DEFAULT_DISABLED_COLOR,
         bypass_modifier: QtCore.Qt.KeyboardModifier = _DEFAULT_BYPASS_MODIFIER,
         order: Optional[int] = None,
     ):
+        if tooltip is None:
+            tooltip = ResetGesture.tooltip(
+                "Reset",
+                saving=reset is None,
+                bypass=ResetGesture.modifier_keys(bypass_modifier),
+            )
         # callback=None: we wire clicked -> _handle_click ourselves (mirrors
         # ToggleOption) and track the bypass state internally rather than via a
         # checkable button, so there's no Qt checked-state to keep in sync.
@@ -106,8 +122,12 @@ class ResetOption(ButtonOption, ptk.LoggingMixin):
         """``True`` while the parameter is bypassed (held at its default)."""
         return self._is_bypassed
 
-    def reset(self) -> None:
+    def reset(self, *, factory: bool = False) -> None:
         """Reset the wrapped widget to its default (one-shot, persisted).
+
+        ``factory=True`` (Ctrl+Shift+click) first forgets the field's saved
+        default, so it returns to the value the UI shipped with. An injected
+        ``reset`` callable has no saved layer and ignores it.
 
         This is the plain-click action; unlike :meth:`set_bypassed` it does not
         snapshot, grey out, or suppress persistence — the default is the value
@@ -120,8 +140,32 @@ class ResetOption(ButtonOption, ptk.LoggingMixin):
         alone. Bypass deliberately does **not** do this — it is a transient
         hold that must restore exactly what it suspended.
         """
+        if factory and self._reset is None:
+            state = self._state()
+            if ResetGesture.supports_saving(state):
+                state.clear_saved_defaults([self.wrapped_widget])
         self._apply_reset(suppress=False)
         self._restore_sibling_options()
+
+    def save_as_default(self) -> bool:
+        """Make the field's current value its default (Shift+click).
+
+        Persisted by the window ``StateManager`` (``save_defaults``), so later
+        resets -- this button's and the panel's -- return here until a factory
+        reset forgets it.
+
+        Returns:
+            ``True`` when a default was saved.
+        """
+        state = self._state()
+        if not ResetGesture.supports_saving(state):
+            return False
+        return bool(state.save_defaults([self.wrapped_widget]))
+
+    def _state(self):
+        """The wrapped widget's owning ``StateManager``, or ``None``."""
+        w = self.wrapped_widget
+        return StateManager.for_widget(w) if w is not None else None
 
     def _restore_sibling_options(self) -> None:
         """Return every other option on this field to its own default."""
@@ -195,10 +239,15 @@ class ResetOption(ButtonOption, ptk.LoggingMixin):
         if self._is_bypassed:
             self.set_bypassed(False)
             return
-        if self._current_modifiers() & self._bypass_modifier:
+        action = ResetGesture.action_for(
+            self._current_modifiers(), bypass_modifier=self._bypass_modifier
+        )
+        if action == ResetGesture.BYPASS:
             self.set_bypassed(True)
+        elif action == ResetGesture.SAVE and self._reset is None:
+            self.save_as_default()
         else:
-            self.reset()
+            self.reset(factory=action == ResetGesture.FACTORY)
 
     def _current_modifiers(self):
         """Active keyboard modifiers at click time (seam for testing/DI)."""
@@ -266,8 +315,8 @@ class ResetOption(ButtonOption, ptk.LoggingMixin):
             self._reset()
             return
         w = self.wrapped_widget
-        state = getattr(self._find_parent_window(), "state", None)
-        if w is None or state is None or not hasattr(state, "reset"):
+        state = self._state()
+        if state is None:
             return
         suppress_save = getattr(state, "suppress_save", None)
         if suppress and callable(suppress_save):

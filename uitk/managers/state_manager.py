@@ -32,6 +32,11 @@ class StateManager(ptk.LoggingMixin):
     # Sentinel returned by ``_coerce_for_store`` for values QSettings can't
     # round-trip — distinct from a legitimately stored ``None``.
     _UNSUPPORTED = object()
+    # Sentinel returned by ``_read_stored`` for a key that holds nothing.
+    _NO_VALUE = object()
+    # Key prefix under which ``save_defaults`` persists a widget's saved
+    # default, beside its session value (``<name>/<signal>``).
+    _SAVED_DEFAULTS_PREFIX = "defaults/"
 
     # Index-based widgets (combo boxes) report ``-1`` for "no selection",
     # which they briefly do while their model is being (re)populated.
@@ -78,7 +83,7 @@ class StateManager(ptk.LoggingMixin):
         if not getattr(widget, "restore_state", False):
             return None
         name = widget.objectName()
-        signal_name = widget.derived_type and widget.default_signals()
+        signal_name = getattr(widget, "derived_type", None) and widget.default_signals()
         if not name or not signal_name:
             self.logger.debug(f"Invalid state key: name={name}, signal={signal_name}")
             return None
@@ -340,7 +345,7 @@ class StateManager(ptk.LoggingMixin):
 
         self.save_value(key, value)
 
-    def save_value(self, key: str, value: Any) -> None:
+    def save_value(self, key: str, value: Any) -> bool:
         """Serialize and persist ``value`` at an explicit state ``key``.
 
         Lower-level companion to :meth:`save`: it writes (and per-write
@@ -350,9 +355,12 @@ class StateManager(ptk.LoggingMixin):
         the no-selection guard, keeping a single write chokepoint.
 
         Writes are silently skipped when ``suppress_save`` is active.
+
+        Returns:
+            ``True`` when the value was written.
         """
         if self._save_suppressed:
-            return
+            return False
 
         # Combo/index widgets briefly report ``-1`` (no selection) while
         # their model is being (re)populated; persisting that transient
@@ -360,32 +368,54 @@ class StateManager(ptk.LoggingMixin):
         # next change.
         if value == self._NO_SELECTION and key.endswith(f"/{self._INDEX_SIGNAL}"):
             self.logger.debug(f"Skipping no-selection (-1) transient for {key}")
-            return
+            return False
 
         stored = self._coerce_for_store(value)
         if stored is self._UNSUPPORTED:
             self.logger.debug(f"Unsupported type for {key}: {type(value)}")
-            return
+            return False
 
         try:
-            store = self.qsettings
-            store.setValue(key, stored)
-            # Belt-and-braces sync alongside the canonical
-            # ``MainWindow.on_close``/``on_hide`` sync wires. Some host
-            # apps (notably Maya on Windows) can exit without delivering
-            # closeEvent to child windows, dropping QSettings' in-memory
-            # write cache. Per-save sync makes state durable regardless
-            # of how the process tears down. Cheap on Windows (registry
-            # writes are sub-millisecond); for high-frequency signals
-            # (slider drag) on slower QSettings backends, consider
-            # adding a debounce in ``sync_widget_values`` upstream
-            # rather than removing this sync.
-            sync = getattr(store, "sync", None)
-            if callable(sync):
-                sync()
+            self.qsettings.setValue(key, stored)
+            self._sync_store()
             self.logger.debug(f"Stored state: {key} -> {stored}")
+            return True
         except Exception as e:
             self.logger.warning(f"Failed to store state for {key}: {e}")
+            return False
+
+    def _sync_store(self) -> None:
+        """Flush the store now.
+
+        Belt-and-braces sync alongside the canonical ``MainWindow.on_close`` /
+        ``on_hide`` sync wires. Some host apps (notably Maya on Windows) can
+        exit without delivering closeEvent to child windows, dropping QSettings'
+        in-memory write cache. Per-write sync makes state durable regardless of
+        how the process tears down. Cheap on Windows (registry writes are
+        sub-millisecond); for high-frequency signals (slider drag) on slower
+        QSettings backends, consider adding a debounce in
+        ``sync_widget_values`` upstream rather than removing this sync.
+        """
+        sync = getattr(self.qsettings, "sync", None)
+        if callable(sync):
+            sync()
+
+    def _read_stored(self, key: str, widget: QtWidgets.QWidget = None) -> Any:
+        """The decoded value stored at *key*, or :data:`_NO_VALUE` when absent.
+
+        Decode is the mirror of the encode side, so it keys off the STORE, not
+        the widget: a SettingsManager store has already decoded (its value()
+        pairs with its encoding setValue) — a second decode would be lossy
+        ("1.10" -> 1.1). A raw QSettings store holds what _coerce_for_store
+        encoded (containers JSON-encoded, ambiguous strings quoted), so it
+        decodes here; non-JSON legacy strings fall through verbatim.
+        """
+        value = self._get_settings(widget).value(key)
+        if value is None:
+            return self._NO_VALUE
+        if self._store_encodes:
+            return value
+        return SettingsManager.decode_stored_value(value)
 
     def load(self, widget: QtWidgets.QWidget) -> None:
         """Load the saved value from QSettings and apply it to the widget."""
@@ -397,53 +427,86 @@ class StateManager(ptk.LoggingMixin):
             self._defaults[widget] = self._get_current_value(widget)
 
         try:
-            value = self._get_settings(widget).value(key)
-            if value is not None:
-                # Decode is the mirror of the encode side, so it keys off the
-                # STORE, not the widget: a SettingsManager store has already
-                # decoded (its value() pairs with its encoding setValue) — a
-                # second decode would be lossy ("1.10" -> 1.1). A raw
-                # QSettings store holds what _coerce_for_store encoded
-                # (containers JSON-encoded, ambiguous strings quoted), so it
-                # decodes here; non-JSON legacy strings fall through verbatim.
-                if self._store_encodes:
-                    parsed_value = value
-                else:
-                    parsed_value = SettingsManager.decode_stored_value(value)
+            parsed_value = self._read_stored(key, widget)
+            if parsed_value is not self._NO_VALUE:
                 with self.suppress_save():
                     self.apply(widget, parsed_value)
                 self.logger.debug(f"Loaded state: {key} -> {parsed_value}")
         except EOFError:
             self.logger.debug(f"EOFError reading state for {key}")
 
-    def reset_all(self, block_signals: bool = False) -> None:
-        """Reset all widgets with stored defaults to their original values.
+    @staticmethod
+    def for_widget(widget: QtWidgets.QWidget) -> Optional["StateManager"]:
+        """The state manager that owns *widget*, or ``None``.
 
-        Parameters:
-            block_signals: If True, block signals during reset. If False (default),
-                signals will fire which ensures proper UI updates.
-
-        Note:
-            Widgets with `exclude_from_reset=True` attribute will be skipped.
+        Walks *widget* and its ancestors for the first ``state`` exposing
+        ``reset`` (a ``MainWindow``'s). A popup ``Menu`` reparented on show
+        severs that chain, so a widget advertising ``owner_window()`` (duck-typed:
+        ``Menu``) is asked for its host before the walk continues.
         """
+        curr = widget
+        while curr is not None:
+            state = getattr(curr, "state", None)
+            if callable(getattr(state, "reset", None)):
+                return state
+            owner_window = getattr(curr, "owner_window", None)
+            if callable(owner_window):
+                host = owner_window()
+                state = getattr(host, "state", None)
+                if callable(getattr(state, "reset", None)):
+                    return state
+            curr = curr.parentWidget()
+        return None
+
+    def _reset_targets(self, widgets=None) -> list:
+        """The widgets a defaults operation acts on.
+
+        Live widgets with a captured default, limited to *widgets* when given
+        (e.g. one menu's fields). ``exclude_from_reset`` opts a widget out of
+        every defaults operation — reset, save and forget alike.
+        """
+        scope = None if widgets is None else set(widgets)
         targets = []
-        for widget, default_value in list(self._defaults.items()):
+        for widget in list(self._defaults.keys()):
             # A live wrapper can outlast its C++ object; touching it raises
-            # RuntimeError. Drop the entry instead of crashing the reset.
+            # RuntimeError. Drop the entry instead of crashing the caller.
             try:
                 widget.objectName()
             except RuntimeError:
                 self._defaults.pop(widget, None)
                 continue
 
-            # Skip widgets explicitly excluded from reset
+            if scope is not None and widget not in scope:
+                continue
+
             if getattr(widget, "exclude_from_reset", False):
                 self.logger.debug(
-                    f"Skipping reset for {widget.objectName()} (exclude_from_reset=True)"
+                    f"Skipping {widget.objectName()} (exclude_from_reset=True)"
                 )
                 continue
 
-            targets.append((widget, default_value))
+            targets.append(widget)
+        return targets
+
+    def reset_all(
+        self, block_signals: bool = False, widgets=None, factory: bool = False
+    ) -> None:
+        """Reset widgets to their defaults (see :meth:`default_for`).
+
+        Parameters:
+            block_signals: If True, block signals during reset. If False (default),
+                signals will fire which ensures proper UI updates.
+            widgets: Optional iterable limiting the reset to these widgets (e.g.
+                one menu's items). ``None`` (default) resets every widget.
+            factory: Forget the widgets' saved defaults first (see
+                :meth:`save_defaults`), so they return to the factory defaults.
+
+        Note:
+            Widgets with `exclude_from_reset=True` attribute will be skipped.
+        """
+        if factory:
+            self.clear_saved_defaults(widgets)
+        targets = self._reset_targets(widgets)
 
         # Per-field option state is cleared FIRST, in its own pass, because some
         # of it CHANGES WHAT APPLYING A VALUE DOES. A ``link_spinboxes`` lock
@@ -456,10 +519,11 @@ class StateManager(ptk.LoggingMixin):
         # opting out of the reset entirely) and is still safe: propagation is
         # driven by the lock on the field being *changed*, and every field that
         # changes here has just been unlocked.
-        for widget, _ in targets:
+        for widget in targets:
             self._restore_option_defaults(widget)
 
-        for widget, default_value in targets:
+        for widget in targets:
+            default_value = self.default_for(widget)
             # Temporarily override block_signals_on_restore if specified.
             # Default matches module-wide default (False) so widgets that
             # never had the attribute don't inherit it as True post-reset.
@@ -479,9 +543,9 @@ class StateManager(ptk.LoggingMixin):
                         widget.block_signals_on_restore = original_block
 
     def reset(self, widget: QtWidgets.QWidget) -> None:
-        """Reset a widget to its default value."""
+        """Reset a widget to its default (see :meth:`default_for`)."""
         if widget in self._defaults:
-            default = self._defaults[widget]
+            default = self.default_for(widget)
             self.apply(widget, default)
             self._sync_stored_default(widget, default)
 
@@ -535,6 +599,79 @@ class StateManager(ptk.LoggingMixin):
     def has_default(self, widget: QtWidgets.QWidget) -> bool:
         """Check if a widget has a stored default value."""
         return widget in self._defaults
+
+    # ---- saved defaults ---------------------------------------------------
+    # A widget's FACTORY default is ``_defaults`` (captured from the UI before
+    # any restore). A SAVED default is the user's "make these the defaults",
+    # persisted under ``_SAVED_DEFAULTS_PREFIX`` beside the session value: it
+    # survives sessions and wins over the factory default until forgotten.
+
+    def default_for(self, widget: QtWidgets.QWidget) -> Any:
+        """The value a reset puts *widget* at.
+
+        Returns:
+            Its saved default when one is stored, else its factory default
+            (``None`` when it has neither).
+        """
+        key = self._saved_default_key(widget)
+        if key:
+            saved = self._read_stored(key, widget)
+            if saved is not self._NO_VALUE:
+                return saved
+        return self._defaults.get(widget)
+
+    def save_defaults(self, widgets=None) -> int:
+        """Make the widgets' current values their defaults (persisted).
+
+        Parameters:
+            widgets: Optional iterable limiting the save; ``None`` saves every
+                widget with a captured default.
+
+        Returns:
+            How many defaults were written (none while ``suppress_save`` is
+            active).
+        """
+        saved = 0
+        for widget in self._reset_targets(widgets):
+            key = self._saved_default_key(widget)
+            if key and self.save_value(key, self._get_current_value(widget)):
+                saved += 1
+        return saved
+
+    def clear_saved_defaults(self, widgets=None) -> int:
+        """Forget saved defaults, so the widgets' factory defaults apply again.
+
+        Parameters:
+            widgets: Optional iterable limiting the clear; ``None`` clears all.
+
+        Returns:
+            How many saved defaults were removed.
+        """
+        if self._save_suppressed:
+            return 0
+        cleared = 0
+        for widget in self._reset_targets(widgets):
+            key = self._stored_default_key(widget)
+            if key:
+                self._get_settings(widget).remove(key)
+                cleared += 1
+        if cleared:
+            self._sync_store()
+        return cleared
+
+    def has_saved_defaults(self, widgets=None) -> bool:
+        """Whether any of the widgets (default: all) has a saved default."""
+        return any(self._stored_default_key(w) for w in self._reset_targets(widgets))
+
+    def _saved_default_key(self, widget: QtWidgets.QWidget) -> Optional[str]:
+        return self._get_state_key(widget, prefix=self._SAVED_DEFAULTS_PREFIX)
+
+    def _stored_default_key(self, widget: QtWidgets.QWidget) -> Optional[str]:
+        """*widget*'s saved-default key when one is stored, else ``None``."""
+        key = self._saved_default_key(widget)
+        if key and self._read_stored(key, widget) is not self._NO_VALUE:
+            return key
+        return None
 
     # Dynamic (C++) property under which a captured default is mirrored onto the
     # widget's QObject. ``_defaults`` is keyed by the Python *wrapper*; a dynamic

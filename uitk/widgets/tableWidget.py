@@ -13,6 +13,7 @@ from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.table_actions import TableActions
+from uitk.widgets.overflow_indicator import OverflowIndicator
 from uitk.managers.cursor_manager import CursorManager
 
 
@@ -614,6 +615,8 @@ class TableWidget(
         super().__init__(parent)
         self._init_header_behavior()
         CellFormatMixin.__init__(self)
+        # Arrows at the top/bottom edge while rows are scrolled out of view.
+        OverflowIndicator.attach(self)
 
         self._left_click_select_only = bool(left_click_select_only)
         self._non_selectable_columns = set()
@@ -976,9 +979,8 @@ class TableWidget(
             return
 
         if is_action and drag_col is not None and drag_rows:
-            # Action column — fire click handler for every traversed row
-            for row in drag_rows:
-                self.actions._on_click(row, drag_col)
+            # Action column — dispatch every traversed row
+            self.actions._on_drag(drag_rows, drag_col)
         else:
             # Editable column — open editor on release cell, propagate on commit
             index = self.indexAt(event.pos())

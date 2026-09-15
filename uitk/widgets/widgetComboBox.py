@@ -114,6 +114,24 @@ class _ActionsNamespace:
         return action
 
 
+class _RowHandle:
+    """What a :class:`WidgetComboBox` row registers on its FieldVisibility.
+
+    ``FieldVisibility`` wants one method, ``setVisible``; a row is not a
+    widget that can hide itself (the model row and the caption container go
+    together), so this stands in and routes to the combo.
+    """
+
+    __slots__ = ("_combo", "_widget")
+
+    def __init__(self, combo, widget):
+        self._combo = combo
+        self._widget = widget
+
+    def setVisible(self, visible: bool) -> None:  # noqa: N802 -- Qt's spelling
+        self._combo.set_row_visible(self._widget, visible)
+
+
 class WidgetComboBox(ComboBox):
     """ComboBox extended with widget embedding support.
 
@@ -179,6 +197,10 @@ class WidgetComboBox(ComboBox):
         # (e.g. during headless testing or before the first show).  Pending
         # (row, container) pairs are flushed in showPopup().
         self._pending_index_widgets: list[tuple[int, QtWidgets.QWidget]] = []
+        # The rows' FieldVisibility, built on first use and rebuilt when the
+        # row set changes (see ``fields``).
+        self._fields = None
+        self._fields_signature: tuple = ()
 
         # Persistent actions section (separator + action buttons at bottom of dropdown)
         self._actions_ns = _ActionsNamespace(self)
@@ -196,12 +218,6 @@ class WidgetComboBox(ComboBox):
         # disconnect them and not accumulate dangling connections to deleted
         # buttons across rebuilds.
         self._action_button_conns: list = []
-
-        # Create overflow indicator (initialized lazily on first popup)
-        self._overflow_indicator = None
-
-        # Install event filter on the view to track scrolling
-        list_view.viewport().installEventFilter(self)
 
         self.currentIndexChanged.connect(self._on_index_changed)
 
@@ -392,6 +408,7 @@ class WidgetComboBox(ComboBox):
             container.deleteLater()
 
         self._model.removeRow(row)
+
         # Renumber tracked AND still-pending widgets: drop the removed row and
         # shift every higher row down by one. Rebuilding from view.indexWidget()
         # would silently lose rows whose index widget was deferred and never
@@ -400,9 +417,7 @@ class WidgetComboBox(ComboBox):
         # this stays consistent with the view.
         def _renumber(mapping):
             return {
-                (r - 1 if r > row else r): v
-                for r, v in mapping.items()
-                if r != row
+                (r - 1 if r > row else r): v for r, v in mapping.items() if r != row
             }
 
         self._widget_items = _renumber(self._widget_items)
@@ -418,6 +433,106 @@ class WidgetComboBox(ComboBox):
         """Convenience accessor for the selected widget."""
 
         return self._widget_items.get(self.currentIndex())
+
+    # ------------------------------------------------------------------
+    # Row visibility
+    # ------------------------------------------------------------------
+    def row_of(self, widget: QtWidgets.QWidget) -> Optional[int]:
+        """The model row embedding *widget*, or ``None``."""
+        for row, embedded in self._widget_items.items():
+            if embedded is widget:
+                return row
+        return None
+
+    def row_container(self, widget: QtWidgets.QWidget) -> Optional[QtWidgets.QWidget]:
+        """The marginless container (caption + widget) of *widget*'s row."""
+        row = self.row_of(widget)
+        return None if row is None else self._row_containers.get(row)
+
+    def set_row_visible(self, widget: QtWidgets.QWidget, visible: bool) -> None:
+        """Show or hide the row embedding *widget*.
+
+        A row a setting has made irrelevant is HIDDEN, not greyed: the model
+        row leaves the view (so the popup no longer sizes for it) and the
+        container goes with it (so a hidden row's caption cannot widen the
+        caption column). Nothing about the widget's VALUE changes -- a hidden
+        row still saves, restores and reads like any other.
+        """
+        row = self.row_of(widget)
+        if row is None:
+            return
+        self.view().setRowHidden(row, not visible)
+        container = self._row_containers.get(row)
+        if container is not None:
+            container.setVisible(visible)
+
+    def is_row_visible(self, widget: QtWidgets.QWidget) -> bool:
+        """False when *widget*'s row is hidden (or *widget* is not a row)."""
+        row = self.row_of(widget)
+        return row is not None and not self.view().isRowHidden(row)
+
+    def field_key(self, widget: QtWidgets.QWidget):
+        """The key *widget*'s row registers under on :attr:`fields`: its
+        objectName, or the widget itself when it has none."""
+        return widget.objectName() or widget
+
+    @property
+    def fields(self):
+        """The rows as a :class:`~uitk.managers.field_visibility.FieldVisibility`.
+
+        Every embedded widget registers under :meth:`field_key`, in the section
+        the titled ``Separator`` row above it names; every titled separator is
+        that section's divider, so a section whose every row is hidden takes
+        its caption down with it. The actions section is not a field: its
+        button row would sit in the last section and hold that caption up.
+        Built on first use and rebuilt when the row set changes, which is what
+        lets a dependency rule wired before the rows existed find them once
+        they do; a rebuilt registry starts from what the view shows, so it
+        keeps the rows other rules had hidden.
+        """
+        last = self._model.rowCount() - self._action_row_count
+        rows = [(r, w) for r, w in sorted(self._widget_items.items()) if r < last]
+        signature = tuple(id(w) for _r, w in rows)
+        if self._fields is not None and signature == self._fields_signature:
+            return self._fields
+        from uitk.managers.field_visibility import FieldVisibility
+
+        # The rows live in a popup that re-measures itself on every show, so
+        # there is no host height to follow: a no-op fit.
+        fields = FieldVisibility(fit=lambda: None)
+        section = None
+        shown = []
+        for row, widget in rows:
+            if self._is_separator_row(row):
+                title = getattr(widget, "title", None)
+                title = title() if callable(title) else title
+                if title:
+                    section = str(title)
+                    fields.divider(section, _RowHandle(self, widget))
+                continue
+            key = self.field_key(widget)
+            fields.register(key, _RowHandle(self, widget), section)
+            if not self.view().isRowHidden(row):
+                shown.append(key)
+        fields.show(shown)
+        self._fields, self._fields_signature = fields, signature
+        return fields
+
+    @classmethod
+    def host_of(cls, widget) -> Optional["WidgetComboBox"]:
+        """The combo whose row embeds *widget*, or ``None``.
+
+        Walks the parent chain (container, view, popup frame, combo), so a
+        rule that resolved the embedded widget by name can reach the registry
+        its row lives in.
+        """
+        parent = getattr(widget, "parent", None)
+        node = parent() if callable(parent) else None
+        while node is not None:
+            if isinstance(node, cls):
+                return node if node.row_of(widget) is not None else None
+            node = node.parent()
+        return None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -472,7 +587,7 @@ class WidgetComboBox(ComboBox):
         """Every opt-in row label currently installed, in row order."""
         labels = []
         for container in self._row_containers.values():
-            if container is None:
+            if container is None or container.isHidden():
                 continue
             try:
                 label = container.findChild(
@@ -565,7 +680,11 @@ class WidgetComboBox(ComboBox):
         tallest = 0
         for r in range(last_tracked):
             widget = self._widget_items.get(r)
-            if widget is not None and not self._is_separator_row(r):
+            if (
+                widget is not None
+                and not self._is_separator_row(r)
+                and not self.view().isRowHidden(r)
+            ):
                 tallest = max(tallest, widget.sizeHint().height())
         if tallest > 0:
             self._uniform_item_height = tallest
@@ -839,7 +958,9 @@ class WidgetComboBox(ComboBox):
         )
         container.adjustSize()
 
-        row = self._add_widget_item(container, "", None, ascending=False, track_height=False)
+        row = self._add_widget_item(
+            container, "", None, ascending=False, track_height=False
+        )
         item = self._model.item(row)
         if item:
             item.setFlags(item.flags() & ~QtCore.Qt.ItemIsSelectable)
@@ -847,56 +968,8 @@ class WidgetComboBox(ComboBox):
 
         self._action_row_count = row_count
 
-    def _create_overflow_indicator(self) -> QtWidgets.QLabel:
-        """Create a minimal triangle arrow indicator for overflow."""
-        view = self.view()
-        if not view or not view.viewport():
-            return None
-
-        indicator = QtWidgets.QLabel(view.viewport())
-        indicator.setAlignment(QtCore.Qt.AlignCenter)
-        # Simple down-pointing triangle
-        indicator.setText("▼")
-        indicator.setStyleSheet(
-            """
-            QLabel {
-                background-color: rgba(0, 0, 0, 100);
-                color: white;
-                font-size: 10px;
-                padding: 2px;
-            }
-        """
-        )
-        indicator.setFixedHeight(16)
-        indicator.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
-        indicator.hide()
-        return indicator
-
-    def _update_overflow_indicator(self) -> None:
-        """Show or hide the overflow indicator based on item count."""
-        item_count = self._model.rowCount()
-        max_visible = self.maxVisibleItems()
-
-        # Show indicator if there are more items than can be displayed
-        if item_count > max_visible:
-            view = self.view()
-            if not view or not view.isVisible():
-                return
-
-            # Create indicator if it doesn't exist
-            if self._overflow_indicator is None:
-                self._overflow_indicator = self._create_overflow_indicator()
-                if self._overflow_indicator is None:
-                    return
-
-            self._overflow_indicator.show()
-            self._reposition_indicator()
-        else:
-            if self._overflow_indicator:
-                self._overflow_indicator.hide()
-
     def showPopup(self) -> None:
-        """Override to expand popup to widest widget and update overflow."""
+        """Override to expand the popup to the widest embedded widget."""
         self._flush_pending_index_widgets()
         # Re-derive row heights from the widgets' current sizeHints before the
         # popup is laid out — they may have shrunk since add-time (theme/font
@@ -916,7 +989,7 @@ class WidgetComboBox(ComboBox):
         view = self.view()
         min_w = max(view.sizeHintForColumn(0), self.width())
         for container in self._row_containers.values():
-            if container is not None:
+            if container is not None and not container.isHidden():
                 container.adjustSize()
                 for w in (
                     container.sizeHint().width(),
@@ -936,17 +1009,6 @@ class WidgetComboBox(ComboBox):
                 if geo.width() < (min_w + 4):
                     geo.setWidth(min_w + 4)
                     popup.setGeometry(geo)
-
-        # Use a longer delay to ensure the view is fully laid out
-        QtCore.QTimer.singleShot(50, self._update_overflow_indicator)
-        # Also update again after scrollbar adjustments
-        QtCore.QTimer.singleShot(150, self._update_overflow_indicator)
-
-    def hidePopup(self) -> None:
-        """Override to hide overflow indicator when popup is hidden."""
-        if self._overflow_indicator:
-            self._overflow_indicator.hide()
-        super().hidePopup()
 
     _ARROW_DIRECTIONS = (None, "down", "up", "left", "right")
 
@@ -1120,16 +1182,16 @@ class WidgetComboBox(ComboBox):
                 # reads at a comparable weight.  Honour the disabled state the
                 # same way the triangle dims via QPalette.Disabled.
                 side = max(8, int(round(base * 1.2)))
-                mode = (
-                    QtGui.QIcon.Normal if self.isEnabled() else QtGui.QIcon.Disabled
-                )
+                mode = QtGui.QIcon.Normal if self.isEnabled() else QtGui.QIcon.Disabled
                 pixmap = icon.pixmap(QtCore.QSize(side, side), mode)
                 painter.drawPixmap(
                     QtCore.QPointF(cx - side / 2.0, cy - side / 2.0), pixmap
                 )
             else:
                 color = self.palette().color(
-                    QtGui.QPalette.Disabled if not self.isEnabled() else QtGui.QPalette.Active,
+                    QtGui.QPalette.Disabled
+                    if not self.isEnabled()
+                    else QtGui.QPalette.Active,
                     QtGui.QPalette.Text,
                 )
                 painter.setPen(QtCore.Qt.NoPen)
@@ -1147,35 +1209,6 @@ class WidgetComboBox(ComboBox):
         if alignment & QtCore.Qt.AlignHCenter:
             return field_rect.center().x() + text_width / 2.0
         return float(field_rect.left() + text_width)
-
-    def eventFilter(self, obj, event):
-        """Event filter to reposition indicator on scroll and resize events."""
-        if obj == self.view().viewport():
-            # Reposition indicator on scroll, resize, or paint events
-            if event.type() in (QtCore.QEvent.Paint, QtCore.QEvent.Resize):
-                if self._overflow_indicator and self._overflow_indicator.isVisible():
-                    self._reposition_indicator()
-        return super().eventFilter(obj, event)
-
-    def _reposition_indicator(self):
-        """Reposition the indicator at the bottom of the viewport."""
-        if not self._overflow_indicator:
-            return
-
-        view = self.view()
-        if not view or not view.isVisible():
-            return
-
-        viewport = view.viewport()
-        if viewport:
-            indicator_width = viewport.width()
-            indicator_height = self._overflow_indicator.height()
-            indicator_y = viewport.height() - indicator_height
-
-            self._overflow_indicator.setGeometry(
-                0, indicator_y, indicator_width, indicator_height
-            )
-            self._overflow_indicator.raise_()
 
     # ------------------------------------------------------------------
     # High level API (matching ComboBox signature)
@@ -1466,7 +1499,9 @@ class WidgetComboBox(ComboBox):
         self._add_defaults_button = value
         if value:
             if self._defaults_action_label not in self.actions:
-                self.actions.add(self._defaults_action_label, self._restore_widget_defaults)
+                self.actions.add(
+                    self._defaults_action_label, self._restore_widget_defaults
+                )
         else:
             self.actions.remove(self._defaults_action_label)
 

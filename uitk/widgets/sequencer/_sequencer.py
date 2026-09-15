@@ -220,6 +220,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     track_shown = QtCore.Signal(str)  # track_name un-hidden via menu
     track_deleted = QtCore.Signal(list)  # [track_name, ...] deleted via context menu
     track_selected = QtCore.Signal(list)  # [track_name, ...] clicked in header
+    #: [(track_name, sub_name), ...] — sub-rows of an expanded track clicked.
+    #: A track label means the whole object; a sub-row means one channel of
+    #: it, so the two are separate signals rather than one with a flag.
+    sub_track_selected = QtCore.Signal(list)
     track_menu_requested = QtCore.Signal(object, list)  # (QMenu, [track_name, ...])
     undo_requested = QtCore.Signal()
     redo_requested = QtCore.Signal()
@@ -389,6 +393,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._header.track_show_requested.connect(self.track_shown.emit)
         self._header.track_delete_requested.connect(self.track_deleted.emit)
         self._header.track_selected.connect(self.track_selected.emit)
+        self._header.sub_track_selected.connect(self.sub_track_selected.emit)
         self._header.track_menu_requested.connect(self.track_menu_requested.emit)
         self._header.track_expand_requested.connect(self._on_header_expand)
 

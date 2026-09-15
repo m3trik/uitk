@@ -707,6 +707,117 @@ class TestMarkerSystem(BaseTestCase):
         item = self.w._marker_items[mid]
         self.assertAlmostEqual(item.opacity(), 0.5, places=2)
 
+    # -- the context menu ----------------------------------------------------
+
+    def _open_menu(self, mid, entry=None):
+        """Open marker *mid*'s menu and choose the entry whose text starts with
+        *entry* -- or, with ``None``, dismiss it."""
+        from unittest.mock import patch
+        from qtpy import QtCore, QtWidgets
+
+        item = self.w._marker_items[mid]
+        ev = QtWidgets.QGraphicsSceneContextMenuEvent(
+            QtCore.QEvent.GraphicsSceneContextMenu
+        )
+        ev.setScenePos(item.scenePos())
+        ev.setScreenPos(QtCore.QPoint(100, 100))
+
+        def choose(menu, *_args, **_kwargs):
+            if entry is None:
+                return None
+            return next(a for a in menu.actions() if a.text().startswith(entry))
+
+        with patch.object(QtWidgets.QMenu, "exec_", choose):
+            item.contextMenuEvent(ev)
+
+    @staticmethod
+    def _typed_time(text):
+        """Have the menu's time field hold *text* when the menu closes."""
+        from unittest.mock import patch
+        from qtpy import QtWidgets
+
+        real = QtWidgets.QLineEdit.text
+
+        def text_of(edit):
+            value = real(edit)
+            return text if edit.placeholderText() == "Time" else value
+
+        return patch.object(QtWidgets.QLineEdit, "text", text_of)
+
+    def test_a_dismissed_menu_leaves_the_marker_where_it_is(self):
+        """The time field shows one decimal, and the menu applied that text
+        back on close: a marker at 10.25 moved to 10.2, emitting
+        ``marker_moved``, whenever its menu was only opened."""
+        mid = self.w.add_marker(time=10.25)
+        moved = []
+        self.w.marker_moved.connect(lambda _mid, time: moved.append(time))
+        self._open_menu(mid)
+        self.assertEqual(moved, [])
+        self.assertEqual(self.w.get_marker(mid).time, 10.25)
+
+    def test_an_edited_time_still_moves_the_marker(self):
+        mid = self.w.add_marker(time=10.25)
+        moved = []
+        self.w.marker_moved.connect(lambda _mid, time: moved.append(time))
+        with self._typed_time("12.5"):
+            self._open_menu(mid)
+        self.assertEqual(moved, [12.5])
+
+    def test_an_escaped_colour_pick_leaves_the_marker_alone(self):
+        """Escape reverts the picker, so nothing may be written: the marker was
+        rewritten and ``marker_changed`` emitted, which dirties a DCC's shot
+        store for a pick the user cancelled."""
+        from unittest.mock import patch
+        from qtpy import QtCore, QtGui
+        from uitk.widgets.editors.color_editor import ColorEditorPopup
+
+        mid = self.w.add_marker(time=10.0, color="#E8A84A")
+        changed = []
+        self.w.marker_changed.connect(changed.append)
+
+        def edit_then_escape(popup):
+            popup.editor.model.set_hsv(v=0.2)
+            popup.keyPressEvent(
+                QtGui.QKeyEvent(
+                    QtCore.QEvent.KeyPress, QtCore.Qt.Key_Escape, QtCore.Qt.NoModifier
+                )
+            )
+            return 0
+
+        with patch.object(ColorEditorPopup, "exec_", edit_then_escape, create=True):
+            self._open_menu(mid, "Color:")
+        self.assertEqual(changed, [])
+        self.assertEqual(self.w.get_marker(mid).color, "#E8A84A")
+
+    def test_a_pick_of_the_colour_it_already_has_leaves_the_marker_alone(self):
+        """Stored as authored (``#E8A84A``) and answered as Qt spells it
+        (``#e8a84a``): the same colour, so there is nothing to write."""
+        from unittest.mock import patch
+        from qtpy import QtGui
+        from uitk.widgets.editors.color_editor import ColorEditorPopup
+
+        mid = self.w.add_marker(time=10.0, color="#E8A84A")
+        changed = []
+        self.w.marker_changed.connect(changed.append)
+        same = QtGui.QColor("#e8a84a")
+        with patch.object(ColorEditorPopup, "get_color", return_value=same):
+            self._open_menu(mid, "Color:")
+        self.assertEqual(changed, [])
+
+    def test_a_new_colour_pick_is_written(self):
+        from unittest.mock import patch
+        from qtpy import QtGui
+        from uitk.widgets.editors.color_editor import ColorEditorPopup
+
+        mid = self.w.add_marker(time=10.0, color="#E8A84A")
+        changed = []
+        self.w.marker_changed.connect(changed.append)
+        picked = QtGui.QColor("#336699")
+        with patch.object(ColorEditorPopup, "get_color", return_value=picked):
+            self._open_menu(mid, "Color:")
+        self.assertEqual(changed, [mid])
+        self.assertEqual(self.w.get_marker(mid).color, "#336699")
+
     # -- range highlight ----------------------------------------------------
 
     def test_set_range_highlight(self):
@@ -876,6 +987,159 @@ class TestSubRowExpansion(BaseTestCase):
         self.assertEqual(len(sub_clips), 1)
         self.assertTrue(sub_clips[0].data.get("resizable_left", True))
         self.assertTrue(sub_clips[0].data.get("resizable_right", True))
+
+
+class TestSubRowLabelSelection(BaseTestCase):
+    """An expanded track's sub-row labels are clickable and name a CHANNEL."""
+
+    def setUp(self):
+        from qtpy import QtCore
+
+        self.Qt = QtCore.Qt
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("obj_A")
+        self.w.expand_track(
+            self.tid,
+            sub_row_data=[
+                ("translateX", [(0, 10, "translateX", None, {})]),
+                ("translateY", [(0, 10, "translateY", None, {})]),
+                ("translateZ", [(0, 10, "translateZ", None, {})]),
+            ],
+        )
+        self.seen = []
+        self.w.sub_track_selected.connect(self.seen.append)
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _press(self, label, mods=None):
+        """A real left-press on *label*, through the header's event filter."""
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        mods = QtCore.Qt.NoModifier if mods is None else mods
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonPress,
+            QtCore.QPointF(2, 2),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            mods,
+        )
+        QtWidgets.QApplication.sendEvent(label, event)
+
+    def _click(self, sub_idx, mods=None):
+        """A real left-press on a sub-row label."""
+        self._press(self.w._header._sub_labels[0][sub_idx], mods)
+
+    def _click_track(self, mods=None):
+        """A real left-press on the object's own label."""
+        self._press(self.w._header._labels[0], mods)
+
+    def _last(self):
+        """The last emission, as pairs.
+
+        Qt hands a ``Signal(list)`` payload back with its inner tuples turned
+        into lists, so the rows are normalized here rather than every consumer
+        having to care which it got.
+        """
+        return [tuple(row) for row in self.seen[-1]]
+
+    def test_clicking_a_sub_row_emits_its_track_and_channel(self):
+        self._click(1)
+        self.assertEqual(len(self.seen), 1)
+        self.assertEqual(self._last(), [("obj_A", "translateY")])
+
+    def test_a_plain_click_replaces_the_previous_pick(self):
+        self._click(0)
+        self._click(2)
+        self.assertEqual(self._last(), [("obj_A", "translateZ")])
+
+    def test_ctrl_click_adds_and_removes(self):
+        self._click(0)
+        self._click(2, self.Qt.ControlModifier)
+        self.assertEqual(
+            self._last(), [("obj_A", "translateX"), ("obj_A", "translateZ")]
+        )
+        self._click(0, self.Qt.ControlModifier)
+        self.assertEqual(self._last(), [("obj_A", "translateZ")])
+
+    def test_shift_click_takes_the_range(self):
+        self._click(0)
+        self._click(2, self.Qt.ShiftModifier)
+        self.assertEqual(
+            [a for _t, a in self._last()], ["translateX", "translateY", "translateZ"]
+        )
+
+    def test_the_selected_label_is_painted_differently(self):
+        header = self.w._header
+        plain = header._sub_labels[0][1].styleSheet()
+        self._click(1)
+        self.assertNotEqual(header._sub_labels[0][1].styleSheet(), plain)
+        self.assertEqual(header._sub_labels[0][0].styleSheet(), plain, "only the one")
+
+    def test_a_track_label_and_a_sub_row_are_different_scopes(self):
+        """Picking one drops the other: they do not mean the same thing.
+
+        Both ways through the event filter, since that is where each press
+        clears the other selection -- a version that assigned the selections
+        itself asserted only its own assignments.
+        """
+        header = self.w._header
+        self._click(1)
+        self._click_track()
+        self.assertEqual(header.selected_names(), ["obj_A"])
+        self.assertEqual(header.selected_sub_rows(), [], "the track drops the channel")
+        self._click(2)
+        self.assertEqual(header.selected_names(), [], "and the channel drops the track")
+        self.assertEqual(self._last(), [("obj_A", "translateZ")])
+
+    def test_hover_does_not_search_the_sub_rows(self):
+        """Every event on a label passes through the filter; only a press is
+        handled there, so only a press may pay for finding which row it hit."""
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        header = self.w._header
+        searched = []
+        real = header._find_sub_label
+        header._find_sub_label = lambda obj: searched.append(obj) or real(obj)
+        label = header._sub_labels[0][1]
+        QtWidgets.QApplication.sendEvent(
+            label,
+            QtGui.QMouseEvent(
+                QtCore.QEvent.MouseMove,
+                QtCore.QPointF(2, 2),
+                QtCore.Qt.NoButton,
+                QtCore.Qt.NoButton,
+                QtCore.Qt.NoModifier,
+            ),
+        )
+        QtWidgets.QApplication.sendEvent(label, QtCore.QEvent(QtCore.QEvent.Leave))
+        self.assertEqual(searched, [])
+        self._click(1)
+        self.assertEqual(searched, [label], "a press still finds its row")
+
+    def test_a_pick_restyles_only_the_labels_whose_state_changed(self):
+        """A stylesheet write re-polishes a label even when the text is the
+        same, and one click changes the state of a row or two."""
+        header = self.w._header
+        self._click(0)
+        labels = {"track": header._labels[0]}
+        labels.update({f"sub{i}": lbl for i, lbl in enumerate(header._sub_labels[0])})
+        restyled = []
+        for name, label in labels.items():
+            real = label.setStyleSheet
+            label.setStyleSheet = lambda qss, _n=name, _r=real: (
+                restyled.append(_n),
+                _r(qss),
+            )
+        self._click(1)
+        self.assertEqual(sorted(restyled), ["sub0", "sub1"])
+
+    def test_collapsing_forgets_the_sub_row_selection(self):
+        self._click(1)
+        self.w.collapse_track(self.tid)
+        self.assertEqual(self.w._header.selected_sub_rows(), [])
+        self.assertEqual(self.w._header._sub_selected, [])
 
 
 # =========================================================================

@@ -244,6 +244,7 @@ class TooltipFormat:
         title: str = None,
         body: str = None,
         descriptions: dict = None,
+        wildcards: dict = None,
         final: str = None,
         final_label: str = "→",
         empty_text: str = None,
@@ -267,6 +268,11 @@ class TooltipFormat:
               supported key is appended and flagged ``unknown``.
             - Without *descriptions*: only the tokens actually present in *template*
               are listed as ``{token} | value`` (a terse "resolves to" view).
+            - With *wildcards*: each bare token is listed first, above the
+              placeholder rows, borrowing the meaning and live value of the key it
+              stands for — the field's whole wildcard vocabulary, and only that
+              vocabulary, so a user reads what is supported rather than guessing
+              from the general grammar.
 
         Resolution goes through :meth:`pythontk.StrUtils.resolve_placeholders`.
         Placeholder values and the resolved *final* are treated as **data** and
@@ -282,6 +288,11 @@ class TooltipFormat:
             body:         Optional purpose paragraph — what the field controls.
             descriptions: Optional ``{token: meaning}`` for the supported keys.
                           Its presence + order drive the full-key table (see above).
+            wildcards:    Optional ``{wildcard: key}`` — each bare token the field
+                          accepts as sugar for one placeholder (e.g. ``{"*": "name"}``
+                          where ``*`` means ``{name}``). Pass *template* already
+                          expanded (``pythontk.StrUtils.expand_wildcard``) so the
+                          preview resolves the same string the field will.
             final:        Optional fully-resolved string (e.g. an absolute output
                           path) shown under the table. ``None`` defaults to the
                           resolved ``result``; pass ``final=""`` to suppress it.
@@ -358,16 +369,26 @@ class TooltipFormat:
         else:
             names = list(info["fields"])
 
-        rows = []
-        for name in names:
-            cells = [f"<td style='padding-right:8px'>{_esc('{' + name + '}')}</td>"]
+        def _row(token, name, meaning):
+            """One table row: the literal token, its meaning, its live value."""
+            cells = [f"<td style='padding-right:8px'>{_esc(token)}</td>"]
             if descriptions is not None:
-                meaning = descriptions.get(name, "")  # author markup — not escaped
+                # author markup — not escaped
                 cells.append(
                     f"<td style='padding-right:8px; color:{_C_MUTED}'>{meaning}</td>"
                 )
             cells.append(f"<td>{_value_cell(name)}</td>")
-            rows.append("<tr>" + "".join(cells) + "</tr>")
+            return "<tr>" + "".join(cells) + "</tr>"
+
+        rows = []
+        # The wildcard vocabulary first — it is the shorthand a user reaches for,
+        # and each entry reads off the placeholder it stands for.
+        for token, name in (wildcards or {}).items():
+            rows.append(_row(token, name, (descriptions or {}).get(name, "")))
+        for name in names:
+            rows.append(
+                _row("{" + name + "}", name, (descriptions or {}).get(name, ""))
+            )
         table_html = (
             f"<table style='margin:3px 0'>{''.join(rows)}</table>" if rows else ""
         )

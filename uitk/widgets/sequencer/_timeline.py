@@ -92,6 +92,10 @@ class TrackHeaderWidget(QtWidgets.QWidget):
     track_show_requested = QtCore.Signal(str)  # track_name to un-hide
     track_delete_requested = QtCore.Signal(list)  # [track_name, ...] to delete
     track_selected = QtCore.Signal(list)  # [track_name, ...] clicked
+    #: [(track_name, sub_name), ...] — an expanded track's sub-rows clicked.
+    #: Separate from ``track_selected`` because the two mean different scopes:
+    #: a track label is the whole object, a sub-row is one of its channels.
+    sub_track_selected = QtCore.Signal(list)
     track_expand_requested = QtCore.Signal(int)  # label index double-clicked
     track_menu_requested = QtCore.Signal(object, list)  # (QMenu, [track_name, ...])
 
@@ -108,6 +112,10 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         "padding-left:16px; color:#999999; background:#2D2D2D; "
         "border-radius:2px; font-size:10px;"
     )
+    _STYLE_SUB_ROW_SELECTED = (
+        "padding-left:16px; color:#FFFFFF; background:#4A4A4A; "
+        "border-radius:2px; font-size:10px;"
+    )
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -120,6 +128,8 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         self._selected: List[int] = []  # indices of selected labels
         self._hidden_track_names: List[str] = []  # set by SequencerWidget
         self._sub_labels: Dict[int, List[QtWidgets.QLabel]] = {}  # idx → sub-row labels
+        self._sub_names: Dict[int, List[str]] = {}  # idx → sub-row names
+        self._sub_selected: List[tuple] = []  # (track_idx, sub_idx) selected
         self._layout = QtWidgets.QVBoxLayout(self)
         self._layout.setContentsMargins(0, _HEADER_HEIGHT, 0, 0)
         self._layout.setSpacing(_TRACK_PADDING)
@@ -226,22 +236,97 @@ class TrackHeaderWidget(QtWidgets.QWidget):
             lbl = QtWidgets.QLabel(sr_name)
             lbl.setFixedHeight(sub_height)
             lbl.setStyleSheet(self._STYLE_SUB_ROW)
+            # Clickable like a track label: a sub-row names a CHANNEL, and
+            # picking one is how a consumer narrows an edit to it.
+            lbl.installEventFilter(self)
             self._layout.insertWidget(insert_at, lbl)
             insert_at += 1
             sub_lbls.append(lbl)
         self._sub_labels[track_idx] = sub_lbls
+        self._sub_names[track_idx] = list(sub_names)
 
     def set_track_collapsed(self, track_idx: int):
         name = self._names[track_idx]
         self._label_text_widget(self._labels[track_idx]).setText(name)
         for lbl in self._sub_labels.pop(track_idx, []):
+            lbl.removeEventFilter(self)
             self._layout.removeWidget(lbl)
             lbl.deleteLater()
+        self._sub_names.pop(track_idx, None)
+        self._sub_selected = [p for p in self._sub_selected if p[0] != track_idx]
+
+    # -- sub-row selection -------------------------------------------------
+
+    def _find_sub_label(self, obj):
+        """``(track_idx, sub_idx)`` of the sub-row label *obj*, or None."""
+        for track_idx, lbls in self._sub_labels.items():
+            for sub_idx, lbl in enumerate(lbls):
+                if lbl is obj:
+                    return (track_idx, sub_idx)
+        return None
+
+    def selected_sub_rows(self) -> List[tuple]:
+        """``[(track_name, sub_name), ...]`` for the selected sub-rows."""
+        out = []
+        for track_idx, sub_idx in self._sub_selected:
+            names = self._sub_names.get(track_idx) or []
+            if track_idx < len(self._names) and sub_idx < len(names):
+                out.append((self._names[track_idx], names[sub_idx]))
+        return out
+
+    def _select_sub_row(self, pair, ctrl: bool, shift: bool) -> None:
+        """Apply a click on sub-row *pair*, with the track-label modifiers.
+
+        Shift ranges within ONE track: a range across two expanded tracks
+        would have to cross their object labels, and the rows on either side
+        of that crossing are not a contiguous list of anything.
+        """
+        track_idx, sub_idx = pair
+        same_track = [p for p in self._sub_selected if p[0] == track_idx]
+        if shift and same_track:
+            lo, hi = sorted((same_track[-1][1], sub_idx))
+            self._sub_selected = [
+                p for p in self._sub_selected if p[0] != track_idx
+            ] + [(track_idx, i) for i in range(lo, hi + 1)]
+        elif ctrl:
+            if pair in self._sub_selected:
+                self._sub_selected.remove(pair)
+            else:
+                self._sub_selected.append(pair)
+        else:
+            self._sub_selected = [pair]
+        # A sub-row and a whole-track selection are different scopes, so
+        # picking one drops the other rather than adding to it.
+        self._selected = []
+        self._refresh_styles()
 
     # -- selection ---------------------------------------------------------
 
     def eventFilter(self, obj, event):
+        # Every label's paint, hover and resize passes through here, and only
+        # a press or a double-click is handled: ask that before any search.
+        etype = event.type()
+        if etype not in (
+            QtCore.QEvent.MouseButtonPress,
+            QtCore.QEvent.MouseButtonDblClick,
+        ):
+            return super().eventFilter(obj, event)
         if obj not in self._labels:
+            pair = (
+                self._find_sub_label(obj)
+                if etype == QtCore.QEvent.MouseButtonPress
+                else None
+            )
+            if pair is not None:
+                if event.button() == QtCore.Qt.LeftButton:
+                    mods = event.modifiers()
+                    self._select_sub_row(
+                        pair,
+                        bool(mods & QtCore.Qt.ControlModifier),
+                        bool(mods & QtCore.Qt.ShiftModifier),
+                    )
+                    self.sub_track_selected.emit(self.selected_sub_rows())
+                    return True
             return super().eventFilter(obj, event)
         if event.type() == QtCore.QEvent.MouseButtonDblClick and obj in self._labels:
             idx = self._labels.index(obj)
@@ -276,6 +361,7 @@ class TrackHeaderWidget(QtWidgets.QWidget):
                         self._selected.append(idx)
                 else:
                     self._selected = [idx]
+                self._sub_selected = []  # the track is a different scope
                 self._refresh_styles()
                 self.track_selected.emit(self.selected_names())
                 return True  # consumed
@@ -300,7 +386,19 @@ class TrackHeaderWidget(QtWidgets.QWidget):
                 style = f"padding-left:6px; color:{tc}; background:{self._colors[i]}; border-radius:3px;"
             else:
                 style = self._STYLE_NORMAL
-            lbl.setStyleSheet(style)
+            # Compared first: a stylesheet write re-polishes the label even when
+            # the text is unchanged, and one click changes a row or two.
+            if lbl.styleSheet() != style:
+                lbl.setStyleSheet(style)
+        for track_idx, lbls in self._sub_labels.items():
+            for sub_idx, lbl in enumerate(lbls):
+                style = (
+                    self._STYLE_SUB_ROW_SELECTED
+                    if (track_idx, sub_idx) in self._sub_selected
+                    else self._STYLE_SUB_ROW
+                )
+                if lbl.styleSheet() != style:
+                    lbl.setStyleSheet(style)
 
     # -- context menu ------------------------------------------------------
 
@@ -339,6 +437,8 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         self._colors.clear()
         self._text_colors.clear()
         self._selected.clear()
+        self._sub_names.clear()
+        self._sub_selected.clear()
 
 
 # ---------------------------------------------------------------------------

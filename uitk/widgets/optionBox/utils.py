@@ -648,8 +648,8 @@ class OptionBoxManager(ptk.LoggingMixin):
         *,
         reset=None,
         icon: str = "undo",
-        tooltip: str = "Reset to default.    Alt/Ctrl+click: hold at default (bypass).",
-        tooltip_bypassed: str = "Held at default (bypassed). Click to restore your value.",
+        tooltip: Optional[str] = None,
+        tooltip_bypassed: Optional[str] = None,
         disabled_color: Optional[str] = None,
         bypass_modifier=None,
         replace: bool = True,
@@ -669,7 +669,8 @@ class OptionBoxManager(ptk.LoggingMixin):
             reset: Optional callable to put the widget at its default. ``None``
                 auto-uses ``window.state.reset(widget)``.
             icon: Icon name (theme-coloured normally, red while bypassed).
-            tooltip / tooltip_bypassed: Tooltips for the active / bypassed states.
+            tooltip / tooltip_bypassed: Tooltips for the active / bypassed states
+                (``None`` = :class:`ResetOption`'s own defaults).
             disabled_color: Hex tint while bypassed (``None`` = project error red).
             bypass_modifier: Modifier(s) that switch a click from reset to the
                 bypass toggle (``None`` = ``Alt | Ctrl``).
@@ -689,9 +690,11 @@ class OptionBoxManager(ptk.LoggingMixin):
             wrapped_widget=self._widget,
             reset=reset,
             icon=icon,
-            tooltip=tooltip,
-            tooltip_bypassed=tooltip_bypassed,
         )
+        if tooltip is not None:
+            kwargs["tooltip"] = tooltip
+        if tooltip_bypassed is not None:
+            kwargs["tooltip_bypassed"] = tooltip_bypassed
         if disabled_color is not None:
             kwargs["disabled_color"] = disabled_color
         if bypass_modifier is not None:

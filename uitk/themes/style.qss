@@ -1548,6 +1548,12 @@ Separator > QLabel {
     border: none;
     padding: 0px 0px;
 }
+/* A checkable separator is a disclosure -- a control, not only a caption --
+   so its caption carries the full text colour (the chevron is painted in
+   the same colour by separator.py). */
+Separator[checkable="true"] > QLabel {
+    color: {TEXT_COLOR};
+}
 
 /* -- MessageBox (transient HUD popup, frameless + translucent host) --
    The host QMessageBox is WA_TranslucentBackground so its chrome is

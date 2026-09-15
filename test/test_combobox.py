@@ -1200,6 +1200,71 @@ class PrefixOnlyFormatsWhatTheCallerOmitted(QtBaseTestCase):
         )
 
 
+class PopupOverflowArrows(QtBaseTestCase):
+    """The popup view carries the shared ``OverflowIndicator``: an arrow at
+    the bottom while rows lie below, at the top while rows are scrolled out
+    above, neither when the list fits."""
+
+    def _open(self, items=40, visible=10):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItems([f"item {i}" for i in range(items)])
+        combo.setMaxVisibleItems(visible)
+        combo.show()
+        combo.showPopup()
+        return combo
+
+    def test_the_popup_marks_its_cropped_edges(self):
+        from uitk.widgets.overflow_indicator import OverflowIndicator
+
+        combo = self._open()
+        try:
+            view = combo.view()
+            ind = OverflowIndicator.of(view)
+            self.assertIsNotNone(ind, "showPopup attaches the shared indicator")
+            QtWait.until(
+                lambda: ind.shown_edges == ("bottom",),
+                "opened at the first row: only the bottom arrow",
+            )
+            self.assertEqual(ind.geometry(), view.viewport().geometry())
+            view.scrollToBottom()
+            QtWait.until(
+                lambda: ind.shown_edges == ("top",), "at the end: only the top arrow"
+            )
+        finally:
+            combo.hidePopup()
+
+    def test_a_list_that_fits_shows_no_arrow(self):
+        from uitk.widgets.overflow_indicator import OverflowIndicator
+
+        combo = self._open(items=5, visible=10)
+        try:
+            ind = OverflowIndicator.of(combo.view())
+            QtWait.pump()
+            self.assertEqual(ind.shown_edges, ())
+            self.assertFalse(ind.isVisible())
+        finally:
+            combo.hidePopup()
+
+    def test_one_indicator_across_reopenings(self):
+        from uitk.widgets.overflow_indicator import OverflowIndicator
+
+        combo = self._open()
+        first = OverflowIndicator.of(combo.view())
+        combo.hidePopup()
+        self.assertFalse(first.isVisible(), "hidden along with the popup")
+        combo.showPopup()
+        try:
+            self.assertIs(OverflowIndicator.of(combo.view()), first)
+            QtWait.until(
+                lambda: first.isVisible() and first.shown_edges == ("bottom",),
+                "the overlay did not come back with the reopened popup",
+            )
+        finally:
+            combo.hidePopup()
+
+
 class CellRows(QtBaseTestCase):
     """A row made of cells: joined display text, per-cell values, an inline
     editor with one field per cell that reports only what changed."""

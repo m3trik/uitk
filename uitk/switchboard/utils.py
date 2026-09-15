@@ -9,6 +9,7 @@ import pythontk as ptk
 
 from uitk.managers.value_manager import ValueManager
 from uitk.managers.cursor_manager import CursorManager
+from uitk.managers.field_visibility import FieldVisibility
 
 # Compatibility re-export (2026-09, one release): ``uitk.switchboard`` still
 # publishes ``OverrideCursorGuard`` through this module. New code imports it
@@ -248,11 +249,20 @@ class SwitchboardUtilsMixin:
 
         widgets = []
         for n in self.unpack_names(name_string):
-            try:
-                w = getattr(ui, n)
-                widgets.append(w)
-            except AttributeError:
-                self.logger.info(traceback.format_exc())
+            w = getattr(ui, n, None)
+            if not isinstance(w, QtWidgets.QWidget):
+                # A registered widget whose objectName shadows a QWidget method
+                # ('size', 'font') is deliberately NOT bound as an attribute
+                # (see MainWindow.register_widget), so the attribute is the
+                # method: read the registry instead of handing a rule a bound
+                # method to setEnabled(). A container with no registry (an
+                # option-box Menu) has only its attributes to offer.
+                registered = getattr(ui, "widgets", None) or ()
+                w = next((x for x in registered if x.objectName() == n), None)
+            if w is None:
+                self.logger.info(f"[get_widgets_by_string_pattern] no widget {n!r}")
+                continue
+            widgets.append(w)
 
         return widgets
 
@@ -910,6 +920,103 @@ class SwitchboardUtilsMixin:
         Returns:
             The rule's ``apply`` callable (handy as an ``on_loaded`` hook).
         """
+        return self._gate_when(
+            ui,
+            targets,
+            trigger,
+            condition,
+            signal,
+            value,
+            invert,
+            rule="enable_when",
+            registry="_enable_when_rules",
+            effect=lambda widget, on: widget.setEnabled(on),
+        )
+
+    def show_when(
+        self,
+        ui,
+        targets,
+        trigger,
+        condition=True,
+        signal=None,
+        value=None,
+        invert=False,
+    ):
+        """Keep *targets* on screen exactly while *trigger*'s value satisfies
+        *condition* -- :meth:`enable_when`'s visibility twin.
+
+        Greying out says "this exists but does not apply"; hiding says "this
+        does not exist for what you chose". A KTX2 encoder dial with PNG
+        selected, a GLB-only optimisation with no GLB being written, an FBX
+        preset on a USD export: the panel is smaller and reads truer without
+        them. Same rule grammar, same order-independence, same bulk refresh
+        (:meth:`refresh_dependencies`), same conflict report::
+
+            sb.show_when(ui, "uastc_rdo", "texture_file_type", "ktx2")
+            sb.show_when(ui, "secondary_max_size,glb_key_tolerance", "cmb004",
+                         {"glb", "fbx_glb"})
+
+        A plain widget hides itself. A row of a :class:`WidgetComboBox` (an
+        option menu) goes through the combo's own
+        :class:`~uitk.managers.field_visibility.FieldVisibility` instead, so
+        the model row leaves the popup and the titled separator over a section
+        whose every row is hidden stands down with them. Either way the
+        widget's VALUE is untouched: a hidden field still saves, restores and
+        reads -- the run reads what the panel holds, so a hidden dial must be
+        one the run ignores (or one the caller resolves as off).
+
+        Parameters and return value as :meth:`enable_when`.
+        """
+        return self._gate_when(
+            ui,
+            targets,
+            trigger,
+            condition,
+            signal,
+            value,
+            invert,
+            rule="show_when",
+            registry="_show_when_rules",
+            effect=self._set_field_visible,
+        )
+
+    @staticmethod
+    def _set_field_visible(widget, on: bool) -> None:
+        """:meth:`show_when`'s effect: the row's registry when *widget* is an
+        option-menu row (:meth:`WidgetComboBox.host_of`), else the widget
+        itself, marked as a field so a collapsing group leaves it hidden
+        (:meth:`FieldVisibility.set_widget_visible`).
+
+        ``host_of`` tests each ancestor's type. Asking each for ``fields``
+        reached the MainWindow, whose ``__getattr__`` answers an unknown name
+        with a whole-UI search -- per target, per firing.
+        """
+        # Deferred: widgetComboBox imports the switchboard.
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        host = WidgetComboBox.host_of(widget)
+        if host is not None and host.fields.set_visible(host.field_key(widget), on):
+            return
+        FieldVisibility.set_widget_visible(widget, on)
+
+    def _gate_when(
+        self,
+        ui,
+        targets,
+        trigger,
+        condition,
+        signal,
+        value,
+        invert,
+        *,
+        rule: str,
+        registry: str,
+        effect,
+    ):
+        """The rule :meth:`enable_when` and :meth:`show_when` share: predicate
+        forms, the duplicate-key no-op and conflict report, the apply closure
+        (*effect* is what it writes to each target) and the wiring."""
         trigger_refs = (
             list(trigger) if isinstance(trigger, (list, tuple)) else [trigger]
         )
@@ -919,7 +1026,7 @@ class SwitchboardUtilsMixin:
             tuple(map(self._rule_ref_name, trigger_refs)),
             tuple(map(self._rule_ref_name, target_refs)),
         )
-        rules = ui.__dict__.setdefault("_enable_when_rules", {})
+        rules = ui.__dict__.setdefault(registry, {})
         if key in rules:
             # Re-wiring the same pair is a deliberate no-op so an ``_init`` slot
             # that re-runs cannot stack rules. A rule with DIFFERENT semantics
@@ -934,7 +1041,7 @@ class SwitchboardUtilsMixin:
                     condition, invert
                 ):
                     self.logger.warning(
-                        f"enable_when: a rule for {key[1]} on {key[0]} already "
+                        f"{rule}: a rule for {key[1]} on {key[0]} already "
                         f"exists with condition={prior[0]!r} invert={prior[1]}; "
                         f"the new condition={condition!r} invert={invert} was "
                         f"DROPPED. Wire one rule per (trigger, target) pair, or "
@@ -971,20 +1078,20 @@ class SwitchboardUtilsMixin:
             try:
                 on = bool(predicate(*[read(w) for w in triggers]))
             except Exception as e:  # a half-built trigger; try again on the next signal
-                self.logger.debug(f"[enable_when] condition raised: {e}")
+                self.logger.debug(f"[{rule}] condition raised: {e}")
                 return
             if invert:
                 on = not on
             for w in resolve_targets():
-                w.setEnabled(on)
+                effect(w, on)
 
         # Carried so a later conflicting wire-up can be named rather than
         # dropped in silence (see the duplicate-key branch above).
         apply._enable_when_spec = (condition, invert)
         return self._wire_rule(
             ui,
-            "enable_when",
-            "_enable_when_rules",
+            rule,
+            registry,
             key,
             resolve_triggers,
             resolve_targets,
@@ -1266,13 +1373,14 @@ class SwitchboardUtilsMixin:
     #: The declarative-rule registries :meth:`refresh_dependencies` re-applies.
     _DEPENDENCY_REGISTRIES = (
         "_enable_when_rules",
+        "_show_when_rules",
         "_text_from_rules",
         "_value_from_rules",
     )
 
     def refresh_dependencies(self, ui) -> None:
         """Re-apply every declarative rule on *ui* — :meth:`enable_when`'s,
-        :meth:`text_from`'s and :meth:`value_from`'s — for bulk value changes
+        :meth:`show_when`'s, :meth:`text_from`'s and :meth:`value_from`'s — for bulk value changes
         made with signals blocked (a preset load, a programmatic restore) that
         no trigger signal announced."""
         for registry in self._DEPENDENCY_REGISTRIES:

@@ -172,6 +172,30 @@ class TestPlaceholderPreview(unittest.TestCase):
         self.assertIn("{missing}", html)
         self.assertIn("note:", html)
 
+    def test_wildcard_rows_borrow_the_meaning_and_value_of_their_key(self):
+        """A field that accepts a bare token as sugar for one placeholder
+        documents both, and the wildcard reads first."""
+        html = TooltipFormat.placeholder_preview(
+            "WIP_{name}",
+            {"name": "myScene", "date": "2026-09-12"},
+            descriptions={"name": "the default name", "date": "YYYY-MM-DD"},
+            wildcards={"*": "name"},
+            final="",  # table only — the resolved line repeats the value
+        )
+        self.assertIn("<td style='padding-right:8px'>*</td>", html)
+        self.assertLess(html.index(">*<"), html.index("{name}"))
+        # The wildcard row carries its key's meaning and its live value.
+        self.assertEqual(html.count("the default name"), 2)
+        self.assertEqual(html.count("myScene"), 2)
+
+    def test_wildcards_are_the_only_bare_tokens_documented(self):
+        """Only the listed vocabulary is exposed — a token the field does not
+        accept never appears as a row."""
+        html = TooltipFormat.placeholder_preview(
+            "{name}", {"name": "x"}, descriptions={"name": "n"}, wildcards={"*": "name"}
+        )
+        self.assertNotIn(">?<", html)
+
     def test_extra_notes_appended(self):
         html = TooltipFormat.placeholder_preview(
             "{scenes}", {"scenes": "scenes"}, notes=["<b>{scene}</b> is a typo"]
