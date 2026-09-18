@@ -1,161 +1,20 @@
 # uitk — API Changes
 
-_Diff vs the last release (origin/main @ 667d562)._
+_Diff vs the last release (origin/main @ ddd41a9)._
 
-## Removed (2)
+## Removed (1)
 
-- `widgets/widgetComboBox.py::WidgetComboBox.eventFilter` — was `(self, obj, event)`
-- `widgets/widgetComboBox.py::WidgetComboBox.hidePopup` — was `(self) -> None`
+- `managers/registry_manager.py::FileRegistry.file_manager` — was `(self) -> 'RegistryManager'`
 
-## Added (129)
+## Added (10)
 
-- `managers/color_model.py::ColorModel(class)`
-- `managers/color_model.py::ColorModel.alpha(self) -> float`
-- `managers/color_model.py::ColorModel.color(self) -> ptk.Color`
-- `managers/color_model.py::ColorModel.hex(self) -> str`
-- `managers/color_model.py::ColorModel.hsva(self) -> Tuple[float, float, float, float]`
-- `managers/color_model.py::ColorModel.hue(self) -> float`
-- `managers/color_model.py::ColorModel.mixed(self) -> bool`
-- `managers/color_model.py::ColorModel.muted(self) -> '_Mute'`
-- `managers/color_model.py::ColorModel.rgbaf(self) -> Tuple[float, float, float, float]`
-- `managers/color_model.py::ColorModel.rgbf(self) -> Tuple[float, float, float]`
-- `managers/color_model.py::ColorModel.saturation(self) -> float`
-- `managers/color_model.py::ColorModel.set_color(self, value, notify: bool = True) -> bool`
-- `managers/color_model.py::ColorModel.set_hsv(self, h: Optional[float] = None, s: Optional[float] = None, v: Optional[float] = None, a: Optional[float] = None, notify: bool = True) -> bool`
-- `managers/color_model.py::ColorModel.set_mixed(self, mixed: bool = True, notify: bool = True) -> bool`
-- `managers/color_model.py::ColorModel.set_rgbf(self, r, g, b, a: Optional[float] = None, notify: bool = True) -> bool`
-- `managers/color_model.py::ColorModel.subscribe(self, callback: Callable[[], None]) -> None`
-- `managers/color_model.py::ColorModel.to_rgbaf(cls, value) -> Optional[Tuple[float, float, float, float]]`
-- `managers/color_model.py::ColorModel.unsubscribe(self, callback: Callable[[], None]) -> None`
-- `managers/color_model.py::ColorModel.value(self) -> float`
-- `managers/field_visibility.py::FieldVisibility(class)`
-- `managers/field_visibility.py::FieldVisibility.bind(self, combo) -> 'FieldVisibility'`
-- `managers/field_visibility.py::FieldVisibility.define(self, mode: str, fields: Iterable[Hashable]) -> 'FieldVisibility'`
-- `managers/field_visibility.py::FieldVisibility.divider(self, section: str, widget) -> 'FieldVisibility'`
-- `managers/field_visibility.py::FieldVisibility.group(self, widget) -> 'FieldVisibility'`
-- `managers/field_visibility.py::FieldVisibility.is_hidden_field(cls, widget) -> bool`
-- `managers/field_visibility.py::FieldVisibility.keys(self) -> tuple`
-- `managers/field_visibility.py::FieldVisibility.mode(self) -> Optional[str]`
-- `managers/field_visibility.py::FieldVisibility.register(self, key: Hashable, widget, section: Optional[str] = None) -> 'FieldVisibility'`
-- `managers/field_visibility.py::FieldVisibility.set_visible(self, key: Hashable, on: bool) -> bool`
-- `managers/field_visibility.py::FieldVisibility.set_widget_visible(cls, widget, on: bool) -> None`
-- `managers/field_visibility.py::FieldVisibility.show(self, keys: Iterable[Hashable]) -> None`
-- `managers/field_visibility.py::FieldVisibility.visible(self) -> tuple`
-- `managers/reset_gesture.py::ResetGesture(class)`
-- `managers/reset_gesture.py::ResetGesture.action_for(cls, modifiers, bypass_modifier=None) -> str`
-- `managers/reset_gesture.py::ResetGesture.eventFilter(self, obj, event)`
-- `managers/reset_gesture.py::ResetGesture.flash(self, message: str) -> None`
-- `managers/reset_gesture.py::ResetGesture.modifier_keys(cls, modifiers) -> List[str]`
-- `managers/reset_gesture.py::ResetGesture.perform(cls, state, action: str, widgets=None) -> Optional[str]`
-- `managers/reset_gesture.py::ResetGesture.refresh_tooltip(self) -> None`
-- `managers/reset_gesture.py::ResetGesture.supports_saving(state) -> bool`
-- `managers/reset_gesture.py::ResetGesture.tooltip(title: str = 'Restore Defaults', *, saving: bool = True, saved: Optional[bool] = None, bypass: Optional[List[str]] = None) -> str`
-- `managers/reset_gesture.py::ResetGesture.trigger(self, *_) -> str`
-- `managers/state_manager.py::StateManager.clear_saved_defaults(self, widgets=None) -> int`
-- `managers/state_manager.py::StateManager.default_for(self, widget: QtWidgets.QWidget) -> Any`
-- `managers/state_manager.py::StateManager.for_widget(widget: QtWidgets.QWidget) -> Optional['StateManager']`
-- `managers/state_manager.py::StateManager.has_saved_defaults(self, widgets=None) -> bool`
-- `managers/state_manager.py::StateManager.save_defaults(self, widgets=None) -> int`
-- `managers/window_height.py::WindowHeight(class)`
-- `managers/window_height.py::WindowHeight.activate_layouts(window: QtWidgets.QWidget) -> None`
-- `managers/window_height.py::WindowHeight.adjust_by(window: QtWidgets.QWidget, delta: int, baseline: Optional[int] = None) -> None`
-- `managers/window_height.py::WindowHeight.fit_host(widget) -> None`
-- `managers/window_height.py::WindowHeight.fit_to_content(window: QtWidgets.QWidget) -> None`
-- `managers/window_height.py::WindowHeight.sync_min(window: QtWidgets.QWidget, hint: int) -> None`
-- `switchboard/utils.py::SwitchboardUtilsMixin.show_when(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)`
-- `widgets/editors/color_editor.py::ColorEditor(class)`
-- `widgets/editors/color_editor.py::ColorEditor.add_slider(self, channel: str) -> GradientSlider`
-- `widgets/editors/color_editor.py::ColorEditor.color(self) -> ptk.Color`
-- `widgets/editors/color_editor.py::ColorEditor.model(self) -> ColorModel`
-- `widgets/editors/color_editor.py::ColorEditor.qcolor(self) -> QtGui.QColor`
-- `widgets/editors/color_editor.py::ColorEditor.register_section(cls, name: str, factory: Callable[['ColorEditor'], QtWidgets.QWidget]) -> None`
-- `widgets/editors/color_editor.py::ColorEditor.section(self, name: str) -> Optional[QtWidgets.QWidget]`
-- `widgets/editors/color_editor.py::ColorEditor.set_mixed(self, mixed: bool = True) -> None`
-- `widgets/editors/color_editor.py::ColorEditorPopup(class)`
-- `widgets/editors/color_editor.py::ColorEditorPopup.color(self) -> ptk.Color`
-- `widgets/editors/color_editor.py::ColorEditorPopup.get_color(cls, initial=None, parent=None, title='Colour', **editor_kwargs)`
-- `widgets/editors/color_editor.py::ColorEditorPopup.keyPressEvent(self, event)`
-- `widgets/editors/color_editor.py::ColorEditorPopup.qcolor(self) -> QtGui.QColor`
-- `widgets/editors/color_editor.py::ColorRampEditor(class)`
-- `widgets/editors/color_editor.py::ColorRampEditor.colors(self) -> tuple`
-- `widgets/editors/color_editor.py::ColorRampEditor.decided(self) -> tuple`
-- `widgets/editors/color_editor.py::ColorRampEditor.editor(self, which) -> ColorEditor`
-- `widgets/editors/color_editor.py::ColorRampEditor.editors(self) -> tuple`
-- `widgets/editors/color_editor.py::ColorRampEditor.labels(self) -> tuple`
-- `widgets/editors/color_editor.py::ColorRampEditor.set_colors(self, colors: Sequence) -> None`
-- `widgets/editors/color_editor.py::ColorRampEditor.set_mixed(self, which, mixed: bool = True) -> None`
-- `widgets/editors/color_editor.py::ColorRampEditor.set_reference(self, stops) -> None`
-- `widgets/editors/color_editor.py::ColorRampEditor.set_shape(self, **shape) -> None`
-- `widgets/editors/color_editor.py::FadeWaveform(class)`
-- `widgets/editors/color_editor.py::FadeWaveform.period(self) -> float`
-- `widgets/editors/color_editor.py::FadeWaveform.set_shape(self, duration=None, hold=None, direction=None) -> None`
-- `widgets/editors/color_editor.py::FadeWaveform.shape(self) -> dict`
-- `widgets/editors/color_editor.py::PulseWaveform(class)`
-- `widgets/editors/color_editor.py::PulseWaveform.period(self) -> float`
-- `widgets/editors/color_editor.py::PulseWaveform.set_shape(self, period=None, duty=None, ramp=None) -> None`
-- `widgets/editors/color_editor.py::PulseWaveform.shape(self) -> dict`
-- `widgets/editors/color_editor.py::RampPreview(class)`
-- `widgets/editors/color_editor.py::RampPreview.composite(self, sample: float)`
-- `widgets/editors/color_editor.py::RampPreview.display(self, sample: float)`
-- `widgets/editors/color_editor.py::RampPreview.elapsed(self) -> float`
-- `widgets/editors/color_editor.py::RampPreview.hideEvent(self, event)`
-- `widgets/editors/color_editor.py::RampPreview.paintEvent(self, event)`
-- `widgets/editors/color_editor.py::RampPreview.sample(self, seconds: float) -> float`
-- `widgets/editors/color_editor.py::RampPreview.set_base(self, rgb) -> None`
-- `widgets/editors/color_editor.py::RampPreview.set_shape(self, **shape) -> None`
-- `widgets/editors/color_editor.py::RampPreview.set_stops(self, stops) -> None`
-- `widgets/editors/color_editor.py::RampPreview.shape(self) -> dict`
-- `widgets/editors/color_editor.py::RampPreview.showEvent(self, event)`
-- `widgets/editors/color_editor.py::RampPreview.waveform(self)`
-- `widgets/gradient_slider.py::GradientSlider(class)`
-- `widgets/gradient_slider.py::GradientSlider.bind(self, model: ColorModel) -> None`
-- `widgets/gradient_slider.py::GradientSlider.channel(self) -> str`
-- `widgets/gradient_slider.py::GradientSlider.event(self, event)`
-- `widgets/gradient_slider.py::GradientSlider.model(self) -> Optional[ColorModel]`
-- `widgets/gradient_slider.py::GradientSlider.refresh(self) -> None`
-- `widgets/gradient_slider.py::STEPS(constant)`
-- `widgets/optionBox/options/reset.py::ResetOption.save_as_default(self) -> bool`
-- `widgets/overflow_indicator.py::OverflowIndicator(class)`
-- `widgets/overflow_indicator.py::OverflowIndicator.area(self) -> Optional[QtWidgets.QAbstractScrollArea]`
-- `widgets/overflow_indicator.py::OverflowIndicator.attach(cls, area: QtWidgets.QAbstractScrollArea) -> 'OverflowIndicator'`
-- `widgets/overflow_indicator.py::OverflowIndicator.detach(self) -> None`
-- `widgets/overflow_indicator.py::OverflowIndicator.eventFilter(self, obj, event)`
-- `widgets/overflow_indicator.py::OverflowIndicator.of(cls, area: QtWidgets.QAbstractScrollArea) -> Optional['OverflowIndicator']`
-- `widgets/overflow_indicator.py::OverflowIndicator.paintEvent(self, event)`
-- `widgets/overflow_indicator.py::OverflowIndicator.refresh(self) -> None`
-- `widgets/overflow_indicator.py::OverflowIndicator.shown_edges(self) -> Tuple[str, ...]`
-- `widgets/separator.py::Separator.isCheckable(self) -> bool`
-- `widgets/separator.py::Separator.isChecked(self) -> bool`
-- `widgets/separator.py::Separator.mousePressEvent(self, event) -> None`
-- `widgets/separator.py::Separator.setCheckable(self, value: bool) -> None`
-- `widgets/separator.py::Separator.setChecked(self, value: bool) -> None`
-- `widgets/separator.py::Separator.toggle(self) -> None`
-- `widgets/sequencer/_timeline.py::TrackHeaderWidget.selected_sub_rows(self) -> List[tuple]`
-- `widgets/widgetComboBox.py::WidgetComboBox.field_key(self, widget: QtWidgets.QWidget)`
-- `widgets/widgetComboBox.py::WidgetComboBox.fields(self)`
-- `widgets/widgetComboBox.py::WidgetComboBox.host_of(cls, widget) -> Optional['WidgetComboBox']`
-- `widgets/widgetComboBox.py::WidgetComboBox.is_row_visible(self, widget: QtWidgets.QWidget) -> bool`
-- `widgets/widgetComboBox.py::WidgetComboBox.row_container(self, widget: QtWidgets.QWidget) -> Optional[QtWidgets.QWidget]`
-- `widgets/widgetComboBox.py::WidgetComboBox.row_of(self, widget: QtWidgets.QWidget) -> Optional[int]`
-- `widgets/widgetComboBox.py::WidgetComboBox.set_row_visible(self, widget: QtWidgets.QWidget, visible: bool) -> None`
-
-## Signature changed (6)
-
-- `managers/state_manager.py::StateManager.reset_all`
-  - was: `(self, block_signals: bool = False) -> None`
-  - now: `(self, block_signals: bool = False, widgets=None, factory: bool = False) -> None`
-- `managers/state_manager.py::StateManager.save_value`
-  - was: `(self, key: str, value: Any) -> None`
-  - now: `(self, key: str, value: Any) -> bool`
-- `widgets/mixins/tooltip_mixin.py::TooltipFormat.placeholder_preview`
-  - was: `(template: str, context: dict, *, title: str = None, body: str = None, descriptions: dict = None, final: str = None, final_label: str = '→', empty_text: str = None, notes: list = None) -> str`
-  - now: `(template: str, context: dict, *, title: str = None, body: str = None, descriptions: dict = None, wildcards: dict = None, final: str = None, final_label: str = '→', empty_text: str = None, notes: list = None) -> str`
-- `widgets/optionBox/options/reset.py::ResetOption.reset`
-  - was: `(self) -> None`
-  - now: `(self, *, factory: bool = False) -> None`
-- `widgets/optionBox/utils.py::OptionBoxManager.set_reset`
-  - was: `(self, *, reset=None, icon: str = 'undo', tooltip: str = 'Reset to default.    Alt/Ctrl+click: hold at default (bypass).', tooltip_bypassed: str = 'Held at default (bypassed). Click to restore your value.', disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)`
-  - now: `(self, *, reset=None, icon: str = 'undo', tooltip: Optional[str] = None, tooltip_bypassed: Optional[str] = None, disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)`
-- `widgets/table_actions.py::TableActions.add`
-  - was: `(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True) -> None`
-  - now: `(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True, drag_action: Optional[Callable[[List[int], int], None]] = None) -> None`
+- `bridge/parameters.py::Parameters.rig_mode_spec(default: str = 'auto', section: str = '') -> AttributeSpec`
+- `managers/shortcut_manager.py::ShortcutManager.hide_bound_menu_items() -> bool`
+- `managers/shortcut_manager.py::ShortcutManager.set_hide_bound_menu_items(value: bool) -> None`
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.widget_has_shortcut(self, widget: QtWidgets.QWidget) -> bool`
+- `widgets/sequencer/_keyframe.py::KeyframeItem.weighted_handles(self) -> bool`
+- `widgets/sequencer/_keyframe.py::TangentHandleItem.drag_participant(self) -> bool`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.modifiers_held(self) -> int`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.set_modifiers_held(self, modifiers) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.shortcut_overlay_mode(self) -> str`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.shortcut_overlay_tracking(self) -> bool`

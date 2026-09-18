@@ -240,6 +240,27 @@ class ContextMenu(Menu):
         """The root :class:`ExpandableList` holding the rows."""
         return self._list
 
+    def _shortcut_filter_candidates(self) -> list:
+        """The rows, not the body that holds them.
+
+        ``Menu.get_items`` returns this menu's single :class:`ExpandableList`;
+        the shortcut filter wants the rows inside it, flyout sub-rows included
+        (``ExpandableList.get_items`` already walks the subtree).
+        """
+        return self._list.get_items()
+
+    def _shortcut_filter_emptied(self) -> None:
+        """Hide the now-rowless list before the placeholder goes in.
+
+        The placeholder is added to the menu's grid at (0, 0) — the cell this
+        list already occupies — so leaving it up paints the two on top of each
+        other (measured: identical geometry). Recorded as filter-hidden so the
+        list comes back with the rows when the preference goes off.
+        """
+        self._list.setVisible(False)
+        self._shortcut_hidden_items.append(self._list)
+        super()._shortcut_filter_emptied()
+
     def add(
         self,
         x,

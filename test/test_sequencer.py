@@ -7259,7 +7259,8 @@ class TestShortcutOverlay(BaseTestCase):
     def test_gestures_are_registered_with_the_manager(self):
         mgr = self.w._shortcut_mgr
         self.assertEqual(
-            list(mgr.gestures), ["Shot bounds", "Gaps", "Clips & keys", "Timeline"]
+            list(mgr.gestures),
+            ["Shot bounds", "Gaps", "Clips & keys", "Tangents", "Timeline"],
         )
         entry = mgr.shortcuts["Ctrl+Drag (Shot bounds)"]
         self.assertTrue(entry["read_only"], "listed in the editor, not rebindable")
@@ -7318,6 +7319,99 @@ class TestShortcutOverlay(BaseTestCase):
         vp = tl.mapFromScene(centre)
         tl._sync_gesture_context(QtCore.QPoint(vp.x(), vp.y()))
         self.assertEqual(self.w.shortcut_overlay.shown_group, "Gaps")
+
+    # -- Off / On / On Modifier ---------------------------------------------
+
+    def test_the_bool_is_the_two_state_face_of_the_mode(self):
+        self.assertEqual(self.w.shortcut_overlay_mode, "off")
+        self.w.shortcut_overlay_visible = True
+        self.assertEqual(self.w.shortcut_overlay_mode, "on")
+        self.w.shortcut_overlay_visible = False
+        self.assertEqual(self.w.shortcut_overlay_mode, "off")
+
+    def test_an_unknown_mode_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.w.shortcut_overlay_mode = "sometimes"
+
+    def test_on_modifier_shows_the_legend_only_while_one_is_held(self):
+        from qtpy import QtCore
+
+        self.w.shortcut_overlay_mode = "modifier"
+        self.assertIsNone(
+            self.w.shortcut_overlay, "nothing built until it is asked for"
+        )
+        self.w.set_modifiers_held(QtCore.Qt.AltModifier)
+        self.assertTrue(self.w.shortcut_overlay_visible)
+        self.w.set_modifiers_held(QtCore.Qt.NoModifier)
+        self.assertFalse(self.w.shortcut_overlay_visible)
+        self.w.set_modifiers_held(QtCore.Qt.ShiftModifier)
+        self.assertTrue(self.w.shortcut_overlay_visible)
+
+    def test_only_the_modifiers_the_legend_explains_raise_it(self):
+        from qtpy import QtCore
+
+        self.w.shortcut_overlay_mode = "modifier"
+        self.w.set_modifiers_held(QtCore.Qt.MetaModifier)
+        self.assertFalse(self.w.shortcut_overlay_visible)
+        self.w.set_modifiers_held(QtCore.Qt.MetaModifier | QtCore.Qt.AltModifier)
+        self.assertTrue(
+            self.w.shortcut_overlay_visible,
+            "a chord carrying one of them still raises it",
+        )
+
+    def test_on_keeps_the_legend_up_whatever_is_held(self):
+        from qtpy import QtCore
+
+        self.w.shortcut_overlay_mode = "on"
+        self.assertTrue(self.w.shortcut_overlay_visible)
+        self.w.set_modifiers_held(QtCore.Qt.ControlModifier)
+        self.assertTrue(self.w.shortcut_overlay_visible)
+        self.w.set_modifiers_held(QtCore.Qt.NoModifier)
+        self.assertTrue(self.w.shortcut_overlay_visible, "a held key is not the gate")
+
+    def test_off_ignores_the_modifiers_entirely(self):
+        from qtpy import QtCore
+
+        self.w.set_modifiers_held(QtCore.Qt.AltModifier)
+        self.assertFalse(self.w.shortcut_overlay_visible)
+        self.assertIsNone(self.w.shortcut_overlay)
+
+    def test_on_modifier_opens_on_the_page_the_pointer_is_over(self):
+        """The lit group is a mouse-MOVE answer and the legend rises between
+        two of them, so the group is tracked while it is still hidden."""
+        from qtpy import QtCore
+
+        self.w.set_shot_blocks(
+            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
+        )
+        self.w.set_range_highlight(40.0, 120.0)
+        self.w.add_gap_overlay(120, 160)
+        self.w.shortcut_overlay_mode = "modifier"
+        tl = self.w._timeline
+        centre = self.w._gap_overlays[0]._rect().center()
+        vp = tl.mapFromScene(centre)
+        tl._sync_gesture_context(QtCore.QPoint(vp.x(), vp.y()))
+        self.w.set_modifiers_held(QtCore.Qt.ControlModifier)
+        self.assertEqual(self.w.shortcut_overlay.shown_group, "Gaps")
+
+    def test_a_modifier_key_over_the_timeline_is_what_raises_it(self):
+        """The view banks the chord by KEY, not from ``event.modifiers()``:
+        Qt's report of a modifier's own press is the one thing it is not
+        reliable about."""
+        from qtpy import QtCore, QtGui
+
+        self.w.shortcut_overlay_mode = "modifier"
+        tl = self.w._timeline
+        press = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress, QtCore.Qt.Key_Alt, QtCore.Qt.NoModifier
+        )
+        tl.keyPressEvent(press)
+        self.assertTrue(self.w.shortcut_overlay_visible)
+        release = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyRelease, QtCore.Qt.Key_Alt, QtCore.Qt.AltModifier
+        )
+        tl.keyReleaseEvent(release)
+        self.assertFalse(self.w.shortcut_overlay_visible)
 
     def test_the_card_stays_translucent_under_the_theme(self):
         """A slight transparency: whatever is behind the card tints it.
@@ -8404,3 +8498,455 @@ class TestAMalformedCurveSegmentCannotCrashTheHost(BaseTestCase):
             item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
         finally:
             painter.end()
+
+
+class TestTangentHandleSelectionDrag(BaseTestCase):
+    """A tangent drag carries the whole key SELECTION.
+
+    Dragging one handle reshapes every selected key's tangent on that side,
+    the way a key drag moves every selected dot.  The modifiers follow the
+    sequencer's own grammar: ``Ctrl`` isolates the grabbed key, ``Shift``
+    gives every selected key the grabbed one's EXACT vector instead of the
+    same nudge, ``Alt`` breaks the tangent.
+    """
+
+    # Both spans spline, unlike ``TestKeyframeItem.SAMPLE_PREVIEW``: the
+    # first two keys each own an OUT handle, which is what a selection drag
+    # needs to carry.
+    PREVIEW = {
+        "keys": [(0, 0.0), (50, 1.0), (100, 0.5)],
+        "segments": [
+            {
+                "t0": 0,
+                "v0": 0.0,
+                "t1": 50,
+                "v1": 1.0,
+                "out_type": "spline",
+                "cp1": (16.67, 0.33),
+                "cp2": (33.33, 0.67),
+            },
+            {
+                "t0": 50,
+                "v0": 1.0,
+                "t1": 100,
+                "v1": 0.5,
+                "out_type": "spline",
+                "cp1": (66.67, 0.83),
+                "cp2": (83.33, 0.67),
+            },
+        ],
+        "val_min": 0.0,
+        "val_max": 1.0,
+    }
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+        self.got = []  # keys_tangent_dragged
+        self.legacy = []  # key_tangent_dragged (deprecated single-key form)
+        self.w.keys_tangent_dragged.connect(lambda *a: self.got.append(a))
+        self.w.key_tangent_dragged.connect(lambda *a: self.legacy.append(a))
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _rows(self, count=1):
+        """*count* expanded sub-rows, each carrying the two-spline preview."""
+        import copy
+
+        tid = self.w.add_track("obj_A")
+        self.w.expand_track(
+            tid,
+            sub_row_data=[
+                (
+                    f"attr{i}",
+                    [
+                        (
+                            0,
+                            100,
+                            f"attr{i}",
+                            "#FF6600",
+                            {"curve_preview": copy.deepcopy(self.PREVIEW)},
+                        )
+                    ],
+                )
+                for i in range(count)
+            ],
+        )
+        items = [
+            self.w._clip_items[c.clip_id]
+            for c in sorted(self.w.clips(), key=lambda c: c.clip_id)
+            if c.sub_row
+        ]
+        return items if count > 1 else items[0]
+
+    @staticmethod
+    def _handle(item, key, side):
+        return next(
+            h for h in item._tangent_handle_items if h.key is key and h.side == side
+        )
+
+    def _pair(self, item):
+        """The first two keys, selected, with their OUT handles."""
+        k0, k1 = item._keyframe_items[0], item._keyframe_items[1]
+        k0.setSelected(True)
+        k1.setSelected(True)
+        return k0, k1, self._handle(item, k0, "out"), self._handle(item, k1, "out")
+
+    @staticmethod
+    def _events(handle, dx, dy, modifiers=None):
+        from qtpy import QtCore
+
+        mods = modifiers if modifiers is not None else QtCore.Qt.KeyboardModifiers()
+        start = handle.scenePos()
+        end = QtCore.QPointF(start.x() + dx, start.y() + dy)
+        return (
+            _scene_mouse_event(
+                QtCore.QEvent.GraphicsSceneMousePress, start, modifiers=mods
+            ),
+            _scene_mouse_event(
+                QtCore.QEvent.GraphicsSceneMouseMove, end, modifiers=mods
+            ),
+            _scene_mouse_event(
+                QtCore.QEvent.GraphicsSceneMouseRelease, end, modifiers=mods
+            ),
+        )
+
+    def _drag(self, handle, dx, dy, modifiers=None):
+        press, move, release = self._events(handle, dx, dy, modifiers)
+        handle.mousePressEvent(press)
+        handle.mouseMoveEvent(move)
+        handle.mouseReleaseEvent(release)
+
+    # -- the default: the whole selection -----------------------------------
+
+    def test_a_drag_nudges_every_selected_keys_handle_by_the_same_step(self):
+        item = self._rows()
+        _k0, _k1, h0, h1 = self._pair(item)
+        before0, before1 = h0.control_point(), h1.control_point()
+        self._drag(h0, 20.0, -15.0)
+        after0, after1 = h0.control_point(), h1.control_point()
+        step = (after0[0] - before0[0], after0[1] - before0[1])
+        self.assertGreater(step[0], 0.0, "dragged right")
+        self.assertGreater(step[1], 0.0, "up on screen is a higher value")
+        self.assertAlmostEqual(after1[0] - before1[0], step[0], places=6)
+        self.assertAlmostEqual(after1[1] - before1[1], step[1], places=6)
+
+    def test_the_payload_carries_every_key_the_gesture_moved(self):
+        item = self._rows()
+        k0, k1, h0, _h1 = self._pair(item)
+        self._drag(h0, 20.0, -15.0)
+        self.assertEqual(len(self.got), 1)
+        groups, side, broken = self.got[0]
+        self.assertEqual((side, broken), ("out", False))
+        self.assertEqual(len(groups), 1, "one clip, one group")
+        clip_id, vectors = groups[0]
+        self.assertEqual(clip_id, item._data.clip_id)
+        self.assertEqual(sorted(t for t, _dt, _dv in vectors), [k0.time, k1.time])
+        for _t, dt, _dv in vectors:
+            self.assertGreater(dt, 0.0, "an OUT handle stays after its key")
+
+    def test_a_multi_key_drag_never_reports_the_deprecated_single_form(self):
+        item = self._rows()
+        _k0, _k1, h0, _h1 = self._pair(item)
+        self._drag(h0, 20.0, -15.0)
+        self.assertEqual(self.legacy, [])
+
+    def test_keys_on_other_clips_come_along_grouped_by_clip(self):
+        first, second = self._rows(2)
+        ka, kb = first._keyframe_items[0], second._keyframe_items[0]
+        ka.setSelected(True)
+        kb.setSelected(True)
+        hb_before = self._handle(second, kb, "out").control_point()
+        self._drag(self._handle(first, ka, "out"), 20.0, -10.0)
+        self.assertNotEqual(self._handle(second, kb, "out").control_point(), hb_before)
+        groups, _side, _broken = self.got[0]
+        self.assertEqual(
+            sorted(cid for cid, _v in groups),
+            sorted([first._data.clip_id, second._data.clip_id]),
+        )
+        self.assertEqual([len(v) for _cid, v in groups], [1, 1])
+
+    def test_an_unselected_keys_handle_is_never_carried(self):
+        item = self._rows()
+        k0 = item._keyframe_items[0]
+        k0.setSelected(True)  # the second key stays out of it, and grows no handle
+        self.assertEqual(
+            [h.key for h in item._tangent_handle_items], [k0], "k1 has no handles"
+        )
+        before = tuple(item._data.data["curve_preview"]["segments"][1]["cp1"])
+        self._drag(self._handle(item, k0, "out"), 20.0, -10.0)
+        self.assertEqual(
+            tuple(item._data.data["curve_preview"]["segments"][1]["cp1"]),
+            before,
+            "k1's OUT control point was left alone",
+        )
+        self.assertEqual(len(self.got[0][0][0][1]), 1)
+        self.assertEqual(len(self.legacy), 1, "one key: the old form still fires")
+
+    # -- Ctrl: isolate ------------------------------------------------------
+
+    def test_ctrl_isolates_the_grabbed_key(self):
+        from qtpy import QtCore
+
+        item = self._rows()
+        k0, _k1, h0, h1 = self._pair(item)
+        before0, before1 = h0.control_point(), h1.control_point()
+        self._drag(h0, 20.0, -15.0, QtCore.Qt.ControlModifier)
+        self.assertNotEqual(h0.control_point(), before0)
+        self.assertEqual(h1.control_point(), before1, "the peer never moved")
+        groups, _side, _broken = self.got[0]
+        self.assertEqual(
+            [(cid, len(v)) for cid, v in groups], [(item._data.clip_id, 1)]
+        )
+        self.assertEqual(groups[0][1][0][0], k0.time)
+        self.assertEqual(len(self.legacy), 1, "one key: the old form still fires")
+
+    def test_ctrl_pressed_mid_drag_puts_the_peers_back(self):
+        from qtpy import QtCore
+
+        item = self._rows()
+        _k0, _k1, h0, h1 = self._pair(item)
+        before1 = h1.control_point()
+        press, move, _release = self._events(h0, 20.0, -15.0)
+        h0.mousePressEvent(press)
+        h0.mouseMoveEvent(move)
+        self.assertNotEqual(h1.control_point(), before1, "carried so far")
+        _p, ctrl_move, ctrl_release = self._events(
+            h0, 20.0, -15.0, QtCore.Qt.ControlModifier
+        )
+        h0.mouseMoveEvent(ctrl_move)
+        self.assertEqual(h1.control_point(), before1, "Ctrl is live, not a gate")
+        h0.mouseReleaseEvent(ctrl_release)
+        self.assertEqual(len(self.got[0][0][0][1]), 1)
+
+    # -- Shift: match -------------------------------------------------------
+
+    def test_shift_gives_every_selected_key_the_same_vector(self):
+        from qtpy import QtCore
+
+        item = self._rows()
+        k0, k1, h0, h1 = self._pair(item)
+        self._drag(h0, 20.0, -15.0, QtCore.Qt.ShiftModifier)
+        v0 = (h0.control_point()[0] - k0.time, h0.control_point()[1] - k0.value)
+        v1 = (h1.control_point()[0] - k1.time, h1.control_point()[1] - k1.value)
+        self.assertAlmostEqual(v0[0], v1[0], places=6)
+        self.assertAlmostEqual(v0[1], v1[1], places=6)
+        groups, _side, _broken = self.got[0]
+        vectors = {t: (dt, dv) for t, dt, dv in groups[0][1]}
+        self.assertAlmostEqual(vectors[k0.time][0], vectors[k1.time][0], places=6)
+        self.assertAlmostEqual(vectors[k0.time][1], vectors[k1.time][1], places=6)
+
+    def test_ctrl_outranks_shift(self):
+        from qtpy import QtCore
+
+        item = self._rows()
+        _k0, _k1, h0, h1 = self._pair(item)
+        before1 = h1.control_point()
+        self._drag(h0, 20.0, -15.0, QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier)
+        self.assertEqual(h1.control_point(), before1)
+
+    # -- Alt: break ---------------------------------------------------------
+
+    def test_alt_reports_a_broken_tangent_and_shows_it_while_held(self):
+        from qtpy import QtCore
+
+        item = self._rows()
+        k0, k1, h0, _h1 = self._pair(item)
+        self.assertFalse(k0.is_broken())
+        press, move, release = self._events(h0, 20.0, -15.0, QtCore.Qt.AltModifier)
+        h0.mousePressEvent(press)
+        h0.mouseMoveEvent(move)
+        self.assertTrue(k0.is_broken(), "dotted under the cursor")
+        self.assertTrue(k1.is_broken(), "the whole gesture breaks")
+        h0.mouseReleaseEvent(release)
+        self.assertFalse(k0.is_broken(), "the flag is the GESTURE's, not the key's")
+        self.assertFalse(k1.is_broken())
+        _groups, side, broken = self.got[0]
+        self.assertEqual((side, broken), ("out", True))
+        self.assertEqual(self.legacy, [], "the old form carries no break flag")
+
+    def test_a_broken_one_key_drag_skips_the_deprecated_form(self):
+        """The old signal carries no break flag, so a gesture that asks for
+        one is reported ONLY through the new signal -- even alone."""
+        from qtpy import QtCore
+
+        item = self._rows()
+        k0 = item._keyframe_items[0]
+        k0.setSelected(True)
+        handle = self._handle(item, k0, "out")
+        self._drag(handle, 20.0, -15.0, QtCore.Qt.AltModifier)
+        self.assertEqual(len(self.got), 1)
+        _groups, side, broken = self.got[0]
+        self.assertEqual((side, broken), ("out", True))
+        self.assertEqual(self.legacy, [])
+
+    def test_ctrl_alt_breaks_only_the_grabbed_key(self):
+        from qtpy import QtCore
+
+        item = self._rows()
+        k0, k1, h0, _h1 = self._pair(item)
+        press, move, release = self._events(
+            h0, 20.0, -15.0, QtCore.Qt.AltModifier | QtCore.Qt.ControlModifier
+        )
+        h0.mousePressEvent(press)
+        h0.mouseMoveEvent(move)
+        self.assertTrue(k0.is_broken())
+        self.assertFalse(k1.is_broken(), "isolated: not part of the gesture")
+        h0.mouseReleaseEvent(release)
+        groups, _side, broken = self.got[0]
+        self.assertTrue(broken)
+        self.assertEqual(len(groups[0][1]), 1)
+
+    # -- the other side of an unbroken key -----------------------------------
+
+    def _in_handle(self, item):
+        """The middle key (selected) with both of its handles: it opens a
+        spline span and closes one, so it owns an IN and an OUT."""
+        key = item._keyframe_items[1]
+        key.setSelected(True)
+        return key, self._handle(item, key, "out"), self._handle(item, key, "in")
+
+    def test_an_unbroken_keys_other_side_swings_with_the_drag(self):
+        """Live, not on release -- otherwise every drag looks like it is
+        breaking the tangent."""
+        import math
+
+        item = self._rows()
+        key, out, inh = self._in_handle(item)
+        before = inh.control_point()
+        length = math.hypot(before[0] - key.time, before[1] - key.value)
+        self._drag(out, 20.0, -15.0)
+        cp_out, cp_in = out.control_point(), inh.control_point()
+        vec = (cp_out[0] - key.time, cp_out[1] - key.value)
+        reach = math.hypot(*vec)
+        self.assertAlmostEqual(cp_in[0] - key.time, -vec[0] / reach * length, places=6)
+        self.assertAlmostEqual(cp_in[1] - key.value, -vec[1] / reach * length, places=6)
+        self.assertAlmostEqual(
+            math.hypot(cp_in[0] - key.time, cp_in[1] - key.value),
+            length,
+            places=6,
+            msg="the other side keeps its OWN length, as both hosts write it",
+        )
+
+    def test_an_unweighted_curves_other_side_keeps_its_time_offset(self):
+        """A curve that stores only an ANGLE pins its control point a third
+        of the span out, so the swing may move the partner's VALUE alone --
+        anything else and the host's rebuild would snap it back."""
+        item = self._rows()
+        item._data.data["curve_preview"]["weighted"] = False
+        key, out, inh = self._in_handle(item)
+        before = inh.control_point()
+        self._drag(out, 20.0, -15.0)
+        cp_out, cp_in = out.control_point(), inh.control_point()
+        self.assertEqual(cp_in[0], before[0], "the time offset is the curve's")
+        self.assertNotEqual(cp_in[1], before[1], "the slope is the drag's")
+        slope = (cp_out[1] - key.value) / (cp_out[0] - key.time)
+        self.assertAlmostEqual(
+            cp_in[1] - key.value, (cp_in[0] - key.time) * slope, places=6
+        )
+
+    def test_a_broken_keys_other_side_stays_where_it_is(self):
+        item = self._rows()
+        item._data.data["curve_preview"]["broken"] = [False, True, False]
+        _key, out, inh = self._in_handle(item)
+        before = inh.control_point()
+        self._drag(out, 20.0, -15.0)
+        self.assertEqual(inh.control_point(), before)
+
+    def test_alt_leaves_the_other_side_alone_too(self):
+        """Breaking is exactly the gesture whose sides move independently."""
+        from qtpy import QtCore
+
+        item = self._rows()
+        _key, out, inh = self._in_handle(item)
+        before = inh.control_point()
+        self._drag(out, 20.0, -15.0, QtCore.Qt.AltModifier)
+        self.assertNotEqual(out.control_point(), before)
+        self.assertEqual(inh.control_point(), before)
+
+    def test_a_carried_keys_other_side_swings_too(self):
+        import math
+
+        item = self._rows()
+        _k0, k1, h0, h1 = self._pair(item)
+        inh = self._handle(item, k1, "in")
+        before = inh.control_point()
+        self._drag(h0, 20.0, -15.0)
+        cp_out, cp_in = h1.control_point(), inh.control_point()
+        self.assertNotEqual(cp_in, before)
+        vec = (cp_out[0] - k1.time, cp_out[1] - k1.value)
+        back = (cp_in[0] - k1.time, cp_in[1] - k1.value)
+        self.assertAlmostEqual(
+            vec[0] * back[1] - vec[1] * back[0],
+            0.0,
+            places=6,
+            msg="the carried key's two sides are one line",
+        )
+        self.assertLess(vec[0] * back[0] + vec[1] * back[1], 0.0, "and opposed")
+        self.assertAlmostEqual(
+            math.hypot(*back),
+            math.hypot(before[0] - k1.time, before[1] - k1.value),
+            places=6,
+        )
+
+    def test_ctrl_puts_a_carried_keys_other_side_back_as_well(self):
+        from qtpy import QtCore
+
+        item = self._rows()
+        _k0, k1, h0, h1 = self._pair(item)
+        inh = self._handle(item, k1, "in")
+        before_out, before_in = h1.control_point(), inh.control_point()
+        press, move, _release = self._events(h0, 20.0, -15.0)
+        h0.mousePressEvent(press)
+        h0.mouseMoveEvent(move)
+        self.assertNotEqual(inh.control_point(), before_in, "carried so far")
+        _p, ctrl_move, ctrl_release = self._events(
+            h0, 20.0, -15.0, QtCore.Qt.ControlModifier
+        )
+        h0.mouseMoveEvent(ctrl_move)
+        h0.mouseReleaseEvent(ctrl_release)
+        self.assertEqual(h1.control_point(), before_out)
+        self.assertEqual(inh.control_point(), before_in, "both sides put back")
+
+    # -- the invariants a peer keeps -----------------------------------------
+
+    def test_every_carried_handle_stays_on_its_own_side_of_its_key(self):
+        item = self._rows()
+        k0, k1, h0, h1 = self._pair(item)
+        self._drag(h0, -400.0, 0.0)  # far left, past both keys
+        self.assertGreater(h0.control_point()[0], k0.time)
+        self.assertGreater(h1.control_point()[0], k1.time)
+
+    def test_a_carried_handle_is_a_drag_participant(self):
+        item = self._rows()
+        _k0, _k1, h0, h1 = self._pair(item)
+        press, move, release = self._events(h0, 20.0, -15.0)
+        h0.mousePressEvent(press)
+        self.assertTrue(h0.drag_participant)
+        self.assertTrue(h1.drag_participant, "the clip must not rebuild under it")
+        h0.mouseMoveEvent(move)
+        h0.mouseReleaseEvent(release)
+        self.assertFalse(h0.drag_participant)
+        self.assertFalse(h1.drag_participant)
+
+    def test_the_scale_box_stays_away_from_a_tangent_drag(self):
+        from qtpy import QtCore
+
+        item = self._rows()
+        _k0, _k1, h0, _h1 = self._pair(item)
+        self.w.set_shift_held(True)
+        self.assertIsNotNone(self.w._key_scale_box, "Shift alone raises the box")
+        press, move, release = self._events(h0, 20.0, -15.0, QtCore.Qt.ShiftModifier)
+        h0.mousePressEvent(press)
+        self.assertIsNone(self.w._key_scale_box, "the press took it away")
+        self.w.refresh_key_scale_box()
+        self.assertIsNone(self.w._key_scale_box, "and it stays away mid-drag")
+        h0.mouseMoveEvent(move)
+        h0.mouseReleaseEvent(release)
+        self.assertIsNotNone(
+            self.w._key_scale_box,
+            "Shift still held: the release hands the modifier back",
+        )

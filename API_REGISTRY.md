@@ -180,6 +180,7 @@ Registry helpers for bridge parameter dicts.
   - `Parameters.scope_spec(default: str = 'selected', section: str = 'Export') -> AttributeSpec` *(static)* — The shared **Scope** parameter every hand-off bridge exposes.
   - `Parameters.shader_type_spec(default: str = 'stingray', section: str = '') -> AttributeSpec` *(static)* — The shared **Rebuild Shader** parameter a material-rebuilding bridge exposes.
   - `Parameters.carrier_spec(default: str = 'fbx', section: str = '') -> AttributeSpec` *(static)* — The shared **Format** parameter: which interchange carrier the payload
+  - `Parameters.rig_mode_spec(default: str = 'auto', section: str = '') -> AttributeSpec` *(static)* — The shared **Rig** parameter: how a hand-off treats the rig logic that
   - `Parameters.referenced_keys(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]` *(static)* — Return registry keys whose ``__KEY__`` token appears in *script_text*.
   - `Parameters.defaults(params: Dict[str, AttributeSpec]) -> Dict[str, Any]` *(static)* — Return ``{key: default}`` for every registered parameter.
   - `Parameters.affix_parts(value: Any, *, default: str = 'prefix')` *(static)* — ``(prefix, suffix)`` for a collected ``affix``-kind parameter value.
@@ -604,10 +605,9 @@ Widget-free *recent values* model — the shared source of truth for value histo
 
 Typed file registries backing Switchboard discovery.
 
-- **[`class FileRegistry(ptk.NamedTupleContainer)`](uitk/uitk/managers/registry_manager.py#L42)** — A named tuple container of file records.
-  - `FileRegistry.file_manager(self) -> 'RegistryManager'` *(property)* — Deprecated alias for :attr:`manager`.
+- **[`class FileRegistry(ptk.NamedTupleContainer)`](uitk/uitk/managers/registry_manager.py#L46)** — A named tuple container of file records.
   - `FileRegistry.extend(self, objects: Union[List[namedtuple], List[tuple], Any], **metadata) -> None` — Extend the registry, collecting file records from raw objects.
-- **[`class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin)`](uitk/uitk/managers/registry_manager.py#L144)** — Creates and owns named file registries.
+- **[`class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin)`](uitk/uitk/managers/registry_manager.py#L143)** — Creates and owns named file registries.
   - `RegistryManager.get_base_dir(self, caller_info: Union[str, int, Any] = 0) -> Optional[str]` — Identify a base directory from a path, a caller frame index, or an object.
   - `RegistryManager.resolve_path(self, target_obj: Union[str, Any], validate: int = 0, path_type: str = 'Path', **metadata) -> Optional[str]` — Resolve a target object to an absolute path.
   - `RegistryManager.create(self, descriptor: str, objects: Optional[Union[str, List[str], Any]] = None, **metadata) -> FileRegistry` — Create a named registry and bind it as an attribute on this manager.
@@ -667,6 +667,8 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
   - `GlobalShortcut.setContext(self, context: QtCore.Qt.ShortcutContext)` — Live-update the underlying QShortcut's context.
   - `GlobalShortcut.dispose(self) -> None` — Disable, unregister, and schedule deletion of this shortcut.
 - **[`class ShortcutManager`](uitk/uitk/managers/shortcut_manager.py#L333)** — Centralized shortcut management with clear separation of concerns
+  - `ShortcutManager.hide_bound_menu_items() -> bool` *(static)* — Whether menus omit items whose action already has a shortcut.
+  - `ShortcutManager.set_hide_bound_menu_items(value: bool) -> None` *(static)* — Set :meth:`hide_bound_menu_items`.
   - `ShortcutManager.context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str` *(static)* — Convert a Qt.ShortcutContext to its persistence string.
   - `ShortcutManager.scope_name_to_context(name: str) -> QtCore.Qt.ShortcutContext` *(static)* — Convert a persisted scope string to a Qt.ShortcutContext.
   - `ShortcutManager.host_namespace_suffix(context_tags) -> str` *(static)* — Settings-key suffix namespacing persisted state by host context.
@@ -808,6 +810,7 @@ Switchboard-side keyboard shortcut machinery.
 - **[`class Shortcut`](uitk/uitk/switchboard/shortcuts.py#L32)** — Decorator to assign a keyboard shortcut to a slot method.
 - **[`class SwitchboardShortcutMixin`](uitk/uitk/switchboard/shortcuts.py#L91)** — Mixin for managing keyboard shortcuts for Switchboard Slots.
   - `SwitchboardShortcutMixin.register_slots_shortcuts(self, ui: QtWidgets.QWidget, slots_instance: object) -> None` — Scan a Slots instance and register shortcuts for decorated methods.
+  - `SwitchboardShortcutMixin.widget_has_shortcut(self, widget: QtWidgets.QWidget) -> bool` — Whether *widget*'s slot currently holds a bound keyboard shortcut.
   - `SwitchboardShortcutMixin.get_shortcut_registry(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]` — Get a registry of all assignable slots and their shortcut status.
   - `SwitchboardShortcutMixin.get_static_shortcut_registry(self, ui_name: str) -> List[Dict[str, Any]]` — Build a UI's shortcut registry WITHOUT instantiating the UI.
   - `SwitchboardShortcutMixin.set_user_shortcut(self, ui: QtWidgets.QWidget, slot_name: str, sequence: str, scope: Optional[str] = None) -> None` — Update a shortcut setting dynamically and live-update the active QShortcut.
@@ -1234,12 +1237,12 @@ Adapter that lets the unified :class:`ShortcutEditor` render a standalone
 <a id="widgets--editors--shortcut_editor--registry_editor"></a>
 ### `widgets/editors/shortcut_editor/registry_editor.py`
 
-- [`USER_SCOPES`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L21) — constant
-- [`SCOPE_LABELS`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L22) — constant
-- [`SCOPE_ICONS`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L23) — constant
-- [`SCOPE_TOOLTIPS`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L24) — constant
-- **[`class CollisionConflict`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L34)** — A single conflict reported by a collision checker.
-- **[`class ShortcutEditor(EditorPanel)`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L70)** — UI for editing global shortcuts with preset support.
+- [`USER_SCOPES`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L22) — constant
+- [`SCOPE_LABELS`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L23) — constant
+- [`SCOPE_ICONS`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L24) — constant
+- [`SCOPE_TOOLTIPS`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L25) — constant
+- **[`class CollisionConflict`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L35)** — A single conflict reported by a collision checker.
+- **[`class ShortcutEditor(EditorPanel)`](uitk/uitk/widgets/editors/shortcut_editor/registry_editor.py#L71)** — UI for editing global shortcuts with preset support.
   - `ShortcutEditor.export_preset_data(self)`
   - `ShortcutEditor.import_preset_data(self, data)`
   - `ShortcutEditor.export_shortcuts(self, loaded_only: bool = False) -> dict` — Export all user-customised shortcuts across loaded UIs.
@@ -1669,11 +1672,11 @@ Pure menu-resolution logic for the MarkingMenu.
 <a id="widgets--menu"></a>
 ### `widgets/menu.py`
 
-- **[`class MenuConfig`](uitk/uitk/widgets/menu.py#L75)** — Configuration for Menu initialization.
+- **[`class MenuConfig`](uitk/uitk/widgets/menu.py#L76)** — Configuration for Menu initialization.
   - `MenuConfig.for_context_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides) -> 'MenuConfig'` *(class)* — Create config for a context menu.
   - `MenuConfig.for_dropdown_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides) -> 'MenuConfig'` *(class)* — Create config for a dropdown menu.
   - `MenuConfig.for_popup_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides) -> 'MenuConfig'` *(class)* — Create config for a popup menu.
-- **[`class ActionButtonManager`](uitk/uitk/widgets/menu.py#L163)** — Manages action buttons for Menu widgets.
+- **[`class ActionButtonManager`](uitk/uitk/widgets/menu.py#L164)** — Manages action buttons for Menu widgets.
   - `ActionButtonManager.container(self) -> QtWidgets.QWidget` *(property)* — Get or create the collapsible action button container.
   - `ActionButtonManager.create_button(self, button_id: str, config: _ActionButtonConfig) -> QtWidgets.QPushButton` — Create an action button with the given configuration.
   - `ActionButtonManager.add_button(self, button_id: str, config: _ActionButtonConfig, index: int = -1) -> QtWidgets.QPushButton` — Add an action button to the container.
@@ -1685,13 +1688,13 @@ Pure menu-resolution logic for the MarkingMenu.
   - `ActionButtonManager.hide_button(self, button_id: str) -> bool` — Hide an action button.
   - `ActionButtonManager.remove_button(self, button_id: str) -> bool` — Remove an action button entirely.
   - `ActionButtonManager.has_visible_items(self) -> bool` — Check if any buttons or widgets are currently visible.
-- **[`class MenuPositioner`](uitk/uitk/widgets/menu.py#L339)** — Encapsulates menu positioning and width matching logic.
+- **[`class MenuPositioner`](uitk/uitk/widgets/menu.py#L340)** — Encapsulates menu positioning and width matching logic.
   - `MenuPositioner.center_on_cursor(widget: QtWidgets.QWidget) -> None` *(static)* — Center menu on cursor position.
   - `MenuPositioner.position_at_coordinate(widget: QtWidgets.QWidget, position: Union[QtCore.QPoint, tuple, list]) -> None` *(static)* — Position menu at specific coordinates.
   - `MenuPositioner.position_relative_to_widget(menu: QtWidgets.QWidget, target_widget: QtWidgets.QWidget, position: str) -> None` *(static)* — Position menu relative to another widget.
   - `MenuPositioner.apply_width_matching(menu: QtWidgets.QWidget, anchor_widget: Optional[QtWidgets.QWidget], match_parent_width: bool, position: Union[str, QtCore.QPoint, tuple, list, None], logger: Optional[Any] = None) -> None` *(static)* — Apply width matching if conditions are met.
   - `MenuPositioner.position_and_match_width(menu: QtWidgets.QWidget, anchor_widget: Optional[QtWidgets.QWidget], position: Union[str, QtCore.QPoint, tuple, list, None], match_parent_width: bool, logger: Optional[Any] = None) -> None` *(static)* — Position menu and apply width matching in one operation.
-- **[`class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin)`](uitk/uitk/widgets/menu.py#L576)** — A custom Qt Widget that serves as a popup menu with additional features.
+- **[`class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin)`](uitk/uitk/widgets/menu.py#L577)** — A custom Qt Widget that serves as a popup menu with additional features.
   - `Menu.create_context_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides)` *(class)* — Factory method: Create a standalone context menu with sensible defaults.
   - `Menu.create_dropdown_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides)` *(class)* — Factory method: Create a dropdown menu for option boxes.
   - `Menu.from_config(cls, config: MenuConfig)` *(class)* — Create a Menu from a MenuConfig object.
@@ -2425,12 +2428,13 @@ Shared drag infrastructure for sequencer graphics items.
 
 The interactive items of an expanded attribute sub-row.
 
-- **[`class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L24)** — An interactive keyframe indicator inside a sub-row :class:`ClipItem`.
+- **[`class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L25)** — An interactive keyframe indicator inside a sub-row :class:`ClipItem`.
   - `KeyframeItem.time(self) -> float` *(property)*
   - `KeyframeItem.value(self) -> float` *(property)*
   - `KeyframeItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
   - `KeyframeItem.boundingRect(self) -> QtCore.QRectF`
   - `KeyframeItem.itemChange(self, change, value)`
+  - `KeyframeItem.weighted_handles(self) -> bool` — Whether a handle's LENGTH carries meaning on this curve.
   - `KeyframeItem.is_broken(self, index: Optional[int] = None) -> bool` — True when this key's tangents are broken (IN and OUT independent).
   - `KeyframeItem.shape(self) -> QtGui.QPainterPath` — Larger hit area for easier clicking.
   - `KeyframeItem.hoverEnterEvent(self, event)`
@@ -2439,10 +2443,11 @@ The interactive items of an expanded attribute sub-row.
   - `KeyframeItem.mouseMoveEvent(self, event)`
   - `KeyframeItem.mouseReleaseEvent(self, event)`
   - `KeyframeItem.contextMenuEvent(self, event)` — Right-click a key: the key menu, for the selected keys (this one
-- **[`class TangentHandleItem(QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L523)** — The grab point of a selected key's IN or OUT tangent handle.
+- **[`class TangentHandleItem(QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L552)** — The grab point of a selected key's IN or OUT tangent handle.
   - `TangentHandleItem.side(self) -> str` *(property)*
   - `TangentHandleItem.key(self) -> KeyframeItem` *(property)*
   - `TangentHandleItem.slot(self) -> tuple` — ``(key, side, segment index, control-point key)`` -- what this
+  - `TangentHandleItem.drag_participant(self) -> bool` *(property)* — True while this handle is being dragged, or carried by one that
   - `TangentHandleItem.control_point(self) -> Optional[tuple]`
   - `TangentHandleItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
   - `TangentHandleItem.shape(self) -> QtGui.QPainterPath`
@@ -2452,7 +2457,7 @@ The interactive items of an expanded attribute sub-row.
   - `TangentHandleItem.mouseMoveEvent(self, event)`
   - `TangentHandleItem.mouseReleaseEvent(self, event)`
   - `TangentHandleItem.contextMenuEvent(self, event)`
-- **[`class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L670)** — The scale box Shift raises around a key selection.
+- **[`class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L948)** — The scale box Shift raises around a key selection.
   - `KeyScaleBoxItem.lo(self) -> float` *(property)* — Frame of the box's left edge.
   - `KeyScaleBoxItem.hi(self) -> float` *(property)* — Frame of the box's right edge.
   - `KeyScaleBoxItem.side(self) -> str` *(property)* — Which handle is being dragged, or ``""`` when none is.
@@ -2557,9 +2562,9 @@ Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 
 An NLE-style timeline sequencer widget.
 
-- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L65)** — Dialog for configuring attribute-type color mappings.
+- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L75)** — Dialog for configuring attribute-type color mappings.
   - `AttributeColorDialog.load_color_map() -> Dict[str, str]` *(static)* — Return the persisted attribute color map without opening a dialog.
-- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L181)** — A split-view NLE sequencer widget.
+- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L197)** — A split-view NLE sequencer widget.
   - `SequencerWidget.window_shortcuts(self) -> bool` *(property)* — When ``True``, sequencer shortcuts are active whenever the
   - `SequencerWidget.showEvent(self, event: QtGui.QShowEvent) -> None`
   - `SequencerWidget.resizeEvent(self, event: QtGui.QResizeEvent) -> None`
@@ -2628,6 +2633,8 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.record_press_modifiers(self, modifiers) -> None` — Bank the modifiers a press carried, for the consumers' gates.
   - `SequencerWidget.shortcut_overlay(self)` *(property)* — The corner legend (:class:`ShortcutOverlay`), or ``None`` until
   - `SequencerWidget.shortcut_overlay_visible(self) -> bool` *(property)* — Show a legend of the drag grammar and keys in the timeline's corner.
+  - `SequencerWidget.shortcut_overlay_mode(self) -> str` *(property)* — When to show the legend: ``"off"``, ``"on"``, or ``"modifier"``.
+  - `SequencerWidget.shortcut_overlay_tracking(self) -> bool` *(property)* — Whether the group under the pointer is worth resolving: the legend
   - `SequencerWidget.attribute_colors(self) -> Dict[str, str]` *(property)* — Mapping of attribute name to hex color string.
   - `SequencerWidget.set_attribute_color(self, name: str, color: str) -> None` — Set a single attribute's color and repaint.
   - `SequencerWidget.sub_row_height(self) -> int` *(property)* — Pixel height of expanded attribute sub-rows (default half track height).
@@ -2643,14 +2650,16 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.show_key_menu(self, global_pos) -> bool` — Open the key menu for the current key selection;
   - `SequencerWidget.refresh_key_scale_box(self) -> None` — Show or hide the Shift scale box around the current key selection.
   - `SequencerWidget.clear_key_scale_box(self) -> None` — Remove the scale box, cancelling a drag it still owns.
-  - `SequencerWidget.set_shift_held(self, held: bool) -> None` — Record whether Shift is down and re-evaluate the scale box.
+  - `SequencerWidget.set_shift_held(self, held: bool) -> None` — Record whether Shift is down -- the one-key face of
+  - `SequencerWidget.modifiers_held(self) -> int` *(property)* — The chord currently held over the timeline, as a plain int.
+  - `SequencerWidget.set_modifiers_held(self, modifiers) -> None` — Record the chord held over the timeline;
 
 <a id="widgets--sequencer--_timeline"></a>
 ### `widgets/sequencer/_timeline.py`
 
 Timeline view, scene, and track-header widgets.
 
-- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L88)** — Left-pane widget showing track labels, vertically synced to the timeline.
+- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L97)** — Left-pane widget showing track labels, vertically synced to the timeline.
   - `TrackHeaderWidget.set_top_margin(self, margin: int) -> None`
   - `TrackHeaderWidget.add_track_label(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: str = None, text_color: str = None)`
   - `TrackHeaderWidget.set_track_expanded(self, track_idx: int, sub_names: List[str], sub_height: int)`
@@ -2659,10 +2668,10 @@ Timeline view, scene, and track-header widgets.
   - `TrackHeaderWidget.eventFilter(self, obj, event)`
   - `TrackHeaderWidget.selected_names(self) -> List[str]`
   - `TrackHeaderWidget.clear_tracks(self)`
-- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L449)** — Scene that owns the ruler, playhead, and all clip items.
+- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L458)** — Scene that owns the ruler, playhead, and all clip items.
   - `TimelineScene.ruler(self) -> RulerItem` *(property)*
   - `TimelineScene.playhead(self) -> PlayheadItem` *(property)*
-- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L474)** — QGraphicsView providing zoom, pan, and coordinate mapping.
+- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L483)** — QGraphicsView providing zoom, pan, and coordinate mapping.
   - `TimelineView.event(self, event: QtCore.QEvent) -> bool`
   - `TimelineView.keyPressEvent(self, event)`
   - `TimelineView.keyReleaseEvent(self, event)`
@@ -2880,7 +2889,7 @@ Scrollable rich-text viewer window.
   - `TreeFormatMixin.set_action_color(self, item: QtWidgets.QTreeWidgetItem, key: str, col: int = 0, use_bg: bool = False)` — Apply semantic color to a tree item.
   - `TreeFormatMixin.action_color_formatter(self, item, value, col, *_)` — Formatter that applies action colors based on item value.
   - `TreeFormatMixin.make_color_map_formatter(self, color_map: dict)` — Create a formatter from a color mapping dictionary.
-- **[`class TreeWidget(QtWidgets.QTreeWidget, MenuMixin, AttributesMixin, TreeFormatMixin, HierarchyIconMixin)`](uitk/uitk/widgets/treeWidget.py#L577)** — Enhanced QTreeWidget with flexible data handling, formatting capabilities, and custom hierarchy ico…
+- **[`class TreeWidget(QtWidgets.QTreeWidget, MenuMixin, AttributesMixin, TreeFormatMixin, HierarchyIconMixin)`](uitk/uitk/widgets/treeWidget.py#L583)** — Enhanced QTreeWidget with flexible data handling, formatting capabilities, and custom hierarchy ico…
   - `TreeWidget.selection_style(self) -> str` *(property)* — Visual style for selected items: ``"border"`` or ``"tint"``.
   - `TreeWidget.header_actions(self) -> _HeaderActionBar` *(property)* — Right-aligned icon-button strip overlaid on the tree header.
   - `TreeWidget.setChildRowColor(self, color) -> None` — Set the child-row background (Qt-property setter).

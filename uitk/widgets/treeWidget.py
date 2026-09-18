@@ -194,6 +194,12 @@ class TreeFormatMixin(ConvertMixin):
         "warning": ("#B49B5C", "#FFF6DC"),
         "info": ("#6D9BAA", "#E2F3F9"),
         "inactive": ("#AAAAAA", None),
+        # Kept in step with CellFormatMixin.ACTION_COLOR_MAP by
+        # test_table_formatting.TestActionColorMapParity. "current" existed only
+        # on the table copy until 2026-09-16, so `widget.ACTION_COLOR_MAP
+        # ["current"]` -- which mayatk's reference_manager does -- was a KeyError
+        # against a tree.
+        "current": ("#C4A44A", None),
         "reset": (None, None),
     }
 

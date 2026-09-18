@@ -92,14 +92,14 @@ class TestNonInteractiveStateSuppressesHover(unittest.TestCase):
         self.assertFalse(item.data(ACTION_NONINTERACTIVE_ROLE))
 
 
-class TestAltPressReachesTheAction(QtBaseTestCase):
-    """An Alt press or Alt-drag on an action column fires the action like a plain one.
+class TestActionColumnPressAndDrag(QtBaseTestCase):
+    """A press or drag on an action column reaches the action, modifiers and all.
 
-    Panels read Alt as "clear" (the Channels Lock / Key columns: a press sets,
-    Alt+press clears, a drag applies either to every row it crosses), reading
-    the modifier from ``QApplication.keyboardModifiers()`` inside the action.
-    So Alt must stay out of the modifiers that turn a drag into a selection
-    gesture -- a Shift / Ctrl drag fires nothing.
+    Panels read the modifier per row from ``QApplication.keyboardModifiers()``
+    inside the action (the Channels Lock / Key columns: a press sets, Alt+press
+    clears, Ctrl+press on Key breaks a connection), and a drag applies the same
+    to every row it crosses -- so no modifier may swallow the gesture, and a
+    drag quicker than Qt's move sampling must still cover the rows in between.
     """
 
     ROWS = 4
@@ -144,6 +144,12 @@ class TestAltPressReachesTheAction(QtBaseTestCase):
         )
         app.processEvents()
 
+    def _fast_drag(self, first, last, modifier=QtCore.Qt.NoModifier):
+        """Press on *first*, one move to *last*, release -- the rows between
+        get no mouse-move of their own, as in any drag quicker than Qt's
+        move sampling."""
+        self._drag([first, last], modifier)
+
     def test_alt_click_fires_the_action_with_alt_held(self):
         QTest.mouseClick(
             self.table.viewport(),
@@ -162,9 +168,55 @@ class TestAltPressReachesTheAction(QtBaseTestCase):
         self._drag([0, 1, 2], QtCore.Qt.NoModifier)
         self.assertEqual(self.hits, [(0, False), (1, False), (2, False)])
 
-    def test_ctrl_drag_fires_nothing(self):
+    def test_ctrl_drag_fires_every_crossed_row(self):
+        """Ctrl is a per-row modifier on an action column (the Channels Key
+        column breaks a connection on Ctrl), so a Ctrl-drag must reach every
+        row -- an action column has no selection for Ctrl to extend."""
         self._drag([0, 1, 2], QtCore.Qt.ControlModifier)
-        self.assertEqual(self.hits, [])
+        self.assertEqual([row for row, _alt in self.hits], [0, 1, 2])
+
+    def test_a_fast_drag_fires_the_rows_it_skipped_over(self):
+        """Mouse moves are sampled: a quick drag lands events on a few rows
+        only, leaving the ones in between untouched (reliably just the first
+        and the last)."""
+        self._fast_drag(0, 3)
+        self.assertEqual([row for row, _alt in self.hits], [0, 1, 2, 3])
+
+    def test_a_fast_drag_upwards_fires_them_in_crossing_order(self):
+        self._fast_drag(3, 0)
+        self.assertEqual([row for row, _alt in self.hits], [3, 2, 1, 0])
+
+    def test_a_fast_drag_leaves_out_hidden_rows(self):
+        self.table.setRowHidden(2, True)
+        app.processEvents()
+        self._fast_drag(0, 3)
+        self.assertEqual([row for row, _alt in self.hits], [0, 1, 3])
+
+    def test_a_row_crossed_twice_fires_once(self):
+        """A drag back to where it started also emits ``clicked`` -- that row
+        must not fire a second time on top of the drag dispatch."""
+        self._drag([0, 2, 0], QtCore.Qt.NoModifier)
+        self.assertEqual([row for row, _alt in self.hits], [0, 1, 2])
+
+    def _drag_out_to(self, first, point):
+        """Drag off row *first* and out to *point*, past the table's rows."""
+        viewport = self.table.viewport()
+        QTest.mousePress(
+            viewport, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, self._center(first)
+        )
+        QTest.mouseMove(viewport, point)
+        QTest.mouseRelease(viewport, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, point)
+        app.processEvents()
+
+    def test_a_drag_into_the_empty_space_below_covers_the_last_rows(self):
+        """Dragging out past the end is how one covers the final rows."""
+        last = self.table.visualRect(self.table.model().index(self.ROWS - 1, 1))
+        self._drag_out_to(0, QtCore.QPoint(last.center().x(), last.bottom() + 25))
+        self.assertEqual([row for row, _alt in self.hits], [0, 1, 2, 3])
+
+    def test_a_drag_above_the_first_row_covers_the_top_rows(self):
+        self._drag_out_to(3, QtCore.QPoint(self._center(3).x(), -25))
+        self.assertEqual([row for row, _alt in self.hits], [3, 2, 1, 0])
 
     def _add_drag_action(self):
         batches = []

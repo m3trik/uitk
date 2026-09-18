@@ -86,7 +86,7 @@ without involving Switchboard.
 ### Registries
 
 Built by `RegistryManager` in [uitk/managers/registry_manager.py](../uitk/managers/registry_manager.py)
-(formerly `FileManager` in `uitk/file_manager.py`, which remains as a deprecated alias shim). Four typed registries:
+(formerly `FileManager` in `uitk/file_manager.py`; that alias shim was removed 2026-09-16). Four typed registries:
 
 | Registry | Inclusion pattern | Fields |
 |:---|:---|:---|
@@ -513,7 +513,6 @@ Both delegates read `uitk_tags` from the .ui XML directly (`extract_metadata`), 
 uitk/
 ├── __init__.py                # DEFAULT_INCLUDE + bootstrap_package
 ├── compile.py                 # .ui → hash-stamped _ui.py compiler + precompile_async + CLI
-├── file_manager.py            # deprecated shim → managers/registry_manager.py
 ├── events.py                  # EventFactoryFilter, MouseTracking
 │
 ├── managers/                  # standalone services (Switchboard- and widget-consumed)

@@ -634,6 +634,8 @@ class TableWidget(
         self._drag_column = None  # column where the drag started
         self._drag_rows = []  # rows traversed during drag
         self._drag_is_action = False  # True when dragging over an action column
+        # Latched over the release that ends a drag — see mouseReleaseEvent.
+        self._suppress_click_action = False
         self._drag_selected_indexes = None
         self._drag_edit_column = None
 
@@ -865,14 +867,20 @@ class TableWidget(
         )
         self._drag_occurred = False
 
+        # An action column has no selection for Shift / Ctrl to extend (its
+        # cells are non-selectable) and panels read those modifiers per row --
+        # the Channels Key column breaks a connection on Ctrl -- so a modifier
+        # drag tracks rows there; on any other column it stays a selection
+        # gesture and fires nothing.
+        is_action = index.isValid() and index.column() in self.actions._columns
         if (
             index.isValid()
             and event.button() == QtCore.Qt.LeftButton
-            and not self._drag_has_modifier
+            and (is_action or not self._drag_has_modifier)
         ):
             self._drag_column = index.column()
             self._drag_rows = [index.row()]
-            self._drag_is_action = index.column() in self.actions._columns
+            self._drag_is_action = is_action
         else:
             self._drag_column = None
             self._drag_rows = []
@@ -901,17 +909,48 @@ class TableWidget(
         ):
             self._drag_occurred = True
 
-        # Track rows traversed while dragging in the same column
+        # Track the rows the drag travels over, the skipped ones included.
         if self._drag_column is not None and self._drag_occurred:
-            index = self.indexAt(event.pos())
-            if (
-                index.isValid()
-                and index.column() == self._drag_column
-                and index.row() not in self._drag_rows
-            ):
-                self._drag_rows.append(index.row())
+            self._track_drag_row(event.pos())
 
         super().mouseMoveEvent(event)
+
+    def _track_drag_row(self, pos):
+        """Record the row under *pos* and every row between it and the last
+        row recorded.
+
+        Mouse moves are sampled, so a drag quicker than that sampling lands
+        events on a few rows only — without filling the gap a drag covers its
+        two ends and misses the rows in between.  The column is ignored: the
+        gesture belongs to the column the press started in, so drifting
+        sideways (or past the last row) doesn't drop rows.  Hidden rows are
+        left out, and a row crossed twice is recorded once.
+        """
+        row = self._drag_row_at(pos.y())
+        if row == -1 or not self._drag_rows:
+            return
+        last = self._drag_rows[-1]
+        step = 1 if row >= last else -1
+        for r in range(last + step, row + step, step):
+            if r not in self._drag_rows and not self.isRowHidden(r):
+                self._drag_rows.append(r)
+
+    def _drag_row_at(self, y):
+        """The row under viewport *y*, clamped to the nearest one past the ends.
+
+        ``rowAt`` reports -1 above the first row and below the last (including
+        the empty space under a short table), yet dragging out past the end is
+        exactly how one covers the final rows — clamping keeps them in the
+        gesture instead of ending it at the last row an event landed on.
+        """
+        row = self.rowAt(y)
+        if row != -1:
+            return row
+        visible = [r for r in range(self.rowCount()) if not self.isRowHidden(r)]
+        if not visible:
+            return -1
+        first_top = self.visualRect(self.model().index(visible[0], 0)).top()
+        return visible[0] if y < first_top else visible[-1]
 
     def mouseReleaseEvent(self, event):
         # Finish an active MMB scrub before falling through to the LMB
@@ -925,6 +964,10 @@ class TableWidget(
             event.accept()
             return
 
+        # The release point can sit rows away from the last move event.
+        if self._drag_occurred and self._drag_column is not None:
+            self._track_drag_row(event.pos())
+
         was_drag = self._drag_occurred
         had_modifier = self._drag_has_modifier
         is_action = self._drag_is_action
@@ -932,7 +975,14 @@ class TableWidget(
         drag_rows = list(self._drag_rows)
 
         self._reset_drag_state()
-        super().mouseReleaseEvent(event)
+        # A drag ending on the cell it started from still emits ``clicked``;
+        # the drag dispatch below owns every row it travelled, so the click
+        # must not fire that row's action a second time.
+        self._suppress_click_action = was_drag
+        try:
+            super().mouseReleaseEvent(event)
+        finally:
+            self._suppress_click_action = False
 
         # Single-click edit: bare LMB click+release (no drag, no modifier)
         # on a registered column opens the editor immediately.  Cells
@@ -974,7 +1024,9 @@ class TableWidget(
                     return
 
         if not (
-            was_drag and not had_modifier and event.button() == QtCore.Qt.LeftButton
+            was_drag
+            and event.button() == QtCore.Qt.LeftButton
+            and (is_action or not had_modifier)
         ):
             return
 
@@ -1232,6 +1284,8 @@ class TableWidget(
 
     def _on_cell_clicked(self, row, col):
         """Handle cell clicks and dispatch to registered actions."""
+        if self._suppress_click_action:
+            return
         if col in self._column_click_actions:
             self._column_click_actions[col](row, col)
 

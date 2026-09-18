@@ -37,7 +37,7 @@ Every module in `API_INDEX.md` must match exactly one home via longest-prefix ma
 | `designer/` | [WIDGETS.md](WIDGETS.md) | § Using the widgets in Qt Designer — the widget-box plugin, `designer_spec`, design-time flag |
 | `events.py` | [API_REFERENCE.md](API_REFERENCE.md) | `uitk.events` section |
 | `examples/` | — | demo code; run `python -m uitk.examples.example`, don't document it |
-| `managers/registry_manager.py` | [API_REFERENCE.md](API_REFERENCE.md) | FileRegistry / RegistryManager section; `file_manager.py` is its deprecated alias shim |
+| `managers/registry_manager.py` | [API_REFERENCE.md](API_REFERENCE.md) | FileRegistry / RegistryManager section (superseded `file_manager.py`, removed 2026-09-16) |
 | `handlers/` | [ARCHITECTURE.md](ARCHITECTURE.md) | handler-ecosystem section |
 | `loaders/` | [ARCHITECTURE.md](ARCHITECTURE.md) | §12 UI loading & compilation |
 | `managers/` | [WIDGETS.md](WIDGETS.md) | standalone services (settings/state/values/presets/icons/shortcuts/cursors — § Cursors), split out of `widgets/mixins/` 2026-07; settings/state user-level detail in USER_GUIDE.md |

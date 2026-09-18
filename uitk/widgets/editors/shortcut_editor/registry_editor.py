@@ -14,6 +14,7 @@ from uitk.widgets.delegates.centered_icon import (
 )
 from uitk.widgets.delegates.shortcut_capture import ShortcutCaptureDelegate
 from uitk.managers.icon_manager import IconManager
+from uitk.managers.shortcut_manager import ShortcutManager
 from uitk.widgets.separator import Separator
 
 
@@ -1144,6 +1145,17 @@ class ShortcutEditor(EditorPanel):
         menu.add(cb)
         self._show_hidden_checkbox = cb
 
+        cb = QtWidgets.QCheckBox("Hide menu items with shortcuts")
+        cb.setToolTip(
+            "Once an action has a key, omit its row from uitk menus.\n"
+            "A global preference — it applies to every menu, not just here."
+        )
+        cb.setFixedHeight(self.HEADER_WIDGET_HEIGHT)
+        cb.setChecked(ShortcutManager.hide_bound_menu_items())
+        cb.toggled.connect(self._set_hide_bound_menu_items)
+        menu.add(cb)
+        self._hide_bound_items_checkbox = cb
+
         # Combo-list filter — pointless in a focused launch, where the combo is
         # a single locked entry (mirrors the skipped show-all toggle).
         if not self._focus:
@@ -1196,6 +1208,16 @@ class ShortcutEditor(EditorPanel):
             self._refresh_ui_list_preserving_selection()
         else:
             self.populate()
+
+    def _set_hide_bound_menu_items(self, hide: bool) -> None:
+        """Omit/restore menu items whose action already has a shortcut.
+
+        A GLOBAL preference (``ShortcutManager``), not this editor's view
+        state: it changes what every uitk menu shows. Menus read it as they
+        open, so nothing here needs repopulating and no open menu needs a
+        re-apply.
+        """
+        ShortcutManager.set_hide_bound_menu_items(bool(hide))
 
     def _set_hide_empty_uis(self, hide_empty: bool) -> None:
         """Omit/restore the UIs with no shortcuts in the target combobox."""

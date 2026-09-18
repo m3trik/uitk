@@ -1989,6 +1989,29 @@ class TestSharedSpecs(BaseTestCase):
         self.assertEqual(first.section, "")
         self.assertEqual(Parameters.carrier_spec(section="Export").section, "Export")
 
+    def test_rig_mode_vocabulary_is_pythontk_s_own(self):
+        """The rig-mode choice renders pythontk's RIG_MODES vocabulary -- like the
+        carrier, one spelling for every panel and every producer."""
+        from pythontk.core_utils.app_handoff import RIG_MODE_PARAM, RIG_MODES
+        from uitk.bridge import Parameters
+
+        spec = Parameters.rig_mode_spec()
+        self.assertEqual(spec.key, RIG_MODE_PARAM)
+        self.assertEqual(spec.kind, "choice")
+        self.assertEqual([value for _label, value in spec.choices], list(RIG_MODES))
+        # auto leads: it is what an undecided request gets, and combos persist by INDEX.
+        self.assertEqual(spec.default, "auto")
+        self.assertEqual(Parameters.rig_mode_spec(default="rig").default, "rig")
+
+    def test_rig_mode_spec_is_distinct_per_caller_and_unsectioned(self):
+        from uitk.bridge import Parameters
+
+        first, second = Parameters.rig_mode_spec(), Parameters.rig_mode_spec()
+        self.assertIsNot(first, second)
+        self.assertIsNot(first.choices, second.choices)
+        self.assertEqual(first.section, "")
+        self.assertEqual(Parameters.rig_mode_spec(section="Export").section, "Export")
+
 
 class TestOutputDirRowPersistence(BaseTestCase):
     """The Output Dir row's persistence + clear-button opt-ins.

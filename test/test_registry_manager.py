@@ -8,7 +8,7 @@ This module tests the registry system backing Switchboard discovery:
 - Path resolution (caller frame, explicit dir, object) and the validate contract
 - Location checks (case-normalized, extensionless)
 - Descriptor guards and container bookkeeping
-- Deprecated ``uitk.file_manager`` aliases
+- The removed ``uitk.file_manager`` alias module stays removed
 
 Run standalone: python -m test.test_registry_manager
 """
@@ -20,7 +20,6 @@ import shutil
 import sys
 import tempfile
 import unittest
-import warnings
 from collections import namedtuple
 from pathlib import Path
 
@@ -178,8 +177,7 @@ class TestRegistryExtension(TempTreeTestCase):
     def test_extend_dedup_ignores_filepath_case(self):
         registry = self.manager.create("ui_registry", str(self.tmp), inc_files="*.ui")
         swapped = [
-            nt._replace(filepath=nt.filepath.swapcase())
-            for nt in registry.named_tuples
+            nt._replace(filepath=nt.filepath.swapcase()) for nt in registry.named_tuples
         ]
         registry.extend(swapped)
         self.assertEqual(
@@ -383,27 +381,20 @@ class TestPackageSurface(BaseTestCase):
         )
         self.assertIn("PushButton", registry.get("classname"))
 
-    def test_deprecated_file_manager_shim(self):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            sys.modules.pop("uitk.file_manager", None)
-            shim = importlib.import_module("uitk.file_manager")
-        self.assertTrue(
-            any(issubclass(w.category, DeprecationWarning) for w in caught),
-            "importing uitk.file_manager must emit a DeprecationWarning",
-        )
-        self.assertIs(shim.FileManager, RegistryManager)
-        self.assertIs(shim.FileContainer, FileRegistry)
+    def test_the_removed_shim_is_really_gone(self):
+        """``uitk.file_manager`` was a 2023 alias module; §5 allows one release."""
+        sys.modules.pop("uitk.file_manager", None)
+        with self.assertRaises(ImportError):
+            importlib.import_module("uitk.file_manager")
 
     def test_lazy_root_exports(self):
         import uitk
 
         self.assertIs(uitk.RegistryManager, RegistryManager)
         self.assertIs(uitk.FileRegistry, FileRegistry)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            self.assertIs(uitk.FileManager, RegistryManager)
-            self.assertIs(uitk.FileContainer, FileRegistry)
+        for gone in ("FileManager", "FileContainer"):
+            with self.subTest(name=gone):
+                self.assertNotIn(gone, uitk.__all__)
 
 
 class TestNamedTupleContainerContract(BaseTestCase):
@@ -460,9 +451,7 @@ class TestNamedTupleContainerContract(BaseTestCase):
     def test_handle_duplicates_default(self):
         existing = [self.File("file1.txt", "/p1")]
         new = [self.File("file1.txt", "/p1"), self.File("file2.txt", "/p2")]
-        self.assertEqual(
-            len(self.container._handle_duplicates(existing, new, True)), 3
-        )
+        self.assertEqual(len(self.container._handle_duplicates(existing, new, True)), 3)
         self.assertEqual(
             len(self.container._handle_duplicates(existing, new, False)), 2
         )

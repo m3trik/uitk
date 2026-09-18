@@ -1515,5 +1515,71 @@ class TestShortcutEditorHideEmptyUis(ShortcutEditorRequirements, QtBaseTestCase)
         editor.close()
 
 
+class TestHideBoundMenuItemsToggle(ShortcutEditorRequirements, QtBaseTestCase):
+    """The editor's "Hide menu items with shortcuts" toggle, and the lookup
+    menus use to ask "is this row already on a key?".
+
+    The toggle drives every uitk menu, so it is a GLOBAL preference rather
+    than this editor's own per-launch view state.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        self.ShortcutManager = ShortcutManager
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
+        self.ui = self.sb.loaded_ui.example
+        self.ui.show()
+        QtWait.pump()
+        ShortcutManager.set_hide_bound_menu_items(False)
+        self.addCleanup(ShortcutManager.set_hide_bound_menu_items, False)
+        self.editor = ShortcutEditor(self.sb, parent=None)
+        self.addCleanup(self.editor.close)
+        self.addCleanup(self.ui.close)
+
+    def test_the_checkbox_writes_the_global_preference(self):
+        checkbox = self.editor._hide_bound_items_checkbox
+        checkbox.setChecked(True)
+        self.assertTrue(self.ShortcutManager.hide_bound_menu_items())
+        checkbox.setChecked(False)
+        self.assertFalse(self.ShortcutManager.hide_bound_menu_items())
+
+    def test_the_preference_is_not_editor_view_state(self):
+        """Editor view state is per-launch-variant; this one has to be read by
+        menus that know nothing about the editor."""
+        self.editor._hide_bound_items_checkbox.setChecked(True)
+        self.assertIsNone(
+            self.editor._settings.value(
+                self.ShortcutManager.HIDE_BOUND_MENU_ITEMS_KEY, None
+            )
+        )
+
+    def test_widget_has_shortcut_follows_the_binding(self):
+        registry = self._require_registry()
+        slot_name = registry[0]["method"]
+        self._require_example_ui_name()
+        widget = getattr(self.ui, slot_name)
+        self.addCleanup(self.sb.set_user_shortcut, self.ui, slot_name, "")
+
+        self.sb.set_user_shortcut(self.ui, slot_name, "")
+        self.assertFalse(self.sb.widget_has_shortcut(widget), "nothing bound yet")
+
+        self.sb.set_user_shortcut(self.ui, slot_name, "Ctrl+Alt+9")
+        self.assertTrue(self.sb.widget_has_shortcut(widget), "now it is on a key")
+
+    def test_an_unregistered_widget_has_no_command_identity(self):
+        from qtpy import QtWidgets as _QtWidgets
+
+        self.assertFalse(self.sb.widget_has_shortcut(_QtWidgets.QPushButton()))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,8 @@ key selection to retime it as a whole.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional, Tuple
+import math
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from qtpy import QtWidgets, QtGui, QtCore
 
@@ -64,6 +65,10 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         self._drag_tooltip = FrameTooltip()
         self._align_times = None  # alignment candidates, resolved on first move
         self._align_hit: bool = False  # drag currently sits on a key frame
+        # Set for the length of a breaking tangent drag (see
+        # ``TangentHandleItem.BREAK_MODIFIER``), so the handle lines go
+        # dotted under the cursor instead of only after the host writes it.
+        self._break_pending: bool = False
 
         self.setAcceptHoverEvents(True)
         self.setFlags(
@@ -155,9 +160,30 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
             slots.append(("out", idx, "cp1"))
         return slots
 
+    def _preview(self) -> dict:
+        """The parent clip's ``curve_preview``, or an empty dict.
+
+        The one reader: the key dot, its handles and the clip's own curve
+        all shape themselves from this mapping, and a second spelling of
+        the lookup is a second place for them to disagree.
+        """
+        return self._parent_clip._data.data.get("curve_preview") or {}
+
     def _segments(self) -> list:
-        preview = self._parent_clip._data.data.get("curve_preview") or {}
-        return preview.get("segments") or []
+        return self._preview().get("segments") or []
+
+    def weighted_handles(self) -> bool:
+        """Whether a handle's LENGTH carries meaning on this curve.
+
+        ``True`` (the default a preview without the key gets) means a handle
+        is where the curve says it is, and moving one keeps its distance
+        from the key -- Blender's handles, Maya's weighted tangents.  When
+        the host reports ``False`` the curve stores an ANGLE only: the
+        handle's time offset is fixed (a third of its span) and its value
+        follows the slope, so a partner swung about the key keeps its TIME
+        offset instead (:meth:`TangentHandleItem._swing_partner`).
+        """
+        return bool(self._preview().get("weighted", True))
 
     def is_broken(self, index: Optional[int] = None) -> bool:
         """True when this key's tangents are broken (IN and OUT independent).
@@ -165,9 +191,12 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         Read from the preview's optional ``broken`` list, one flag per key
         in ``keys`` order; a preview without it has no broken keys.  A
         broken key draws its handle lines dotted, as the Graph Editor does.
+        True as well while a breaking tangent drag is carrying this key --
+        the line goes dotted with the gesture, not a rebuild later.
         """
-        preview = self._parent_clip._data.data.get("curve_preview") or {}
-        flags = preview.get("broken") or ()
+        if self._break_pending:
+            return True
+        flags = self._preview().get("broken") or ()
         idx = self._key_index() if index is None else index
         return 0 <= idx < len(flags) and bool(flags[idx])
 
@@ -199,7 +228,7 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         """
         clip = self._parent_clip
         rect = clip.rect()
-        preview = clip._data.data.get("curve_preview", {})
+        preview = self._preview()
         dur = clip._data.duration
         start = clip._data.start
         frac = (t - start) / dur if dur > 1e-6 else 0.5
@@ -216,7 +245,7 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         run backwards, for a handle dragged in pixels."""
         clip = self._parent_clip
         rect = clip.rect()
-        preview = clip._data.data.get("curve_preview", {})
+        preview = self._preview()
         dur = clip._data.duration
         frac = (point.x() - rect.x()) / rect.width() if rect.width() > 1e-6 else 0.0
         t = clip._data.start + frac * dur
@@ -528,17 +557,58 @@ class TangentHandleItem(QtWidgets.QGraphicsEllipseItem):
     :meth:`KeyframeItem._tangent_slots`).  Dragging it rewrites that control
     point IN PLACE, so the clip's curve and the handle line follow the mouse
     live, and the release reports the gesture once as
-    :attr:`SequencerWidget.key_tangent_dragged` -- the handle vector in
-    curve units (frames, value), which is what a host turns into a tangent
-    angle and weight (Maya) or a handle position (Blender).  The OUT handle
-    stays after its key and the IN handle before it: a handle dragged past
-    its key is a tangent no curve can carry.
+    :attr:`SequencerWidget.keys_tangent_dragged` -- one handle VECTOR per
+    key in curve units (frames, value), which is what a host turns into a
+    tangent angle and weight (Maya) or a handle position (Blender).  The OUT
+    handle stays after its key and the IN handle before it: a handle dragged
+    past its key is a tangent no curve can carry.
+
+    An UNBROKEN key is one straight line through the dot, so the side the
+    user is not holding swings with the side they are -- reversed, its own
+    length kept -- live, under the cursor.  Without it every drag looked
+    like it was breaking the tangent and only the release revealed that
+    both sides had moved.  A broken key (dotted lines), or one this drag is
+    breaking, keeps its other side exactly where it is: moving the sides
+    independently is what broken MEANS.  The swing is a preview of what the
+    host writes on release, not something reported on its own -- Maya swings
+    a unified key's other side itself, Blender re-aims an aligned handle.
+
+    A drag carries the whole key SELECTION: every other selected key's
+    handle on the same side moves with the grabbed one, the way a key drag
+    moves every selected dot.  The modifiers are the sequencer's own
+    grammar, read on the tangent instead of the clip -- Ctrl means "only
+    this one, nothing else moves", Shift "apply it across the selection",
+    Alt "the other mode":
+
+    * ``Ctrl``  -- ISOLATE: reshape only the grabbed key and leave the rest
+      of the selection where it was;
+    * ``Shift`` -- MATCH: give every selected key this EXACT vector (one
+      angle, one weight) instead of the same nudge it started from;
+    * ``Alt``   -- BREAK the tangent, so the dragged side no longer swings
+      its partner.  The handle lines go dotted while it is held.
+
+    They compose: ``Ctrl+Alt`` breaks just the grabbed key, ``Shift+Alt``
+    puts the whole selection on one broken tangent.  ``Ctrl`` outranks
+    ``Shift`` -- with one key in the gesture, "the same nudge" and "the same
+    vector" are the same drag.  All three are read on every MOVE, so what
+    the release commits is what the curve under the cursor already shows;
+    a chord pressed after the last move, with nothing left to redraw, is
+    not part of the gesture.
 
     Never selectable, so a marquee ignores it; a right-click on it is the
     key's own menu.
     """
 
     _RADIUS = 2.5
+
+    #: The drag grammar, as class attributes so a host can re-point one
+    #: without reaching into the event handlers.
+    ISOLATE_MODIFIER = QtCore.Qt.ControlModifier
+    MATCH_MODIFIER = QtCore.Qt.ShiftModifier
+    BREAK_MODIFIER = QtCore.Qt.AltModifier
+
+    #: How far, in frames, a handle is held off its own key.
+    _MIN_SPAN = 1e-3
 
     def __init__(self, key: KeyframeItem, side: str, seg_index: int, cp_key: str):
         r = self._RADIUS
@@ -548,7 +618,15 @@ class TangentHandleItem(QtWidgets.QGraphicsEllipseItem):
         self._seg_index = seg_index
         self._cp_key = cp_key
         self._dragging = False
+        self._drag_owner = None  # the handle whose drag is carrying this one
         self._origin: Optional[tuple] = None
+        # The handles this drag carries, with the control point each
+        # started from -- resolved on press (see ``_collect_peers``).
+        self._peers: List[Tuple["TangentHandleItem", tuple]] = []
+        # ``id(key) -> (opposite-side handle, the point it started from)``
+        # for every key this drag moves -- the sides it has to keep in line.
+        self._partners: Dict[int, Tuple["TangentHandleItem", tuple]] = {}
+        self._mods = QtCore.Qt.NoModifier  # chord of the last move
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, False)
         self.setAcceptHoverEvents(True)
         self.setAcceptedMouseButtons(QtCore.Qt.LeftButton | QtCore.Qt.RightButton)
@@ -570,6 +648,23 @@ class TangentHandleItem(QtWidgets.QGraphicsEllipseItem):
         """``(key, side, segment index, control-point key)`` -- what this
         handle stands for, compared by the clip on each resync."""
         return (self._key, self._side, self._seg_index, self._cp_key)
+
+    @property
+    def drag_participant(self) -> bool:
+        """True while this handle is being dragged, or carried by one that
+        is.  The clip reads it before rebuilding its key items: a resync
+        mid-gesture retires the very handles the drag is holding.
+
+        Being carried is ASKED of the owner rather than remembered as a flag
+        of its own.  A gesture whose own handle is retired under it -- a host
+        rebuild landing mid-drag -- never reaches its release, and a flag
+        would leave every peer marked for the rest of the session, with their
+        clips refusing to rebuild ever again.
+        """
+        if self._dragging:
+            return True
+        owner = self._drag_owner
+        return owner is not None and owner._dragging and owner.scene() is not None
 
     def control_point(self) -> Optional[tuple]:
         segments = self._key._segments()
@@ -616,29 +711,189 @@ class TangentHandleItem(QtWidgets.QGraphicsEllipseItem):
 
     # -- drag ---------------------------------------------------------------
 
+    def _clamp_time(self, t: float, key_time: float) -> float:
+        """*t* pushed back to this handle's own side of its key.
+
+        The handle never crosses it: the tangent it stands for has a
+        direction, and a zero or reversed time step is not one.
+        """
+        if self._side == "out":
+            return max(t, key_time + self._MIN_SPAN)
+        return min(t, key_time - self._MIN_SPAN)
+
+    def _place(self, t: float, v: float) -> "ClipItem":
+        """Write the control point and move the grab point onto it.
+
+        Returns the clip that now has to repaint -- the handle LINE and the
+        curve are painted by the clip, not by the grab point.
+        """
+        t = self._clamp_time(t, self._key._time)
+        self._set_control_point(t, v)
+        self.setPos(self._key._clip_point(t, v))
+        return self._key._parent_clip
+
+    def _collect_gesture(self) -> tuple:
+        """``(peers, partners)`` -- every handle this drag moves, with the
+        control point each starts from.
+
+        *peers* are the same-side handles of the OTHER selected keys, in
+        selection order; *partners* map a key id to its OPPOSITE-side
+        handle, for the grabbed key and every peer, since an unbroken key's
+        two sides are one line.
+
+        Resolved once, on press, in ONE walk: the selection cannot change
+        under a drag, and re-reading it on every move would cost a scene
+        query per pixel on a long selection.  Read from the clips' own
+        handle items rather than rebuilt from the preview, so a key with
+        nothing on the dragged side -- a linear or stepped span, a clip
+        that refuses key edits and grows no handles at all -- brings
+        neither a peer nor a partner, which is right: a side that does not
+        move has nothing to keep in line with.
+        """
+        scene = self.scene()
+        if scene is None:
+            return [], {}
+        keys = [self._key]
+        keys += [
+            i
+            for i in scene.selectedItems()
+            if isinstance(i, KeyframeItem) and i is not self._key
+        ]
+        handles, seen = {}, set()
+        for key in keys:
+            clip = key._parent_clip
+            if id(clip) in seen:
+                continue
+            seen.add(id(clip))
+            for handle in clip._tangent_handle_items:
+                handles[(id(handle._key), handle.side)] = handle
+        other = "in" if self._side == "out" else "out"
+        peers, partners = [], {}
+        for key in keys:
+            handle = self if key is self._key else handles.get((id(key), self._side))
+            cp = None if handle is None else handle.control_point()
+            if cp is None:
+                continue
+            if handle is not self:
+                peers.append((handle, cp))
+            partner = handles.get((id(key), other))
+            partner_cp = None if partner is None else partner.control_point()
+            if partner_cp is not None:
+                partners[id(key)] = (partner, partner_cp)
+        return peers, partners
+
+    def _swing_partner(self, key: KeyframeItem, cp: tuple, started: tuple, dirty: dict):
+        """Keep *key*'s other side in line with the one being dragged.
+
+        The partner is reversed along the new tangent, keeping whichever of
+        its measurements the curve actually stores
+        (:meth:`KeyframeItem.weighted_handles`): its LENGTH on a weighted
+        curve -- Blender re-aims an aligned handle exactly so, and Maya's
+        unified key takes one angle for both sides while each keeps its
+        weight -- or its TIME offset on an unweighted one, where the host
+        will re-lay it a fixed third of its span out and only the slope is
+        the drag's to set.  Guessing one rule for both put the partner where
+        the rebuild would not, and the release snapped it.
+
+        It goes back untouched when the key is broken (or this drag is
+        breaking it), and when the dragged side has not actually left
+        *started*, which is what Ctrl's restore needs: a key whose sides were
+        never collinear to begin with must not drift every time the peers
+        snap back.
+        """
+        entry = self._partners.get(id(key))
+        if entry is None:
+            return
+        partner, cp0 = entry
+        if partner.scene() is None:
+            return
+        moved = abs(cp[0] - started[0]) > 1e-9 or abs(cp[1] - started[1]) > 1e-9
+        if not moved or key.is_broken():
+            clip = partner._place(*cp0)
+        else:
+            dt, dv = cp[0] - key._time, cp[1] - key._value
+            # Where the partner starts, as an offset from its key: signed,
+            # so it already names the side the partner belongs on.
+            back_t, back_v = cp0[0] - key._time, cp0[1] - key._value
+            if key.weighted_handles():
+                reach = math.hypot(dt, dv)
+                length = math.hypot(back_t, back_v)
+                if reach < 1e-12 or length < 1e-12:
+                    return
+                off_t, off_v = -dt / reach * length, -dv / reach * length
+            elif abs(dt) < 1e-12:
+                return
+            else:
+                off_t, off_v = back_t, back_t * (dv / dt)
+            clip = partner._place(key._time + off_t, key._value + off_v)
+        dirty[id(clip)] = clip
+
+    def _sync_break_pending(self, on: bool, isolate: bool) -> None:
+        """Flag the keys this drag is breaking, so their handle lines go
+        dotted under the cursor (:meth:`KeyframeItem.is_broken`) instead of
+        only once the host has written the tangent and rebuilt."""
+        self._key._break_pending = on
+        for peer, _cp in self._peers:
+            peer._key._break_pending = on and not isolate
+
     def mousePressEvent(self, event):
         if event.button() != QtCore.Qt.LeftButton:
             event.ignore()
             return
         self._origin = self.control_point()
         self._dragging = self._origin is not None
+        self._mods = event.modifiers()
+        if self._dragging:
+            sq = self._key._parent_clip._timeline.parent_sequencer
+            # Mirrors the key dot: a gesture must never inherit the chord
+            # the LAST one banked.
+            sq.record_press_modifiers(event.modifiers())
+            # The Shift scale box answers the same Shift this drag reads,
+            # so it has no business rising over a tangent gesture.
+            sq._tangent_drag_active = True
+            sq.clear_key_scale_box()
+            self._peers, self._partners = self._collect_gesture()
+            for peer, _cp in self._peers:
+                peer._drag_owner = self
+            for partner, _cp in self._partners.values():
+                partner._drag_owner = self
         event.accept()
 
     def mouseMoveEvent(self, event):
         if not self._dragging:
             return
-        clip = self._key._parent_clip
-        t, v = self._key._curve_coords(clip.mapFromScene(event.scenePos()))
-        # The handle never crosses its key: the tangent it stands for has
-        # a direction, and a zero or reversed time step is not one.
-        eps = 1e-3
-        if self._side == "out":
-            t = max(t, self._key._time + eps)
-        else:
-            t = min(t, self._key._time - eps)
-        self._set_control_point(t, v)
-        self.setPos(self._key._clip_point(t, v))
-        clip.update()
+        self._mods = event.modifiers()
+        isolate = bool(self._mods & self.ISOLATE_MODIFIER)
+        match = bool(self._mods & self.MATCH_MODIFIER) and not isolate
+        # Flagged BEFORE anything moves: each swing asks its key whether it
+        # is broken, and a breaking drag is what makes it so.
+        self._sync_break_pending(bool(self._mods & self.BREAK_MODIFIER), isolate)
+        key = self._key
+        clip = key._parent_clip
+        t, v = key._curve_coords(clip.mapFromScene(event.scenePos()))
+        self._place(t, v)
+        dirty = {id(clip): clip}
+        cp = self.control_point()
+        self._swing_partner(key, cp, self._origin, dirty)
+        vector = (cp[0] - key._time, cp[1] - key._value)
+        step = (cp[0] - self._origin[0], cp[1] - self._origin[1])
+        for peer, cp0 in self._peers:
+            if peer.scene() is None:
+                continue  # retired under the drag by a host rebuild
+            peer_key = peer._key
+            if isolate:
+                # Ctrl is live, not a release-time gate: the peers go back
+                # to where they were, so the curve shows what will commit.
+                target = cp0
+            elif match:
+                target = (peer_key._time + vector[0], peer_key._value + vector[1])
+            else:
+                target = (cp0[0] + step[0], cp0[1] + step[1])
+            peer_clip = peer._place(*target)
+            dirty[id(peer_clip)] = peer_clip
+            self._swing_partner(peer_key, peer.control_point(), cp0, dirty)
+        for item in dirty.values():
+            item.update()
         event.accept()
 
     def mouseReleaseEvent(self, event):
@@ -646,21 +901,44 @@ class TangentHandleItem(QtWidgets.QGraphicsEllipseItem):
             event.ignore()
             return
         self._dragging = False
-        cp, origin = self.control_point(), self._origin
-        self._origin = None
-        event.accept()
-        if cp is None or origin is None:
-            return
-        if abs(cp[0] - origin[0]) < 1e-9 and abs(cp[1] - origin[1]) < 1e-9:
-            return
+        self._sync_break_pending(False, False)
+        peers, self._peers = self._peers, []
+        partners, self._partners = self._partners, {}
+        for handle, _cp in list(peers) + list(partners.values()):
+            handle._drag_owner = None
+        origin, self._origin = self._origin, None
+        mods, self._mods = self._mods, QtCore.Qt.NoModifier
         sq = self._key._parent_clip._timeline.parent_sequencer
-        sq.key_tangent_dragged.emit(
-            self._key._parent_clip._data.clip_id,
-            self._key._time,
-            self._side,
-            cp[0] - self._key._time,
-            cp[1] - self._key._value,
-        )
+        sq._tangent_drag_active = False
+        # Shift means the scale box again the moment the gesture ends.
+        sq.refresh_key_scale_box()
+        event.accept()
+        if origin is None:
+            return
+        broken = bool(mods & self.BREAK_MODIFIER)
+        isolate = bool(mods & self.ISOLATE_MODIFIER)
+        groups: dict = {}  # clip_id -> [(time, dt, dv), ...]
+        for handle, started in [(self, origin)] + ([] if isolate else peers):
+            if handle.scene() is None:
+                continue
+            cp = handle.control_point()
+            if cp is None:
+                continue
+            if abs(cp[0] - started[0]) < 1e-9 and abs(cp[1] - started[1]) < 1e-9:
+                continue  # never moved, or clamped back onto where it was
+            key = handle._key
+            groups.setdefault(key._parent_clip._data.clip_id, []).append(
+                (key._time, cp[0] - key._time, cp[1] - key._value)
+            )
+        if not groups:
+            return
+        payload = list(groups.items())
+        sq.keys_tangent_dragged.emit(payload, self._side, broken)
+        if not broken and len(payload) == 1 and len(payload[0][1]) == 1:
+            # The deprecated single-key form, for the gesture it always
+            # described and unchanged in it.  Connect ONE of the two.
+            time, dt, dv = payload[0][1][0]
+            sq.key_tangent_dragged.emit(payload[0][0], time, self._side, dt, dv)
 
     def contextMenuEvent(self, event):
         # The handle belongs to its key; so does the menu.

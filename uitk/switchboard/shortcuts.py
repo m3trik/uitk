@@ -364,6 +364,30 @@ class SwitchboardShortcutMixin:
             f"[shortcut] Bound '{sequence}' -> {slots_instance.__class__.__name__}.{method_name}"
         )
 
+    def widget_has_shortcut(self, widget: QtWidgets.QWidget) -> bool:
+        """Whether *widget*'s slot currently holds a bound keyboard shortcut.
+
+        The live binding map answers this: ``_connected_shortcuts`` is keyed by
+        slot method name and holds only what is bound right now, so a cleared
+        binding drops out of it. Cheaper than :meth:`get_shortcut_registry`,
+        which rebuilds every entry for the UI — this runs per item as a menu
+        opens (``Menu._apply_shortcut_item_filter``).
+
+        Parameters:
+            widget (QtWidgets.QWidget): A registered widget; its objectName
+                names the slot, and its ``ui`` says which Slots instance owns it.
+
+        Returns:
+            bool: ``True`` when a key is bound to that slot.
+        """
+        name = widget.objectName()
+        ui = getattr(widget, "ui", None)
+        if not name or ui is None:
+            return False
+        slots_instance = self.get_slots_instance(ui)
+        connected = getattr(slots_instance, "_connected_shortcuts", None) or {}
+        return name in connected
+
     def get_shortcut_registry(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]:
         """Get a registry of all assignable slots and their shortcut status.
 

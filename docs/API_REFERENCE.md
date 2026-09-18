@@ -451,9 +451,8 @@ sb.registry.ui_registry.get(filename="editor.ui", return_field="filepath")
 
 For the full FileRegistry query API see [managers/registry_manager.py](../uitk/managers/registry_manager.py) source.
 
-> Deprecated aliases: `uitk.FileManager` / `uitk.FileContainer` (and the
-> `uitk.file_manager` module) still resolve to these classes and emit a
-> `DeprecationWarning`.
+> Removed 2026-09-16: the `uitk.FileManager` / `uitk.FileContainer` aliases and
+> the `uitk.file_manager` shim module. Use `RegistryManager` / `FileRegistry`.
 
 ---
 
@@ -704,7 +703,6 @@ The remaining public top-level symbols (`uitk/__init__.py` → `DEFAULT_INCLUDE`
 | `ValueManager` | Static get/set for most Qt widget values, routed by type or signal name ([managers/value_manager.py](../uitk/managers/value_manager.py)); `StateManager.apply` builds on it |
 | `OptionalPackageManager` | Probe for / offer to install an optional package importable in this session — `available(spec)`, `ensure(spec, feature=...)` ([managers/optional_package_manager.py](../uitk/managers/optional_package_manager.py)); bridge panels expose it via `ensure_optional_package` ([Bridge](BRIDGE.md)) |
 | `RecentValuesStore` | Widget-free most-recent-first value history — `record`, `values`, `subscribe`, `prune_invalid` ([managers/recent_values_store.py](../uitk/managers/recent_values_store.py)); backs the `RecentValuesOption` in [Widgets](WIDGETS.md) |
-| `FileManager`, `FileContainer` | Deprecated aliases — see the `FileRegistry` / `RegistryManager` section above |
 
 ---
 
