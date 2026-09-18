@@ -148,3 +148,31 @@ jobs:
 
       - name: Registry matches source
         run: python m3trik/scripts/generate_api_registry.py uitk --check
+
+  lint:
+    # ``ruff check`` only -- NOT ``ruff format --check``, for the reason
+    # pythontk/tests.yml states: a format gate would be red on arrival and
+    # therefore ignored.
+    #
+    # Scope is the PACKAGE dir, not ``.``. Measured 2026-09-16: the package is
+    # clean against the declared rule set, while ``.`` still reports 27
+    # findings, all under test/. Gating on ``.`` would make this job red on
+    # arrival and therefore ignored; widen it once that is burned down.
+    #
+    # Pinned, because an unpinned ruff turns an upstream rule addition into a
+    # red PR nobody changed.
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: pip install ruff==0.15.17
+
+      - name: ruff check
+        run: ruff check uitk

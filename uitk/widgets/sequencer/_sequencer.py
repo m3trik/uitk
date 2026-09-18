@@ -49,7 +49,17 @@ from uitk.widgets.sequencer._overlays import (
 )
 from uitk.widgets.sequencer._markers import MarkerItem
 from uitk.widgets.sequencer._draggable import ItemRetirement
-from uitk.widgets.sequencer._timeline import TrackHeaderWidget, TimelineView
+from uitk.widgets.sequencer._timeline import (
+    TrackHeaderWidget,
+    TimelineView,
+    _ALT_MOD,
+    _CTRL_MOD,
+    _SHIFT_MOD,
+)
+
+#: What "On Modifier" answers to -- the three the legend is about.  As plain
+#: ints, the form the timeline banks a chord in.
+_LEGEND_MODIFIERS = _ALT_MOD | _CTRL_MOD | _SHIFT_MOD
 
 
 #: Pixels of margin :meth:`SequencerWidget.frame_shot` leaves on each side.
@@ -154,6 +164,8 @@ class AttributeColorDialog(ColorMappingDialog):
 #: over the keys there, or shrinks and leaves keys for the next shot); Shift
 #: retimes the keys into the new span.  The ruler band's body moves the shot.
 #: A gap's edge belongs to the shot beyond it: a plain drag slides that shot.
+#: A tangent handle reads the same three modifiers on the key selection it is
+#: part of (:class:`~uitk.widgets.sequencer._keyframe.TangentHandleItem`).
 _GESTURE_DEFS = (
     ("Shot bounds", "Drag", "Move the bound; neighbours ripple (keys stay)"),
     ("Shot bounds", "Ctrl+Drag", "Move the bound only; nothing else moves"),
@@ -172,6 +184,10 @@ _GESTURE_DEFS = (
     ("Clips & keys", "Shift+Drag", "Cross shot bounds, bounds stay"),
     ("Clips & keys", "Ctrl", "Snap to whole frames"),
     ("Clips & keys", "Right-click", "Tangents, lock, Move to Shot"),
+    ("Tangents", "Drag a handle", "Reshape every selected key's tangent"),
+    ("Tangents", "Ctrl+Drag", "Reshape the grabbed key only"),
+    ("Tangents", "Shift+Drag", "Give every selected key this exact tangent"),
+    ("Tangents", "Alt+Drag", "Break the tangent (dotted while held)"),
     ("Timeline", "Drag", "Marquee select (Space moves it)"),
     ("Timeline", "Ctrl+Shift+Click", "Switch to the shot under the cursor"),
     ("Timeline", "Wheel / Middle-drag", "Zoom / pan"),
@@ -278,11 +294,20 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     # consumer resolves both payloads with one routine.  Emitted before
     # ``exec_`` -- add actions; the widget appends Delete after them.
     key_menu_requested = QtCore.Signal(object, list)  # (QMenu, [{clip_id, times}])
-    # A tangent handle of a selected key was dragged: the key's clip and
-    # time, which side ("in" / "out"), and the handle VECTOR from the key in
-    # curve units -- frames along, value up.  One emit per gesture, on
-    # release; the preview's control point already shows the new shape, and
-    # the consumer rebuilds from the scene after writing the tangent.
+    # A tangent handle was dragged: every key the gesture carried, grouped
+    # by clip -- [(clip_id, [(time, dt, dv), ...]), ...], the handle VECTOR
+    # from each key in curve units (frames along, value up) -- which side
+    # ("in" / "out") it belongs to, and whether the drag asked to BREAK the
+    # tangent (Alt).  A drag carries the whole key selection unless Ctrl
+    # isolates it; Shift makes every key take the grabbed key's exact
+    # vector instead of the same nudge.  One emit per gesture, on release;
+    # the preview's control points already show the new shape, and the
+    # consumer rebuilds from the scene after writing the tangents.
+    keys_tangent_dragged = QtCore.Signal(list, str, bool)
+    # DEPRECATED, one release: superseded by ``keys_tangent_dragged``, which
+    # carries the whole gesture.  Still emitted -- alone, after it -- for the
+    # single-key unbroken drag it always described, so an existing consumer
+    # keeps working.  Connect ONE of the two, never both.
     key_tangent_dragged = QtCore.Signal(int, float, str, float, float)
 
     def __init__(self, parent=None, **kwargs):
@@ -326,7 +351,18 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # Shift + a key selection raises a scale box around it; see
         # ``refresh_key_scale_box``.
         self._key_scale_box = None
-        self._shift_held: bool = False
+        # The chord held over the timeline, as a plain int: the Shift scale
+        # box and the legend's "On Modifier" mode are both answers to it
+        # (:meth:`set_modifiers_held`).
+        self._modifiers_held: int = 0
+        #: off / on / modifier -- see :attr:`shortcut_overlay_mode`.
+        self._shortcut_overlay_mode: str = "off"
+        # The gesture group under the pointer, remembered so a legend that
+        # rises later opens on the right page.
+        self._gesture_context: Optional[str] = None
+        # A tangent handle is being dragged: the Shift scale box answers the
+        # same Shift that drag reads, and must stay out of its way.
+        self._tangent_drag_active: bool = False
         self._window_shortcuts: bool = False  # shortcuts active at window level
         # Top-level window the ShortcutOverride filter is installed on.
         # Tracked by identity (not a bool) so a reparent — e.g. Maya
@@ -1695,15 +1731,73 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
 
     @shortcut_overlay_visible.setter
     def shortcut_overlay_visible(self, value: bool) -> None:
-        if value and self._shortcut_overlay is None:
+        self.shortcut_overlay_mode = "on" if value else "off"
+
+    #: What the corner legend does: never, always, or only while one of the
+    #: modifiers it explains is held.
+    SHORTCUT_OVERLAY_MODES = ("off", "on", "modifier")
+
+    @property
+    def shortcut_overlay_mode(self) -> str:
+        """When to show the legend: ``"off"``, ``"on"``, or ``"modifier"``.
+
+        ``"modifier"`` keeps it out of the way until the user reaches for
+        one of the keys it explains -- Ctrl, Shift or Alt -- and takes it
+        away again on release, so the legend answers the question at the
+        moment it is asked instead of sitting in the corner all session.
+        Assigning a bool is the two-state face of the same setting.
+        """
+        return self._shortcut_overlay_mode
+
+    @shortcut_overlay_mode.setter
+    def shortcut_overlay_mode(self, value) -> None:
+        if isinstance(value, bool):
+            value = "on" if value else "off"
+        value = str(value).lower()
+        if value not in self.SHORTCUT_OVERLAY_MODES:
+            raise ValueError(
+                f"shortcut_overlay_mode: {value!r} is not one of "
+                f"{self.SHORTCUT_OVERLAY_MODES}"
+            )
+        if value == self._shortcut_overlay_mode:
+            return
+        self._shortcut_overlay_mode = value
+        self._refresh_shortcut_overlay()
+
+    @property
+    def shortcut_overlay_tracking(self) -> bool:
+        """Whether the group under the pointer is worth resolving: the legend
+        is up, or one modifier away from being.
+
+        The gesture context is a mouse-MOVE answer and the legend can rise
+        between two of them, so "On Modifier" keeps tracking while hidden --
+        otherwise it would open on whatever page the pointer was over when
+        it was last visible.
+        """
+        return (
+            self.shortcut_overlay_visible or self._shortcut_overlay_mode == "modifier"
+        )
+
+    def _refresh_shortcut_overlay(self) -> None:
+        """Put the legend on screen, or take it off, per the current mode."""
+        wanted = self._shortcut_overlay_mode == "on" or (
+            self._shortcut_overlay_mode == "modifier"
+            and bool(self._modifiers_held & _LEGEND_MODIFIERS)
+        )
+        if wanted and self._shortcut_overlay is None:
             self._shortcut_overlay = self._shortcut_mgr.overlay(self._timeline)
-        if self._shortcut_overlay is not None:
-            self._shortcut_overlay.setVisible(bool(value))
-            if value:
-                self._shortcut_overlay.refresh()
+            self._shortcut_overlay.set_context(self._gesture_context)
+        overlay = self._shortcut_overlay
+        if overlay is None or overlay.isVisible() == wanted:
+            return
+        overlay.setVisible(wanted)
+        if wanted:
+            overlay.refresh()
 
     def _set_gesture_context(self, group: Optional[str]) -> None:
-        """Brighten *group* on the legend, if one is showing."""
+        """Brighten *group* on the legend, and remember it for one that has
+        yet to rise."""
+        self._gesture_context = group
         if self._shortcut_overlay is not None:
             self._shortcut_overlay.set_context(group)
 
@@ -2128,9 +2222,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
 
         Held Shift plus a key selection is the request; anything else --
         Shift let go, the selection gone or collapsed onto one frame, a
-        scale already in flight -- takes the box away again.  Called from
-        the timeline's key handling and from every key-selection change, so
-        the box tracks both halves of the condition.
+        scale already in flight, a tangent drag reading that same Shift as
+        its own -- takes the box away again.  Called from the timeline's key
+        handling and from every key-selection change, so the box tracks both
+        halves of the condition.
         """
         from uitk.widgets.sequencer._keyframe import KeyScaleBoxItem
 
@@ -2138,7 +2233,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         if box is not None and box._is_drag_active():
             return
         span = None
-        if self._shift_held:
+        if self._modifiers_held & _SHIFT_MOD and not self._tangent_drag_active:
             span = self._key_scale_span(self._scalable_keys())
         if span is None:
             self.clear_key_scale_box()
@@ -2162,12 +2257,32 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._key_scale_box = None
 
     def set_shift_held(self, held: bool) -> None:
-        """Record whether Shift is down and re-evaluate the scale box."""
-        held = bool(held)
-        if held == self._shift_held:
+        """Record whether Shift is down -- the one-key face of
+        :meth:`set_modifiers_held`, for callers that track only the modifier
+        the scale box answers to."""
+        mods = self._modifiers_held
+        self.set_modifiers_held(mods | _SHIFT_MOD if held else mods & ~_SHIFT_MOD)
+
+    @property
+    def modifiers_held(self) -> int:
+        """The chord currently held over the timeline, as a plain int."""
+        return self._modifiers_held
+
+    def set_modifiers_held(self, modifiers) -> None:
+        """Record the chord held over the timeline; takes a Qt flag or an int.
+
+        The view has to tell the widget rather than the widget asking: Qt
+        delivers no KeyPress for a modifier already down when the pointer
+        arrives, and no KeyRelease once focus has gone.  Two things read it
+        -- the Shift scale box, and the corner legend in its "On Modifier"
+        mode -- so both are re-evaluated here.
+        """
+        value = int(getattr(modifiers, "value", modifiers))
+        if value == self._modifiers_held:
             return
-        self._shift_held = held
+        self._modifiers_held = value
         self.refresh_key_scale_box()
+        self._refresh_shortcut_overlay()
 
     def _editable_key_groups(self) -> List[dict]:
         """:meth:`selected_keys` minus the clips that refuse key edits.

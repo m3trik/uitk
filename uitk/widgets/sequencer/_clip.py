@@ -144,9 +144,13 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             return
 
         # If any child key -- or a tangent handle -- is mid-drag, skip the
-        # rebuild to avoid destroying active drag state.  Just reposition
-        # the existing items.
-        if self._keys_dragging or any(h._dragging for h in self._tangent_handle_items):
+        # rebuild to avoid destroying active drag state.  A handle CARRIED
+        # by a drag on another clip counts (``drag_participant``): the
+        # gesture is holding it, whoever is under the cursor.  Just
+        # reposition the existing items.
+        if self._keys_dragging or any(
+            h.drag_participant for h in self._tangent_handle_items
+        ):
             for ki in self._keyframe_items:
                 ki._reposition()
             self._sync_tangent_handles()
@@ -215,12 +219,12 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         Repositions in place when the wanted set is unchanged (zoom, scroll,
         a key drag ending), rebuilds otherwise.  Nothing while a key drag is
         live -- the preview is being re-timed under the keys -- and never
-        while a handle itself is being dragged.
+        while a handle here is part of one, dragged or carried.
         """
         from uitk.widgets.sequencer._draggable import ItemRetirement
         from uitk.widgets.sequencer._keyframe import TangentHandleItem
 
-        if any(h._dragging for h in self._tangent_handle_items):
+        if any(h.drag_participant for h in self._tangent_handle_items):
             return
         wanted = []
         if not self._keys_dragging:

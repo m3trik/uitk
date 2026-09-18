@@ -39,9 +39,7 @@ class Parameters(_ParametersInternal):
     """Registry helpers operating over a ``{key: AttributeSpec}`` PARAMS dict."""
 
     @staticmethod
-    def scope_spec(
-        default: str = "selected", section: str = "Export"
-    ) -> AttributeSpec:
+    def scope_spec(default: str = "selected", section: str = "Export") -> AttributeSpec:
         """The shared **Scope** parameter every hand-off bridge exposes.
 
         Which objects a send acts on is a property of hand-off bridges in
@@ -176,6 +174,48 @@ class Parameters(_ParametersInternal):
                 "  typed Xform prims. Instanced / linked-duplicate selections\n"
                 "  are REFUSED on a scene hand-off rather than flattened —\n"
                 "  send those via FBX."
+            ),
+        )
+
+    @staticmethod
+    def rig_mode_spec(default: str = "auto", section: str = "") -> AttributeSpec:
+        """The shared **Rig** parameter: how a hand-off treats the rig logic that
+        drives what it carries -- constraints, IK, drivers, expressions, which
+        neither carrier has a form for.
+
+        A property of hand-off bridges in general, like the carrier, so the spec
+        lives here: one label, one vocabulary, one tooltip across every bridge
+        and both DCCs. The vocabulary is pythontk's
+        :data:`~pythontk.core_utils.app_handoff.RIG_MODES` verbatim, and the
+        engine is what enforces it. Order is append-only: combos persist by
+        INDEX, and ``auto`` leads because it is what an undecided request gets.
+
+        Like :meth:`carrier_spec`, *section* defaults to EMPTY so the spec can
+        drop into an unsectioned registry, and a FRESH spec is returned per
+        call (the ``choices`` list is mutable).
+        """
+        import pythontk as ptk
+
+        labels = {
+            "auto": "Auto",
+            "bake": "Bake to keys",
+            "rig": "Transfer rig",
+            "raw": "Raw",
+        }
+        return AttributeSpec(
+            key=ptk.RIG_MODE_PARAM,
+            label="Rig",
+            kind="choice",
+            default=default,
+            choices=[(labels.get(mode, mode), mode) for mode in ptk.RIG_MODES],
+            section=section,
+            tooltip=(
+                "How the rig logic driving the selection travels. "
+                "Auto: bake driven animation to keys only when the scene has some (constraints, IK, driven keys), else import raw. "
+                "Bake to keys: always bake every driven channel. "
+                "Transfer rig: rebuild each rig (a control chain down to what it deforms) as editable relationships when the target can build and verify ALL of it; a rig it cannot complete is baked exactly as Bake would, and the log names the link that stopped it. "
+                "Raw: touch nothing; driven animation is lost. "
+                "Whenever a rig is baked, its apparatus is left out of the import -- constraint nodes, IK handles, control curves, up-vector locators, the groups holding only those, and joints nothing is skinned to -- because the motion now lives on what renders; the log counts what was dropped, and nothing renderable is ever touched. Raw keeps it, along with everything else."
             ),
         )
 

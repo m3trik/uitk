@@ -50,6 +50,15 @@ _ALT_MOD, _CTRL_MOD, _SHIFT_MOD = (
 #: Held at press, these keep the existing selection instead of replacing it.
 _MARQUEE_KEEP_MODS = _ALT_MOD | _CTRL_MOD | _SHIFT_MOD
 
+#: The modifier KEYS, and the bit each one stands for.  Tracked by key rather
+#: than by ``event.modifiers()``: Qt's report of the chord during a modifier's
+#: own press/release is the one thing it is not reliable about.
+_MODIFIER_KEYS = {
+    QtCore.Qt.Key_Alt: _ALT_MOD,
+    QtCore.Qt.Key_Control: _CTRL_MOD,
+    QtCore.Qt.Key_Shift: _SHIFT_MOD,
+}
+
 
 # ---------------------------------------------------------------------------
 #  _ElidingLabel
@@ -516,11 +525,22 @@ class TimelineView(QtWidgets.QGraphicsView):
                 return True
         return super().event(event)
 
+    def _sync_modifier(self, event, held: bool) -> None:
+        """Bank a modifier key going down or up, if that is what this was.
+
+        Shift over a key selection raises the scale bar and any of the three
+        can raise the legend; none of them is a shortcut, so the event goes
+        on to whoever else wants it.
+        """
+        bit = _MODIFIER_KEYS.get(event.key())
+        if bit is None:
+            return
+        sq = self.parent_sequencer
+        mods = sq.modifiers_held
+        sq.set_modifiers_held(mods | bit if held else mods & ~bit)
+
     def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Shift:
-            # Shift over a key selection raises the scale bar; it is not a
-            # shortcut, so the event goes on to whoever else wants it.
-            self.parent_sequencer.set_shift_held(True)
+        self._sync_modifier(event, True)
         # Spacebar during marquee: start repositioning the selection area
         if event.key() == QtCore.Qt.Key_Space and self._marquee_active:
             self._space_held = True
@@ -538,8 +558,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Shift:
-            self.parent_sequencer.set_shift_held(False)
+        self._sync_modifier(event, False)
         if event.key() == QtCore.Qt.Key_Space and self._marquee_active:
             self._space_held = False
             event.accept()
@@ -551,13 +570,13 @@ class TimelineView(QtWidgets.QGraphicsView):
         # Qt delivers no KeyPress for a modifier already down when the
         # pointer arrives, and no KeyRelease once focus has gone -- so the
         # live state is read here rather than inferred from the last event.
-        self.parent_sequencer.set_shift_held(
-            bool(QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ShiftModifier)
+        self.parent_sequencer.set_modifiers_held(
+            QtWidgets.QApplication.keyboardModifiers()
         )
         super().enterEvent(event)
 
     def focusOutEvent(self, event):
-        self.parent_sequencer.set_shift_held(False)
+        self.parent_sequencer.set_modifiers_held(0)
         super().focusOutEvent(event)
 
     # -- mapper -------------------------------------------------------------
@@ -917,14 +936,18 @@ class TimelineView(QtWidgets.QGraphicsView):
     def _sync_gesture_context(self, viewport_pos) -> None:
         """Tell the shortcut overlay which gesture group the pointer is over."""
         sq = self.parent_sequencer
-        if not sq.shortcut_overlay_visible:
+        if not sq.shortcut_overlay_tracking:
             return  # nobody is reading: skip the per-move scene query
         zone = self._hit_zone(viewport_pos.y())
         if zone in ("ruler", "shot_lane"):
             group = "Shot bounds" if self._shot_band_zone(viewport_pos) else "Timeline"
         else:
             item = self.itemAt(viewport_pos)
-            if isinstance(item, (ClipItem, KeyframeItem, TangentHandleItem)):
+            if isinstance(item, TangentHandleItem):
+                # The handle reads the three modifiers differently from the
+                # dot it hangs off: its own rows, under its own heading.
+                group = "Tangents"
+            elif isinstance(item, (ClipItem, KeyframeItem)):
                 group = "Clips & keys"
             elif isinstance(item, _GapOverlayItem):
                 # A head/tail cap is the first/last shot's own bound.
@@ -951,7 +974,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         sq._set_gesture_context(None)
         # Qt delivers no KeyRelease once the widget has lost the pointer, so
         # the held state cannot be inferred from events after this one.
-        sq.set_shift_held(False)
+        sq.set_modifiers_held(0)
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event):

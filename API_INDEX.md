@@ -15,7 +15,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `bridge/parameters.py` — Registry helpers for bridge parameter dicts.
 - `class Parameters(_ParametersInternal)`
-  - methods: scope_spec, shader_type_spec, carrier_spec, referenced_keys, defaults, affix_parts, render_context
+  - methods: scope_spec, shader_type_spec, carrier_spec, rig_mode_spec, referenced_keys, defaults, affix_parts, render_context
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
 - `class BridgeSlotsBase(_BridgeSlotsInternal)`
@@ -123,7 +123,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `managers/registry_manager.py` — Typed file registries backing Switchboard discovery.
 - `class FileRegistry(ptk.NamedTupleContainer)`
-  - methods: file_manager, extend
+  - methods: extend
 - `class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin)`
   - methods: get_base_dir, resolve_path, create, contains_location, get_container, list_containers, remove_container
 
@@ -141,7 +141,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class GlobalShortcut(QtCore.QObject)`
   - methods: eventFilter, setEnabled, isEnabled, setKey, setContext, dispose
 - `class ShortcutManager`
-  - methods: context_to_scope_name, scope_name_to_context, host_namespace_suffix, resolve_application_host, find_duplicate_application_shortcuts, add_shortcut, add_shortcuts_batch, add_global_shortcut, add_info_entry, add_gesture, overlay, remove_shortcut, clear_all, on_change, rebind_shortcut, show_editor, get_shortcuts_info, has_shortcut, get_shortcut, get_registry
+  - methods: hide_bound_menu_items, set_hide_bound_menu_items, context_to_scope_name, scope_name_to_context, host_namespace_suffix, resolve_application_host, find_duplicate_application_shortcuts, add_shortcut, add_shortcuts_batch, add_global_shortcut, add_info_entry, add_gesture, overlay, remove_shortcut, clear_all, on_change, rebind_shortcut, show_editor, get_shortcuts_info, has_shortcut, get_shortcut, get_registry
 
 ### `managers/state_manager.py`
 - `class StateManager(ptk.LoggingMixin)`
@@ -177,7 +177,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 ### `switchboard/shortcuts.py` — Switchboard-side keyboard shortcut machinery.
 - `class Shortcut`
 - `class SwitchboardShortcutMixin`
-  - methods: register_slots_shortcuts, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut, dispose_shortcuts, register_command, unregister_command, get_command_registry, set_command_shortcut, set_binding_hidden, set_binding_editable
+  - methods: register_slots_shortcuts, widget_has_shortcut, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut, dispose_shortcuts, register_command, unregister_command, get_command_registry, set_command_shortcut, set_binding_hidden, set_binding_editable
 
 ### `switchboard/slots.py`
 - `class Signals`
@@ -616,9 +616,9 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/sequencer/_keyframe.py` — The interactive items of an expanded attribute sub-row.
 - `class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem)`
-  - methods: time, value, paint, boundingRect, itemChange, is_broken, shape, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent
+  - methods: time, value, paint, boundingRect, itemChange, weighted_handles, is_broken, shape, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent
 - `class TangentHandleItem(QtWidgets.QGraphicsEllipseItem)`
-  - methods: side, key, slot, control_point, paint, shape, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent
+  - methods: side, key, slot, drag_participant, control_point, paint, shape, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, contextMenuEvent
 - `class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`
   - methods: lo, hi, side, set_span, shape, boundingRect, paint, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent
 
@@ -646,7 +646,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class AttributeColorDialog(ColorMappingDialog)`
   - methods: load_color_map
 - `class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`
-  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, selected_shot, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, ctrl_held_at_press, record_press_modifiers, shortcut_overlay, shortcut_overlay_visible, attribute_colors, set_attribute_color, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips, selected_keys, select_keys, show_key_menu, refresh_key_scale_box, clear_key_scale_box, set_shift_held
+  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, clips, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, selected_shot, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_gap_overlays, show_range_highlight, zone_menu_enabled, shift_held_at_press, ctrl_held_at_press, record_press_modifiers, shortcut_overlay, shortcut_overlay_visible, shortcut_overlay_mode, shortcut_overlay_tracking, attribute_colors, set_attribute_color, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips, selected_keys, select_keys, show_key_menu, refresh_key_scale_box, clear_key_scale_box, set_shift_held, modifiers_held, set_modifiers_held
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`

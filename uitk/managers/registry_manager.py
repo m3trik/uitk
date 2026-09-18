@@ -27,9 +27,13 @@ Example:
 
 Note:
     This module supersedes ``uitk.file_manager`` (``FileManager`` /
-    ``FileContainer``).  The old import path and class names remain
-    available as deprecated aliases via that module.
+    ``FileContainer``), whose alias shim was REMOVED 2026-09-16 after
+    outliving the one release ``CODE_STANDARD.md`` s5 allows it.  There is
+    no ``uitk.file_manager`` to import and no ``uitk.FileManager`` /
+    ``uitk.FileContainer`` on the root surface; use ``RegistryManager`` and
+    ``FileRegistry``.
 """
+
 import os
 import sys
 import inspect
@@ -58,11 +62,6 @@ class FileRegistry(ptk.NamedTupleContainer):
         """
         super().__init__(**kwargs)
         self.manager = manager
-
-    @property
-    def file_manager(self) -> "RegistryManager":
-        """Deprecated alias for :attr:`manager`."""
-        return self.manager
 
     @staticmethod
     def _is_tuple_data(objects: Any) -> bool:
@@ -318,7 +317,10 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
         if (
             descriptor.startswith("_")
             or hasattr(type(self), descriptor)
-            or (existing is not None and not isinstance(existing, ptk.NamedTupleContainer))
+            or (
+                existing is not None
+                and not isinstance(existing, ptk.NamedTupleContainer)
+            )
         ):
             raise ValueError(
                 f"Descriptor {descriptor!r} would shadow a "
@@ -340,7 +342,10 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
 
         # Re-creating a descriptor replaces its container; drop the old one
         # from the tracking list so it can't leak.
-        if isinstance(existing, ptk.NamedTupleContainer) and existing in self.containers:
+        if (
+            isinstance(existing, ptk.NamedTupleContainer)
+            and existing in self.containers
+        ):
             self.containers.remove(existing)
 
         self.containers.append(container)
@@ -571,6 +576,8 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
 
 if __name__ == "__main__":
     manager = RegistryManager(log_level="INFO")
-    registry = manager.create("module_registry", os.path.dirname(__file__), inc_files="*.py")
+    registry = manager.create(
+        "module_registry", os.path.dirname(__file__), inc_files="*.py"
+    )
     print(registry)
     print(registry.get("filename"))

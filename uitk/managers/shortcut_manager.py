@@ -333,6 +333,42 @@ class GlobalShortcut(QtCore.QObject):
 class ShortcutManager:
     """Centralized shortcut management with clear separation of concerns"""
 
+    #: Global preference — hide menu items whose action already has a key.
+    HIDE_BOUND_MENU_ITEMS_KEY = "hide_shortcut_bound_menu_items"
+
+    @staticmethod
+    def _global_preferences():
+        """The shared ``switchboard/configurable`` store.
+
+        Read straight from QSettings rather than through a Switchboard: a
+        :class:`~uitk.widgets.menu.Menu` applies this preference and has no
+        Switchboard in scope, while the shortcut editor writes it — both must
+        land on the one value. Same two-access-path idiom the marking menu
+        uses for its binding store.
+        """
+        from uitk.managers.settings_manager import SettingsManager
+
+        return SettingsManager(namespace="switchboard").branch("configurable")
+
+    @staticmethod
+    def hide_bound_menu_items() -> bool:
+        """Whether menus omit items whose action already has a shortcut."""
+        value = ShortcutManager._global_preferences().value(
+            ShortcutManager.HIDE_BOUND_MENU_ITEMS_KEY, False
+        )
+        return bool(value)
+
+    @staticmethod
+    def set_hide_bound_menu_items(value: bool) -> None:
+        """Set :meth:`hide_bound_menu_items`.
+
+        Menus read it as they are shown, so the change reaches every menu on
+        its next appearance — there is nothing to re-apply to open ones.
+        """
+        ShortcutManager._global_preferences().setValue(
+            ShortcutManager.HIDE_BOUND_MENU_ITEMS_KEY, bool(value)
+        )
+
     @staticmethod
     def context_to_scope_name(context: QtCore.Qt.ShortcutContext) -> str:
         """Convert a Qt.ShortcutContext to its persistence string."""

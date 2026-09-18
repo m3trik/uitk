@@ -28,6 +28,7 @@ from uitk.widgets.footer import Footer
 from uitk.widgets.separator import Separator
 from uitk.themes.style_sheet import StyleSheet
 from uitk.managers.state_manager import StateManager
+from uitk.managers.shortcut_manager import ShortcutManager
 from uitk.managers.reset_gesture import ResetGesture
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.convert import ConvertMixin
@@ -755,6 +756,10 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
             self.setObjectName(name)
 
         self.logger.setLevel(log_level)
+
+        # Items this menu hid because their action already has a shortcut —
+        # tracked so only those are restored when the preference goes off.
+        self._shortcut_hidden_items = []
 
         # Core event state
         self._event_filters_installed = False
@@ -1959,6 +1964,9 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         elif self.add_apply_button:
             self._update_apply_button_visibility()
 
+        # Before the height pass — it has to measure what will actually show.
+        self._apply_shortcut_item_filter()
+
         self._resize_height_to_content()
 
     def show(self) -> None:
@@ -3030,6 +3038,65 @@ class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
         # or get the usual item event-filter treatment.
         self.gridLayout.addWidget(label, 0, 0, 1, max(1, self.gridLayout.columnCount()))
         self._empty_placeholder = label
+
+    def _shortcut_filter_candidates(self) -> list:
+        """Items the shortcut filter may hide (overridden where the body is
+        not the grid — see :class:`~uitk.widgets.context_menu.ContextMenu`)."""
+        return self.get_items()
+
+    def _item_has_shortcut(self, item) -> bool:
+        """Whether *item*'s action currently holds a keyboard shortcut.
+
+        An item is matched to a command by objectName through the Switchboard
+        its UI belongs to (``register_widget`` gives every registered item its
+        ``ui``).  Anything unregistered — a plain label row, a menu built
+        outside a UI — has no command identity and so never matches.
+        """
+        name = item.objectName()
+        sb = getattr(getattr(item, "ui", None), "sb", None)
+        if not name or sb is None:
+            return False
+        try:
+            return bool(sb.widget_has_shortcut(item))
+        except Exception as e:  # a menu must open whatever the registry does
+            self.logger.debug(f"[_item_has_shortcut] {name}: {e}")
+            return False
+
+    def _apply_shortcut_item_filter(self) -> None:
+        """Hide items whose action already has a shortcut, when asked to.
+
+        Driven by the global ``ShortcutManager.hide_bound_menu_items()``
+        preference (the shortcut editor's toggle): a menu exists to reach an
+        action, so once the action is on a key its row is clutter to the users
+        who turn this on.  Re-read on every show — flipping the preference off
+        restores exactly the items this hid, leaving rows hidden for any other
+        reason alone.
+        """
+        restored, self._shortcut_hidden_items = self._shortcut_hidden_items, []
+        for item in restored:
+            try:
+                item.setVisible(True)
+            except RuntimeError:  # deleted between shows
+                pass
+
+        if not ShortcutManager.hide_bound_menu_items():
+            return
+
+        candidates = self._shortcut_filter_candidates()
+        for item in candidates:
+            if item.isHidden() or not self._item_has_shortcut(item):
+                continue
+            item.setVisible(False)
+            self._shortcut_hidden_items.append(item)
+
+        # Filtering everything away would otherwise open a bare empty popup.
+        if self._shortcut_hidden_items and all(item.isHidden() for item in candidates):
+            self._shortcut_filter_emptied()
+
+    def _shortcut_filter_emptied(self) -> None:
+        """Every filterable item is hidden — show the empty-state placeholder
+        instead of a bare popup."""
+        self._add_empty_placeholder()
 
     def _remove_empty_placeholder(self) -> None:
         """Tear down the empty placeholder if present."""

@@ -17,6 +17,7 @@ Run standalone: python -m test.test_menu
 """
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from conftest import QtBaseTestCase, QtWait, setup_qt_application
@@ -26,6 +27,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore
 
+from uitk.managers.shortcut_manager import ShortcutManager
 from uitk.widgets.menu import Menu, MenuConfig, MenuPositioner, ActionButtonManager
 
 
@@ -3126,6 +3128,82 @@ class TestMenuRestoreDefaults(QtBaseTestCase):
         _twin, field = self._twin()
         self._click_defaults()
         self.assertEqual(field.value(), 0.0)
+
+
+class TestHideItemsThatHaveShortcuts(QtBaseTestCase):
+    """The global "hide menu items that already have a shortcut" preference.
+
+    A menu exists to reach an action; once that action is on a key, the row is
+    clutter for the users who want it gone. Only items that can be matched to
+    a command are filtered — one whose objectName names a slot currently
+    holding a bound key. A plain label row carries no command identity, so it
+    always stays.
+    """
+
+    def setUp(self):
+        super().setUp()
+        ShortcutManager.set_hide_bound_menu_items(False)
+        self.addCleanup(ShortcutManager.set_hide_bound_menu_items, False)
+
+    def _menu(self, bound=("tb000",)):
+        """A menu of two slot-backed buttons (only *bound* ones hold a key)
+        plus a label row with no command identity."""
+        menu = self.track_widget(Menu())
+        self.items = {}
+        for name in ("tb000", "tb001"):
+            button = menu.add(
+                QtWidgets.QPushButton, setText=name.upper(), setObjectName=name
+            )
+            button.ui = SimpleNamespace(
+                sb=SimpleNamespace(
+                    widget_has_shortcut=lambda w, bound=bound: w.objectName() in bound
+                )
+            )
+            self.items[name] = button
+        self.items["label"] = menu.add(QtWidgets.QLabel, setText="plain row")
+        return menu
+
+    def test_a_bound_item_is_hidden_when_the_preference_is_on(self):
+        ShortcutManager.set_hide_bound_menu_items(True)
+        menu = self._menu()
+        menu.show()
+        QtWait.pump()
+        self.assertTrue(self.items["tb000"].isHidden(), "the bound row must go")
+        self.assertFalse(self.items["tb001"].isHidden(), "the unbound row stays")
+        self.assertFalse(self.items["label"].isHidden(), "a label has no command")
+
+    def test_nothing_is_hidden_while_the_preference_is_off(self):
+        menu = self._menu()
+        menu.show()
+        QtWait.pump()
+        self.assertFalse(any(w.isHidden() for w in self.items.values()))
+
+    def test_turning_the_preference_off_brings_the_item_back(self):
+        ShortcutManager.set_hide_bound_menu_items(True)
+        menu = self._menu()
+        menu.show()
+        QtWait.pump()
+        self.assertTrue(self.items["tb000"].isHidden())
+
+        menu.hide()
+        ShortcutManager.set_hide_bound_menu_items(False)
+        menu.show()
+        QtWait.pump()
+        self.assertFalse(self.items["tb000"].isHidden(), "the row must return")
+
+    def test_a_row_hidden_for_another_reason_is_not_revived(self):
+        """The filter restores only what IT hid — a row hidden by a visibility
+        rule must not reappear when the preference goes off."""
+        menu = self._menu()
+        self.items["tb001"].setVisible(False)
+        ShortcutManager.set_hide_bound_menu_items(True)
+        menu.show()
+        QtWait.pump()
+        menu.hide()
+        ShortcutManager.set_hide_bound_menu_items(False)
+        menu.show()
+        QtWait.pump()
+        self.assertTrue(self.items["tb001"].isHidden())
 
 
 # -----------------------------------------------------------------------------

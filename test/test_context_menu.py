@@ -10,6 +10,7 @@ option box without falling out of the list's bookkeeping.
 """
 
 import unittest
+from types import SimpleNamespace
 
 from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
@@ -17,6 +18,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore, QtGui
 
+from uitk.managers.shortcut_manager import ShortcutManager
 from uitk.widgets.context_menu import ContextMenu, MenuRow
 from uitk.widgets.separator import Separator
 from uitk.themes.style_sheet import StyleSheet
@@ -503,6 +505,74 @@ class TestContextMenuSurface(QtBaseTestCase):
         deep = self.menu.add("Tangents", parent=row)
         self.menu.add("Auto", parent=deep, callback=lambda: None)
         self.assertTrue(deep.sublist.menu_surface)
+
+
+class TestContextMenuHidesRowsThatHaveShortcuts(QtBaseTestCase):
+    """The global "hide items that have a shortcut" preference reaches these
+    rows too — they live in an ExpandableList, not the menu's own grid, so the
+    filter has to walk the list (flyout sub-rows included)."""
+
+    def setUp(self):
+        super().setUp()
+        ShortcutManager.set_hide_bound_menu_items(False)
+        self.addCleanup(ShortcutManager.set_hide_bound_menu_items, False)
+        self.host = self.track_widget(_Host())
+        self.host.resize(300, 200)
+        self.host.show()
+        self.menu = ContextMenu(parent=self.host)
+        self.addCleanup(self.menu.dispose)
+
+    def _row(self, label, name=None, bound=False, parent=None):
+        kwargs = {"setObjectName": name} if name else {}
+        row = self.menu.add(label, callback=lambda: None, parent=parent, **kwargs)
+        if name:
+            row.ui = SimpleNamespace(
+                sb=SimpleNamespace(widget_has_shortcut=lambda w, b=bound: b)
+            )
+        return row
+
+    def test_a_bound_row_goes_and_its_neighbours_stay(self):
+        bound = self._row("Keys", "tb000", bound=True)
+        free = self._row("Tangents", "tb001", bound=False)
+        plain = self._row("No command of its own")
+        ShortcutManager.set_hide_bound_menu_items(True)
+        self.menu.show()
+        QtWait.pump()
+        self.assertEqual(
+            [bound.isHidden(), free.isHidden(), plain.isHidden()],
+            [True, False, False],
+        )
+
+    def test_filtering_every_row_shows_the_placeholder_alone(self):
+        """The placeholder goes into the grid cell this menu's row list already
+        occupies, so the list has to stand down rather than paint under it."""
+        rows = [self._row("Keys", "tb000", bound=True), self._row("T", "tb001", True)]
+        ShortcutManager.set_hide_bound_menu_items(True)
+        self.menu.show()
+        QtWait.pump()
+        self.assertTrue(all(row.isHidden() for row in rows))
+        self.assertIsNotNone(self.menu._empty_placeholder, "expected a placeholder")
+        self.assertTrue(self.menu.list.isHidden(), "the empty list must not paint")
+
+    def test_the_list_comes_back_with_the_rows(self):
+        rows = [self._row("Keys", "tb000", bound=True)]
+        ShortcutManager.set_hide_bound_menu_items(True)
+        self.menu.show()
+        QtWait.pump()
+        self.menu.hide()
+        ShortcutManager.set_hide_bound_menu_items(False)
+        self.menu.show()
+        QtWait.pump()
+        self.assertFalse(self.menu.list.isHidden())
+        self.assertFalse(rows[0].isHidden())
+
+    def test_a_flyout_row_is_reached_too(self):
+        parent_row = self.menu.add("Keys", callback=lambda: None)
+        sub = self._row("Auto", "tb002", bound=True, parent=parent_row)
+        ShortcutManager.set_hide_bound_menu_items(True)
+        self.menu.show()
+        QtWait.pump()
+        self.assertTrue(sub.isHidden())
 
 
 if __name__ == "__main__":
