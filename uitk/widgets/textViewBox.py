@@ -13,8 +13,16 @@ the user can keep working while reading. Buttons are wired to
 ``close()`` for the standard Accept / Reject / Destructive roles;
 Apply / Reset / Help leave the window open and surface the clicked
 name via :attr:`clicked_button`.
+
+Structured data renders through :meth:`TextViewBox.format_data` --
+colour-coded JSON, the one place the data viewer's look is tuned.
 """
+import html
+import json
+import re
+
 from qtpy import QtCore, QtGui, QtWidgets
+import pythontk as ptk
 
 from uitk.widgets.windowPanel import WindowPanel
 from uitk.widgets.mixins.text import RichTextFormatter
@@ -90,6 +98,53 @@ class TextViewBox(WindowPanel):
         "ignore": ("Ignore", QtWidgets.QDialogButtonBox.RejectRole, "Ignore"),
         "discard": ("Discard", QtWidgets.QDialogButtonBox.DestructiveRole, "Discard"),
     }
+
+    #: Token role -> CSS colour for :meth:`format_data`: the one place the data
+    #: viewer's colour coding is tuned. Drawn from pythontk's dark-theme
+    #: palettes so it reads like the rest of the ecosystem.
+    DATA_COLORS = {
+        "key": ptk.Palette.status()["info"][0],  # steel blue
+        "string": ptk.Palette.status()["warn"][0],  # warm gold
+        "number": ptk.Palette.diff()["moved"][0],  # muted purple
+        "literal": ptk.Palette.status()["error"][0],  # true / false / null
+        "punctuation": ptk.Palette.ui()["text_dim"].hex,
+    }
+    # One JSON token per match; a string followed by its colon is a key.
+    _DATA_TOKEN = re.compile(
+        r'(?P<string>"(?:\\.|[^"\\])*")(?P<colon>:)?'
+        r"|(?P<number>-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"
+        r"|(?P<literal>\btrue\b|\bfalse\b|\bnull\b)"
+        r"|(?P<punctuation>[{}\[\],])"
+    )
+
+    @classmethod
+    def format_data(cls, data, indent: int = 2) -> str:
+        """*data* as indented, colour-coded JSON HTML (one ``<pre>`` block).
+
+        Keys, strings, numbers, ``true`` / ``false`` / ``null`` and punctuation
+        each take their :attr:`DATA_COLORS` role. A value JSON cannot encode is
+        shown as its ``str``, so a caller never has to pre-clean what it hands
+        in.
+        """
+        text = json.dumps(data, indent=indent, ensure_ascii=False, default=str)
+
+        def span(role, token):
+            color = cls.DATA_COLORS[role]
+            return f'<span style="color:{color}">{html.escape(token)}</span>'
+
+        out, pos = [], 0
+        for match in cls._DATA_TOKEN.finditer(text):
+            out.append(html.escape(text[pos : match.start()]))  # whitespace
+            if match.group("string") is not None:
+                is_key = match.group("colon") is not None
+                out.append(span("key" if is_key else "string", match.group("string")))
+                if is_key:
+                    out.append(span("punctuation", ":"))
+            else:
+                out.append(span(match.lastgroup, match.group()))
+            pos = match.end()
+        out.append(html.escape(text[pos:]))
+        return f"<pre>{''.join(out)}</pre>"
 
     def __init__(
         self,

@@ -1,7 +1,5 @@
 # !/usr/bin/python
 # coding=utf-8
-import threading
-
 from qtpy import QtCore, QtWidgets
 
 # From this package:
@@ -9,343 +7,23 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 from uitk.widgets.mixins.shortcut_guard import ShortcutGuardMixin
+from uitk.widgets.mixins.text_validation import TextValidationMixin
 
 
-class LineEditFormatMixin:
-    """Lazily formats QLineEdit with reversible visual state feedback.
+class LineEditFormatMixin(TextValidationMixin):
+    """:class:`LineEdit`'s validation feedback -- the shared
+    :class:`~uitk.widgets.mixins.text_validation.TextValidationMixin`, whose
+    commit is ``editingFinished`` (Enter / focus-out), so
+    ``set_validator(revert_on_commit=...)`` works here.
 
-    Provides ``set_action_color(key)`` / ``reset_action_color()`` for
-    signaling validation state.  Styling is driven by a ``actionState``
-    dynamic property and defined in style.qss.
-
-    Also provides an optional ``set_validator()`` API that wires up
-    debounced ``textChanged`` → user-supplied predicate → visual feedback
-    (``actionState`` color + tooltip) → ``validated(bool, str)`` signal.
-
-    Built-in string shortcuts for ``set_validator()``:
-        - ``"file"``  — ``ptk.is_valid(text, "file")``
-        - ``"dir"``   — ``ptk.is_valid(text, "dir")``
-        - ``"path"``  — ``ptk.is_valid(text)`` (file or dir)
-
-    Or pass any ``callable(text) -> bool`` for arbitrary validation.
-
-    The host class must declare ``validated = QtCore.Signal(bool, str)``
-    for the signal to be available; ``set_validator()`` still functions
-    (color + tooltip updates) when no such signal exists.
+    Kept under this name: it is what ``LineEdit`` has always mixed in, and
+    hosts still call its ``set_action_color`` / ``reset_action_color`` on
+    fields of their own.  The validator API itself is documented on the
+    shared mixin, which :class:`~uitk.widgets.textEdit.TextEdit` uses too.
     """
 
-    def set_action_color(self, key: str) -> None:
-        self.setProperty("actionState", key)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def reset_action_color(self) -> None:
-        self.setProperty("actionState", None)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    # ------------------------------------------------------------------
-    # Validator API
-    # ------------------------------------------------------------------
-
-    _VALIDATOR_PRESETS = ("file", "dir", "path", "url", "file_or_url")
-    # Presets whose value may be a URL: the synchronous check passes a URL on
-    # shape alone and a deferred probe (``_url_probe``) settles reachability.
-    _URL_PRESETS = ("url", "file_or_url")
-
-    @staticmethod
-    def _resolve_validator(validator):
-        """Convert a preset string into a callable, or return *validator* as-is."""
-        if callable(validator):
-            return validator
-        if validator in LineEditFormatMixin._VALIDATOR_PRESETS:
-            import pythontk as ptk
-
-            if validator == "url":
-                return lambda text: ptk.RemoteFile.is_url(text)
-            if validator == "file_or_url":
-                return lambda text: (
-                    ptk.RemoteFile.is_url(text) or ptk.is_valid(text, "file")
-                )
-            kind = None if validator == "path" else validator
-            return lambda text, _k=kind: bool(text) and ptk.is_valid(text, _k)
-        raise ValueError(
-            f"validator must be callable or one of "
-            f"{LineEditFormatMixin._VALIDATOR_PRESETS!r}, got {validator!r}"
-        )
-
-    @staticmethod
-    def _url_probe(text):
-        """Deferred check behind the URL presets: can *text* be fetched?
-
-        A URL can't be verified without a round trip, so the synchronous
-        preset accepts it on shape and this settles it off the Qt thread via
-        ``ptk.RemoteFile.probe`` (which also rewrites share links and refuses
-        a sign-in page).  A non-URL value already passed synchronously.
-        """
-        import pythontk as ptk
-
-        if not ptk.RemoteFile.is_url(text):
-            return True, None
-        problem = ptk.RemoteFile.probe(text)
-        return problem is None, problem
-
-    def set_validator(
-        self,
-        validator,
-        *,
-        debounce_ms: int = 300,
-        invalid_tooltip: str = "Invalid",
-        valid_tooltip=None,
-        empty_tooltip=None,
-        empty_is_valid: bool = True,
-        deferred=None,
-        pending_tooltip: str = "Checking\u2026",
-    ):
-        """Install a debounced text validator with visual feedback.
-
-        Parameters:
-            validator: A callable ``(text) -> bool`` or a preset string:
-                ``"file"`` / ``"dir"`` / ``"path"`` (must exist on disk),
-                ``"url"`` (an ``http(s)`` address), ``"file_or_url"`` (either).
-                The URL presets also install a deferred reachability probe
-                (see *deferred*) unless one is passed explicitly.
-            debounce_ms: Delay before validating after the last keystroke.
-                Set to 0 to validate immediately (typically only useful
-                in tests).
-            invalid_tooltip: Tooltip shown when validation fails.  A string,
-                or a callable ``(message) -> str`` handed the deferred check's
-                message (``None`` when the synchronous check failed) so a host
-                can wrap the reason in its own rich tooltip.
-            valid_tooltip: Tooltip shown when validation passes.  Can be
-                a string, a callable ``(text) -> str``, or ``None`` to
-                show the text itself.
-            empty_tooltip: Tooltip shown when text is empty.  ``None``
-                (default) preserves whatever tooltip was set on the
-                widget before ``set_validator`` was called.
-            empty_is_valid: When True (default), empty text resets the
-                color and emits ``validated(True, "")``.  When False,
-                empty text is treated as invalid.
-            deferred: Optional slow check run on a worker thread AFTER
-                *validator* passes -- a network probe, a disk scan.  Called
-                with the value; returns ``bool`` or ``(bool, message)``.
-                While it runs the field shows the ``info`` state and
-                *pending_tooltip*; its answer then sets the final color
-                (``message`` becomes the tooltip on failure) and emits
-                ``validated`` a second time.  An answer for a value the
-                user has since replaced is dropped.  The host must declare
-                ``deferred_validated = QtCore.Signal(int, bool, object)``
-                (:class:`LineEdit` does): a worker thread cannot touch
-                widgets, so the result crosses back through that signal.
-            pending_tooltip: Tooltip while *deferred* is in flight.
-        """
-        callable_validator = self._resolve_validator(validator)
-        if deferred is None and validator in self._URL_PRESETS:
-            deferred = self._url_probe
-
-        # Capture pre-install tooltip so empty-text state can restore it
-        prior_tooltip = self.toolTip()
-
-        # Idempotent install — disconnect any prior wiring first
-        self.clear_validator()
-
-        # QTimer-based debouncer (replaces any pending validation)
-        timer = QtCore.QTimer(self)
-        timer.setSingleShot(True)
-        timer.timeout.connect(self._run_validation)
-
-        self._validator_callable = callable_validator
-        self._validator_timer = timer
-        self._validator_debounce_ms = max(0, int(debounce_ms))
-        self._validator_invalid_tooltip = invalid_tooltip
-        self._validator_valid_tooltip = valid_tooltip
-        self._validator_empty_tooltip = (
-            empty_tooltip if empty_tooltip is not None else prior_tooltip
-        )
-        self._validator_empty_is_valid = empty_is_valid
-        self._validator_deferred = deferred
-        self._validator_pending_tooltip = pending_tooltip
-        self._deferred_generation = 0
-        if deferred is not None:
-            emitter = getattr(self, "deferred_validated", None)
-            if emitter is None or not hasattr(emitter, "connect"):
-                raise TypeError(
-                    "a deferred validator needs a host that declares "
-                    "`deferred_validated = QtCore.Signal(int, bool, object)`"
-                )
-            emitter.connect(self._on_deferred_validated)
-        self._last_validation_text = None
-        self._last_validation_result = None
-
-        self.textChanged.connect(self._on_text_changed_validate)
-
-        # Run once now so the initial color/tooltip reflect current state
-        self._run_validation()
-
-    def clear_validator(self):
-        """Remove any installed validator and reset visual state."""
-        timer = getattr(self, "_validator_timer", None)
-        if timer is not None:
-            timer.stop()
-            timer.deleteLater()
-        if getattr(self, "_validator_callable", None) is not None:
-            try:
-                self.textChanged.disconnect(self._on_text_changed_validate)
-            except (TypeError, RuntimeError):
-                pass
-        # Retire any in-flight deferred check; its answer must not land on
-        # a field that no longer validates.
-        self._deferred_generation = getattr(self, "_deferred_generation", 0) + 1
-        if getattr(self, "_validator_deferred", None) is not None:
-            try:
-                self.deferred_validated.disconnect(self._on_deferred_validated)
-            except (TypeError, RuntimeError):
-                pass
-        self._validator_deferred = None
-        self._validator_callable = None
-        self._validator_timer = None
-        self._last_validation_text = None
-        self._last_validation_result = None
-        self.reset_action_color()
-
-    @property
-    def is_valid(self):
-        """Last validation result, or ``None`` if no validator is set."""
-        return getattr(self, "_last_validation_result", None)
-
-    def validate_now(self, run_deferred: bool = True):
-        """Cancel any pending debounce and validate the current text now.
-
-        Useful from commit handlers (``editingFinished``) where stale
-        ``is_valid`` would be wrong if the user pressed Enter before the
-        debounce timer fired.
-
-        Parameters:
-            run_deferred: Also start the ``deferred`` check when one is
-                installed.  A commit handler about to do the real work
-                itself -- fetch the URL, open the file -- passes False: the
-                synchronous check settles, any in-flight deferred answer is
-                retired, and the handler's own result is the last word.
-        """
-        timer = getattr(self, "_validator_timer", None)
-        if timer is not None:
-            timer.stop()
-        if getattr(self, "_validator_callable", None) is not None:
-            self._run_validation(run_deferred=run_deferred)
-
-    def _on_text_changed_validate(self, _text):
-        timer = getattr(self, "_validator_timer", None)
-        if timer is None:
-            return
-        if self._validator_debounce_ms <= 0:
-            self._run_validation()
-            return
-        timer.start(self._validator_debounce_ms)
-
-    def _validation_value(self):
-        """The value validation runs against.
-
-        Defaults to the field text. Data-carrying hosts (e.g. :class:`LineEdit`
-        whose :meth:`set_value` shows a friendly display while storing a
-        distinct payload) override this to return that payload, so the
-        validator and the ``valid_tooltip`` callback see the real value rather
-        than the display string.
-        """
-        return self.text()
-
-    def _run_validation(self, run_deferred: bool = True):
-        validator = getattr(self, "_validator_callable", None)
-        if validator is None:
-            return
-        value = self._validation_value()
-        empty = not value
-        # Every run supersedes a deferred check still in flight: its answer
-        # describes a value that may no longer be in the field.
-        self._deferred_generation = getattr(self, "_deferred_generation", 0) + 1
-
-        if empty and self._validator_empty_is_valid:
-            ok = True
-            self.reset_action_color()
-            self.setToolTip(self._validator_empty_tooltip or "")
-        else:
-            try:
-                ok = bool(validator(value))
-            except Exception:
-                ok = False
-
-            deferred = getattr(self, "_validator_deferred", None)
-            if ok and deferred is not None and run_deferred:
-                self.set_action_color("info")
-                self.setToolTip(self._validator_pending_tooltip or "")
-                self._start_deferred(deferred, value)
-            elif ok:
-                self._show_valid(value)
-            else:
-                self._show_invalid(None)
-
-        self._last_validation_text = value
-        self._last_validation_result = ok
-        self._emit_validated(ok, value)
-
-    def _show_valid(self, value):
-        self.set_action_color("reset")
-        tip = self._validator_valid_tooltip
-        if callable(tip):
-            tip = tip(value)
-        self.setToolTip(tip if tip is not None else str(value))
-
-    def _show_invalid(self, message):
-        self.set_action_color("invalid")
-        tip = self._validator_invalid_tooltip
-        if callable(tip):
-            tip = tip(message)
-        else:
-            tip = message or tip
-        self.setToolTip(tip if tip is not None else "")
-
-    def _emit_validated(self, ok, value):
-        emitter = getattr(self, "validated", None)
-        if emitter is not None and hasattr(emitter, "emit"):
-            emitter.emit(ok, value if isinstance(value, str) else str(value))
-
-    def _start_deferred(self, deferred, value):
-        """Run ``deferred(value)`` on a daemon thread.
-
-        The answer comes back on the Qt thread through ``deferred_validated``
-        tagged with the generation it was started for, so a late answer
-        for a value the user has since replaced is ignored.
-        """
-        generation = self._deferred_generation
-        emitter = self.deferred_validated
-
-        def _work():
-            try:
-                result = deferred(value)
-            except Exception:
-                result = False
-            if isinstance(result, tuple):
-                ok = result[0]
-                message = result[1] if len(result) > 1 else None
-            else:
-                ok, message = result, None
-            try:
-                emitter.emit(generation, bool(ok), message)
-            except RuntimeError:
-                pass  # the widget was deleted while the check ran
-
-        threading.Thread(
-            target=_work, name="LineEdit-deferred-validate", daemon=True
-        ).start()
-
-    def _on_deferred_validated(self, generation, ok, message):
-        if generation != getattr(self, "_deferred_generation", 0):
-            return  # answer for a value the user has since replaced
-        if ok:
-            self._show_valid(self._last_validation_text)
-        else:
-            self._show_invalid(message)
-        self._last_validation_result = ok
-        self._emit_validated(ok, self._last_validation_text)
+    def _commit_signal(self):
+        return self.editingFinished
 
 
 class LineEdit(
@@ -369,7 +47,8 @@ class LineEdit(
       ``event`` override wins). Read-only-aware: such a field keeps Copy and
       Select All and releases the writes.
     - self.set_validator(...): Optional debounced text validation with
-      visual feedback (via LineEditFormatMixin). Emits ``validated``.
+      visual feedback (via LineEditFormatMixin). Emits ``validated``;
+      ``set_validator("name")`` enforces a legal name as the user types.
 
     Usage Examples:
         # Basic LineEdit
@@ -390,6 +69,9 @@ class LineEdit(
         # Validate as a directory path with debounced feedback
         line_edit.set_validator("dir", debounce_ms=300)
         line_edit.validated.connect(lambda ok, text: ...)
+
+        # A legal name: marked red with the reason until it is one
+        line_edit.set_validator("name")
     """
 
     # Qt Designer widget-box entry.
@@ -402,6 +84,9 @@ class LineEdit(
     deferred_validated = QtCore.Signal(int, bool, object)
     """Internal: a ``deferred`` validator's answer crossing back to the Qt
     thread. (generation, is_valid, message)."""
+    commit_refused = QtCore.Signal(str, str)
+    """A refused value was committed and ``revert_on_commit`` put the field
+    back. (refused text, reason)."""
 
     # Class-level menu defaults (applied when menu is first accessed)
     _menu_defaults = {"hide_on_leave": True}
@@ -473,6 +158,10 @@ class LineEdit(
     def _validation_value(self):
         """Validate against the data payload when present, else the text."""
         return self.value()
+
+    def _set_validation_value(self, value):
+        """The revert on commit restores a VALUE (no display split)."""
+        self.set_value(value)
 
     def contextMenuEvent(self, event):
         """Override the standard context menu if there is a custom one."""

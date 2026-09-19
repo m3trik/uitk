@@ -1573,6 +1573,7 @@ class OptionBoxManager(ptk.LoggingMixin):
             QtWidgets.QTextEdit,
             QtWidgets.QPlainTextEdit,
             QtWidgets.QPushButton,
+            QtWidgets.QCheckBox,
             QtWidgets.QComboBox,
             QtWidgets.QSpinBox,
             QtWidgets.QDoubleSpinBox,

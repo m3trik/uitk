@@ -193,7 +193,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `switchboard/utils.py`
 - `class SwitchboardUtilsMixin`
-  - methods: busy_cursor, pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, show_when, text_from, value_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
+  - methods: busy_cursor, pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, show_when, text_from, value_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, data_view_dialog, save_data_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
@@ -347,8 +347,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: mousePressEvent, mouseReleaseEvent
 
 ### `widgets/lineEdit.py`
-- `class LineEditFormatMixin`
-  - methods: set_action_color, reset_action_color, set_validator, clear_validator, is_valid, validate_now
+- `class LineEditFormatMixin(TextValidationMixin)`
 - `class LineEdit(ShortcutGuardMixin, QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`
   - methods: set_value, value, data, clear_value, contextMenuEvent, showEvent, hideEvent
 
@@ -453,6 +452,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: richTextLabelDict, richTextSizeHintDict, richTextSizeHint, set_rich_text_style, getRichTextLabel, richText, setRichText, setAlignment
 - `class TextOverlay`
   - methods: textOverlayLabel, setTextOverlay, setTextOverlayAlignment, setTextOverlayColor
+
+### `widgets/mixins/text_validation.py` — Validation feedback for a text field -- the red "refused" state.
+- `class TextValidationMixin`
+  - methods: set_action_color, reset_action_color, set_validator, clear_validator, is_valid, validation_message, validate_now
 
 ### `widgets/mixins/tooltip_mixin.py`
 - `class TooltipFormat`
@@ -690,7 +693,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: add, set, get, update_for_row_height
 
 ### `widgets/textEdit.py`
-- `class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMixin)`
+- `class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMixin, TextValidationMixin)`
   - methods: insertText, showEvent, hideEvent
 
 ### `widgets/textEditLogHandler.py`
@@ -699,7 +702,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/textViewBox.py` — Scrollable rich-text viewer window.
 - `class TextViewBox(WindowPanel)`
-  - methods: setStandardButtons, setText, append_text, clear_text, clicked_button
+  - methods: format_data, setStandardButtons, setText, append_text, clear_text, clicked_button
 
 ### `widgets/toolBox.py`
 - `class HoverSwitcher(QtCore.QObject)`

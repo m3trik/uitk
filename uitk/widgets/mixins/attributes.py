@@ -127,9 +127,8 @@ class AttributesMixin:
             value (): The value to be assigned to the attribute
             also_set_original (bool): Whether to keep the original attribute if an alternative legal name is created
         """
-        import re
-
-        legal_name = re.sub(r"[^0-9a-zA-Z]", "_", name)
+        # The switchboard's one objectName rule (StrUtils owns it).
+        legal_name = ptk.StrUtils.to_legal_name(name)
         # if the name contains illegal chars; set an alternate attribute using legal characters.
         if name != legal_name:
             setattr(obj, legal_name, value)
