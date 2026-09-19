@@ -4,9 +4,16 @@ from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.shortcut_guard import ShortcutGuardMixin
+from uitk.widgets.mixins.text_validation import TextValidationMixin
 
 
-class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMixin):
+class TextEdit(
+    ShortcutGuardMixin,
+    QtWidgets.QTextEdit,
+    MenuMixin,
+    AttributesMixin,
+    TextValidationMixin,
+):
     """Rich text editor with context menu and visibility signals.
 
     ``ShortcutGuardMixin`` precedes ``QTextEdit`` in the MRO so its ``event``
@@ -14,6 +21,12 @@ class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMix
     editing chord at all, so an app-wide Copy binding (uitk's own script console,
     a DCC hotkey) consumes Ctrl+C and the pane can only be copied from via its
     context menu. Editable instances behave exactly as Qt already did.
+
+    ``set_validator(...)`` validates the plain text with the same red
+    "refused" feedback as :class:`~uitk.widgets.lineEdit.LineEdit` (via
+    ``TextValidationMixin``) -- ``set_validator("name")`` included -- and
+    emits ``validated``.  A text edit has no commit moment, so
+    ``revert_on_commit`` is not available here.
     """
 
     # Qt Designer widget-box entry.
@@ -26,6 +39,11 @@ class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMix
 
     shown = QtCore.Signal()
     hidden = QtCore.Signal()
+    validated = QtCore.Signal(bool, str)
+    """Emitted after debounced validation. (is_valid, text)."""
+    deferred_validated = QtCore.Signal(int, bool, object)
+    """Internal: a ``deferred`` validator's answer crossing back to the Qt
+    thread. (generation, is_valid, message)."""
 
     # Class-level menu defaults (applied when menu is first accessed)
     _menu_defaults = {"hide_on_leave": True}
@@ -37,6 +55,11 @@ class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMix
 
         self.setProperty("class", self.__class__.__name__)
         self.set_attributes(**kwargs)
+
+    def _validation_value(self):
+        """Validation reads the plain text (a rich-text edit's markup is not
+        the value)."""
+        return self.toPlainText()
 
     def insertText(self, text, color="LightGray", backround_color="rgb(50, 50, 50)"):
         """Append a new paragraph to the textEdit.

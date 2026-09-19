@@ -1,6 +1,5 @@
 # !/usr/bin/python
 # coding=utf-8
-import re
 import os
 import sys
 import inspect
@@ -77,7 +76,6 @@ class Switchboard(
     QtCore = QtCore
     QtGui = QtGui
     QtWidgets = QtWidgets
-
 
     # Lazy QApplication accessor. Previously this ran in the class body,
     # which constructed a QApplication as a side effect of merely importing
@@ -1001,9 +999,11 @@ class Switchboard(
         self, legal_name: str, unique_match: bool = False
     ) -> Union[str, List[str], None]:
         """Convert the given legal name to its original name(s) by searching the UI files."""
-        pattern = re.sub(r"_", r"[^0-9a-zA-Z]", legal_name)
+        # The inverse of convert_to_legal_name, from the rule's owner: each
+        # ``_`` may have been any non-alphanumeric character.
+        pattern = ptk.StrUtils.legal_name_matcher(legal_name)
         filenames = self.registry.ui_registry.get("filename")
-        matches = [name for name in filenames if re.fullmatch(pattern, name)]
+        matches = [name for name in filenames if pattern.fullmatch(name)]
 
         if unique_match:
             if len(matches) != 1:

@@ -2512,6 +2512,101 @@ class TestDialogsYieldToBusyCursor(QtBaseTestCase):
         finally:
             dlg.close()
 
+    def test_text_view_dialog_logs_a_readable_preview(self):
+        """The log preview drops tags AND entities: an escaped JSON report
+        logs as ``"key"``, not ``&quot;key&quot;``."""
+        sb = Switchboard()
+        with mock.patch.object(sb.logger, "info") as info:
+            dlg = sb.data_view_dialog({"key": "a<b"})
+        try:
+            logged = info.call_args[0][0]
+            self.assertIn('"key": "a<b"', logged)
+            self.assertNotIn("&quot;", logged)
+        finally:
+            dlg.close()
+
+    def test_data_view_dialog_empty_data_is_a_message_not_a_viewer(self):
+        """Nothing to show -- an empty container, or a store whose carriers are
+        all empty -- says so in a message box instead of opening a blank viewer."""
+        sb = Switchboard()
+        for empty in ({}, [], {"data_internal": {}, "data_export": {}}):
+            with mock.patch.object(sb, "message_box") as box:
+                self.assertIsNone(sb.data_view_dialog(empty, empty_message="none here"))
+            box.assert_called_once_with("none here")
+        # Falsy SCALARS are data, not emptiness: a record of zeros still shows,
+        # and so does a bare falsy scalar.
+        for falsy in ({"count": 0, "enabled": False}, 0, False):
+            with mock.patch.object(sb, "message_box") as box:
+                dlg = sb.data_view_dialog(falsy)
+            self.assertIsNotNone(dlg, falsy)
+            dlg.close()
+            box.assert_not_called()
+
+    def test_data_view_dialog_renders_colour_coded_json(self):
+        """Every token role takes its DATA_COLORS colour; markup in the data is
+        escaped, never rendered."""
+        from uitk.widgets.textViewBox import TextViewBox
+
+        data = {"k": "v<b>", "n": 3, "t": True, "z": None, "l": [1]}
+        html_text = TextViewBox.format_data(data)
+        for role in ("key", "string", "number", "literal", "punctuation"):
+            self.assertIn(TextViewBox.DATA_COLORS[role], html_text, role)
+        self.assertNotIn("<b>", html_text)
+        self.assertIn("v&lt;b&gt;", html_text)
+        # A string containing a colon or digits stays one string token.
+        self.assertIn(
+            f'<span style="color:{TextViewBox.DATA_COLORS["string"]}">'
+            "&quot;a: 1&quot;</span>",
+            TextViewBox.format_data(["a: 1"]),
+        )
+        sb = Switchboard()
+        dlg = sb.data_view_dialog(data, title="T")
+        try:
+            labels = [b.text() for b in dlg.button_box.buttons()]
+            self.assertIn("Save", labels)
+            self.assertIn(
+                TextViewBox.DATA_COLORS["key"].lower(), dlg.text_edit.toHtml().lower()
+            )
+        finally:
+            dlg.close()
+        dlg = sb.data_view_dialog(data, save_path=None)
+        try:
+            self.assertNotIn("Save", [b.text() for b in dlg.button_box.buttons()])
+        finally:
+            dlg.close()
+
+    def test_data_view_dialog_save_writes_the_data_as_json(self):
+        """Save asks where (starting at *save_path*), adds the extension, and
+        writes the DATA -- not the rendered HTML."""
+        import json
+        import os
+
+        import pythontk as ptk
+
+        store = ptk.TempArtifacts("uitk_data_view_save", policy="scoped")
+        self.addCleanup(store.cleanup)
+        target = os.path.join(store.dir_path(), "picked")
+        data = {"records": {"a": [1, 2]}, "when": object()}
+        sb = Switchboard()
+        dlg = sb.data_view_dialog(data, title="T", save_path="suggested.json")
+        asked = {}
+
+        def pick(parent, caption, start, flt):
+            asked.update(caption=caption, start=start)
+            return target, flt
+
+        save = next(b for b in dlg.button_box.buttons() if b.text() == "Save")
+        with mock.patch.object(sb, "message_box"):
+            with mock.patch.object(
+                QtWidgets.QFileDialog, "getSaveFileName", side_effect=pick
+            ):
+                save.click()
+        self.assertEqual(asked, {"caption": "Save T As", "start": "suggested.json"})
+        with open(target + ".json", encoding="utf-8") as fh:
+            written = json.load(fh)
+        self.assertEqual(written["records"], {"a": [1, 2]})
+        self.assertIsInstance(written["when"], str)  # unencodable -> its str
+
     def test_deprecated_stack_aliases_delegate_and_warn(self):
         """One-release aliases for the moved stack primitives."""
         app = QtWidgets.QApplication.instance()

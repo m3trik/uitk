@@ -2031,6 +2031,42 @@ class TestDisableOption(QtBaseTestCase):
             second._settings.sync()
 
 
+class TestCheckBoxOptionBox(QtBaseTestCase):
+    """A plain ``QCheckBox`` takes an option box once Switchboard patches the
+    common widgets -- it was missing from that list, so ``checkbox.option_box``
+    raised and a panel's action button on a checkbox row never appeared."""
+
+    def test_checkbox_row_in_a_widget_combo_gets_a_working_action(self):
+        from uitk.widgets.optionBox.options.action import ActionOption
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        OptionBoxManager.patch_common_widgets()
+        host = self.track_widget(QtWidgets.QWidget())
+        QtWidgets.QVBoxLayout(host)
+        combo = WidgetComboBox(host)
+        host.layout().addWidget(combo)
+        chk = QtWidgets.QCheckBox("Export Scene Data Node")
+        combo.add([(chk, "export_data_node")], header="Settings", clear=True)
+        clicks = []
+        chk.option_box.add_action(
+            callback=lambda: clicks.append(1), icon="shell", tooltip="show"
+        )
+        host.show()
+        combo.showPopup()  # the rows live in the popup, as the user sees them
+        self.app.processEvents()
+        try:
+            button = chk.option_box.find_option(ActionOption).widget
+            self.assertTrue(button.isVisible())
+            self.assertFalse(button.icon().isNull())
+            button.click()
+            self.assertEqual(clicks, [1])
+            chk.click()  # the checkbox itself still toggles
+            self.assertTrue(chk.isChecked())
+        finally:
+            combo.hidePopup()
+
+
 class TestDisableOptionInMenu(QtBaseTestCase):
     """A disable button on a field added to a ``Menu``.
 

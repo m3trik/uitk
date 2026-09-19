@@ -26,6 +26,8 @@ $env:QT_QPA_PLATFORM = "offscreen"; & python o:\Cloud\Code\_scripts\uitk\test\ru
 
 **`offscreen` is not optional.** Without it the suite runs under the platform's NATIVE style and system palette (`windows11`, dark) and the pixel-rendering tests fail against a widget stack they were never written for -- `TestShortcutOverlay.test_the_card_stays_translucent_under_the_theme` draws a 344x202 card of pale cyan where offscreen/Fusion gives 380x336 of translucent dark. Same tree: 0 failures offscreen, 2 native. The runner warns when the variable is unset.
 
+**Never patch a QObject subclass's attribute with a bare `MagicMock`** (`mock.patch.object(BrowseOption, "browse")`): the next bound-method `connect` on an instance makes PySide build that class's dynamic meta-object from its class dict, and it faults natively on the mock -- no Python frame, no traceback (PySide 6.10.1, backtraced). Use `autospec=True` or `new=<function>`.
+
 ## Architecture
 
 - `uitk/widgets/` — reusable widgets. **Module filenames are frozen public API**: `.ui` files across the ecosystem reference them as custom-widget headers (`uitk.widgets.pushButton`) — never rename or move a widget module (the grandfathered exception to root's `my_class.py` naming rule; new modules elsewhere follow it).

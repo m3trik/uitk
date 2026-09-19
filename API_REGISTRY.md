@@ -93,6 +93,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/mixins/size_grip.py`](#widgets--mixins--size_grip) — Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 - [`widgets/mixins/spin_box_display.py`](#widgets--mixins--spin_box_display) — Shared display behaviour for the spin-box widgets.
 - [`widgets/mixins/text.py`](#widgets--mixins--text) — Text rendering for uitk widgets.
+- [`widgets/mixins/text_validation.py`](#widgets--mixins--text_validation) — Validation feedback for a text field -- the red "refused" state.
 - [`widgets/mixins/tooltip_mixin.py`](#widgets--mixins--tooltip_mixin)
 - [`widgets/mixins/wheel_step.py`](#widgets--mixins--wheel_step) — Shared input handling for spin-box widgets: the modifier-driven wheel
 - [`widgets/optionBox/_optionBox.py`](#widgets--optionBox--_optionBox) — OptionBox - Plugin-based container for wrapping widgets with action buttons.
@@ -740,7 +741,7 @@ How a window follows the height of what it is holding.
 <a id="switchboard--_core"></a>
 ### `switchboard/_core.py`
 
-- **[`class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardUtilsMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin, SwitchboardNamespaceMixin)`](uitk/uitk/switchboard/_core.py#L32)** — Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
+- **[`class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardUtilsMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin, SwitchboardNamespaceMixin)`](uitk/uitk/switchboard/_core.py#L31)** — Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
   - `Switchboard.register_handler(self, name: str, instance, defaults: dict = None)` — Register a handler instance and apply defaults to its config.
   - `Switchboard.iter_handler_entries(self)` — Yield every :class:`HandlerEntry` from every launchable handler.
   - `Switchboard.active_ui(self) -> Optional[QtWidgets.QWidget]` *(property)* — Return the currently set UI, or None — no auto-load, no warning.
@@ -854,7 +855,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 <a id="switchboard--utils"></a>
 ### `switchboard/utils.py`
 
-- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L29)** — Utility methods for widget positioning, centering, and screen geometry.
+- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L31)** — Utility methods for widget positioning, centering, and screen geometry.
   - `SwitchboardUtilsMixin.busy_cursor(shape=QtCore.Qt.WaitCursor)` *(static)* — Application busy cursor for the duration of a ``with`` block.
   - `SwitchboardUtilsMixin.pop_override_cursor_stack(app)` *(static)* — Deprecated alias of :meth:`CursorManager.pop_stack` (2026-09;
   - `SwitchboardUtilsMixin.push_override_cursor_stack(app, saved)` *(static)* — Deprecated alias of :meth:`CursorManager.push_stack` (2026-09;
@@ -881,6 +882,8 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardUtilsMixin.progress_adapter(update: Callable[..., bool]) -> Callable[..., bool]` *(static)* — Adapt the footer ``update`` callable to the shape downstream
   - `SwitchboardUtilsMixin.message_box(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)` — Spawns a message box with the given text and optionally sets buttons.
   - `SwitchboardUtilsMixin.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None)` — Spawn a scrollable text-viewer window with optional buttons.
+  - `SwitchboardUtilsMixin.data_view_dialog(self, data: Any, *, title: str = '', save_path: Optional[str] = '', empty_message: str = 'Nothing to show.', size=(720, 560), parent=None)` — Show structured *data* as colour-coded JSON in a text viewer.
+  - `SwitchboardUtilsMixin.save_data_dialog(self, data: Any, title: str = '', path: str = '', parent=None) -> Optional[str]` — Write *data* as indented JSON to a ``.json`` file the user picks.
   - `SwitchboardUtilsMixin.file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]` *(static)* — Open a file dialog to select files of the given type(s) using qtpy.
   - `SwitchboardUtilsMixin.dir_dialog(title: str = 'Select a directory', start_dir: str = '/home') -> str` *(static)* — Open a directory dialog to select a directory using qtpy.
   - `SwitchboardUtilsMixin.save_file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]` *(static)* — Open a save-file dialog to choose a destination path.
@@ -1520,14 +1523,8 @@ A slider whose track shows the colour it is about to set.
 <a id="widgets--lineEdit"></a>
 ### `widgets/lineEdit.py`
 
-- **[`class LineEditFormatMixin`](uitk/uitk/widgets/lineEdit.py#L14)** — Lazily formats QLineEdit with reversible visual state feedback.
-  - `LineEditFormatMixin.set_action_color(self, key: str) -> None`
-  - `LineEditFormatMixin.reset_action_color(self) -> None`
-  - `LineEditFormatMixin.set_validator(self, validator, *, debounce_ms: int = 300, invalid_tooltip: str = 'Invalid', valid_tooltip=None, empty_tooltip=None, empty_is_valid: bool = True, deferred=None, pending_tooltip: str = 'Checking…')` — Install a debounced text validator with visual feedback.
-  - `LineEditFormatMixin.clear_validator(self)` — Remove any installed validator and reset visual state.
-  - `LineEditFormatMixin.is_valid(self)` *(property)* — Last validation result, or ``None`` if no validator is set.
-  - `LineEditFormatMixin.validate_now(self, run_deferred: bool = True)` — Cancel any pending debounce and validate the current text now.
-- **[`class LineEdit(ShortcutGuardMixin, QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`](uitk/uitk/widgets/lineEdit.py#L351)** — LineEdit with automatic Menu and OptionBox integration.
+- **[`class LineEditFormatMixin(TextValidationMixin)`](uitk/uitk/widgets/lineEdit.py#L13)** — :class:`LineEdit`'s validation feedback -- the shared
+- **[`class LineEdit(ShortcutGuardMixin, QtWidgets.QLineEdit, MenuMixin, OptionBoxMixin, AttributesMixin, LineEditFormatMixin)`](uitk/uitk/widgets/lineEdit.py#L29)** — LineEdit with automatic Menu and OptionBox integration.
   - `LineEdit.set_value(self, value, display=None)` — Set the field's underlying value and an optional display string.
   - `LineEdit.value(self)` — The field's value: the stored data payload, or :meth:`text` if none.
   - `LineEdit.data(self)` — The stored data payload, or ``None`` when the text *is* the value.
@@ -1937,6 +1934,20 @@ Text rendering for uitk widgets.
   - `TextOverlay.setTextOverlay(self, text, color=None, alignment=None)` — If the text string contains rich text formatting:
   - `TextOverlay.setTextOverlayAlignment(self, alignment='AlignLeft')` — Override setAlignment to accept string alignment arguments as well as QtCore.Qt.AlignmentFlags.
   - `TextOverlay.setTextOverlayColor(self, color)` — Set the stylesheet for a QLabel.
+
+<a id="widgets--mixins--text_validation"></a>
+### `widgets/mixins/text_validation.py`
+
+Validation feedback for a text field -- the red "refused" state.
+
+- **[`class TextValidationMixin`](uitk/uitk/widgets/mixins/text_validation.py#L21)** — Reversible visual state feedback plus an optional validator.
+  - `TextValidationMixin.set_action_color(self, key: str) -> None`
+  - `TextValidationMixin.reset_action_color(self) -> None`
+  - `TextValidationMixin.set_validator(self, validator, *, debounce_ms: int = 300, invalid_tooltip: str = 'Invalid', valid_tooltip=None, empty_tooltip=None, empty_is_valid: bool = True, deferred=None, pending_tooltip: str = 'Checking…', reasons=None, revert_on_commit=False)` — Install a debounced text validator with visual feedback.
+  - `TextValidationMixin.clear_validator(self)` — Remove any installed validator and reset visual state.
+  - `TextValidationMixin.is_valid(self)` *(property)* — Last validation result, or ``None`` if no validator is set.
+  - `TextValidationMixin.validation_message(self)` *(property)* — Why the last validation refused the value (a reason validator's
+  - `TextValidationMixin.validate_now(self, run_deferred: bool = True)` — Cancel any pending debounce and validate the current text now.
 
 <a id="widgets--mixins--tooltip_mixin"></a>
 ### `widgets/mixins/tooltip_mixin.py`
@@ -2836,7 +2847,7 @@ Reusable action-column management for :class:`TableWidget`.
 <a id="widgets--textEdit"></a>
 ### `widgets/textEdit.py`
 
-- **[`class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMixin)`](uitk/uitk/widgets/textEdit.py#L9)** — Rich text editor with context menu and visibility signals.
+- **[`class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMixin, TextValidationMixin)`](uitk/uitk/widgets/textEdit.py#L10)** — Rich text editor with context menu and visibility signals.
   - `TextEdit.insertText(self, text, color='LightGray', backround_color='rgb(50, 50, 50)')` — Append a new paragraph to the textEdit.
   - `TextEdit.showEvent(self, event)` — Parameters:
   - `TextEdit.hideEvent(self, event)` — Parameters:
@@ -2856,7 +2867,8 @@ Reusable action-column management for :class:`TableWidget`.
 
 Scrollable rich-text viewer window.
 
-- **[`class TextViewBox(WindowPanel)`](uitk/uitk/widgets/textViewBox.py#L38)** — Read-only rich-text viewer with optional standard buttons.
+- **[`class TextViewBox(WindowPanel)`](uitk/uitk/widgets/textViewBox.py#L46)** — Read-only rich-text viewer with optional standard buttons.
+  - `TextViewBox.format_data(cls, data, indent: int = 2) -> str` *(class)* — *data* as indented, colour-coded JSON HTML (one ``<pre>`` block).
   - `TextViewBox.setStandardButtons(self, *buttons) -> None` — Configure the visible buttons by name.
   - `TextViewBox.setText(self, string: str, fontColor: str = 'white', background=False, fontSize=None) -> None` — Set the body text, replacing any existing content.
   - `TextViewBox.append_text(self, string: str, fontColor: str = 'white', fontSize=None) -> None` — Append a paragraph without clearing existing content.

@@ -461,5 +461,156 @@ class TestDataAwareRecentValues(QtBaseTestCase):
         self.assertEqual(len(opt.recent_values), 1)
 
 
+class TestReasonValidators(QtBaseTestCase):
+    """A validator that answers WHY a value is refused (a sentence, or None
+    when accepted) -- the shape ``ptk.StrUtils.name_error`` and
+    ``ShotStore.name_error`` return -- and the ``"name"`` preset built on it."""
+
+    def test_name_preset_marks_an_illegal_name_and_says_why(self):
+        import pythontk as ptk
+
+        le = self.track_widget(LineEdit())
+        le.set_validator("name", debounce_ms=0)
+        le.setText("Step 4.1")
+        self.assertFalse(le.is_valid)
+        self.assertEqual(le.property("actionState"), "invalid")
+        self.assertEqual(le.toolTip(), ptk.StrUtils.name_error("Step 4.1"))
+        self.assertEqual(le.validation_message, le.toolTip())
+        # Works as typed: the refused text is never rewritten.
+        self.assertEqual(le.text(), "Step 4.1")
+
+        le.setText("Step_4_1")
+        self.assertTrue(le.is_valid)
+        self.assertEqual(le.property("actionState"), "reset")
+        self.assertIsNone(le.validation_message)
+
+    def test_a_reason_validator_reads_none_as_accepted(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator(
+            lambda t: None if t.islower() else f"{t!r} is not lowercase",
+            reasons=True,
+            debounce_ms=0,
+            valid_tooltip="lowercase only",
+        )
+        le.setText("abc")
+        self.assertTrue(le.is_valid)
+        self.assertEqual(le.toolTip(), "lowercase only")
+        le.setText("ABC")
+        self.assertFalse(le.is_valid)
+        self.assertEqual(le.toolTip(), "'ABC' is not lowercase")
+
+    def test_empty_is_checked_when_it_is_not_valid(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator(
+            lambda t: "needs a name" if not t else None,
+            reasons=True,
+            debounce_ms=0,
+            empty_is_valid=False,
+        )
+        self.assertFalse(le.is_valid)
+        self.assertEqual(le.toolTip(), "needs a name")
+
+    def test_a_bool_validator_still_gives_no_reason(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator(lambda t: False, debounce_ms=0, invalid_tooltip="nope")
+        le.setText("x")
+        self.assertIsNone(le.validation_message)
+        self.assertEqual(le.toolTip(), "nope")
+
+
+class TestRevertOnCommit(QtBaseTestCase):
+    """A committed refusal goes back -- to the last accepted value, or to the
+    value a callable names (the model's own) -- and says what was refused."""
+
+    def test_commit_puts_back_the_last_accepted_value(self):
+        le = self.track_widget(LineEdit())
+        refused = []
+        le.commit_refused.connect(lambda text, why: refused.append((text, why)))
+        le.set_validator("name", debounce_ms=0, revert_on_commit=True)
+        le.setText("Shot_1")
+        le.setText("Shot 1")
+        le.editingFinished.emit()
+        self.assertEqual(le.text(), "Shot_1")
+        self.assertTrue(le.is_valid)
+        self.assertEqual(len(refused), 1)
+        self.assertEqual(refused[0][0], "Shot 1")
+        self.assertIn("a space", refused[0][1])
+
+    def test_a_callable_names_the_value_to_put_back(self):
+        """The model's own value wins even when it was never accepted here --
+        a legacy name the rule refuses stays the shot's name, marked."""
+        le = self.track_widget(LineEdit())
+        le.setText("Legacy Name")
+        le.set_validator(
+            "name", debounce_ms=0, revert_on_commit=lambda: "Legacy Name"
+        )
+        le.setText("also bad!")
+        le.editingFinished.emit()
+        self.assertEqual(le.text(), "Legacy Name")
+        self.assertFalse(le.is_valid)  # still marked: the model's name is illegal
+
+    def test_an_accepted_commit_changes_nothing(self):
+        le = self.track_widget(LineEdit())
+        refused = []
+        le.commit_refused.connect(lambda *a: refused.append(a))
+        le.set_validator("name", debounce_ms=0, revert_on_commit=True)
+        le.setText("Good_1")
+        le.editingFinished.emit()
+        self.assertEqual(le.text(), "Good_1")
+        self.assertEqual(refused, [])
+
+    def test_off_by_default_keeps_the_refused_text(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator("name", debounce_ms=0)
+        le.setText("a b")
+        le.editingFinished.emit()
+        self.assertEqual(le.text(), "a b")
+
+    def test_commit_flushes_a_pending_debounce_first(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator("name", debounce_ms=10_000, revert_on_commit=True)
+        le.setText("Ok_1")
+        le.validate_now()
+        le.setText("not ok")  # still debouncing when Enter lands
+        le.editingFinished.emit()
+        self.assertEqual(le.text(), "Ok_1")
+
+    def test_clear_validator_disconnects_the_commit(self):
+        le = self.track_widget(LineEdit())
+        le.set_validator("name", debounce_ms=0, revert_on_commit=True)
+        le.setText("Ok_1")
+        le.clear_validator()
+        le.setText("not ok")
+        le.editingFinished.emit()
+        self.assertEqual(le.text(), "not ok")
+
+
+class TestTextEditValidation(QtBaseTestCase):
+    """TextEdit shares the mixin: the same red refusal on its plain text."""
+
+    def test_name_preset_on_a_text_edit(self):
+        from uitk.widgets.textEdit import TextEdit
+
+        te = self.track_widget(TextEdit())
+        captured = []
+        te.validated.connect(lambda ok, t: captured.append((ok, t)))
+        te.set_validator("name", debounce_ms=0)
+        te.setPlainText("two words")
+        self.assertFalse(te.is_valid)
+        self.assertEqual(te.property("actionState"), "invalid")
+        self.assertIn("a space", te.toolTip())
+        self.assertEqual(captured[-1], (False, "two words"))
+        te.setPlainText("one_word")
+        self.assertTrue(te.is_valid)
+        self.assertEqual(captured[-1], (True, "one_word"))
+
+    def test_a_text_edit_cannot_revert_on_commit(self):
+        from uitk.widgets.textEdit import TextEdit
+
+        te = self.track_widget(TextEdit())
+        with self.assertRaises(TypeError):
+            te.set_validator("name", revert_on_commit=True)
+
+
 if __name__ == "__main__":
     unittest.main()

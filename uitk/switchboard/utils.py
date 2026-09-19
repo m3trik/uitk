@@ -1,5 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
+import html
+import json
 import re
 import traceback
 import warnings
@@ -2032,7 +2034,8 @@ class SwitchboardUtilsMixin:
         """
         # Log a stripped, length-capped preview so reports don't flood
         # the log file the way an uncapped echo would.
-        preview = re.sub("<.*?>", "", text or "")
+        # Entities too: escaped content (a JSON report) would log as &quot;.
+        preview = html.unescape(re.sub("<.*?>", "", text or ""))
         if len(preview) > 500:
             preview = preview[:500] + "…"
         if preview:
@@ -2063,6 +2066,100 @@ class SwitchboardUtilsMixin:
         # report is on screen and the user is meant to interact with it.
         CursorManager.drain()
         return dlg
+
+    def data_view_dialog(
+        self,
+        data: Any,
+        *,
+        title: str = "",
+        save_path: Optional[str] = "",
+        empty_message: str = "Nothing to show.",
+        size=(720, 560),
+        parent=None,
+    ):
+        """Show structured *data* as colour-coded JSON in a text viewer.
+
+        The shared viewer for tool-authored data -- scene metadata, manifests,
+        records -- so every caller gets the same look
+        (:meth:`TextViewBox.format_data`) and the same Save, and polishing it
+        polishes them all.
+
+        Parameters:
+            data: Any JSON-serializable value; one json cannot encode is shown
+                as its ``str``.
+            title: Window title; also names the Save dialog.
+            save_path: Suggested file for the Save button (``""`` suggests
+                none); ``None`` hides Save.
+            empty_message: Shown in a message box instead of an empty viewer
+                when *data* holds nothing: an empty container, or a dict whose
+                values are all empty containers (a store with no records).
+            size: Initial ``(width, height)``.
+            parent: Anchor widget, as :meth:`text_view_dialog`.
+
+        Returns:
+            The :class:`TextViewBox`, or ``None`` when *data* was empty.
+        """
+
+        # A dict of EMPTY CONTAINERS is empty (a store with no records); a falsy
+        # scalar (0, False, "") is data and still shows, at the top level too.
+        def is_empty(value):
+            return isinstance(value, (dict, list, tuple)) and not value
+
+        if (
+            data is None
+            or is_empty(data)
+            or (isinstance(data, dict) and all(map(is_empty, data.values())))
+        ):
+            self.message_box(empty_message)
+            return None
+        buttons = ("Ok",) if save_path is None else ("Save", "Ok")
+        dlg = self.text_view_dialog(
+            self.registered_widgets.TextViewBox.format_data(data),
+            *buttons,
+            title=title,
+            size=size,
+            monospace=True,
+            word_wrap=False,
+            parent=parent,
+        )
+        if save_path is not None:
+
+            def on_clicked(button):
+                if button.text().replace("&", "") == "Save":
+                    self.save_data_dialog(
+                        data, title=title, path=save_path, parent=parent
+                    )
+
+            dlg.button_box.clicked.connect(on_clicked)
+        return dlg
+
+    def save_data_dialog(
+        self, data: Any, title: str = "", path: str = "", parent=None
+    ) -> Optional[str]:
+        """Write *data* as indented JSON to a ``.json`` file the user picks.
+
+        :meth:`data_view_dialog`'s Save, usable on its own. Written atomically;
+        a value json cannot encode is written as its ``str``.
+
+        Returns:
+            The written path, or ``None`` when the user cancelled.
+        """
+        with CursorManager.suspend():
+            picked, _ = QtWidgets.QFileDialog.getSaveFileName(
+                parent if parent is not None else self.parent(),
+                f"Save {title or 'Data'} As",
+                path,
+                "JSON (*.json)",
+            )
+        if not picked:
+            return None
+        if not picked.lower().endswith(".json"):
+            picked += ".json"
+        ptk.FileUtils.atomic_write_text(
+            picked, json.dumps(data, indent=2, ensure_ascii=False, default=str)
+        )
+        self.message_box(f"Saved to <hl>{ptk.format_path(picked, 'file')}</hl>.")
+        return picked
 
     @staticmethod
     def file_dialog(

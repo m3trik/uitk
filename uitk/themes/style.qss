@@ -670,23 +670,28 @@ QLineEdit:read-only:disabled {
     border: {BORDER_W} solid {DISABLED_BACKGROUND};
 }
 /* Action state feedback (set via dynamic property) */
-QLineEdit[actionState="valid"] {
+QLineEdit[actionState="valid"],
+QTextEdit[actionState="valid"] {
     color: {ACTION_VALID_FG};
     background-color: {ACTION_VALID_BG};
 }
-QLineEdit[actionState="invalid"] {
+QLineEdit[actionState="invalid"],
+QTextEdit[actionState="invalid"] {
     color: {ACTION_INVALID_FG};
     background-color: {ACTION_INVALID_BG};
 }
-QLineEdit[actionState="warning"] {
+QLineEdit[actionState="warning"],
+QTextEdit[actionState="warning"] {
     color: {ACTION_WARNING_FG};
     background-color: {ACTION_WARNING_BG};
 }
-QLineEdit[actionState="info"] {
+QLineEdit[actionState="info"],
+QTextEdit[actionState="info"] {
     color: {ACTION_INFO_FG};
     background-color: {ACTION_INFO_BG};
 }
-QLineEdit[actionState="inactive"] {
+QLineEdit[actionState="inactive"],
+QTextEdit[actionState="inactive"] {
     color: {ACTION_INACTIVE_FG};
 }
 QTextEdit {
