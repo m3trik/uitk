@@ -2079,7 +2079,7 @@ class MarkingMenu(
                 # The leaf's slot actually fires here — a release hitting a leaf
                 # whose owning ``ui`` isn't a live menu falls through to the
                 # skip-log below instead.
-                self.hide()
+                self.dismiss_for_action()
                 widget.clicked.emit()
                 return True
             else:
@@ -2094,7 +2094,7 @@ class MarkingMenu(
             parent = widget.parent()
             while parent:
                 if hasattr(parent, "on_item_interacted"):
-                    self.hide()
+                    self.dismiss_for_action()
                     parent.on_item_interacted.emit(widget)
                     return True
                 parent = parent.parent()
@@ -2890,6 +2890,41 @@ class MarkingMenu(
             ):
                 self._reset_stacked_pin(child)
                 child.hide()
+
+    def dismiss_for_action(self) -> None:
+        """End the gesture NOW, because a user action is about to run.
+
+        Not every action a hosted page produces is dispatched by this class. An
+        ``ExpandableList`` sublist item is no registered switchboard widget, so
+        its release is consumed by the list's own event filter and never reaches
+        :meth:`_handle_widget_action` — which is where the hide before a leaf
+        fires lives. This is that same hide, reachable by a widget that
+        dispatches its OWN input through duck-typed ancestor lookup
+        (``ExpandableList._find_host_with``), so one dispatch route cannot end
+        the gesture while another silently leaves it live.
+
+        Dismissal cannot be left to the activation key's release. A slot
+        routinely opens a blocking, focus-stealing window — a NATIVE file
+        dialog, a DCC's own browser — and the keyboard goes with it, so Qt never
+        sees the ``KeyRelease`` at all: :meth:`_on_activation_release` does not
+        run, and the overlay is stranded on screen (live: Maya, *scene* ▸ Import
+        ▸ "Import Blender Scene", the menu sitting under the file dialog until
+        the next activation). Whatever ends the gesture therefore has to be the
+        DISPATCH, which is synchronous and cannot be swallowed.
+
+        :meth:`hide` is the whole teardown — ``_relinquish_input_control`` drops
+        the hold and any mouse grab, ``hideEvent`` restores the dimmed host
+        windows — and is a no-op on an already-hidden menu, so this is safe to
+        call from every dispatch path, including ones that overlap.
+
+        It exists as a name of its own rather than letting callers probe for
+        ``hide`` precisely BECAUSE the lookup is duck-typed: every QWidget has a
+        ``hide``, so an ancestor walk searching for it would match the first
+        container it met and close some arbitrary parent. This name means one
+        thing — *I am a transient surface that a dispatched action dismisses* —
+        and only a surface that is one answers to it.
+        """
+        self.hide()
 
     def hide(self):
         """Override hide to properly reset stacked widget state."""

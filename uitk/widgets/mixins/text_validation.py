@@ -403,6 +403,10 @@ class TextValidationMixin:
         if emitter is not None and hasattr(emitter, "emit"):
             emitter.emit(str(refused), self.validation_message or "")
         self._set_validation_value(restore)
+        # Settle now: the restore's textChanged only re-arms the debounce, and a
+        # caller reading ``is_valid`` right after the commit must get the
+        # restored value's verdict, not the refused one's.
+        self.validate_now(run_deferred=False)
 
     def _set_validation_value(self, value):
         """Put *value* back in the field (the revert on commit)."""

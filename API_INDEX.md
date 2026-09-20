@@ -193,7 +193,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `switchboard/utils.py`
 - `class SwitchboardUtilsMixin`
-  - methods: busy_cursor, pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, show_when, text_from, value_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, message_box, text_view_dialog, data_view_dialog, save_data_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
+  - methods: busy_cursor, pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, show_when, text_from, value_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, confirm, message_box, text_view_dialog, data_view_dialog, save_data_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
@@ -357,7 +357,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/marking_menu/_marking_menu.py`
 - `class MarkingMenu(QtWidgets.QWidget, ptk.SingletonMixin, ptk.LoggingMixin, ptk.HelpMixin)`
-  - methods: retire_all, retire, instance, stored_activation_key, default_bindings, bindings, on_bindings_changed, menu_theme, window_theme, resolve_hosted_theme, ui_handler, get, set_activation_key, start_menu_names, hosts_ui, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
+  - methods: retire_all, retire, instance, stored_activation_key, default_bindings, bindings, on_bindings_changed, menu_theme, window_theme, resolve_hosted_theme, ui_handler, get, set_activation_key, start_menu_names, hosts_ui, get_route_target, set_route_target, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, show, dismiss_for_action, hide, hideEvent, enable_input_logging, disable_input_logging, dim_other_windows, restore_other_windows, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent
 
 ### `widgets/marking_menu/_resolver.py` — Pure menu-resolution logic for the MarkingMenu.
 - constants: LEFT_BUTTON, RIGHT_BUTTON, MIDDLE_BUTTON, SHIFT_MOD, CTRL_MOD, ALT_MOD, META_MOD

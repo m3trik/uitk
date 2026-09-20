@@ -1934,6 +1934,14 @@ class SwitchboardUtilsMixin:
 
         return adapted
 
+    def confirm(self, question, yes="Yes", no="No") -> bool:
+        """Ask *question* in a modal :meth:`message_box` and answer True when
+        the user chose *yes* -- the consent callable a tool's install offer
+        takes (``ptk.ImgUtils.settle_ktx2_encoder(prompt=sb.confirm)``), so
+        no panel re-spells "message_box(q, 'Yes', 'No') == 'Yes'" itself.
+        """
+        return self.message_box(question, yes, no) == yes
+
     def message_box(
         self,
         string,
