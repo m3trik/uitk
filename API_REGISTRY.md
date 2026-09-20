@@ -880,6 +880,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardUtilsMixin.invert_on_modifier(value)` *(static)* — Invert a numerical or boolean value if the alt key is pressed.
   - `SwitchboardUtilsMixin.progress(self, ui=None, total: Optional[int] = None, text: str = '', busy: Optional[bool] = None)` — Context manager for cooperative progress / task feedback.
   - `SwitchboardUtilsMixin.progress_adapter(update: Callable[..., bool]) -> Callable[..., bool]` *(static)* — Adapt the footer ``update`` callable to the shape downstream
+  - `SwitchboardUtilsMixin.confirm(self, question, yes='Yes', no='No') -> bool` — Ask *question* in a modal :meth:`message_box` and answer True when
   - `SwitchboardUtilsMixin.message_box(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)` — Spawns a message box with the given text and optionally sets buttons.
   - `SwitchboardUtilsMixin.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None)` — Spawn a scrollable text-viewer window with optional buttons.
   - `SwitchboardUtilsMixin.data_view_dialog(self, data: Any, *, title: str = '', save_path: Optional[str] = '', empty_message: str = 'Nothing to show.', size=(720, 560), parent=None)` — Show structured *data* as colour-coded JSON in a text viewer.
@@ -1606,6 +1607,7 @@ A slider whose track shows the colour it is about to set.
   - `MarkingMenu.mouseDoubleClickEvent(self, event) -> None`
   - `MarkingMenu.mouseReleaseEvent(self, event) -> None` — Handle mouse release: dispatch click action or sync menu state.
   - `MarkingMenu.show(self, ui: Optional[str] = None, pos=None, force: bool = False, **kwargs) -> QtWidgets.QWidget` — Central hub for showing any UI component.
+  - `MarkingMenu.dismiss_for_action(self) -> None` — End the gesture NOW, because a user action is about to run.
   - `MarkingMenu.hide(self)` — Override hide to properly reset stacked widget state.
   - `MarkingMenu.hideEvent(self, event)` — Clean up on hide - relinquishes input control even if hide() was bypassed.
   - `MarkingMenu.enable_input_logging(self, path: Optional[str] = None, level='DEBUG') -> str` — Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.

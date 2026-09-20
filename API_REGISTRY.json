@@ -4913,12 +4913,21 @@
               "deprecated": false
             },
             {
+              "name": "confirm",
+              "qualname": "SwitchboardUtilsMixin.confirm",
+              "kind": "method",
+              "signature": "(self, question, yes='Yes', no='No') -> bool",
+              "summary": "Ask *question* in a modal :meth:`message_box` and answer True when",
+              "line": 1937,
+              "deprecated": false
+            },
+            {
               "name": "message_box",
               "qualname": "SwitchboardUtilsMixin.message_box",
               "kind": "method",
               "signature": "(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)",
               "summary": "Spawns a message box with the given text and optionally sets buttons.",
-              "line": 1937,
+              "line": 1945,
               "deprecated": false
             },
             {
@@ -4927,7 +4936,7 @@
               "kind": "method",
               "signature": "(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None)",
               "summary": "Spawn a scrollable text-viewer window with optional buttons.",
-              "line": 1983,
+              "line": 1991,
               "deprecated": false
             },
             {
@@ -4936,7 +4945,7 @@
               "kind": "method",
               "signature": "(self, data: Any, *, title: str = '', save_path: Optional[str] = '', empty_message: str = 'Nothing to show.', size=(720, 560), parent=None)",
               "summary": "Show structured *data* as colour-coded JSON in a text viewer.",
-              "line": 2070,
+              "line": 2078,
               "deprecated": false
             },
             {
@@ -4945,7 +4954,7 @@
               "kind": "method",
               "signature": "(self, data: Any, title: str = '', path: str = '', parent=None) -> Optional[str]",
               "summary": "Write *data* as indented JSON to a ``.json`` file the user picks.",
-              "line": 2136,
+              "line": 2144,
               "deprecated": false
             },
             {
@@ -4954,7 +4963,7 @@
               "kind": "staticmethod",
               "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]",
               "summary": "Open a file dialog to select files of the given type(s) using qtpy.",
-              "line": 2165,
+              "line": 2173,
               "deprecated": false
             },
             {
@@ -4963,7 +4972,7 @@
               "kind": "staticmethod",
               "signature": "(title: str = 'Select a directory', start_dir: str = '/home') -> str",
               "summary": "Open a directory dialog to select a directory using qtpy.",
-              "line": 2206,
+              "line": 2214,
               "deprecated": false
             },
             {
@@ -4972,7 +4981,7 @@
               "kind": "staticmethod",
               "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]",
               "summary": "Open a save-file dialog to choose a destination path.",
-              "line": 2228,
+              "line": 2236,
               "deprecated": false
             },
             {
@@ -4981,7 +4990,7 @@
               "kind": "staticmethod",
               "signature": "(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str",
               "summary": "Show a modal text-input dialog and return the entered string.",
-              "line": 2266,
+              "line": 2274,
               "deprecated": false
             },
             {
@@ -4990,7 +4999,7 @@
               "kind": "staticmethod",
               "signature": "(items, title: str = 'Select', label: str = 'Select item(s):', parent: QtWidgets.QWidget = None, multi: bool = True, selected=None) -> list",
               "summary": "Show a modal list picker and return the chosen entries.",
-              "line": 2361,
+              "line": 2369,
               "deprecated": false
             },
             {
@@ -4999,7 +5008,7 @@
               "kind": "staticmethod",
               "signature": "(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', validate: Callable = None, message: str = '') -> Optional[dict]",
               "summary": "Show a modal form of labelled rows and return ``{name: value}``.",
-              "line": 2436,
+              "line": 2444,
               "deprecated": false
             },
             {
@@ -5008,7 +5017,7 @@
               "kind": "staticmethod",
               "signature": "(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', cancel_text: str = None, validate: Callable = None, message: str = '', help_text: str = '', on_run: Callable = None, apply_text: str = 'Apply', output: bool = True, min_width: int = 560, settings=None, settings_key: str = 'window_geometry')",
               "summary": "Build a :class:`~uitk.widgets.formPanel.FormPanel` — the modeless twin.",
-              "line": 2517,
+              "line": 2525,
               "deprecated": false
             },
             {
@@ -5017,7 +5026,7 @@
               "kind": "staticmethod",
               "signature": "(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)",
               "summary": "Simulate a key press event for the given UI and optionally release the keyboard.",
-              "line": 2607,
+              "line": 2615,
               "deprecated": false
             },
             {
@@ -5026,7 +5035,7 @@
               "kind": "method",
               "signature": "(self, func: callable, *args, ms: int = 300, **kwargs) -> None",
               "summary": "Defer execution of any callable with arguments after a delay.",
-              "line": 2630,
+              "line": 2638,
               "deprecated": false
             },
             {
@@ -5035,7 +5044,7 @@
               "kind": "method",
               "signature": "(self, obj=None, clear=False)",
               "summary": "Protect the given object(s) from garbage collection by holding a strong reference.",
-              "line": 2670,
+              "line": 2678,
               "deprecated": false
             },
             {
@@ -5044,7 +5053,7 @@
               "kind": "staticmethod",
               "signature": "(content_fn, parent=None, **kwargs)",
               "summary": "Show a themed modal Menu popup, block until dismissed.",
-              "line": 2703,
+              "line": 2711,
               "deprecated": false
             }
           ]
@@ -8475,7 +8484,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Hide this list and collapse every still-open sublist.",
-              "line": 1222,
+              "line": 1266,
               "deprecated": false
             },
             {
@@ -8484,7 +8493,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "On the root list's show, size to content and retroactively",
-              "line": 1240,
+              "line": 1284,
               "deprecated": false
             },
             {
@@ -8493,7 +8502,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Ensure all sublists are closed when this list is hidden.",
-              "line": 1317,
+              "line": 1361,
               "deprecated": false
             },
             {
@@ -8502,7 +8511,7 @@
               "kind": "staticmethod",
               "signature": "(widget)",
               "summary": "Get the padding values around a widget.",
-              "line": 1574,
+              "line": 1618,
               "deprecated": false
             },
             {
@@ -8511,7 +8520,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the recommended size for the widget.",
-              "line": 1593,
+              "line": 1637,
               "deprecated": false
             },
             {
@@ -8520,7 +8529,7 @@
               "kind": "method",
               "signature": "(self, widget, event)",
               "summary": "Filter events for the ExpandableList.",
-              "line": 1834,
+              "line": 1878,
               "deprecated": false
             },
             {
@@ -8529,7 +8538,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the cursor leaving this list widget.",
-              "line": 1953,
+              "line": 2002,
               "deprecated": false
             }
           ]
@@ -10360,12 +10369,21 @@
               "deprecated": false
             },
             {
+              "name": "dismiss_for_action",
+              "qualname": "MarkingMenu.dismiss_for_action",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "End the gesture NOW, because a user action is about to run.",
+              "line": 2894,
+              "deprecated": false
+            },
+            {
               "name": "hide",
               "qualname": "MarkingMenu.hide",
               "kind": "method",
               "signature": "(self)",
               "summary": "Override hide to properly reset stacked widget state.",
-              "line": 2894,
+              "line": 2929,
               "deprecated": false
             },
             {
@@ -10374,7 +10392,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Clean up on hide - relinquishes input control even if hide() was bypassed.",
-              "line": 2954,
+              "line": 2989,
               "deprecated": false
             },
             {
@@ -10383,7 +10401,7 @@
               "kind": "method",
               "signature": "(self, path: Optional[str] = None, level='DEBUG') -> str",
               "summary": "Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.",
-              "line": 3074,
+              "line": 3109,
               "deprecated": false
             },
             {
@@ -10392,7 +10410,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Stop the file logging started by :meth:`enable_input_logging`.",
-              "line": 3094,
+              "line": 3129,
               "deprecated": false
             },
             {
@@ -10401,7 +10419,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Fade every background window and menu, once per hold.",
-              "line": 3160,
+              "line": 3195,
               "deprecated": false
             },
             {
@@ -10410,7 +10428,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore everything dimmed by the last :meth:`dim_other_windows`.",
-              "line": 3179,
+              "line": 3214,
               "deprecated": false
             },
             {
@@ -10419,7 +10437,7 @@
               "kind": "method",
               "signature": "(self, widgets) -> None",
               "summary": "Initialize child widgets with an event filter.",
-              "line": 3206,
+              "line": 3241,
               "deprecated": false
             },
             {
@@ -10428,7 +10446,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the enter event for child widgets.",
-              "line": 3279,
+              "line": 3314,
               "deprecated": false
             },
             {
@@ -10437,7 +10455,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> None",
               "summary": "Handle the leave event for child widgets.",
-              "line": 3317,
+              "line": 3352,
               "deprecated": false
             },
             {
@@ -10446,7 +10464,7 @@
               "kind": "method",
               "signature": "(self, w, event) -> bool",
               "summary": "Dispatch (or forward) a release delivered to a *grabbed* child.",
-              "line": 3326,
+              "line": 3361,
               "deprecated": false
             }
           ]

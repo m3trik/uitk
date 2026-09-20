@@ -1098,6 +1098,50 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             w = w.parentWidget()
         return None
 
+    def _is_branch_row(self, widget) -> bool:
+        """True if *widget* opens a populated sublist — navigation, not an action.
+
+        The leaf/branch split both activation modes turn on, named once so they
+        cannot drift: a branch release opens or toggles its flyout, a leaf
+        release runs a slot (and so dismisses — see
+        :meth:`_dismiss_for_leaf_action`).
+        """
+        sublist = getattr(widget, "sublist", None)
+        return sublist is not None and bool(sublist.get_items())
+
+    def _dismiss_for_leaf_action(self) -> None:
+        """Bring down this flyout chain AND the transient surface hosting it,
+        before a leaf's slot runs.
+
+        Dismiss-then-dispatch, not dispatch-then-dismiss. A leaf's slot commonly
+        opens a blocking, focus-stealing window — a NATIVE file dialog, a DCC's
+        own browser — and from the moment it is up, the surfaces above it can no
+        longer take themselves down by input: a marking menu is dismissed by the
+        release of its activation key, and a native dialog owns the keyboard, so
+        Qt never sees that ``KeyRelease`` and the menu is stranded on screen
+        until the next activation (live: Maya, *scene* ▸ Import ▸ "Import Blender
+        Scene"). The emit is synchronous and blocks for as long as the dialog is
+        open, so anything deferred past it is already too late.
+
+        The host is found by the duck-typed ancestor lookup this widget uses
+        instead of importing its hosts (:meth:`_find_host_with`, as for
+        ``on_hide`` / ``adopt_transient``) — ``dismiss_for_action`` is
+        implemented by the marking-menu overlay. Resolving to None is the
+        correct answer for an embedded list in an ordinary panel: a click on a
+        header-menu row must not close the panel it sits in. The lookup starts
+        at the ROOT list because a sublist is reparented to the window and its
+        own parent chain no longer runs through the host.
+        """
+        root = self._get_root_list()
+        root._force_hide_all()
+        host = self._find_host_with("dismiss_for_action", start=root)
+        if host is None:
+            return
+        try:
+            host.dismiss_for_action()
+        except RuntimeError:
+            pass  # host's C++ side went during the dismiss — nothing left to hide
+
     def _adopt_into_host_menu(self, sublist):
         """Register an embedded flyout with the popup menu hosting this list.
 
@@ -1923,7 +1967,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                 # geometry math runs on the right instance at any depth.
                 if self._click_mode():
                     sub = getattr(widget, "sublist", None)
-                    if sub is not None and sub.get_items():
+                    if self._is_branch_row(widget):
                         if sub.isVisible():
                             # Toggle closed; if that emptied the chain, end
                             # the session (filter removal).
@@ -1936,15 +1980,20 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
                             self._begin_click_chain()
                             self._handle_widget_enter_event(widget)
                         return True
-                    # Leaf: close the menu FIRST, then activate exactly like
-                    # hover mode. Hide-then-dispatch matches the marking
-                    # menu's _handle_widget_action order — the slot may open
-                    # a modal dialog, and emitting first would leave the
-                    # flyout chain hanging over it until the slot returns.
-                    self._get_root_list()._force_hide_all()
+                    # Leaf: dismiss FIRST, then activate — the same order,
+                    # through the same helper, as hover mode below.
+                    self._dismiss_for_leaf_action()
                     self.on_item_interacted.emit(widget)
                     return True
 
+                # Hover mode. A branch row is navigation — its flyout is
+                # already open from the hover, and the release means nothing
+                # more — so only a LEAF dismisses. The emit itself is
+                # unconditional either way: a branch row may carry an action of
+                # its own (the "both" row an ExpandableList permits), and
+                # whether it does is the consumer's business, not this list's.
+                if not self._is_branch_row(widget):
+                    self._dismiss_for_leaf_action()
                 self.on_item_interacted.emit(widget)
                 return True  # Consume event to prevent double-firing
 

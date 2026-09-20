@@ -40,6 +40,7 @@ from test_marking_menu_integration import (
     StubUi,
     DEFAULT_BINDINGS,
 )
+from uitk.widgets.expandableList import ExpandableList
 
 
 class MarkingMenuLeafClickWhileGrabHeld(QtBaseTestCase):
@@ -296,6 +297,147 @@ class InputHandoffDiagnostics(QtBaseTestCase):
             self.mm.disable_input_logging()
             self.assertFalse(self.mm._input_logging_on)
             self.assertFalse(self.mm.mouse_tracking._input_logging_on)
+
+
+class LeafDispatchedByTheWidgetItself(QtBaseTestCase):
+    """A leaf dispatched by a hosted widget's OWN input handling must end the
+    gesture, exactly as one dispatched through ``_handle_widget_action`` does.
+
+    Live report (Maya): *scene* ▸ submenu ▸ **Import** ▸ "Import Blender Scene".
+    The slot opens a file dialog and the marking menu stays up underneath it,
+    even after ``key_show`` is released.
+
+    The cause is a coverage gap, not a slot bug. ``MarkingMenu`` ends the
+    gesture on its own dispatch path (``_handle_widget_action`` hides BEFORE
+    firing the leaf), but an ``ExpandableList`` sublist item is not a registered
+    switchboard widget: its release is consumed by the list's own
+    ``eventFilter``, which emitted ``on_item_interacted`` without telling the
+    host anything happened. The overlay was then left to the only other
+    teardown trigger -- the activation key's release -- and that trigger cannot
+    fire here, because the native file dialog the slot opens takes the keyboard
+    and Qt never sees the ``KeyRelease`` at all.
+
+    So the dismissal has to happen on the DISPATCH. Asserted on the state the
+    stranding is made of: the overlay still shown, the flyout still up, and the
+    gesture still reading as held.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._drain_qt_events()
+
+        self.parent = QtWidgets.QWidget()
+        self.parent.resize(400, 400)
+        self.parent.show()
+        self.track_widget(self.parent)
+
+        self.mm = DriveableMarkingMenu(self.parent, dict(DEFAULT_BINDINGS))
+        QtWidgets.QWidget.show(self.mm)
+        self.track_widget(self.mm)
+
+        # The hosted page the list lives on (tentacle's ``scene#submenu``).
+        self.submenu = StubUi("scene#submenu", parent=self.mm)
+        self.submenu._tags = {"submenu"}
+        self.submenu.tags = ["submenu"]
+        self.mm.sb.register_ui(self.submenu)
+        self.mm._current_widget = self.submenu
+        self.mm.sb.current_ui = self.submenu
+        self.submenu.show()
+        self.track_widget(self.submenu)
+
+        # The Import list, wired as ``scene``'s ``list001_init`` wires it.
+        self.lst = ExpandableList(self.submenu)
+        self.lst.setObjectName("list001")
+        self.lst.ui = self.submenu
+        self.lst.apply_preset("expand_overlay")
+        self.root_item = self.lst.add("Import")
+        self.root_item.sublist.add(["Import File", "Import Blender Scene"])
+        self.lst.show()
+
+        self.fired = []
+        self.lst.on_item_interacted.connect(lambda w: self.fired.append(w.item_text()))
+
+        # Mid-gesture: key held, menu up, the Import flyout open under the cursor.
+        self.mm._activation_key_held = True
+        self._drain_qt_events()
+        self.lst._handle_widget_enter_event(self.root_item)
+        self._drain_qt_events()
+
+    def _leaf(self, text):
+        return next(
+            i for i in self.root_item.sublist.get_items() if i.item_text() == text
+        )
+
+    def _release_on(self, widget):
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonRelease,
+            QtCore.QPointF(widget.rect().center()),
+            QtCore.QPointF(widget.mapToGlobal(widget.rect().center())),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoButton,
+            QtCore.Qt.NoModifier,
+        )
+        QtWidgets.QApplication.sendEvent(widget, event)
+        self._drain_qt_events()
+
+    def test_sublist_leaf_still_fires(self):
+        """Control: the dismissal must not cost the click itself."""
+        self._release_on(self._leaf("Import Blender Scene"))
+        self.assertEqual(self.fired, ["Import Blender Scene"])
+
+    def test_sublist_leaf_ends_the_gesture(self):
+        """The reported bug: the overlay is stranded over the slot's dialog."""
+        self._release_on(self._leaf("Import Blender Scene"))
+        self.assertFalse(
+            QtWidgets.QWidget.isVisible(self.mm),
+            "marking menu still up after a leaf dispatched its action",
+        )
+        self.assertFalse(self.mm._activation_key_held)
+
+    def test_sublist_leaf_takes_the_flyout_down(self):
+        self._release_on(self._leaf("Import Blender Scene"))
+        self.assertFalse(self.root_item.sublist.isVisible())
+
+    def test_dismissal_precedes_the_slot(self):
+        """Ordering is the whole point: a slot that opens a modal dialog blocks
+        inside the emit, so a dismissal scheduled after it comes too late."""
+        seen = []
+        self.lst.on_item_interacted.connect(
+            lambda _w: seen.append(QtWidgets.QWidget.isVisible(self.mm))
+        )
+        self._release_on(self._leaf("Import File"))
+        self.assertEqual(seen, [False], "menu was still up when the slot ran")
+
+    def test_parent_row_is_navigation_not_an_action(self):
+        """Releasing on a row that OWNS a populated sublist opens/keeps the
+        flyout -- it is navigation, and must not end the gesture."""
+        self._release_on(self.root_item)
+        self.assertTrue(QtWidgets.QWidget.isVisible(self.mm))
+        self.assertTrue(self.mm._activation_key_held)
+
+    def test_embedded_list_does_not_dismiss_its_panel(self):
+        """The host lookup must find a gesture surface and nothing else: the
+        same list in a normal panel (a header menu row) must leave that panel
+        open when an item is clicked."""
+        panel = QtWidgets.QMainWindow()
+        panel.resize(200, 200)
+        panel.show()
+        self.track_widget(panel)
+        body = QtWidgets.QWidget(panel)
+        panel.setCentralWidget(body)
+
+        lst = ExpandableList(body)
+        lst.apply_preset("hover_menu")
+        root = lst.add("File")
+        root.sublist.add(["Open"])
+        lst.show()
+        self._drain_qt_events()
+        lst._handle_widget_enter_event(root)
+        self._drain_qt_events()
+
+        leaf = next(i for i in root.sublist.get_items() if i.item_text() == "Open")
+        self._release_on(leaf)
+        self.assertTrue(panel.isVisible())
 
 
 if __name__ == "__main__":

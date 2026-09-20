@@ -574,6 +574,10 @@ class TestRevertOnCommit(QtBaseTestCase):
         le.setText("not ok")  # still debouncing when Enter lands
         le.editingFinished.emit()
         self.assertEqual(le.text(), "Ok_1")
+        # The revert's verdict is settled at once, not after the debounce: the
+        # restore's textChanged only re-armed the timer.
+        self.assertTrue(le.is_valid)
+        self.assertEqual(le.property("actionState"), "reset")
 
     def test_clear_validator_disconnects_the_commit(self):
         le = self.track_widget(LineEdit())

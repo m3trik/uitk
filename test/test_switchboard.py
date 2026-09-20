@@ -2542,6 +2542,21 @@ class TestDialogsYieldToBusyCursor(QtBaseTestCase):
             dlg.close()
             box.assert_not_called()
 
+    def test_confirm_is_the_modal_yes_no_as_a_bool(self):
+        """`confirm` is the consent callable a tool's install offer takes: a
+        modal message box with the two buttons, True only for the yes button
+        (whatever the box returns otherwise -- the other button, a close)."""
+        sb = Switchboard()
+        with mock.patch.object(sb, "message_box", return_value="Yes") as box:
+            self.assertTrue(sb.confirm("Install it?"))
+        box.assert_called_once_with("Install it?", "Yes", "No")
+        for other in ("No", None, ""):
+            with mock.patch.object(sb, "message_box", return_value=other):
+                self.assertFalse(sb.confirm("Install it?"), other)
+        with mock.patch.object(sb, "message_box", return_value="Go") as box:
+            self.assertTrue(sb.confirm("Really?", yes="Go", no="Stay"))
+        box.assert_called_once_with("Really?", "Go", "Stay")
+
     def test_data_view_dialog_renders_colour_coded_json(self):
         """Every token role takes its DATA_COLORS colour; markup in the data is
         escaped, never rendered."""
