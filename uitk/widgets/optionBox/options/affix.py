@@ -250,6 +250,8 @@ class AffixOption(PersistedOption, ButtonOption):
     #: a text-supplying mode occupies the field.
     _MODE_KEY = "mode"
     _HELD_KEY = "held_text"
+    #: The mode a :meth:`save_default` parks for :meth:`restore_default`.
+    _DEFAULT_MODE_KEY = "default_mode"
 
     def __init__(
         self,
@@ -432,14 +434,32 @@ class AffixOption(PersistedOption, ButtonOption):
                 self._on_change(mode)
 
     def restore_default(self) -> None:
-        """Return the picker to its constructed ``default`` mode.
+        """Return the picker to its default mode.
 
         Called by a sibling ``ResetOption`` when the user resets the field —
         without it, a persisted mode would be the one part of the field a reset
         could not reach. Routed through :meth:`set_mode`, so the cleared mode
         persists and ``on_change`` fires exactly as a click would.
+
+        The default is the one :meth:`save_default` stored, else the
+        constructed one.
         """
-        self.set_mode(self._initial)
+        self.set_mode(self._default_mode())
+
+    def save_default(self) -> bool:
+        """Make the current mode the one :meth:`restore_default` returns to."""
+        return self._store(self._DEFAULT_MODE_KEY, self._mode)
+
+    def clear_saved_default(self) -> bool:
+        """Forget a :meth:`save_default`; the constructed mode is default again."""
+        return self._forget(self._DEFAULT_MODE_KEY)
+
+    def _default_mode(self) -> str:
+        """What :meth:`restore_default` returns to: a saved mode, else the
+        constructed one. A saved mode no longer in the cycle (a panel that
+        changed its modes since) is ignored rather than raising."""
+        saved = self._settings.value(self._DEFAULT_MODE_KEY) if self._settings else None
+        return saved if saved in self._modes else self._initial
 
     def refresh(self) -> None:
         """Re-pull a text-supplying mode's value into the field.
@@ -567,7 +587,8 @@ class AffixOption(PersistedOption, ButtonOption):
         if not self._settings:
             return
         saved = self._settings.value(self._MODE_KEY)
-        if saved in self._modes:
-            self._mode = saved
+        # No session mode (a first open on this machine) falls back to the
+        # saved default, which is what a default is for.
+        self._mode = saved if saved in self._modes else self._default_mode()
         held = self._settings.value(self._HELD_KEY)
         self._held = None if held is None else str(held)

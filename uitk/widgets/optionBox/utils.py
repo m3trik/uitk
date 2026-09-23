@@ -790,12 +790,38 @@ class OptionBoxManager(ptk.LoggingMixin):
         panel-wide ``StateManager.reset_all``; the per-field reset button goes
         through ``ResetOption`` instead, which skips itself.
         """
+        self._each_option("restore_default")
+        return self
+
+    def save_option_defaults(self) -> int:
+        """Make every option's current state its default (``BaseOption.save_default``).
+
+        The save half of what :meth:`restore_option_defaults` resets, reached
+        by a panel-wide *Save as Defaults*. Returns how many options wrote one.
+        """
+        return self._each_option("save_default")
+
+    def clear_option_defaults(self) -> int:
+        """Forget every option's saved default (``BaseOption.clear_saved_default``).
+
+        A factory reset, which runs before the values are restored. Returns how
+        many saved defaults were removed.
+        """
+        return self._each_option("clear_saved_default")
+
+    def _each_option(self, method: str) -> int:
+        """Call *method* on every option; count the truthy answers.
+
+        One bad plugin must not eat the batch, so each call is guarded
+        individually and logged at debug.
+        """
+        done = 0
         for option in self.get_options():
             try:
-                option.restore_default()
-            except Exception as e:  # one bad plugin must not eat the reset
-                self.logger.debug(f"restore_default failed on {option!r}: {e}")
-        return self
+                done += bool(getattr(option, method)())
+            except Exception as e:
+                self.logger.debug(f"{method} failed on {option!r}: {e}")
+        return done
 
     def find_option(self, option_type):
         """Find the first option of the given type.

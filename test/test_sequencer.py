@@ -1963,7 +1963,7 @@ class TestPlayheadNavigation(BaseTestCase):
 
 
 class TestFrameShot(BaseTestCase):
-    """frame_shot / frame_all viewport framing."""
+    """frame_shot viewport framing."""
 
     def setUp(self):
         self.w = SequencerWidget()
@@ -1989,13 +1989,10 @@ class TestFrameShot(BaseTestCase):
         """frame_shot does nothing with no clips or range."""
         self.w.frame_shot()  # should not raise
 
-    def test_frame_all_is_alias(self):
-        """frame_all is an alias for frame_shot."""
-        # Class-level alias: bound methods differ, but underlying function is same
-        self.assertEqual(
-            type(self.w).frame_all,
-            type(self.w).frame_shot,
-        )
+    def test_retired_frame_all_alias_stays_removed(self):
+        """``frame_all`` was a silent alias of ``frame_shot`` from 2026-03-19
+        and was retired 2026-09-21 with no caller left; it must not return."""
+        self.assertFalse(hasattr(type(self.w), "frame_all"))
 
 
 # =========================================================================
@@ -7479,7 +7476,7 @@ if __name__ == "__main__":
 class TestTangentHandleDrag(BaseTestCase):
     """A selected key's tangent handles are grab points: dragging one reshapes
     the preview's control point live and reports the handle vector once, on
-    release, as ``key_tangent_dragged``."""
+    release, as ``keys_tangent_dragged``."""
 
     PREVIEW = __import__("copy").deepcopy(TestKeyframeItem.SAMPLE_PREVIEW)
 
@@ -7563,11 +7560,14 @@ class TestTangentHandleDrag(BaseTestCase):
         out = next(h for h in self._handles(item) if h.side == "out")
         before = out.control_point()
         got = []
-        self.w.key_tangent_dragged.connect(lambda *a: got.append(a))
+        self.w.keys_tangent_dragged.connect(lambda *a: got.append(a))
         self._drag(out, 30.0, -10.0)
         self.assertEqual(len(got), 1)
-        cid, t, side, dt, dv = got[0]
-        self.assertEqual((cid, side), (clip.clip_id, "out"))
+        groups, side, broken = got[0]
+        self.assertEqual((side, broken), ("out", False))
+        self.assertEqual([cid for cid, _ in groups], [clip.clip_id])
+        self.assertEqual(len(groups[0][1]), 1, "one selected key, one vector")
+        t, dt, dv = groups[0][1][0]
         self.assertAlmostEqual(t, key._time)
         self.assertGreater(dt, 0.0)
         self.assertGreater(dv, 0.0, "up on screen is a higher value")
@@ -7587,10 +7587,13 @@ class TestTangentHandleDrag(BaseTestCase):
         key.setSelected(True)
         inh = next(h for h in self._handles(item) if h.side == "in")
         got = []
-        self.w.key_tangent_dragged.connect(lambda *a: got.append(a))
+        self.w.keys_tangent_dragged.connect(lambda *a: got.append(a))
         self._drag(inh, 500.0, 0.0)  # far past the key, to the right
         self.assertEqual(len(got), 1)
-        self.assertLess(got[0][3], 0.0, "an IN handle stays before its key")
+        groups, side, _broken = got[0]
+        self.assertEqual(side, "in")
+        _time, dt, _dv = groups[0][1][0]
+        self.assertLess(dt, 0.0, "an IN handle stays before its key")
 
     def test_a_release_without_movement_reports_nothing(self):
         clip, item = self._clip()
@@ -7598,7 +7601,7 @@ class TestTangentHandleDrag(BaseTestCase):
         key.setSelected(True)
         out = next(h for h in self._handles(item) if h.side == "out")
         got = []
-        self.w.key_tangent_dragged.connect(lambda *a: got.append(a))
+        self.w.keys_tangent_dragged.connect(lambda *a: got.append(a))
         self._drag(out, 0.0, 0.0)
         self.assertEqual(got, [])
 
@@ -8544,9 +8547,7 @@ class TestTangentHandleSelectionDrag(BaseTestCase):
         self.w.resize(800, 400)
         self.w.show()
         self.got = []  # keys_tangent_dragged
-        self.legacy = []  # key_tangent_dragged (deprecated single-key form)
         self.w.keys_tangent_dragged.connect(lambda *a: self.got.append(a))
-        self.w.key_tangent_dragged.connect(lambda *a: self.legacy.append(a))
 
     def tearDown(self):
         self.w.close()
@@ -8648,11 +8649,12 @@ class TestTangentHandleSelectionDrag(BaseTestCase):
         for _t, dt, _dv in vectors:
             self.assertGreater(dt, 0.0, "an OUT handle stays after its key")
 
-    def test_a_multi_key_drag_never_reports_the_deprecated_single_form(self):
-        item = self._rows()
-        _k0, _k1, h0, _h1 = self._pair(item)
-        self._drag(h0, 20.0, -15.0)
-        self.assertEqual(self.legacy, [])
+    def test_the_retired_single_key_signal_stays_removed(self):
+        """``key_tangent_dragged`` (one key, no break flag) was superseded by
+        ``keys_tangent_dragged`` on 2026-09-17 and retired 2026-09-21 after
+        three releases with no consumer; the gesture reports through one
+        signal only."""
+        self.assertFalse(hasattr(self.w, "key_tangent_dragged"))
 
     def test_keys_on_other_clips_come_along_grouped_by_clip(self):
         first, second = self._rows(2)
@@ -8684,7 +8686,6 @@ class TestTangentHandleSelectionDrag(BaseTestCase):
             "k1's OUT control point was left alone",
         )
         self.assertEqual(len(self.got[0][0][0][1]), 1)
-        self.assertEqual(len(self.legacy), 1, "one key: the old form still fires")
 
     # -- Ctrl: isolate ------------------------------------------------------
 
@@ -8702,7 +8703,6 @@ class TestTangentHandleSelectionDrag(BaseTestCase):
             [(cid, len(v)) for cid, v in groups], [(item._data.clip_id, 1)]
         )
         self.assertEqual(groups[0][1][0][0], k0.time)
-        self.assertEqual(len(self.legacy), 1, "one key: the old form still fires")
 
     def test_ctrl_pressed_mid_drag_puts_the_peers_back(self):
         from qtpy import QtCore
@@ -8766,11 +8766,9 @@ class TestTangentHandleSelectionDrag(BaseTestCase):
         self.assertFalse(k1.is_broken())
         _groups, side, broken = self.got[0]
         self.assertEqual((side, broken), ("out", True))
-        self.assertEqual(self.legacy, [], "the old form carries no break flag")
 
-    def test_a_broken_one_key_drag_skips_the_deprecated_form(self):
-        """The old signal carries no break flag, so a gesture that asks for
-        one is reported ONLY through the new signal -- even alone."""
+    def test_a_broken_one_key_drag_reports_the_break(self):
+        """A lone key's gesture carries the break flag like any other."""
         from qtpy import QtCore
 
         item = self._rows()
@@ -8781,7 +8779,6 @@ class TestTangentHandleSelectionDrag(BaseTestCase):
         self.assertEqual(len(self.got), 1)
         _groups, side, broken = self.got[0]
         self.assertEqual((side, broken), ("out", True))
-        self.assertEqual(self.legacy, [])
 
     def test_ctrl_alt_breaks_only_the_grabbed_key(self):
         from qtpy import QtCore

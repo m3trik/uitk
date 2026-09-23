@@ -23,7 +23,8 @@ class DoubleSpinBox(
     """Custom QDoubleSpinBox with modifier-driven wheel-step adjustment.
 
     See :class:`uitk.widgets.mixins.wheel_step.WheelStepMixin` for the
-    Ctrl / Ctrl+Shift / Alt / Ctrl+Alt modifier contract,
+    Ctrl / Ctrl+Shift / Alt / Ctrl+Alt modifier contract and the position
+    gate that keeps a stretched field from eating a panel's scroll,
     :class:`uitk.widgets.mixins.wheel_step.SpinBoxAdjustingMixin` for the
     ``adjusting`` state a debounced slot (``widget.debounce``) waits on,
     :class:`uitk.widgets.mixins.feedback.FeedbackMixin` for the transient

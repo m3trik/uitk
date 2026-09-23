@@ -932,13 +932,7 @@ class TangentHandleItem(QtWidgets.QGraphicsEllipseItem):
             )
         if not groups:
             return
-        payload = list(groups.items())
-        sq.keys_tangent_dragged.emit(payload, self._side, broken)
-        if not broken and len(payload) == 1 and len(payload[0][1]) == 1:
-            # The deprecated single-key form, for the gesture it always
-            # described and unchanged in it.  Connect ONE of the two.
-            time, dt, dv = payload[0][1][0]
-            sq.key_tangent_dragged.emit(payload[0][0], time, self._side, dt, dv)
+        sq.keys_tangent_dragged.emit(list(groups.items()), self._side, broken)
 
     def contextMenuEvent(self, event):
         # The handle belongs to its key; so does the menu.

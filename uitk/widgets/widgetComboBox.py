@@ -1133,15 +1133,14 @@ class WidgetComboBox(ComboBox):
         if direction is None and not has_icon:
             return
 
-        # Displayed text mirrors AlignedComboBox.CustomStyle.drawControl:
-        # header when no item is current, otherwise current item's text.
+        # The text AlignedComboBox.paintEvent draws: the header when no item
+        # is current, otherwise the current item's text with its display-only
+        # adornments (prefix and " *" suffix), so the arrow follows all of it.
         if self.currentIndex() == -1 and getattr(self, "header_text", None):
             text = self.header_text
             alignment = getattr(self, "header_alignment", QtCore.Qt.AlignLeft)
         else:
-            # Include the display-only suffix (e.g. " *") so the arrow is
-            # positioned after it, matching what CustomStyle.drawControl paints.
-            text = (self.currentText() or "") + getattr(self, "current_text_suffix", "")
+            text = self.format_current_display_text(self.currentText() or "")
             alignment = QtCore.Qt.AlignLeft
 
         if not text:

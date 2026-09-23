@@ -2,9 +2,10 @@
 # coding=utf-8
 """Shared persistence wiring for OptionBox plugins.
 
-Four persisted plugins (ActionOption, PinValuesOption, RecentValuesOption,
-ToggleOption + its DisableOption/FilterOption subclasses) all maintained
-near-duplicate ``settings_key`` resolution + lazy SettingsManager construction.
+The persisted plugins (ActionOption, AffixOption, PinValuesOption,
+RecentValuesOption, ToggleOption + its DisableOption/FilterOption subclasses)
+all maintained near-duplicate ``settings_key`` resolution + lazy
+SettingsManager construction.
 :class:`PersistedOption` is both the mixin a plugin opts into (declare
 ``SETTINGS_APP``, call ``_init_persistence``) and the namespace holding the
 construction helpers, so a plugin whose key resolution differs — PinValuesOption
@@ -38,8 +39,10 @@ class PersistedOption:
         - ``False`` → persistence disabled (consumer owns storage externally)
 
     After :meth:`_init_persistence`, ``self._settings`` is either a
-    :class:`SettingsManager` instance or ``None``. Subclasses guard on truthiness
-    before reading/writing.
+    :class:`SettingsManager` instance or ``None``. :meth:`_store` / :meth:`_forget`
+    are the guarded single-key write and delete every subclass would otherwise
+    hand-roll; a subclass writing several keys at once still guards on
+    truthiness itself, so it can share one ``sync``.
 
     :meth:`settings_for` and :meth:`host_suffix_for` are the class's *namespace*
     role: plugins that can't use this mixin's key resolution still call them, so
@@ -57,6 +60,37 @@ class PersistedOption:
             getattr(self, "wrapped_widget", None),
         )
 
+    def _store(self, key: str, value) -> bool:
+        """Persist *value* under *key* in this option's namespace.
+
+        The write half every plugin repeats -- guard, ``setValue``, ``sync``.
+        It lives here rather than in each plugin because the plugins that save
+        a DEFAULT (``BaseOption.save_default``) all need exactly this and
+        nothing more; what differs between them is only which key and which
+        value, which is the part they should still own.
+
+        Returns:
+            Whether anything was written (``False`` with persistence disabled).
+        """
+        if not self._settings:
+            return False
+        self._settings.setValue(key, value)
+        self._settings.sync()
+        return True
+
+    def _forget(self, key: str) -> bool:
+        """Remove *key* from this option's namespace (:meth:`_store`'s inverse).
+
+        Returns:
+            Whether a value was removed -- ``False`` when the key was unset, so
+            a caller can report "nothing to forget" without a second read.
+        """
+        if not self._settings or self._settings.value(key) is None:
+            return False
+        self._settings.remove(key)
+        self._settings.sync()
+        return True
+
     def _resolve_settings_key(self) -> Optional[str]:
         """Resolve the namespace string used for QSettings.
 
@@ -71,9 +105,10 @@ class PersistedOption:
 
         Known gap in the auto-derived case (2): the key is the bare objectName, so
         two PANELS carrying the same widget name share one stored value within a
-        host. Measured, and logged in ``.claude/BACKLOG.md`` (2026-08-21, uitk) —
-        panel-scoping it moves every existing auto key, so it needs its own pass.
-        Pass an explicit ``settings_key`` to opt out.
+        host. Measured 2026-08-21 (the entry has since aged out of
+        ``.claude/BACKLOG.md`` into the archive, undecided) — panel-scoping it
+        moves every existing auto key, so it needs its own pass. Pass an explicit
+        ``settings_key`` to opt out, as mayatk's Lightmap Baker does.
         """
         if self._settings_key is False:
             return None

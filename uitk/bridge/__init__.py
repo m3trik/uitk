@@ -32,7 +32,6 @@ only the moment the implementation module loads is.
 
 __all__ = [
     "AttributeSpec",
-    "BridgeParam",
     "BridgeSlotsBase",
     "Formatters",
     "KindFactory",
@@ -54,11 +53,6 @@ _LAZY = {
     }.items()
     for name in names
 }
-
-# Friendlier alias for bridge consumers -- the dataclass IS the bridge
-# parameter spec; the older "BridgeParam" name is kept so existing call
-# sites don't have to rename if they don't want to.
-_LAZY["BridgeParam"] = ("spec", "AttributeSpec")
 
 
 def __getattr__(name):

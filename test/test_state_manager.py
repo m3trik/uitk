@@ -544,5 +544,88 @@ class TestSavedDefaults(QtBaseTestCase):
         self.assertIsNotNone(self.store.value("defaults/s000/valueChanged"))
 
 
+class TestSavedDefaultsCoverAFieldsOptions(QtBaseTestCase):
+    """A field is its value AND its switches.
+
+    ``reset_all`` already restores a field's option state; these pin the other
+    half of the grammar -- save-as-default and factory-reset reaching the same
+    options -- so a panel-wide gesture can't answer "saved" for a control it
+    silently skipped.
+    """
+
+    KEY = "test_state_manager_option_default"
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.optionBox.utils import OptionBoxManager
+
+        # `widget.option_box` is patched on by the Switchboard, which no test
+        # here builds.
+        OptionBoxManager.patch_common_widgets()
+        self._dir = tempfile.TemporaryDirectory()
+        self.ini = os.path.join(self._dir.name, "state.ini")
+        self.sm = StateManager(QtCore.QSettings(self.ini, QtCore.QSettings.IniFormat))
+        self.toggle = None
+
+    def tearDown(self):
+        # The toggle persists through its OWN SettingsManager, not the .ini.
+        if self.toggle is not None and self.toggle._settings is not None:
+            self.toggle._settings.clear()
+            self.toggle._settings.sync()
+        self._dir.cleanup()
+        super().tearDown()
+
+    def field(self):
+        """A state-managed spin box wearing a toggle that starts on."""
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        sb = self.track_widget(QtWidgets.QDoubleSpinBox())
+        sb.setObjectName("s000")
+        sb.restore_state = True
+        sb.derived_type = QtWidgets.QDoubleSpinBox
+        sb.default_signals = lambda: "valueChanged"
+        self.sm.capture_default(sb)
+        self.toggle = ToggleOption(
+            wrapped_widget=sb, initial=True, settings_key=self.KEY
+        )
+        sb.option_box.add_option(self.toggle)
+        return sb
+
+    def test_a_saved_default_is_what_a_reset_returns_the_switch_to(self):
+        sb = self.field()
+        self.toggle.set_on(False)
+        self.assertEqual(self.sm.save_defaults([sb]), 2, "the value and the switch")
+
+        self.toggle.set_on(True)
+        self.sm.reset_all()
+        self.assertFalse(self.toggle.is_on, "the reset must land on the SAVED default")
+
+    def test_without_a_save_a_reset_returns_to_the_shipped_state(self):
+        sb = self.field()
+        self.toggle.set_on(False)
+        self.sm.reset_all(widgets=[sb])
+        self.assertTrue(self.toggle.is_on)
+
+    def test_a_factory_reset_forgets_the_switchs_saved_default(self):
+        sb = self.field()
+        self.toggle.set_on(False)
+        self.sm.save_defaults([sb])
+        self.sm.reset_all(widgets=[sb], factory=True)
+        self.assertTrue(self.toggle.is_on, "factory reset lands on initial=True")
+
+        self.toggle.set_on(False)
+        self.sm.reset_all(widgets=[sb])
+        self.assertTrue(self.toggle.is_on, "and the save is gone for later resets")
+
+    def test_suppress_save_blocks_the_switch_too(self):
+        sb = self.field()
+        self.toggle.set_on(False)
+        with self.sm.suppress_save():
+            self.assertEqual(self.sm.save_defaults([sb]), 0)
+        self.toggle.set_on(True)
+        self.sm.reset_all(widgets=[sb])
+        self.assertTrue(self.toggle.is_on)
+
+
 if __name__ == "__main__":
     unittest.main()

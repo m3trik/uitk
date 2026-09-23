@@ -9,10 +9,43 @@ Used by :class:`uitk.widgets.spinBox.SpinBox` and
 - :class:`SpinBoxTextColorMixin` tints the displayed value text.
 - :class:`PrefixColumnMixin` lays the ``prefix`` label and the value out as a
   two-part column that survives a narrow field.
+- :class:`_TextMetrics` answers where a laid-out string's characters land --
+  the one measurement both the prefix column and the wheel's position gate
+  (:class:`uitk.widgets.mixins.wheel_step.WheelStepMixin`) are built on.
 """
 import re
 
 from qtpy import QtCore, QtGui
+
+
+class _TextMetrics:
+    """Where a string's characters land once Qt has laid it out.
+
+    ``QFontMetrics`` measures a tab as a plain advance; the renderer puts what
+    follows it at a tab **stop** (``QTextOption``'s default, 80 px, with no
+    public setter). Anything that has to agree with the renderer about where
+    the value sits -- the prefix column here, the wheel's position gate in
+    ``wheel_step`` -- measures through ``QTextLayout``, and through this one
+    implementation: the layout owns the line's storage, so every reading has
+    to be taken before it goes out of scope rather than by handing a caller a
+    ``QTextLine`` that would outlive it.
+    """
+
+    @staticmethod
+    def x_positions(text: str, font: QtGui.QFont, indices):
+        """``([x, ...], width)`` -- the x of each character *index* in *text*,
+        and the string's natural width, laid out in *font*."""
+        layout = QtGui.QTextLayout(text, font)
+        layout.beginLayout()
+        line = layout.createLine()
+        line.setLineWidth(1e6)  # a single unwrapped line
+        layout.endLayout()
+        positions = []
+        for index in indices:
+            x = line.cursorToX(index)
+            # Some bindings hand back (x, cursorPosition) rather than a float.
+            positions.append(x[0] if isinstance(x, (tuple, list)) else x)
+        return positions, line.naturalTextWidth()
 
 
 # Our color directive is tagged with a ``/*tc*/`` marker so it can be replaced
@@ -287,16 +320,13 @@ class PrefixColumnMixin:
     def _tab_column_x(self, label: str) -> float:
         """X (px) at which the value starts when the label is tab-separated.
 
-        Measured through ``QTextLayout`` rather than assumed, so it tracks the
-        widget's font and whatever tab stop the running Qt defaults to.
+        Measured (see :class:`_TextMetrics`) rather than assumed, so it tracks
+        the widget's font and whatever tab stop the running Qt defaults to.
         """
-        layout = QtGui.QTextLayout(f"{label}{self._COLUMN_SEPARATOR} ", self.font())
-        layout.beginLayout()
-        line = layout.createLine()
-        line.setLineWidth(1e6)
-        layout.endLayout()
-        x = line.cursorToX(len(label) + 1)
-        return x[0] if isinstance(x, (tuple, list)) else x
+        (x,), _ = _TextMetrics.x_positions(
+            f"{label}{self._COLUMN_SEPARATOR} ", self.font(), (len(label) + 1,)
+        )
+        return x
 
     def _widest_value_text(self) -> str:
         """The widest string this box can show for its value, suffix included.

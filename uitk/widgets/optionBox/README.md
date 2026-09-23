@@ -194,16 +194,31 @@ the same box is asked to `restore_default()` (see below), so a lock / disable
 toggle clears along with the value it was modifying. Bypass deliberately does
 not — it is a transient hold that must restore exactly what it suspended.
 
-### Resetting an option's own state — `restore_default()`
-`BaseOption.restore_default()` is a no-op hook every option inherits. Override
-it to declare "this is my default state", and both a sibling `ResetOption` and
-a panel-wide `StateManager.reset_all()` will clear you when the user resets the
-field. `BinaryToggleOption` (so `ToggleOption` / `DisableOption` / the filter
-gate) implements it as `set_on(initial)`; options holding user data — pinned
-and recent values — leave it a no-op and are never cleared.
+### An option's own default — `restore_default()` / `save_default()`
+`BaseOption` ships three no-op hooks every option inherits. Override them to
+join the panel's reset grammar:
+
+| Hook | Called by | Means |
+|:---|:---|:---|
+| `restore_default()` | a sibling `ResetOption`, `StateManager.reset_all()` | "put me back at my default" |
+| `save_default()` | `StateManager.save_defaults()` (Shift+Click) | "my current state IS the default now" |
+| `clear_saved_default()` | `StateManager.clear_saved_defaults()` (factory reset) | "forget that; the constructed default applies again" |
+
+`BinaryToggleOption` (so `ToggleOption` / `DisableOption`; the filter gate, whose
+state its caller persists, opts out) and
+`AffixOption` implement all three: the saved default lives beside the live state
+in the option's own settings, `restore_default()` returns to it where one exists
+and to the constructed default otherwise, and an option with no session state
+opens at it. Options holding user data — pinned and recent values — leave the
+hooks no-ops and are never touched.
+
+A field is its value *and* its switches, so a panel-wide save that skipped the
+options would report "Defaults Saved" for half the controls the user just set.
 
 ```python
 widget.option_box.restore_option_defaults()   # batch, all options on a field
+widget.option_box.save_option_defaults()      # -> how many wrote one
+widget.option_box.clear_option_defaults()     # -> how many were forgotten
 option.sibling_options()                      # the other options on the box
 ```
 

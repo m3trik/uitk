@@ -15,10 +15,12 @@ from uitk.widgets.overflow_indicator import OverflowIndicator
 
 
 class CustomStyle(QtWidgets.QProxyStyle):
-    """Custom proxy style for ComboBox that handles header text display.
+    """Fusion-based proxy style for ComboBox: focus, popup and row-metric fixes.
 
-    This style overrides CE_ComboBoxLabel drawing to display custom header
-    text when no item is selected (currentIndex == -1).
+    The label is NOT this style's to compose: a combo's label paints the
+    option's ``currentText``, and once a stylesheet styles the box Qt draws it
+    without consulting the proxy at all. :meth:`AlignedComboBox.paintEvent`
+    writes the text into the option instead.
 
     Attributes:
         combo_box: Reference to the AlignedComboBox using this style.
@@ -27,30 +29,6 @@ class CustomStyle(QtWidgets.QProxyStyle):
     def __init__(self, style):
         super().__init__(style)
         self.combo_box = None  # Initialize to None, will be set later
-
-    def drawControl(self, element, opt, painter, widget=None):
-        """Override control drawing to handle header text display."""
-        # Only intercept when we know we're painting our own combobox.
-        # Accepting widget=None would risk hijacking CE_ComboBoxLabel
-        # drawing in unrelated contexts (e.g., the popup view paint).
-        if isinstance(widget, AlignedComboBox):
-            if element == QtWidgets.QStyle.CE_ComboBoxLabel:
-                current_index = self.combo_box.currentIndex()
-                if self.combo_box.has_header:
-                    current_index -= 1
-
-                if self.combo_box.header_text and (current_index == -1):
-                    opt.text = self.combo_box.header_text
-                    opt.displayAlignment = self.combo_box.header_alignment
-                elif current_index >= 0:
-                    # Prefix/suffix are display-only (see
-                    # ``format_current_display_text``); item data / itemText and
-                    # the dropdown popup items stay untouched.
-                    opt.text = self.combo_box.format_current_display_text(
-                        self.combo_box.itemText(current_index)
-                    )
-
-        super().drawControl(element, opt, painter, widget)
 
     @staticmethod
     def _strip_focus_state_for_combobox(control, opt):
@@ -113,9 +91,9 @@ class AlignedComboBox(QtWidgets.QComboBox):
     # popup, not a standalone widget.
     designer_spec = {"visible": False}
 
-    # Only ``ComboBox`` ever inserts a header row, but ``CustomStyle.drawControl``
-    # reads this off any AlignedComboBox it paints — so the base has to carry the
-    # default or a bare instance dies on first draw.
+    # Only ``ComboBox`` ever inserts a header row, but ``paintEvent`` reads this
+    # off every AlignedComboBox — so the base has to carry the default or a bare
+    # instance dies on first draw.
     has_header = False
 
     def __init__(self, parent=None):
@@ -192,11 +170,33 @@ class AlignedComboBox(QtWidgets.QComboBox):
         return text
 
     def paintEvent(self, event):
-        """Custom paint event to draw header text when no selection."""
-        # Always call the parent class's paintEvent to ensure all elements are drawn
-        super().paintEvent(event)
+        """Paint the box and its label -- adorned -- then any header text.
 
-        # Then do custom paint for the header text
+        ``QComboBox::paintEvent``, restated so the label is composed here: the
+        label is drawn from the option's ``currentText``, and under a stylesheet
+        Qt draws it without asking the widget's style, so the option is the one
+        place :meth:`format_current_display_text` can reliably reach the pixels.
+        An editable combo paints its line edit instead, and a placeholder takes
+        the placeholder palette, exactly as Qt does.
+        """
+        painter = QtWidgets.QStylePainter(self)
+        painter.setPen(self.palette().color(QtGui.QPalette.Text))
+        opt = QtWidgets.QStyleOptionComboBox()
+        self.initStyleOption(opt)
+        painter.drawComplexControl(QtWidgets.QStyle.CC_ComboBox, opt)
+        index = self.currentIndex()
+        if index < 0 and self.placeholderText():
+            palette = opt.palette
+            palette.setBrush(QtGui.QPalette.ButtonText, palette.placeholderText())
+            opt.palette = palette
+            opt.currentText = self.placeholderText()
+        elif not self.isEditable() and index - (1 if self.has_header else 0) >= 0:
+            # Display-only: itemText / item data and the popup stay untouched.
+            opt.currentText = self.format_current_display_text(opt.currentText)
+        painter.drawControl(QtWidgets.QStyle.CE_ComboBoxLabel, opt)
+        painter.end()
+
+        # Then the header text, over an empty selection.
         if self.header_text and self.currentIndex() == -1:
             painter = QtGui.QPainter(self)
 
@@ -729,8 +729,8 @@ class ComboBox(
     def current_text_suffix(self) -> str:
         """Text appended to the *displayed* current selection only.
 
-        Affects what the collapsed combo paints (via the style's
-        ``drawControl``), not ``itemText`` / item data — so a marker like
+        Affects what the collapsed combo paints (see :meth:`paintEvent`), not
+        ``itemText`` / item data — so a marker like
         ``" *"`` (unsaved edits) can be shown without corrupting the underlying
         name used for load/rename/delete. Setting it repaints.
         """
@@ -748,7 +748,7 @@ class ComboBox(
         """Text prepended to the *displayed* current selection only.
 
         The left-side twin of :attr:`current_text_suffix`: it changes what the
-        collapsed combo paints (via the style's ``drawControl``), not
+        collapsed combo paints (see :meth:`paintEvent`), not
         ``itemText`` / item data or the dropdown popup items. Lets a label such
         as ``"Target UI:  "`` ride on the current item in place of a separate
         ``QLabel``, keeping the popup clean. Setting it repaints.

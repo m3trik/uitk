@@ -1226,6 +1226,64 @@ class TestSwitchboardLinkSpinboxes(QtBaseTestCase):
             "reset_all also clears the locks",
         )
 
+    def _reset_scenario(self, **link_kwargs):
+        """Three linked fields, each moved off its 0.0 default by hand."""
+        self.sb.link_spinboxes(self.ui, "s000-2", **link_kwargs)
+        for w in self.boxes:
+            w.restore_state = True
+            self.ui.state.capture_default(w)  # default = 0.0 for all three
+            self._lock(w, False)
+        for w, value in zip(self.boxes, (5.0, 10.0, -3.0)):
+            w.setValue(value)
+        for w in self.boxes:
+            self._lock(w)
+
+    def test_reset_all_lands_on_the_defaults_when_the_locks_default_on(self):
+        """``initial=True``: the option pass turns every lock back ON before
+        the values land, so each reset field shoved its delta into its locked
+        siblings -- (8, 13, 0), the very result the pass order exists to stop.
+        A reset is applied FOR the user, not by them (``state.is_applying``)."""
+        self._reset_scenario(settings_key=False, initial=True)
+
+        self.ui.state.reset_all()
+
+        self.assertEqual([w.value() for w in self.boxes], [0.0, 0.0, 0.0])
+        self.assertTrue(all(self._toggle(w).is_on for w in self.boxes))
+
+    def test_reset_all_lands_on_the_defaults_when_a_lock_default_was_saved(self):
+        """Save as Defaults now reaches a field's switches: with every lock
+        saved ON (the fields at 0.0), a later Reset re-locked the fields
+        before applying their values."""
+        import uuid
+
+        self.sb.link_spinboxes(
+            self.ui, "s000-2", settings_key=f"test_lock_default_{uuid.uuid4().hex}"
+        )
+        for w in self.boxes:
+            w.restore_state = True
+            self.ui.state.capture_default(w)
+            self._lock(w)
+        self.ui.state.save_defaults()  # 0.0 everywhere, every lock ON
+        self.addCleanup(self.ui.state.clear_saved_defaults)
+        for w in self.boxes:
+            self._lock(w, False)
+        for w, value in zip(self.boxes, (5.0, 10.0, -3.0)):
+            w.setValue(value)
+        for w in self.boxes:
+            self._lock(w)
+
+        self.ui.state.reset_all()
+
+        self.assertEqual([w.value() for w in self.boxes], [0.0, 0.0, 0.0])
+        self.assertTrue(all(self._toggle(w).is_on for w in self.boxes))
+
+    def test_a_single_field_reset_does_not_move_its_locked_siblings(self):
+        self._reset_scenario(settings_key=False)
+
+        self.ui.state.reset(self.boxes[0])
+
+        self.assertEqual([w.value() for w in self.boxes], [0.0, 10.0, -3.0])
+
     def test_excluded_field_keeps_its_lock(self):
         """``exclude_from_reset`` opts a field out of the whole reset — its
         lock is option state, so it is left alone too."""
@@ -2622,16 +2680,18 @@ class TestDialogsYieldToBusyCursor(QtBaseTestCase):
         self.assertEqual(written["records"], {"a": [1, 2]})
         self.assertIsInstance(written["when"], str)  # unencodable -> its str
 
-    def test_deprecated_stack_aliases_delegate_and_warn(self):
-        """One-release aliases for the moved stack primitives."""
-        app = QtWidgets.QApplication.instance()
-        app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
-        with self.assertWarns(DeprecationWarning):
-            saved = SwitchboardUtilsMixin.pop_override_cursor_stack(app)
-        self.assertIsNone(app.overrideCursor())
-        with self.assertWarns(DeprecationWarning):
-            SwitchboardUtilsMixin.push_override_cursor_stack(app, saved)
-        self.assertEqual(app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
+    def test_retired_cursor_aliases_stay_removed(self):
+        """The 2026-09-04 moves to ``CursorManager`` shipped their aliases in
+        eleven releases; they were retired 2026-09-21 and must not creep back
+        -- the stack primitives are ``CursorManager.pop_stack`` / ``push_stack``
+        and the guard is ``uitk.OverrideCursorGuard``."""
+        import uitk.switchboard as switchboard_pkg
+
+        for name in ("pop_override_cursor_stack", "push_override_cursor_stack"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(SwitchboardUtilsMixin, name))
+        self.assertNotIn("OverrideCursorGuard", switchboard_pkg.__all__)
+        self.assertFalse(hasattr(switchboard_pkg, "OverrideCursorGuard"))
 
     def test_busy_cursor_reaches_the_scope_through_the_switchboard(self):
         app = QtWidgets.QApplication.instance()
