@@ -17,15 +17,12 @@ Switchboard class and all its dependencies):
     SlotWrapper   — slot invocation wrapper
     Shortcut      — slot keyboard-shortcut decorator
     Cancelable    — slot decorator enabling Esc-cancel + warning dialog
-    OverrideCursorGuard — compatibility alias (2026-09): the class lives in
-                          ``uitk.managers.cursor_manager`` and is published
-                          from the ``uitk`` root; this name goes in the
-                          release after
 
 Application override-cursor policy — the stack primitives, the busy scope
-with its modal suspension, the drain — lives in
-``uitk.managers.cursor_manager.CursorManager``. The slot dispatcher and the
-switchboard dialogs consume it; they do not own it.
+with its modal suspension, the drain, ``OverrideCursorGuard`` — lives in
+``uitk.managers.cursor_manager`` and is published from the ``uitk`` root.
+The slot dispatcher and the switchboard dialogs consume it; they do not own
+it.
 """
 
 __all__ = [
@@ -34,7 +31,6 @@ __all__ = [
     "SlotWrapper",
     "Shortcut",
     "Cancelable",
-    "OverrideCursorGuard",
 ]
 
 # Map public symbol -> (submodule suffix, attribute name). Resolved on
@@ -47,7 +43,6 @@ _LAZY = {
     "SlotWrapper": ("slots", "SlotWrapper"),
     "Shortcut": ("shortcuts", "Shortcut"),
     "Cancelable": ("slots", "Cancelable"),
-    "OverrideCursorGuard": ("utils", "OverrideCursorGuard"),
 }
 
 

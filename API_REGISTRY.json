@@ -3676,7 +3676,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Apply the given value to the widget using ValueManager.",
-              "line": 138,
+              "line": 139,
               "deprecated": false
             },
             {
@@ -3685,7 +3685,16 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Context manager that temporarily suppresses QSettings writes.",
-              "line": 273,
+              "line": 274,
+              "deprecated": false
+            },
+            {
+              "name": "is_applying",
+              "qualname": "StateManager.is_applying",
+              "kind": "property",
+              "signature": "(self) -> bool",
+              "summary": "True while values are applied FOR the user rather than BY them.",
+              "line": 301,
               "deprecated": false
             },
             {
@@ -3694,7 +3703,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any = None) -> None",
               "summary": "Save the current value of the widget to QSettings.",
-              "line": 314,
+              "line": 337,
               "deprecated": false
             },
             {
@@ -3703,7 +3712,7 @@
               "kind": "method",
               "signature": "(self, key: str, value: Any) -> bool",
               "summary": "Serialize and persist ``value`` at an explicit state ``key``.",
-              "line": 348,
+              "line": 371,
               "deprecated": false
             },
             {
@@ -3712,7 +3721,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Load the saved value from QSettings and apply it to the widget.",
-              "line": 420,
+              "line": 443,
               "deprecated": false
             },
             {
@@ -3721,7 +3730,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget) -> Optional['StateManager']",
               "summary": "The state manager that owns *widget*, or ``None``.",
-              "line": 439,
+              "line": 462,
               "deprecated": false
             },
             {
@@ -3730,7 +3739,7 @@
               "kind": "method",
               "signature": "(self, block_signals: bool = False, widgets=None, factory: bool = False) -> None",
               "summary": "Reset widgets to their defaults (see :meth:`default_for`).",
-              "line": 491,
+              "line": 514,
               "deprecated": false
             },
             {
@@ -3739,7 +3748,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Reset a widget to its default (see :meth:`default_for`).",
-              "line": 545,
+              "line": 574,
               "deprecated": false
             },
             {
@@ -3748,7 +3757,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Removes the stored state for the widget from QSettings.",
-              "line": 592,
+              "line": 635,
               "deprecated": false
             },
             {
@@ -3757,7 +3766,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> bool",
               "summary": "Check if a widget has a stored default value.",
-              "line": 599,
+              "line": 642,
               "deprecated": false
             },
             {
@@ -3766,7 +3775,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> Any",
               "summary": "The value a reset puts *widget* at.",
-              "line": 609,
+              "line": 652,
               "deprecated": false
             },
             {
@@ -3774,8 +3783,8 @@
               "qualname": "StateManager.save_defaults",
               "kind": "method",
               "signature": "(self, widgets=None) -> int",
-              "summary": "Make the widgets' current values their defaults (persisted).",
-              "line": 623,
+              "summary": "Make the widgets' current values — and their option state — their defaults.",
+              "line": 666,
               "deprecated": false
             },
             {
@@ -3784,7 +3793,7 @@
               "kind": "method",
               "signature": "(self, widgets=None) -> int",
               "summary": "Forget saved defaults, so the widgets' factory defaults apply again.",
-              "line": 641,
+              "line": 693,
               "deprecated": false
             },
             {
@@ -3793,7 +3802,7 @@
               "kind": "method",
               "signature": "(self, widgets=None) -> bool",
               "summary": "Whether any of the widgets (default: all) has a saved default.",
-              "line": 662,
+              "line": 719,
               "deprecated": false
             },
             {
@@ -3802,7 +3811,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Capture the current widget value as its default.",
-              "line": 711,
+              "line": 768,
               "deprecated": false
             },
             {
@@ -3811,7 +3820,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Explicitly set a widget's default value.",
-              "line": 744,
+              "line": 801,
               "deprecated": false
             },
             {
@@ -3820,7 +3829,7 @@
               "kind": "method",
               "signature": "(self, key: str, value: Any) -> None",
               "summary": "Persist an arbitrary key/value pair through QSettings.",
-              "line": 762,
+              "line": 819,
               "deprecated": false
             },
             {
@@ -3829,7 +3838,7 @@
               "kind": "method",
               "signature": "(self, key: str, default: Any = None) -> Any",
               "summary": "Retrieve a previously stored custom key/value pair.",
-              "line": 779,
+              "line": 836,
               "deprecated": false
             },
             {
@@ -3838,7 +3847,7 @@
               "kind": "method",
               "signature": "(self, key: str) -> None",
               "summary": "Remove a single custom key from storage.",
-              "line": 794,
+              "line": 851,
               "deprecated": false
             }
           ]
@@ -4693,7 +4702,7 @@
         {
           "name": "SwitchboardUtilsMixin",
           "summary": "Utility methods for widget positioning, centering, and screen geometry.",
-          "line": 31,
+          "line": 25,
           "bases": [],
           "members": [
             {
@@ -4702,25 +4711,7 @@
               "kind": "staticmethod",
               "signature": "(shape=QtCore.Qt.WaitCursor)",
               "summary": "Application busy cursor for the duration of a ``with`` block.",
-              "line": 49,
-              "deprecated": false
-            },
-            {
-              "name": "pop_override_cursor_stack",
-              "qualname": "SwitchboardUtilsMixin.pop_override_cursor_stack",
-              "kind": "staticmethod",
-              "signature": "(app)",
-              "summary": "Deprecated alias of :meth:`CursorManager.pop_stack` (2026-09;",
-              "line": 62,
-              "deprecated": false
-            },
-            {
-              "name": "push_override_cursor_stack",
-              "qualname": "SwitchboardUtilsMixin.push_override_cursor_stack",
-              "kind": "staticmethod",
-              "signature": "(app, saved)",
-              "summary": "Deprecated alias of :meth:`CursorManager.push_stack` (2026-09;",
-              "line": 74,
+              "line": 43,
               "deprecated": false
             },
             {
@@ -4729,7 +4720,7 @@
               "kind": "staticmethod",
               "signature": "(widget)",
               "summary": "Get the relative position of the cursor with respect to the center of a given widget.",
-              "line": 86,
+              "line": 56,
               "deprecated": false
             },
             {
@@ -4738,7 +4729,7 @@
               "kind": "staticmethod",
               "signature": "(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)",
               "summary": "Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor…",
-              "line": 98,
+              "line": 68,
               "deprecated": false
             },
             {
@@ -4747,7 +4738,7 @@
               "kind": "classmethod",
               "signature": "(cls, name_string)",
               "summary": "Unpacks a comma-separated string of names and returns a list of individual names.",
-              "line": 178,
+              "line": 148,
               "deprecated": false
             },
             {
@@ -4756,7 +4747,7 @@
               "kind": "method",
               "signature": "(self, ui, name_string)",
               "summary": "Get a list of corresponding widgets from a single shorthand formatted string.",
-              "line": 235,
+              "line": 205,
               "deprecated": false
             },
             {
@@ -4765,7 +4756,7 @@
               "kind": "method",
               "signature": "(self, clss, name_string)",
               "summary": "Get a list of corresponding methods from a single shorthand formatted string.",
-              "line": 271,
+              "line": 241,
               "deprecated": false
             },
             {
@@ -4774,7 +4765,7 @@
               "kind": "method",
               "signature": "(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]",
               "summary": "Create button groups for a set of widgets.",
-              "line": 296,
+              "line": 266,
               "deprecated": false
             },
             {
@@ -4783,7 +4774,7 @@
               "kind": "method",
               "signature": "(self, ui, trigger=None, signal=None, apply_now=True, **kwargs)",
               "summary": "Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…",
-              "line": 532,
+              "line": 502,
               "deprecated": false
             },
             {
@@ -4792,7 +4783,7 @@
               "kind": "method",
               "signature": "(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)",
               "summary": "Keep *targets* enabled exactly while *trigger*'s value satisfies",
-              "line": 857,
+              "line": 827,
               "deprecated": false
             },
             {
@@ -4801,7 +4792,7 @@
               "kind": "method",
               "signature": "(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)",
               "summary": "Keep *targets* on screen exactly while *trigger*'s value satisfies",
-              "line": 938,
+              "line": 908,
               "deprecated": false
             },
             {
@@ -4810,7 +4801,7 @@
               "kind": "method",
               "signature": "(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], formatter: Callable[..., str], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]",
               "summary": "Keep *targets*' text derived from *sources* — a self-labelling widget,",
-              "line": 1105,
+              "line": 1075,
               "deprecated": false
             },
             {
@@ -4819,7 +4810,7 @@
               "kind": "method",
               "signature": "(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], resolver: Callable[..., Any], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]",
               "summary": "Keep *targets*' VALUE derived from *sources* — a control that follows",
-              "line": 1235,
+              "line": 1205,
               "deprecated": false
             },
             {
@@ -4828,7 +4819,7 @@
               "kind": "method",
               "signature": "(self, ui) -> None",
               "summary": "Re-apply every declarative rule on *ui* — :meth:`enable_when`'s,",
-              "line": 1383,
+              "line": 1353,
               "deprecated": false
             },
             {
@@ -4837,7 +4828,7 @@
               "kind": "method",
               "signature": "(self, ui, widgets, signals, slots)",
               "summary": "Connect multiple signals to multiple slots at once.",
-              "line": 1392,
+              "line": 1362,
               "deprecated": false
             },
             {
@@ -4846,7 +4837,7 @@
               "kind": "method",
               "signature": "(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), **set_reset_kwargs)",
               "summary": "Give each matching value widget a per-field *reset-to-default* button.",
-              "line": 1445,
+              "line": 1415,
               "deprecated": false
             },
             {
@@ -4855,7 +4846,7 @@
               "kind": "method",
               "signature": "(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), icon: str = 'lock', icon_off: str = 'unlock', tooltip_on: str = 'Linked. Changing this shifts the other linked fields by the same amount. Click to unlink.', tooltip_off: str = 'Unlinked. Click to link this field so it moves with the others.', initial: bool = False, active_color: str = _LOCK_ACTIVE_COLOR, disabled_color: str = _LOCK_INACTIVE_COLOR, **set_toggle_kwargs)",
               "summary": "Give each spin box a *lock* toggle that links locked boxes by an equal delta.",
-              "line": 1542,
+              "line": 1512,
               "deprecated": false
             },
             {
@@ -4864,7 +4855,7 @@
               "kind": "method",
               "signature": "(self, checkboxes, axis, ui=None)",
               "summary": "Set the given checkbox's check states to reflect the specified axis.",
-              "line": 1676,
+              "line": 1645,
               "deprecated": false
             },
             {
@@ -4873,7 +4864,7 @@
               "kind": "method",
               "signature": "(self, checkboxes, ui=None, return_type='str')",
               "summary": "Get the intended axis value as a string or integer by reading the multiple checkbox's check states.",
-              "line": 1704,
+              "line": 1673,
               "deprecated": false
             },
             {
@@ -4882,7 +4873,7 @@
               "kind": "method",
               "signature": "(self, ui, unknown_tags) -> None",
               "summary": "Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted",
-              "line": 1747,
+              "line": 1716,
               "deprecated": false
             },
             {
@@ -4891,7 +4882,7 @@
               "kind": "staticmethod",
               "signature": "(value)",
               "summary": "Invert a numerical or boolean value if the alt key is pressed.",
-              "line": 1780,
+              "line": 1749,
               "deprecated": false
             },
             {
@@ -4900,7 +4891,7 @@
               "kind": "method",
               "signature": "(self, ui=None, total: Optional[int] = None, text: str = '', busy: Optional[bool] = None)",
               "summary": "Context manager for cooperative progress / task feedback.",
-              "line": 1805,
+              "line": 1774,
               "deprecated": false
             },
             {
@@ -4909,7 +4900,7 @@
               "kind": "staticmethod",
               "signature": "(update: Callable[..., bool]) -> Callable[..., bool]",
               "summary": "Adapt the footer ``update`` callable to the shape downstream",
-              "line": 1874,
+              "line": 1843,
               "deprecated": false
             },
             {
@@ -4918,7 +4909,7 @@
               "kind": "method",
               "signature": "(self, question, yes='Yes', no='No') -> bool",
               "summary": "Ask *question* in a modal :meth:`message_box` and answer True when",
-              "line": 1937,
+              "line": 1906,
               "deprecated": false
             },
             {
@@ -4927,7 +4918,7 @@
               "kind": "method",
               "signature": "(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)",
               "summary": "Spawns a message box with the given text and optionally sets buttons.",
-              "line": 1945,
+              "line": 1914,
               "deprecated": false
             },
             {
@@ -4936,7 +4927,7 @@
               "kind": "method",
               "signature": "(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None)",
               "summary": "Spawn a scrollable text-viewer window with optional buttons.",
-              "line": 1991,
+              "line": 1960,
               "deprecated": false
             },
             {
@@ -4945,7 +4936,7 @@
               "kind": "method",
               "signature": "(self, data: Any, *, title: str = '', save_path: Optional[str] = '', empty_message: str = 'Nothing to show.', size=(720, 560), parent=None)",
               "summary": "Show structured *data* as colour-coded JSON in a text viewer.",
-              "line": 2078,
+              "line": 2047,
               "deprecated": false
             },
             {
@@ -4954,7 +4945,7 @@
               "kind": "method",
               "signature": "(self, data: Any, title: str = '', path: str = '', parent=None) -> Optional[str]",
               "summary": "Write *data* as indented JSON to a ``.json`` file the user picks.",
-              "line": 2144,
+              "line": 2113,
               "deprecated": false
             },
             {
@@ -4963,7 +4954,7 @@
               "kind": "staticmethod",
               "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]",
               "summary": "Open a file dialog to select files of the given type(s) using qtpy.",
-              "line": 2173,
+              "line": 2142,
               "deprecated": false
             },
             {
@@ -4972,7 +4963,7 @@
               "kind": "staticmethod",
               "signature": "(title: str = 'Select a directory', start_dir: str = '/home') -> str",
               "summary": "Open a directory dialog to select a directory using qtpy.",
-              "line": 2214,
+              "line": 2183,
               "deprecated": false
             },
             {
@@ -4981,7 +4972,7 @@
               "kind": "staticmethod",
               "signature": "(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]",
               "summary": "Open a save-file dialog to choose a destination path.",
-              "line": 2236,
+              "line": 2205,
               "deprecated": false
             },
             {
@@ -4990,7 +4981,7 @@
               "kind": "staticmethod",
               "signature": "(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str",
               "summary": "Show a modal text-input dialog and return the entered string.",
-              "line": 2274,
+              "line": 2243,
               "deprecated": false
             },
             {
@@ -4999,7 +4990,7 @@
               "kind": "staticmethod",
               "signature": "(items, title: str = 'Select', label: str = 'Select item(s):', parent: QtWidgets.QWidget = None, multi: bool = True, selected=None) -> list",
               "summary": "Show a modal list picker and return the chosen entries.",
-              "line": 2369,
+              "line": 2338,
               "deprecated": false
             },
             {
@@ -5008,7 +4999,7 @@
               "kind": "staticmethod",
               "signature": "(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', validate: Callable = None, message: str = '') -> Optional[dict]",
               "summary": "Show a modal form of labelled rows and return ``{name: value}``.",
-              "line": 2444,
+              "line": 2413,
               "deprecated": false
             },
             {
@@ -5017,7 +5008,7 @@
               "kind": "staticmethod",
               "signature": "(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', cancel_text: str = None, validate: Callable = None, message: str = '', help_text: str = '', on_run: Callable = None, apply_text: str = 'Apply', output: bool = True, min_width: int = 560, settings=None, settings_key: str = 'window_geometry')",
               "summary": "Build a :class:`~uitk.widgets.formPanel.FormPanel` — the modeless twin.",
-              "line": 2525,
+              "line": 2494,
               "deprecated": false
             },
             {
@@ -5026,7 +5017,7 @@
               "kind": "staticmethod",
               "signature": "(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)",
               "summary": "Simulate a key press event for the given UI and optionally release the keyboard.",
-              "line": 2615,
+              "line": 2584,
               "deprecated": false
             },
             {
@@ -5035,7 +5026,7 @@
               "kind": "method",
               "signature": "(self, func: callable, *args, ms: int = 300, **kwargs) -> None",
               "summary": "Defer execution of any callable with arguments after a delay.",
-              "line": 2638,
+              "line": 2607,
               "deprecated": false
             },
             {
@@ -5044,7 +5035,7 @@
               "kind": "method",
               "signature": "(self, obj=None, clear=False)",
               "summary": "Protect the given object(s) from garbage collection by holding a strong reference.",
-              "line": 2678,
+              "line": 2647,
               "deprecated": false
             },
             {
@@ -5053,7 +5044,7 @@
               "kind": "staticmethod",
               "signature": "(content_fn, parent=None, **kwargs)",
               "summary": "Show a themed modal Menu popup, block until dismissed.",
-              "line": 2711,
+              "line": 2680,
               "deprecated": false
             }
           ]
@@ -5921,28 +5912,19 @@
       "classes": [
         {
           "name": "CustomStyle",
-          "summary": "Custom proxy style for ComboBox that handles header text display.",
+          "summary": "Fusion-based proxy style for ComboBox: focus, popup and row-metric fixes.",
           "line": 17,
           "bases": [
             "QtWidgets.QProxyStyle"
           ],
           "members": [
             {
-              "name": "drawControl",
-              "qualname": "CustomStyle.drawControl",
-              "kind": "method",
-              "signature": "(self, element, opt, painter, widget=None)",
-              "summary": "Override control drawing to handle header text display.",
-              "line": 31,
-              "deprecated": false
-            },
-            {
               "name": "drawComplexControl",
               "qualname": "CustomStyle.drawComplexControl",
               "kind": "method",
               "signature": "(self, control, opt, painter, widget=None)",
               "summary": "",
-              "line": 72,
+              "line": 50,
               "deprecated": false
             },
             {
@@ -5951,7 +5933,7 @@
               "kind": "method",
               "signature": "(self, hint, option=None, widget=None, returnData=None)",
               "summary": "",
-              "line": 76,
+              "line": 54,
               "deprecated": false
             },
             {
@@ -5960,7 +5942,7 @@
               "kind": "method",
               "signature": "(self, metric, option=None, widget=None)",
               "summary": "",
-              "line": 86,
+              "line": 64,
               "deprecated": false
             }
           ]
@@ -5968,7 +5950,7 @@
         {
           "name": "AlignedComboBox",
           "summary": "ComboBox with header text and alignment support.",
-          "line": 97,
+          "line": 75,
           "bases": [
             "QtWidgets.QComboBox"
           ],
@@ -5979,7 +5961,7 @@
               "kind": "method",
               "signature": "(self, text)",
               "summary": "Set the header text displayed when no item is selected.",
-              "line": 137,
+              "line": 115,
               "deprecated": false
             },
             {
@@ -5988,7 +5970,7 @@
               "kind": "method",
               "signature": "(self, alignment)",
               "summary": "Set the alignment for header text.",
-              "line": 146,
+              "line": 124,
               "deprecated": false
             },
             {
@@ -5997,7 +5979,7 @@
               "kind": "method",
               "signature": "(self, property_name)",
               "summary": "Extract a numeric property value from the widget's stylesheet.",
-              "line": 162,
+              "line": 140,
               "deprecated": false
             },
             {
@@ -6006,7 +5988,7 @@
               "kind": "method",
               "signature": "(self, text: str) -> str",
               "summary": "Compose the text painted for the *current* selection only.",
-              "line": 177,
+              "line": 155,
               "deprecated": false
             },
             {
@@ -6014,8 +5996,8 @@
               "qualname": "AlignedComboBox.paintEvent",
               "kind": "method",
               "signature": "(self, event)",
-              "summary": "Custom paint event to draw header text when no selection.",
-              "line": 194,
+              "summary": "Paint the box and its label -- adorned -- then any header text.",
+              "line": 172,
               "deprecated": false
             }
           ]
@@ -6871,7 +6853,7 @@
               "kind": "method",
               "signature": "(self, value: float) -> str",
               "summary": "Format the text displayed in the spin box, removing trailing zeros and unnecessary decimal points.",
-              "line": 47,
+              "line": 48,
               "deprecated": false
             }
           ]
@@ -12333,7 +12315,7 @@
         {
           "name": "SpinBoxTextColorMixin",
           "summary": "Tint a spin box's displayed value text.",
-          "line": 24,
+          "line": 57,
           "bases": [],
           "members": [
             {
@@ -12342,7 +12324,7 @@
               "kind": "method",
               "signature": "(self, color) -> None",
               "summary": "Tint the displayed value text.",
-              "line": 36,
+              "line": 69,
               "deprecated": false
             },
             {
@@ -12351,7 +12333,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "The current value-text color override, or ``None`` if unset.",
-              "line": 49,
+              "line": 82,
               "deprecated": false
             }
           ]
@@ -12359,7 +12341,7 @@
         {
           "name": "PrefixColumnMixin",
           "summary": "Lay a spin box's ``prefix`` label and its value out as a column.",
-          "line": 54,
+          "line": 87,
           "bases": [],
           "members": [
             {
@@ -12368,7 +12350,7 @@
               "kind": "method",
               "signature": "(self, prefix: str) -> None",
               "summary": "Set the label shown ahead of the value (separator managed here).",
-              "line": 102,
+              "line": 135,
               "deprecated": false
             },
             {
@@ -12377,7 +12359,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "The prefix as set, without the separator (or elision) applied here.",
-              "line": 109,
+              "line": 142,
               "deprecated": false
             },
             {
@@ -12386,7 +12368,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 119,
+              "line": 152,
               "deprecated": false
             },
             {
@@ -12395,7 +12377,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 126,
+              "line": 159,
               "deprecated": false
             },
             {
@@ -12404,7 +12386,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 133,
+              "line": 166,
               "deprecated": false
             },
             {
@@ -12413,7 +12395,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 138,
+              "line": 171,
               "deprecated": false
             },
             {
@@ -12422,7 +12404,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 141,
+              "line": 174,
               "deprecated": false
             }
           ]
@@ -12917,7 +12899,7 @@
         {
           "name": "WheelStepMixin",
           "summary": "Mixin: modifier-driven wheel handling for ``QAbstractSpinBox`` subclasses.",
-          "line": 43,
+          "line": 56,
           "bases": [],
           "members": [
             {
@@ -12926,7 +12908,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QWheelEvent) -> None",
               "summary": "",
-              "line": 57,
+              "line": 98,
               "deprecated": false
             }
           ]
@@ -12934,7 +12916,7 @@
         {
           "name": "SpinBoxAdjustingMixin",
           "summary": "Mixin: the *adjusting* state of a ``QAbstractSpinBox`` subclass.",
-          "line": 119,
+          "line": 287,
           "bases": [],
           "members": [
             {
@@ -12943,7 +12925,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "True while a mouse button is held on the box or a typed edit is",
-              "line": 135,
+              "line": 303,
               "deprecated": false
             },
             {
@@ -12952,7 +12934,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 148,
+              "line": 316,
               "deprecated": false
             },
             {
@@ -12961,7 +12943,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 152,
+              "line": 320,
               "deprecated": false
             },
             {
@@ -12970,7 +12952,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 156,
+              "line": 324,
               "deprecated": false
             },
             {
@@ -12979,7 +12961,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 161,
+              "line": 329,
               "deprecated": false
             }
           ]
@@ -13206,8 +13188,26 @@
               "qualname": "BaseOption.restore_default",
               "kind": "method",
               "signature": "(self) -> None",
-              "summary": "Return this option's *own* state to its as-constructed default.",
+              "summary": "Return this option's *own* state to its default.",
               "line": 132,
+              "deprecated": false
+            },
+            {
+              "name": "save_default",
+              "qualname": "BaseOption.save_default",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "Make this option's current state the one :meth:`restore_default` returns to.",
+              "line": 147,
+              "deprecated": false
+            },
+            {
+              "name": "clear_saved_default",
+              "qualname": "BaseOption.clear_saved_default",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "Forget a :meth:`save_default`, so the as-constructed default applies again.",
+              "line": 162,
               "deprecated": false
             },
             {
@@ -13216,7 +13216,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Re-pull anything this option DERIVES from a source outside itself.",
-              "line": 144,
+              "line": 174,
               "deprecated": false
             },
             {
@@ -13225,7 +13225,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Set or update the wrapped widget.",
-              "line": 156,
+              "line": 186,
               "deprecated": false
             }
           ]
@@ -13233,7 +13233,7 @@
         {
           "name": "ButtonOption",
           "summary": "Base class for button-based options.",
-          "line": 165,
+          "line": 195,
           "bases": [
             "BaseOption"
           ],
@@ -13244,7 +13244,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Create a QPushButton widget.",
-              "line": 216,
+              "line": 246,
               "deprecated": false
             },
             {
@@ -13253,7 +13253,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Setup button connections.",
-              "line": 264,
+              "line": 294,
               "deprecated": false
             },
             {
@@ -13262,7 +13262,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Block the next click event (used when popup closes to prevent immediate reopen).",
-              "line": 281,
+              "line": 311,
               "deprecated": false
             },
             {
@@ -13271,7 +13271,7 @@
               "kind": "method",
               "signature": "(self, checked)",
               "summary": "Set the checked state of the button.",
-              "line": 296,
+              "line": 326,
               "deprecated": false
             }
           ]
@@ -13279,7 +13279,7 @@
         {
           "name": "GatingMixin",
           "summary": "Reusable *gating button* capability for option plugins.",
-          "line": 380,
+          "line": 410,
           "bases": [],
           "members": []
         }
@@ -13294,7 +13294,7 @@
         {
           "name": "PersistedOption",
           "summary": "Mixin that adds ``settings_key`` resolution + lazy SettingsManager.",
-          "line": 28,
+          "line": 29,
           "bases": [],
           "members": [
             {
@@ -13303,7 +13303,7 @@
               "kind": "staticmethod",
               "signature": "(widget) -> str",
               "summary": "Host-context suffix (``\"_maya\"`` / ``\"_blender\"`` / ``\"\"``) for *widget*.",
-              "line": 89,
+              "line": 124,
               "deprecated": false
             },
             {
@@ -13312,7 +13312,7 @@
               "kind": "staticmethod",
               "signature": "(app: str, key: str, widget=None) -> Optional['SettingsManager']",
               "summary": "A :class:`SettingsManager` for an option plugin's persisted state.",
-              "line": 116,
+              "line": 151,
               "deprecated": false
             }
           ]
@@ -13375,7 +13375,7 @@
         {
           "name": "MenuOption",
           "summary": "A menu action option specifically for showing menus.",
-          "line": 213,
+          "line": 210,
           "bases": [
             "ActionOption"
           ],
@@ -13386,7 +13386,7 @@
               "kind": "method",
               "signature": "(self, menu)",
               "summary": "Set or update the menu.",
-              "line": 251,
+              "line": 248,
               "deprecated": false
             },
             {
@@ -13395,7 +13395,7 @@
               "kind": "method",
               "signature": "(self, widget)",
               "summary": "Update wrapped widget and reparent menu if needed.",
-              "line": 259,
+              "line": 256,
               "deprecated": false
             }
           ]
@@ -13458,7 +13458,7 @@
               "kind": "property",
               "signature": "(self) -> List[str]",
               "summary": "The mode keys in cycle order.",
-              "line": 369,
+              "line": 371,
               "deprecated": false
             },
             {
@@ -13467,7 +13467,7 @@
               "kind": "method",
               "signature": "(self, key: Optional[str] = None) -> AffixMode",
               "summary": "The :class:`AffixMode` for *key* (the current mode by default).",
-              "line": 373,
+              "line": 375,
               "deprecated": false
             },
             {
@@ -13476,7 +13476,7 @@
               "kind": "classmethod",
               "signature": "(cls, widget) -> bool",
               "summary": "Attach only to text-bearing hosts (``resolve`` reads ``text()``).",
-              "line": 382,
+              "line": 384,
               "deprecated": false
             },
             {
@@ -13485,7 +13485,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Create the standard option button, seeded with the current mode's glyph.",
-              "line": 390,
+              "line": 392,
               "deprecated": false
             },
             {
@@ -13494,7 +13494,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Wire the cycle click, show the tooltip, apply the mode's field effects.",
-              "line": 396,
+              "line": 398,
               "deprecated": false
             },
             {
@@ -13503,7 +13503,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Current mode key.",
-              "line": 409,
+              "line": 411,
               "deprecated": false
             },
             {
@@ -13512,7 +13512,7 @@
               "kind": "method",
               "signature": "(self, mode: str) -> None",
               "summary": "Select *mode* if it is one of :attr:`modes` (else no-op).",
-              "line": 417,
+              "line": 419,
               "deprecated": false
             },
             {
@@ -13520,8 +13520,26 @@
               "qualname": "AffixOption.restore_default",
               "kind": "method",
               "signature": "(self) -> None",
-              "summary": "Return the picker to its constructed ``default`` mode.",
-              "line": 434,
+              "summary": "Return the picker to its default mode.",
+              "line": 436,
+              "deprecated": false
+            },
+            {
+              "name": "save_default",
+              "qualname": "AffixOption.save_default",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "Make the current mode the one :meth:`restore_default` returns to.",
+              "line": 449,
+              "deprecated": false
+            },
+            {
+              "name": "clear_saved_default",
+              "qualname": "AffixOption.clear_saved_default",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "Forget a :meth:`save_default`;",
+              "line": 453,
               "deprecated": false
             },
             {
@@ -13530,7 +13548,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Re-pull a text-supplying mode's value into the field.",
-              "line": 444,
+              "line": 464,
               "deprecated": false
             },
             {
@@ -13539,7 +13557,7 @@
               "kind": "method",
               "signature": "(self, text: Optional[str] = None, *, default: str = 'prefix') -> Tuple[str, str]",
               "summary": "Return ``(prefix, suffix)`` for *text* under the current mode.",
-              "line": 453,
+              "line": 473,
               "deprecated": false
             }
           ]
@@ -14046,7 +14064,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Create the pin button widget.",
-              "line": 466,
+              "line": 471,
               "deprecated": false
             },
             {
@@ -14055,7 +14073,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the list of pinned values (raw values, not entries).",
-              "line": 722,
+              "line": 727,
               "deprecated": false
             },
             {
@@ -14064,7 +14082,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the list of PinnedValueEntry objects.",
-              "line": 727,
+              "line": 732,
               "deprecated": false
             },
             {
@@ -14073,7 +14091,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Check if there are any pinned values.",
-              "line": 732,
+              "line": 737,
               "deprecated": false
             },
             {
@@ -14082,7 +14100,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Clear all pinned values.",
-              "line": 736,
+              "line": 741,
               "deprecated": false
             },
             {
@@ -14091,7 +14109,7 @@
               "kind": "method",
               "signature": "(self, value, alias=None)",
               "summary": "Programmatically add a pinned value.",
-              "line": 742,
+              "line": 747,
               "deprecated": false
             }
           ]
@@ -14374,7 +14392,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Current state.",
-              "line": 113,
+              "line": 118,
               "deprecated": false
             },
             {
@@ -14383,7 +14401,7 @@
               "kind": "method",
               "signature": "(self, value: bool, *, emit: bool = True) -> None",
               "summary": "Programmatically set the toggle state.",
-              "line": 117,
+              "line": 122,
               "deprecated": false
             },
             {
@@ -14391,8 +14409,26 @@
               "qualname": "BinaryToggleOption.restore_default",
               "kind": "method",
               "signature": "(self) -> None",
-              "summary": "Return the toggle to its constructed ``initial`` state.",
-              "line": 136,
+              "summary": "Return the toggle to its default state.",
+              "line": 141,
+              "deprecated": false
+            },
+            {
+              "name": "save_default",
+              "qualname": "BinaryToggleOption.save_default",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "Make the current state the one :meth:`restore_default` returns to.",
+              "line": 154,
+              "deprecated": false
+            },
+            {
+              "name": "clear_saved_default",
+              "qualname": "BinaryToggleOption.clear_saved_default",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "Forget a :meth:`save_default`;",
+              "line": 158,
               "deprecated": false
             },
             {
@@ -14401,7 +14437,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 150,
+              "line": 166,
               "deprecated": false
             }
           ]
@@ -14409,7 +14445,7 @@
         {
           "name": "ToggleOption",
           "summary": "Persisted binary toggle button.",
-          "line": 201,
+          "line": 229,
           "bases": [
             "BinaryToggleOption"
           ],
@@ -14693,12 +14729,30 @@
               "deprecated": false
             },
             {
+              "name": "save_option_defaults",
+              "qualname": "OptionBoxManager.save_option_defaults",
+              "kind": "method",
+              "signature": "(self) -> int",
+              "summary": "Make every option's current state its default (``BaseOption.save_default``).",
+              "line": 796,
+              "deprecated": false
+            },
+            {
+              "name": "clear_option_defaults",
+              "qualname": "OptionBoxManager.clear_option_defaults",
+              "kind": "method",
+              "signature": "(self) -> int",
+              "summary": "Forget every option's saved default (``BaseOption.clear_saved_default``).",
+              "line": 804,
+              "deprecated": false
+            },
+            {
               "name": "find_option",
               "qualname": "OptionBoxManager.find_option",
               "kind": "method",
               "signature": "(self, option_type)",
               "summary": "Find the first option of the given type.",
-              "line": 800,
+              "line": 826,
               "deprecated": false
             },
             {
@@ -14707,7 +14761,7 @@
               "kind": "method",
               "signature": "(self, order)",
               "summary": "Set option order (fluent interface)",
-              "line": 820,
+              "line": 846,
               "deprecated": false
             },
             {
@@ -14716,7 +14770,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Set clear button to appear first (fluent interface)",
-              "line": 829,
+              "line": 855,
               "deprecated": false
             },
             {
@@ -14725,7 +14779,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Check if option box is enabled",
-              "line": 834,
+              "line": 860,
               "deprecated": false
             },
             {
@@ -14734,7 +14788,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the actual option box widget",
-              "line": 839,
+              "line": 865,
               "deprecated": false
             },
             {
@@ -14743,7 +14797,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get or create a Menu instance for this option box.",
-              "line": 845,
+              "line": 871,
               "deprecated": false
             },
             {
@@ -14752,7 +14806,7 @@
               "kind": "method",
               "signature": "(self, create=False)",
               "summary": "Get menu, optionally creating if it doesn't exist.",
-              "line": 864,
+              "line": 890,
               "deprecated": false
             },
             {
@@ -14761,7 +14815,7 @@
               "kind": "method",
               "signature": "(self, menu=None, **menu_kwargs)",
               "summary": "Enable menu option using the MenuOption plugin.",
-              "line": 908,
+              "line": 934,
               "deprecated": false
             },
             {
@@ -14770,7 +14824,7 @@
               "kind": "method",
               "signature": "(self, *, title: Optional[str] = None, items=None, build_menu=None, position: str = 'cursorPos', add_header: bool = True, tooltip: str = 'Options', menu=None)",
               "summary": "Add a dropdown *option menu* button (fluent interface).",
-              "line": 1025,
+              "line": 1051,
               "deprecated": false
             },
             {
@@ -14779,7 +14833,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Disable the menu option (fluent interface).",
-              "line": 1086,
+              "line": 1112,
               "deprecated": false
             },
             {
@@ -14788,7 +14842,7 @@
               "kind": "method",
               "signature": "(self, option)",
               "summary": "Add an option plugin to this option box.",
-              "line": 1103,
+              "line": 1129,
               "deprecated": false
             },
             {
@@ -14797,7 +14851,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Get the container widget (for layout management).",
-              "line": 1314,
+              "line": 1340,
               "deprecated": false
             },
             {
@@ -14806,7 +14860,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove option box completely",
-              "line": 1474,
+              "line": 1500,
               "deprecated": false
             },
             {
@@ -14815,7 +14869,7 @@
               "kind": "staticmethod",
               "signature": "(widget, show_clear=False, options=None, **kwargs)",
               "summary": "Add an option box to any widget with one call.",
-              "line": 1498,
+              "line": 1524,
               "deprecated": false
             },
             {
@@ -14824,7 +14878,7 @@
               "kind": "staticmethod",
               "signature": "(widget, **kwargs)",
               "summary": "Add just a clear button to a text widget.",
-              "line": 1521,
+              "line": 1547,
               "deprecated": false
             },
             {
@@ -14833,7 +14887,7 @@
               "kind": "staticmethod",
               "signature": "(widget, menu, **kwargs)",
               "summary": "Add a menu option to any widget.",
-              "line": 1534,
+              "line": 1560,
               "deprecated": false
             },
             {
@@ -14842,7 +14896,7 @@
               "kind": "staticmethod",
               "signature": "(widget_class)",
               "summary": "Add option_box attribute to a widget class.",
-              "line": 1554,
+              "line": 1580,
               "deprecated": false
             },
             {
@@ -14851,7 +14905,7 @@
               "kind": "staticmethod",
               "signature": "()",
               "summary": "Patch common Qt widgets with option box support.",
-              "line": 1569,
+              "line": 1595,
               "deprecated": false
             }
           ]
@@ -16276,7 +16330,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 943,
+              "line": 937,
               "deprecated": false
             }
           ]
@@ -16284,7 +16338,7 @@
         {
           "name": "KeyScaleBoxItem",
           "summary": "The scale box Shift raises around a key selection.",
-          "line": 948,
+          "line": 942,
           "bases": [
             "DraggableItemMixin",
             "QtWidgets.QGraphicsRectItem"
@@ -16296,7 +16350,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "Frame of the box's left edge.",
-              "line": 1022,
+              "line": 1016,
               "deprecated": false
             },
             {
@@ -16305,7 +16359,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "Frame of the box's right edge.",
-              "line": 1027,
+              "line": 1021,
               "deprecated": false
             },
             {
@@ -16314,7 +16368,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Which handle is being dragged, or ``\"\"`` when none is.",
-              "line": 1032,
+              "line": 1026,
               "deprecated": false
             },
             {
@@ -16323,7 +16377,7 @@
               "kind": "method",
               "signature": "(self, lo: float, hi: float, top: float, bottom: float) -> None",
               "summary": "Place the box around a selection spanning *lo*-*hi* over those rows.",
-              "line": 1036,
+              "line": 1030,
               "deprecated": false
             },
             {
@@ -16332,7 +16386,7 @@
               "kind": "method",
               "signature": "(self) -> QtGui.QPainterPath",
               "summary": "Only the two grips.",
-              "line": 1072,
+              "line": 1066,
               "deprecated": false
             },
             {
@@ -16341,7 +16395,7 @@
               "kind": "method",
               "signature": "(self) -> QtCore.QRectF",
               "summary": "",
-              "line": 1081,
+              "line": 1075,
               "deprecated": false
             },
             {
@@ -16350,7 +16404,7 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, option, widget=None)",
               "summary": "",
-              "line": 1086,
+              "line": 1080,
               "deprecated": false
             },
             {
@@ -16359,7 +16413,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1109,
+              "line": 1103,
               "deprecated": false
             },
             {
@@ -16368,7 +16422,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1116,
+              "line": 1110,
               "deprecated": false
             },
             {
@@ -16377,7 +16431,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1124,
+              "line": 1118,
               "deprecated": false
             },
             {
@@ -16386,7 +16440,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1181,
+              "line": 1175,
               "deprecated": false
             },
             {
@@ -16395,7 +16449,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1220,
+              "line": 1214,
               "deprecated": false
             }
           ]
@@ -16993,7 +17047,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "When ``True``, sequencer shortcuts are active whenever the",
-              "line": 504,
+              "line": 499,
               "deprecated": false
             },
             {
@@ -17002,7 +17056,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QShowEvent) -> None",
               "summary": "",
-              "line": 533,
+              "line": 528,
               "deprecated": false
             },
             {
@@ -17011,7 +17065,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QResizeEvent) -> None",
               "summary": "",
-              "line": 541,
+              "line": 536,
               "deprecated": false
             },
             {
@@ -17020,7 +17074,7 @@
               "kind": "method",
               "signature": "(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool",
               "summary": "Intercept ShortcutOverride on the window when window_shortcuts is on.",
-              "line": 601,
+              "line": 596,
               "deprecated": false
             },
             {
@@ -17029,7 +17083,7 @@
               "kind": "method",
               "signature": "(self, event: QtCore.QEvent) -> bool",
               "summary": "",
-              "line": 650,
+              "line": 645,
               "deprecated": false
             },
             {
@@ -17038,7 +17092,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Dispatch registered shortcuts when focus is on a non-timeline child.",
-              "line": 673,
+              "line": 668,
               "deprecated": false
             },
             {
@@ -17047,7 +17101,7 @@
               "kind": "method",
               "signature": "(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: Optional[str] = None, text_color: Optional[str] = None) -> int",
               "summary": "Add a new track row.",
-              "line": 697,
+              "line": 692,
               "deprecated": false
             },
             {
@@ -17056,7 +17110,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Suppress per-add scene-rect recomputation during a rebuild.",
-              "line": 755,
+              "line": 750,
               "deprecated": false
             },
             {
@@ -17065,7 +17119,7 @@
               "kind": "method",
               "signature": "(self, track_id: int, start: float, duration: float, label: str = '', color: Optional[str] = None, sub_row: str = '', locked: bool = False, **data) -> int",
               "summary": "Add a clip to an existing track.",
-              "line": 777,
+              "line": 772,
               "deprecated": false
             },
             {
@@ -17074,7 +17128,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int)",
               "summary": "Remove a clip by id.",
-              "line": 828,
+              "line": 823,
               "deprecated": false
             },
             {
@@ -17083,7 +17137,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int, label: str)",
               "summary": "Set the display label for a clip.",
-              "line": 838,
+              "line": 833,
               "deprecated": false
             },
             {
@@ -17092,7 +17146,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int, locked: bool)",
               "summary": "Lock or unlock a clip, preventing drag/resize/rename/selection.",
-              "line": 848,
+              "line": 843,
               "deprecated": false
             },
             {
@@ -17101,7 +17155,7 @@
               "kind": "method",
               "signature": "(self, track_id: int)",
               "summary": "Remove a track and all its clips.",
-              "line": 859,
+              "line": 854,
               "deprecated": false
             },
             {
@@ -17110,7 +17164,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int) -> Optional[ClipData]",
               "summary": "Return the data for a clip, or None.",
-              "line": 905,
+              "line": 900,
               "deprecated": false
             },
             {
@@ -17119,7 +17173,7 @@
               "kind": "method",
               "signature": "(self, track_id: int) -> Optional[TrackData]",
               "summary": "Return the data for a track, or None.",
-              "line": 909,
+              "line": 904,
               "deprecated": false
             },
             {
@@ -17128,7 +17182,7 @@
               "kind": "method",
               "signature": "(self) -> List[TrackData]",
               "summary": "Return a list of all track data.",
-              "line": 916,
+              "line": 911,
               "deprecated": false
             },
             {
@@ -17137,7 +17191,7 @@
               "kind": "method",
               "signature": "(self, track_id: Optional[int] = None) -> List[ClipData]",
               "summary": "Return clip data, optionally filtered by track.",
-              "line": 920,
+              "line": 915,
               "deprecated": false
             },
             {
@@ -17146,7 +17200,7 @@
               "kind": "method",
               "signature": "(self, clip_id_a: int, clip_id_b: int) -> None",
               "summary": "Swap the timeline positions of two clips and emit ``clips_reordered``.",
-              "line": 926,
+              "line": 921,
               "deprecated": false
             },
             {
@@ -17155,7 +17209,7 @@
               "kind": "method",
               "signature": "(self, time: float)",
               "summary": "Move the playhead to a specific time.",
-              "line": 964,
+              "line": 959,
               "deprecated": false
             },
             {
@@ -17164,7 +17218,7 @@
               "kind": "method",
               "signature": "(self, path: str, fps: float = 24.0) -> bool",
               "summary": "Bind an audio file (typically a composite WAV) for scrub playback.",
-              "line": 970,
+              "line": 965,
               "deprecated": false
             },
             {
@@ -17173,7 +17227,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Drop the bound audio source and stop any in-flight scrub.",
-              "line": 984,
+              "line": 979,
               "deprecated": false
             },
             {
@@ -17182,7 +17236,7 @@
               "kind": "method",
               "signature": "(self, *, keep_range_highlight: bool = False)",
               "summary": "Remove all tracks, clips, and markers.",
-              "line": 994,
+              "line": 989,
               "deprecated": false
             },
             {
@@ -17191,7 +17245,7 @@
               "kind": "method",
               "signature": "(self, *, keep_range_highlight: bool = False)",
               "summary": "Remove markers, overlays, and shot lane without touching tracks or clips.",
-              "line": 1036,
+              "line": 1031,
               "deprecated": false
             },
             {
@@ -17200,7 +17254,7 @@
               "kind": "method",
               "signature": "(self, time: float, note: str = '', color: Optional[str] = None, draggable: bool = True, style: str = 'triangle', line_style: str = 'dashed', opacity: float = 1.0) -> int",
               "summary": "Add a marker at *time*.",
-              "line": 1060,
+              "line": 1055,
               "deprecated": false
             },
             {
@@ -17209,7 +17263,7 @@
               "kind": "method",
               "signature": "(self, marker_id: int)",
               "summary": "Remove a marker by id.",
-              "line": 1092,
+              "line": 1087,
               "deprecated": false
             },
             {
@@ -17218,7 +17272,7 @@
               "kind": "method",
               "signature": "(self, marker_id: int) -> Optional[MarkerData]",
               "summary": "Return marker data, or None.",
-              "line": 1111,
+              "line": 1106,
               "deprecated": false
             },
             {
@@ -17227,7 +17281,7 @@
               "kind": "method",
               "signature": "(self) -> List[MarkerData]",
               "summary": "Return all markers.",
-              "line": 1115,
+              "line": 1110,
               "deprecated": false
             },
             {
@@ -17236,7 +17290,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove all markers.",
-              "line": 1119,
+              "line": 1114,
               "deprecated": false
             },
             {
@@ -17245,7 +17299,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float, color: Optional[str] = None, alpha: int = 30)",
               "summary": "Show or update a translucent highlight over a time range.",
-              "line": 1128,
+              "line": 1123,
               "deprecated": false
             },
             {
@@ -17254,7 +17308,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove the range highlight from the timeline.",
-              "line": 1159,
+              "line": 1154,
               "deprecated": false
             },
             {
@@ -17263,7 +17317,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float, color: str = '#888888', alpha: int = 15)",
               "summary": "Add a non-interactive range overlay (e.g.",
-              "line": 1165,
+              "line": 1160,
               "deprecated": false
             },
             {
@@ -17272,7 +17326,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove all non-interactive range overlays.",
-              "line": 1179,
+              "line": 1174,
               "deprecated": false
             },
             {
@@ -17281,7 +17335,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float, color: str = '#555555', alpha: int = 120, locked: bool = False, tail: bool = False, head: bool = False)",
               "summary": "Add a diagonal-hatch overlay for a gap between shots.",
-              "line": 1185,
+              "line": 1180,
               "deprecated": false
             },
             {
@@ -17290,7 +17344,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove all gap overlays.",
-              "line": 1219,
+              "line": 1214,
               "deprecated": false
             },
             {
@@ -17299,7 +17353,7 @@
               "kind": "method",
               "signature": "(self, locked: bool)",
               "summary": "Set the locked state on every gap overlay.",
-              "line": 1225,
+              "line": 1220,
               "deprecated": false
             },
             {
@@ -17308,7 +17362,7 @@
               "kind": "method",
               "signature": "(self, blocks: list) -> None",
               "summary": "Show coloured shot-block indicators on the ruler.",
-              "line": 1246,
+              "line": 1241,
               "deprecated": false
             },
             {
@@ -17317,7 +17371,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[dict]",
               "summary": "The shot block currently marked ``active``, or ``None``.",
-              "line": 1259,
+              "line": 1254,
               "deprecated": false
             },
             {
@@ -17326,7 +17380,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove all shot-block indicators from the ruler.",
-              "line": 1269,
+              "line": 1264,
               "deprecated": false
             },
             {
@@ -17335,7 +17389,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[tuple]",
               "summary": "Return ``(start, end)`` of the active highlight, or ``None``.",
-              "line": 1273,
+              "line": 1268,
               "deprecated": false
             },
             {
@@ -17344,7 +17398,7 @@
               "kind": "method",
               "signature": "(self, names: List[str])",
               "summary": "Store a list of hidden track names for the 'show hidden' menu.",
-              "line": 1279,
+              "line": 1274,
               "deprecated": false
             },
             {
@@ -17353,7 +17407,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float)",
               "summary": "Set the active-shot time range painted as a column tint.",
-              "line": 1284,
+              "line": 1279,
               "deprecated": false
             },
             {
@@ -17362,7 +17416,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove the active-shot column tint.",
-              "line": 1290,
+              "line": 1285,
               "deprecated": false
             },
             {
@@ -17371,7 +17425,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Advance the playhead by one step (snap_interval or 1 frame).",
-              "line": 1324,
+              "line": 1319,
               "deprecated": false
             },
             {
@@ -17380,7 +17434,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Move the playhead back by one step (snap_interval or 1 frame).",
-              "line": 1329,
+              "line": 1324,
               "deprecated": false
             },
             {
@@ -17389,7 +17443,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to the next clip boundary.",
-              "line": 1362,
+              "line": 1357,
               "deprecated": false
             },
             {
@@ -17398,7 +17452,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to the previous clip boundary.",
-              "line": 1370,
+              "line": 1365,
               "deprecated": false
             },
             {
@@ -17407,7 +17461,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to frame 0.",
-              "line": 1378,
+              "line": 1373,
               "deprecated": false
             },
             {
@@ -17416,7 +17470,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to the end of the last clip.",
-              "line": 1382,
+              "line": 1377,
               "deprecated": false
             },
             {
@@ -17425,7 +17479,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Add a marker at the current playhead position.",
-              "line": 1386,
+              "line": 1381,
               "deprecated": false
             },
             {
@@ -17434,7 +17488,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Zoom and scroll the timeline to frame the active shot range.",
-              "line": 1392,
+              "line": 1387,
               "deprecated": false
             },
             {
@@ -17443,7 +17497,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Revert to the previous clip state.",
-              "line": 1468,
+              "line": 1460,
               "deprecated": false
             },
             {
@@ -17452,7 +17506,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Re-apply a previously undone change.",
-              "line": 1481,
+              "line": 1473,
               "deprecated": false
             },
             {
@@ -17461,7 +17515,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "Time-snap interval.",
-              "line": 1494,
+              "line": 1486,
               "deprecated": false
             },
             {
@@ -17470,7 +17524,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Draw a guide (and tint the drag readout) when a drag lands on a",
-              "line": 1504,
+              "line": 1496,
               "deprecated": false
             },
             {
@@ -17479,7 +17533,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Also pull a drag onto a nearby key frame, not just highlight it.",
-              "line": 1516,
+              "line": 1508,
               "deprecated": false
             },
             {
@@ -17488,7 +17542,7 @@
               "kind": "method",
               "signature": "(self, exclude_clip_ids=(), exclude_times=(), exclude_spans=()) -> List[float]",
               "summary": "Sorted, de-duplicated frames that a drag can align to.",
-              "line": 1531,
+              "line": 1523,
               "deprecated": false
             },
             {
@@ -17497,7 +17551,7 @@
               "kind": "method",
               "signature": "(self, time: float, candidates, tolerance: Optional[float] = None) -> Optional[float]",
               "summary": "Return the entry of *candidates* within *tolerance* of *time*.",
-              "line": 1582,
+              "line": 1574,
               "deprecated": false
             },
             {
@@ -17506,7 +17560,7 @@
               "kind": "method",
               "signature": "(self, times) -> None",
               "summary": "Show vertical alignment guides at *times* (empty hides them).",
-              "line": 1604,
+              "line": 1596,
               "deprecated": false
             },
             {
@@ -17515,7 +17569,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove the alignment guides.",
-              "line": 1627,
+              "line": 1619,
               "deprecated": false
             },
             {
@@ -17524,7 +17578,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 1635,
+              "line": 1627,
               "deprecated": false
             },
             {
@@ -17533,7 +17587,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 1645,
+              "line": 1637,
               "deprecated": false
             },
             {
@@ -17542,7 +17596,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 1655,
+              "line": 1647,
               "deprecated": false
             },
             {
@@ -17551,7 +17605,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "When ``True``, right-clicks emit :attr:`zone_context_menu_requested`",
-              "line": 1665,
+              "line": 1657,
               "deprecated": false
             },
             {
@@ -17560,7 +17614,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether Shift was held when the last drag interaction started.",
-              "line": 1684,
+              "line": 1676,
               "deprecated": false
             },
             {
@@ -17569,7 +17623,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether Ctrl was held when the last drag interaction started.",
-              "line": 1693,
+              "line": 1685,
               "deprecated": false
             },
             {
@@ -17578,7 +17632,7 @@
               "kind": "method",
               "signature": "(self, modifiers) -> None",
               "summary": "Bank the modifiers a press carried, for the consumers' gates.",
-              "line": 1705,
+              "line": 1697,
               "deprecated": false
             },
             {
@@ -17587,7 +17641,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "The corner legend (:class:`ShortcutOverlay`), or ``None`` until",
-              "line": 1717,
+              "line": 1709,
               "deprecated": false
             },
             {
@@ -17596,7 +17650,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Show a legend of the drag grammar and keys in the timeline's corner.",
-              "line": 1723,
+              "line": 1715,
               "deprecated": false
             },
             {
@@ -17605,7 +17659,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "When to show the legend: ``\"off\"``, ``\"on\"``, or ``\"modifier\"``.",
-              "line": 1741,
+              "line": 1733,
               "deprecated": false
             },
             {
@@ -17614,7 +17668,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the group under the pointer is worth resolving: the legend",
-              "line": 1768,
+              "line": 1760,
               "deprecated": false
             },
             {
@@ -17623,7 +17677,7 @@
               "kind": "property",
               "signature": "(self) -> Dict[str, str]",
               "summary": "Mapping of attribute name to hex color string.",
-              "line": 1806,
+              "line": 1798,
               "deprecated": false
             },
             {
@@ -17632,7 +17686,7 @@
               "kind": "method",
               "signature": "(self, name: str, color: str) -> None",
               "summary": "Set a single attribute's color and repaint.",
-              "line": 1822,
+              "line": 1814,
               "deprecated": false
             },
             {
@@ -17641,7 +17695,7 @@
               "kind": "property",
               "signature": "(self) -> int",
               "summary": "Pixel height of expanded attribute sub-rows (default half track height).",
-              "line": 1837,
+              "line": 1829,
               "deprecated": false
             },
             {
@@ -17650,7 +17704,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Callable providing sub-row data for track expansion.",
-              "line": 1847,
+              "line": 1839,
               "deprecated": false
             },
             {
@@ -17659,7 +17713,7 @@
               "kind": "method",
               "signature": "(self, track_id: int, sub_row_data=None)",
               "summary": "Expand *track_id* to show sub-rows beneath it.",
-              "line": 1862,
+              "line": 1854,
               "deprecated": false
             },
             {
@@ -17668,7 +17722,7 @@
               "kind": "method",
               "signature": "(self, track_id: int, sub_row: str, preview: dict, color: str = '#CCCCCC') -> None",
               "summary": "Set or clear a background curve preview for a sub-row.",
-              "line": 1916,
+              "line": 1908,
               "deprecated": false
             },
             {
@@ -17677,7 +17731,7 @@
               "kind": "method",
               "signature": "(self, track_id: int)",
               "summary": "Collapse a previously expanded track, removing its sub-row clips.",
-              "line": 1936,
+              "line": 1928,
               "deprecated": false
             },
             {
@@ -17686,7 +17740,7 @@
               "kind": "method",
               "signature": "(self, track_id: int) -> bool",
               "summary": "Return True if the track is currently expanded.",
-              "line": 1987,
+              "line": 1979,
               "deprecated": false
             },
             {
@@ -17695,7 +17749,7 @@
               "kind": "method",
               "signature": "(self, track_id: int)",
               "summary": "Toggle expansion state.",
-              "line": 1991,
+              "line": 1983,
               "deprecated": false
             },
             {
@@ -17704,7 +17758,7 @@
               "kind": "method",
               "signature": "(self) -> List[int]",
               "summary": "Return clip IDs for all currently selected clips.",
-              "line": 2063,
+              "line": 2055,
               "deprecated": false
             },
             {
@@ -17713,7 +17767,7 @@
               "kind": "method",
               "signature": "(self) -> List[dict]",
               "summary": "Selected keyframe dots grouped by clip: ``[{clip_id, times}, ...]``.",
-              "line": 2071,
+              "line": 2063,
               "deprecated": false
             },
             {
@@ -17722,7 +17776,7 @@
               "kind": "method",
               "signature": "(self, wanted: List[dict], replace: bool = True) -> int",
               "summary": "Select keyframe dots by clip data and time;",
-              "line": 2092,
+              "line": 2084,
               "deprecated": false
             },
             {
@@ -17731,7 +17785,7 @@
               "kind": "method",
               "signature": "(self, global_pos) -> bool",
               "summary": "Open the key menu for the current key selection;",
-              "line": 2148,
+              "line": 2140,
               "deprecated": false
             },
             {
@@ -17740,7 +17794,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Show or hide the Shift scale box around the current key selection.",
-              "line": 2220,
+              "line": 2212,
               "deprecated": false
             },
             {
@@ -17749,7 +17803,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove the scale box, cancelling a drag it still owns.",
-              "line": 2246,
+              "line": 2238,
               "deprecated": false
             },
             {
@@ -17758,7 +17812,7 @@
               "kind": "method",
               "signature": "(self, held: bool) -> None",
               "summary": "Record whether Shift is down -- the one-key face of",
-              "line": 2259,
+              "line": 2251,
               "deprecated": false
             },
             {
@@ -17767,7 +17821,7 @@
               "kind": "property",
               "signature": "(self) -> int",
               "summary": "The chord currently held over the timeline, as a plain int.",
-              "line": 2267,
+              "line": 2259,
               "deprecated": false
             },
             {
@@ -17776,7 +17830,7 @@
               "kind": "method",
               "signature": "(self, modifiers) -> None",
               "summary": "Record the chord held over the timeline;",
-              "line": 2271,
+              "line": 2263,
               "deprecated": false
             }
           ]
@@ -18400,7 +18454,7 @@
               "kind": "method",
               "signature": "(self) -> Union[float, int]",
               "summary": "Return integer if decimals is 0, else float.",
-              "line": 64,
+              "line": 65,
               "deprecated": false
             },
             {
@@ -18409,7 +18463,7 @@
               "kind": "method",
               "signature": "(self, *args)",
               "summary": "Set a mapping of values to custom display strings.",
-              "line": 71,
+              "line": 72,
               "deprecated": false
             },
             {
@@ -18418,7 +18472,7 @@
               "kind": "method",
               "signature": "(self, value: float) -> str",
               "summary": "Format the text displayed in the spin box.",
-              "line": 89,
+              "line": 90,
               "deprecated": false
             },
             {
@@ -18427,7 +18481,7 @@
               "kind": "method",
               "signature": "(self, text: str) -> float",
               "summary": "Convert text back to value.",
-              "line": 99,
+              "line": 100,
               "deprecated": false
             },
             {
@@ -18436,7 +18490,7 @@
               "kind": "method",
               "signature": "(self, text: str, pos: int) -> object",
               "summary": "Validate input, allowing custom display strings.",
-              "line": 105,
+              "line": 106,
               "deprecated": false
             },
             {
@@ -18445,7 +18499,7 @@
               "kind": "method",
               "signature": "(self, steps: int) -> None",
               "summary": "Step by the given number of steps, snapping to the step-size grid.",
-              "line": 117,
+              "line": 118,
               "deprecated": false
             }
           ]
@@ -20130,7 +20184,7 @@
               "kind": "method",
               "signature": "(self, x, data=None, header=None, header_alignment='left', clear=True, restore_index=False, ascending=False, _recursion=False, **kwargs)",
               "summary": "Populate the combo box with text, widgets or actions.",
-              "line": 1217,
+              "line": 1216,
               "deprecated": false
             },
             {
@@ -20139,7 +20193,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "When True, adds a \"Restore Defaults\" action at the bottom of the",
-              "line": 1483,
+              "line": 1482,
               "deprecated": false
             },
             {
@@ -20148,7 +20202,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "",
-              "line": 1631,
+              "line": 1630,
               "deprecated": false
             }
           ]

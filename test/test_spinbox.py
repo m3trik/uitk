@@ -16,12 +16,17 @@ Run standalone: python -m pytest test/test_spinbox.py -v
 import unittest
 from unittest.mock import MagicMock
 
-from conftest import QtBaseTestCase, rendered_text_width, setup_qt_application
+from conftest import (
+    QtBaseTestCase,
+    QtWait,
+    rendered_text_width,
+    setup_qt_application,
+)
 
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
 
-from qtpy import QtCore, QtGui
+from qtpy import QtCore, QtGui, QtWidgets
 
 
 # =============================================================================
@@ -367,9 +372,14 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
         ``axis="x"`` puts the delta on ``angleDelta().x()`` with ``.y()`` at
         zero -- simulates the Alt-held axis transpose observed on some
         platforms / Qt6 builds.
+
+        The position sits ON the value: the ladder is what these tests are
+        about, and the position gate (TestSpinBoxWheelPositionGate) would
+        otherwise decide their outcome for them.
         """
 
         event = MagicMock()
+        event.position.return_value = QtCore.QPointF(6.0, 8.0)
         if axis == "x":
             event.angleDelta.return_value.x.return_value = delta
             event.angleDelta.return_value.y.return_value = 0
@@ -537,6 +547,301 @@ class TestSpinBoxModifierSteps(QtBaseTestCase):
 
 
 # =============================================================================
+# Wheel Position Gate Tests
+# =============================================================================
+
+
+class TestSpinBoxWheelPositionGate(QtBaseTestCase):
+    """The wheel steps only where it lands on (or near) the drawn value.
+
+    A field stretched by its layout is mostly empty space, and a wheel out
+    there belongs to whatever scrolls behind the box -- the panel it sits in
+    -- not to a value the cursor was only passing over. Only where there IS
+    something to scroll: in a panel that cannot, the box keeps the wheel.
+    """
+
+    VALUE = 5
+    WIDTH = 400
+    #: Well right of the number (which draws in the first ~15 px) and well
+    #: left of the step arrows: field, and nothing else.
+    EMPTY_FIELD_X = 200
+
+    def _make_spinbox(self, width=None, scrollable=True):
+        """A SpinBox *width* px wide in a panel that can scroll -- the case
+        the gate exists for -- or, with *scrollable* False, in one that
+        cannot."""
+        from uitk.widgets.spinBox import SpinBox
+
+        sb = SpinBox()
+        sb.setRange(-100, 100)
+        sb.setSingleStep(1)
+        sb.setValue(self.VALUE)
+        sb.setFixedWidth(width or self.WIDTH)
+        if scrollable:
+            host = self.track_widget(QtWidgets.QScrollArea())
+            inner = QtWidgets.QWidget()
+            layout = QtWidgets.QVBoxLayout(inner)
+            layout.addWidget(sb)
+            for _ in range(40):  # rows enough to give the area a range
+                layout.addWidget(QtWidgets.QLabel("row"))
+            host.setWidget(inner)
+            host.setWidgetResizable(True)
+            host.resize((width or self.WIDTH) + 40, 120)
+        else:
+            host = self.track_widget(QtWidgets.QWidget())
+            QtWidgets.QVBoxLayout(host).addWidget(sb)
+        host.show()
+        QtWait.pump()
+        return sb
+
+    def _wheel_at(self, widget, x, modifiers=QtCore.Qt.NoModifier, delta=120):
+        """A real ``QWheelEvent`` *x* px across *widget* (local coords).
+
+        Real rather than mocked: the gate reads ``event.position()``, so a
+        mock would only be testing the mock's idea of where the cursor was.
+        """
+        local = QtCore.QPointF(x, widget.height() / 2)
+        return QtGui.QWheelEvent(
+            local,
+            QtCore.QPointF(widget.mapToGlobal(local.toPoint())),
+            QtCore.QPoint(0, 0),
+            QtCore.QPoint(0, delta),
+            QtCore.Qt.NoButton,
+            modifiers,
+            QtCore.Qt.NoScrollPhase,
+            False,
+        )
+
+    def test_wheel_on_the_value_steps(self):
+        sb = self._make_spinbox()
+        event = self._wheel_at(sb, 8)
+
+        sb.wheelEvent(event)
+
+        self.assertEqual(sb.value(), self.VALUE + 1)
+        self.assertTrue(event.isAccepted())
+
+    def test_wheel_out_on_the_empty_field_is_left_for_the_parent(self):
+        """Unaccepted is the whole contract: Qt walks an ignored wheel up the
+        parent chain, which is how the panel behind the box gets to scroll."""
+        sb = self._make_spinbox()
+        event = self._wheel_at(sb, self.EMPTY_FIELD_X)
+
+        sb.wheelEvent(event)
+
+        self.assertEqual(sb.value(), self.VALUE)
+        self.assertFalse(event.isAccepted())
+
+    def test_modifier_wheel_out_on_the_empty_field_is_left_too(self):
+        """One rule for every wheel: position decides whether there is a step
+        at all, the modifier ladder only picks its size."""
+        sb = self._make_spinbox()
+        event = self._wheel_at(sb, self.EMPTY_FIELD_X, QtCore.Qt.ControlModifier)
+
+        sb.wheelEvent(event)
+
+        self.assertEqual(sb.value(), self.VALUE)
+        self.assertFalse(event.isAccepted())
+
+    def test_wheel_over_the_step_arrows_steps(self):
+        """The arrows are a value affordance however far they sit from the
+        number, so the zone covers the box's chrome as well."""
+        sb = self._make_spinbox()
+        editor = sb.lineEdit()
+        if editor.x() + editor.width() >= sb.width():
+            self.skipTest("this style leaves the box no chrome to aim at")
+        event = self._wheel_at(sb, sb.width() - 2)
+
+        sb.wheelEvent(event)
+
+        self.assertEqual(sb.value(), self.VALUE + 1)
+
+    def test_a_box_with_no_room_beside_its_value_takes_every_wheel(self):
+        """70 px is what the ecosystem's panels actually author for a spin box
+        (32 explicit ones across mayatk / tentacle / blendertk; the rest are
+        sized by their layout). A box that size has no field to aim at beside
+        its value, so it reads as one target and keeps every wheel -- without
+        that, half of every standard panel field would have gone deaf while
+        only the stretched ones were meant to change.
+
+        The house width is swept rather than sampled: "takes every wheel" is
+        the claim, and a single x would pass on whichever rule happened to
+        answer. The second half then pins ``_AIMABLE_FIELD_PX`` on its own, at
+        a width where the margin does not reach and with the aim point kept
+        clear of the chrome escape hatch at the far edge -- otherwise the case
+        could quietly stop testing the threshold and still pass. The wide box
+        is its control: it proves that x really is past the value's margin.
+        """
+        house = self._make_spinbox(width=70)
+        for x in range(0, house.width(), 5):
+            house.setValue(self.VALUE)
+            house.wheelEvent(self._wheel_at(house, x))
+            self.assertEqual(house.value(), self.VALUE + 1, f"deaf at x={x}")
+
+        boxed = self._make_spinbox(width=110)
+        editor = boxed.lineEdit()
+        # Three-quarters across the editor: clear of the value's margin on
+        # one side and of the step arrows on the other, so only the threshold
+        # can answer.
+        x = editor.x() + (editor.width() * 3) // 4
+
+        wide = self._make_spinbox()
+        control = self._wheel_at(wide, x)
+        wide.wheelEvent(control)
+        self.assertFalse(control.isAccepted(), "fixture x is not past the value")
+
+        event = self._wheel_at(boxed, x)
+        boxed.wheelEvent(event)
+
+        self.assertEqual(boxed.value(), self.VALUE + 1)
+
+    def test_the_zone_follows_the_prefix_tab_column(self):
+        """A tab-separated prefix puts the value at a tab STOP, tens of px
+        right of the label's own advance. Measured with QFontMetrics instead,
+        the zone would sit over the label and miss the number entirely."""
+        sb = self._make_spinbox()
+        sb.setPrefix("Bias:")
+        QtWait.pump()
+
+        on_label = self._wheel_at(sb, 20)
+        sb.wheelEvent(on_label)
+        self.assertEqual(sb.value(), self.VALUE, "the label is not the value")
+
+        on_value = self._wheel_at(sb, 88)
+        sb.wheelEvent(on_value)
+        self.assertEqual(sb.value(), self.VALUE + 1)
+
+    def test_with_nothing_to_scroll_the_box_keeps_every_wheel(self):
+        """Most panels have no scroll area: a wheel left for the parent there
+        went nowhere, and most of a stretched field went dead -- 55 of 75
+        sampled x positions on a 298 px box did nothing at all."""
+        sb = self._make_spinbox(scrollable=False)
+        for x in range(0, sb.width(), 10):
+            sb.setValue(self.VALUE)
+            event = self._wheel_at(sb, x)
+            sb.wheelEvent(event)
+            self.assertEqual(sb.value(), self.VALUE + 1, f"dead at x={x}")
+
+    def test_a_right_aligned_value_is_gated_from_its_own_side(self):
+        """The field's room was measured to the RIGHT of the value only, so a
+        right-aligned value -- its empty field on the left -- was never gated."""
+        sb = self._make_spinbox()
+        sb.setAlignment(QtCore.Qt.AlignRight)
+        QtWait.pump()
+        start, end, chrome, field = sb._value_span()
+
+        far = self._wheel_at(sb, field + 20)
+        sb.wheelEvent(far)
+        self.assertEqual(sb.value(), self.VALUE)
+        self.assertFalse(far.isAccepted())
+
+        near = self._wheel_at(sb, (start + end) / 2)
+        sb.wheelEvent(near)
+        self.assertEqual(sb.value(), self.VALUE + 1)
+
+    def test_widening_the_margin_does_not_turn_the_gate_off(self):
+        """The threshold is px of field beside the value, and the margin is
+        the slack around it -- a wider margin asks for an easier target. It
+        was measured PAST the margin, so ``wheel_margin=100`` on a 150 px box
+        switched the gate off entirely."""
+        sb = self._make_spinbox(width=150)
+        sb.wheel_margin = 100
+        start, end, chrome, field = sb._value_span()
+        x = end + sb.wheel_margin + 8
+        if x >= chrome:
+            self.skipTest("this style leaves no field past the widened zone")
+
+        event = self._wheel_at(sb, x)
+        sb.wheelEvent(event)
+
+        self.assertEqual(sb.value(), self.VALUE)
+        self.assertFalse(event.isAccepted())
+
+    def test_a_read_only_box_takes_no_modified_step(self):
+        """Qt's own wheel never steps a read-only box; the modifier ladder
+        wrote the value around that rule (Ctrl+wheel went 5 -> 15)."""
+        sb = self._make_spinbox(scrollable=False)
+        sb.setReadOnly(True)
+        for modifiers in (
+            QtCore.Qt.NoModifier,
+            QtCore.Qt.ControlModifier,
+            QtCore.Qt.AltModifier | QtCore.Qt.ControlModifier,
+        ):
+            event = self._wheel_at(sb, 8, modifiers)
+            sb.wheelEvent(event)
+            self.assertEqual(sb.value(), self.VALUE, modifiers)
+
+    def test_wheel_margin_none_steps_anywhere_on_the_box(self):
+        """Opt-out, through the declarative path a dict-built panel uses --
+        and through the constructor, which is the same path and is what the
+        docs promise."""
+        from uitk.widgets.spinBox import SpinBox
+
+        self.assertIsNone(self.track_widget(SpinBox(wheel_margin=None)).wheel_margin)
+
+        sb = self._make_spinbox()
+        sb.set_attributes(wheel_margin=None)
+        self.assertIsNone(sb.wheel_margin)
+
+        event = self._wheel_at(sb, self.EMPTY_FIELD_X)
+        sb.wheelEvent(event)
+
+        self.assertEqual(sb.value(), self.VALUE + 1)
+        self.assertTrue(event.isAccepted())
+
+    def test_a_wider_margin_widens_the_zone(self):
+        sb = self._make_spinbox()
+        sb.wheel_margin = 300
+
+        event = self._wheel_at(sb, self.EMPTY_FIELD_X)
+        sb.wheelEvent(event)
+
+        self.assertEqual(sb.value(), self.VALUE + 1)
+
+    def test_the_box_never_swallows_what_the_panel_should_get(self):
+        """The handover itself is Qt's: an unaccepted wheel walks up the
+        parent chain to whatever scrolls (``QWidget::wheelEvent`` -- "it is
+        very important that you ignore() the event if you do not handle it,
+        so that the widget's parent can interpret it").
+
+        That walk cannot be driven from in-process: it runs for SPONTANEOUS
+        events, the ones the window system delivers. Measured under the
+        offscreen QPA, a wheel pushed through ``QApplication.sendEvent`` --
+        at the box, or at its window -- never reaches the scroll area, and a
+        plain ``QLabel`` in the same fixture behaves identically (the same
+        event sent straight at the viewport does scroll it). So this pins the
+        half that is this widget's to keep: parked over the empty field, in a
+        panel that has somewhere to scroll, the box takes nothing.
+        """
+        from uitk.widgets.spinBox import SpinBox
+
+        area = self.track_widget(QtWidgets.QScrollArea())
+        inner = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(inner)
+        sb = SpinBox()
+        sb.setRange(-100, 100)
+        sb.setSingleStep(1)
+        sb.setValue(self.VALUE)
+        layout.addWidget(sb)
+        for _ in range(40):  # enough rows to give the area something to scroll
+            layout.addWidget(QtWidgets.QLabel("row"))
+        area.setWidget(inner)
+        area.setWidgetResizable(True)
+        area.resize(self.WIDTH + 20, 120)
+        area.show()
+        QtWait.pump()
+        self.assertGreater(
+            area.verticalScrollBar().maximum(), 0, "fixture never became scrollable"
+        )
+
+        event = self._wheel_at(sb, self.EMPTY_FIELD_X, delta=-120)
+        sb.wheelEvent(event)
+
+        self.assertEqual(sb.value(), self.VALUE)
+        self.assertFalse(event.isAccepted())
+
+
+# =============================================================================
 # Prefix Tests
 # =============================================================================
 
@@ -577,6 +882,7 @@ class TestAttributeWindowIntUsesUitkSpinBox(QtBaseTestCase):
         event.angleDelta.return_value.x.return_value = 0
         event.angleDelta.return_value.y.return_value = 120
         event.modifiers.return_value = QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier
+        event.position.return_value = QtCore.QPointF(6.0, 8.0)  # on the value
 
         widget.wheelEvent(event)
         self.assertEqual(widget.value(), 6)

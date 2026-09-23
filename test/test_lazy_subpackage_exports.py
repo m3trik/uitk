@@ -86,7 +86,6 @@ SEQUENCER_EXPORTS = (
 
 BRIDGE_EXPORTS = (
     "AttributeSpec",
-    "BridgeParam",
     "BridgeSlotsBase",
     "Formatters",
     "KindFactory",
@@ -237,6 +236,16 @@ class TestLazySubpackageSurface(BaseTestCase):
                 module = importlib.import_module(pkg)
                 with self.assertRaises(AttributeError):
                     getattr(module, "NoSuchSymbol_xyz")
+
+    def test_retired_bridge_param_alias_stays_removed(self):
+        """``BridgeParam`` was a silent second name for ``AttributeSpec``
+        (the original 2026-05 spelling). Nothing called it by 2026-09-21,
+        when it was retired rather than given a removal version; the spec is
+        ``AttributeSpec``."""
+        import uitk.bridge
+
+        self.assertNotIn("BridgeParam", uitk.bridge.__all__)
+        self.assertFalse(hasattr(uitk.bridge, "BridgeParam"))
 
 
 class TestSubpackageImportIsLazy(BaseTestCase):

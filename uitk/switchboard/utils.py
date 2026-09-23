@@ -4,7 +4,6 @@ import html
 import json
 import re
 import traceback
-import warnings
 from typing import Any, Callable, Dict, List, Optional, Union
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
@@ -12,11 +11,6 @@ import pythontk as ptk
 from uitk.managers.value_manager import ValueManager
 from uitk.managers.cursor_manager import CursorManager
 from uitk.managers.field_visibility import FieldVisibility
-
-# Compatibility re-export (2026-09, one release): ``uitk.switchboard`` still
-# publishes ``OverrideCursorGuard`` through this module. New code imports it
-# from ``uitk`` (or ``uitk.managers.cursor_manager``).
-from uitk.managers.cursor_manager import OverrideCursorGuard  # noqa: F401
 
 
 # Lock-toggle tints used by :meth:`SwitchboardUtilsMixin.link_spinboxes`, taken
@@ -57,30 +51,6 @@ class SwitchboardUtilsMixin:
         of the stack rather than its own entry.
         """
         return CursorManager.busy(shape)
-
-    @staticmethod
-    def pop_override_cursor_stack(app):
-        """Deprecated alias of :meth:`CursorManager.pop_stack` (2026-09; removed
-        in the release after). The new home takes ``pop_stack(app)``."""
-        warnings.warn(
-            "SwitchboardUtilsMixin.pop_override_cursor_stack is deprecated; "
-            "use uitk.CursorManager.pop_stack(app).",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return CursorManager.pop_stack(app)
-
-    @staticmethod
-    def push_override_cursor_stack(app, saved):
-        """Deprecated alias of :meth:`CursorManager.push_stack` (2026-09; removed
-        in the release after). The new home takes ``push_stack(saved, app)``."""
-        warnings.warn(
-            "SwitchboardUtilsMixin.push_override_cursor_stack is deprecated; "
-            "use uitk.CursorManager.push_stack(saved, app).",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        CursorManager.push_stack(saved, app)
 
     @staticmethod
     def get_cursor_offset_from_center(widget):
@@ -1625,13 +1595,12 @@ class SwitchboardUtilsMixin:
                     return
                 last = prev.get(src, val)
                 prev[src] = val
-                # During a programmatic state restore / preset load (saves
-                # suppressed) values are applied field-by-field, not by a user
-                # gesture — re-baseline only. Otherwise restoring a locked field
-                # would fire a spurious delta into its locked siblings and
-                # corrupt their restored values (order-dependent). Mirrors how
-                # MainWindow.sync_widget_values gates on the same flag.
-                if state is not None and getattr(state, "_save_suppressed", 0):
+                # During a programmatic apply -- a state restore, a preset
+                # load, a reset (``state.is_applying``) -- values land field by
+                # field, not by a user gesture: re-baseline only. Otherwise
+                # restoring a locked field would fire a spurious delta into its
+                # locked siblings and corrupt their restored values.
+                if state is not None and getattr(state, "is_applying", False):
                     return
                 if not _is_locked(src):
                     return

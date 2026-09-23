@@ -341,6 +341,37 @@ class TestAffixOptionPersistence(QtBaseTestCase):
         self.assertEqual(after.mode, "suffix", "the reset must persist too")
         self._clear(after)
 
+    def test_a_saved_default_is_what_a_reset_returns_to(self):
+        """Shift+Click on a panel's reset button reaches the picker too
+        (``BaseOption.save_default``), or the mode is the one field setting a
+        save cannot move."""
+        key = "test_affix_saved_default"
+        option = self._fresh(key, default="auto")
+        option.set_mode("prefix")
+        self.assertTrue(option.save_default())
+
+        option.set_mode("suffix")
+        option.restore_default()
+        self.assertEqual(option.mode, "prefix", "the reset lands on the saved one")
+
+        self.assertTrue(option.clear_saved_default())
+        option.restore_default()
+        self.assertEqual(option.mode, "auto", "and the constructed one is back")
+        self.assertFalse(option.clear_saved_default(), "nothing left to forget")
+        self._clear(option)
+
+    def test_a_saved_default_opens_a_picker_with_no_session_mode(self):
+        key = "test_affix_default_opens"
+        option = self._fresh(key, default="auto")
+        option.set_mode("prefix")
+        self.assertTrue(option.save_default())
+        option._settings.remove(option._MODE_KEY)  # no session state
+        option._settings.sync()
+
+        fresh = self._fresh(key, default="auto")
+        self.assertEqual(fresh.mode, "prefix")
+        self._clear(fresh)
+
     def test_manager_forwards_settings_key(self):
         key = "test_affix_manager_key"
         le = self.track_widget(LineEdit())

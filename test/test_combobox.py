@@ -887,8 +887,8 @@ class CurrentTextPrefixSuffix(QtBaseTestCase):
         self.assertEqual(combo.current_text_prefix, "Target UI:  ")
 
     def test_base_aligned_combobox_has_no_adornments(self):
-        """``format_current_display_text`` lives on the base so the style's
-        ``drawControl`` can call it for either class; a bare ``AlignedComboBox``
+        """``format_current_display_text`` lives on the base so the base's
+        ``paintEvent`` can call it for either class; a bare ``AlignedComboBox``
         (no prefix/suffix attrs) must return the text unchanged via getattr."""
         from uitk.widgets.comboBox import AlignedComboBox
 
@@ -898,10 +898,10 @@ class CurrentTextPrefixSuffix(QtBaseTestCase):
     def test_base_aligned_combobox_paints(self):
         """The same bare-``AlignedComboBox`` contract, all the way through a paint.
 
-        ``CustomStyle.drawControl`` reads ``has_header`` off whatever
-        ``AlignedComboBox`` it is painting, but only ``ComboBox.__init__`` ever set
-        it — so painting a bare base instance raised AttributeError. Rendering is
-        the only way to catch it: constructing one is fine, it dies on first draw.
+        The label paint (``AlignedComboBox.paintEvent``) reads ``has_header``
+        off the combo it paints, but only ``ComboBox.__init__`` ever set it -- so
+        painting a bare base instance raised AttributeError. Rendering is the
+        only way to catch it: constructing one is fine, it dies on first draw.
         """
         from qtpy import QtGui
         from uitk.widgets.comboBox import AlignedComboBox
@@ -910,6 +910,53 @@ class CurrentTextPrefixSuffix(QtBaseTestCase):
         combo.addItem("x")
         combo.resize(120, 24)
         combo.render(QtGui.QPixmap(combo.size()))  # must not raise
+
+    @staticmethod
+    def _painted(combo):
+        """The combo as it paints: the only honest test of an adornment."""
+        from qtpy import QtGui
+
+        pixmap = QtGui.QPixmap(combo.size())
+        pixmap.fill(QtCore.Qt.black)
+        combo.render(pixmap)
+        return pixmap.toImage()
+
+    def _assert_adornments_paint(self, stylesheet):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        if stylesheet:
+            combo.setStyleSheet(stylesheet)
+        combo.addItem("quest")
+        combo.setCurrentIndex(0)
+        combo.resize(200, 22)
+        bare = self._painted(combo)
+
+        combo.current_text_suffix = "  ****"
+        self.assertNotEqual(self._painted(combo), bare, "suffix never painted")
+        combo.current_text_suffix = ""
+        self.assertEqual(self._painted(combo), bare, "suffix outlived its reset")
+
+        combo.current_text_prefix = "Preset:  "
+        self.assertNotEqual(self._painted(combo), bare, "prefix never painted")
+
+    def test_adornments_reach_the_pixels_under_a_stylesheet(self):
+        """REGRESSION (2026-09-22): the adornments were composed and never drawn.
+
+        The style wrote them to ``opt.text`` -- a field a combo's label does not
+        read (it paints ``currentText``) -- and once a stylesheet styles the
+        box, Qt paints that label without consulting the proxy style at all.
+        Seen live on the Lightmap Baker's preset combo: ``is_modified()`` True,
+        ``current_text_suffix == " *"``, and the box still read a bare "quest".
+        Every string-level test above passed the whole time.
+        """
+        self._assert_adornments_paint(
+            "QComboBox { border: 1px solid #555555; padding: 1px 4px; }"
+        )
+
+    def test_adornments_reach_the_pixels_without_a_stylesheet(self):
+        """The same contract through the proxy style's own label path."""
+        self._assert_adornments_paint(None)
 
 
 class OpenBoxDistinctFromView(QtBaseTestCase):

@@ -20,11 +20,16 @@ Run standalone: python -m pytest test/test_double_spin_box.py -v
 import unittest
 from unittest.mock import MagicMock
 
-from conftest import QtBaseTestCase, rendered_text_width, setup_qt_application
+from conftest import (
+    QtBaseTestCase,
+    QtWait,
+    rendered_text_width,
+    setup_qt_application,
+)
 
 app = setup_qt_application()
 
-from qtpy import QtCore, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 
 
 class TestDoubleSpinBoxModifierSteps(QtBaseTestCase):
@@ -41,7 +46,14 @@ class TestDoubleSpinBoxModifierSteps(QtBaseTestCase):
         return sb
 
     def _make_wheel_event(self, delta=120, modifiers=None, axis="y"):
+        """A mock wheel event, positioned ON the value.
+
+        The ladder is what these tests are about; the position gate (see
+        TestDoubleSpinBoxWheelPositionGate) would otherwise decide their
+        outcome for them.
+        """
         event = MagicMock()
+        event.position.return_value = QtCore.QPointF(6.0, 8.0)
         if axis == "x":
             event.angleDelta.return_value.x.return_value = delta
             event.angleDelta.return_value.y.return_value = 0
@@ -485,6 +497,73 @@ class TestDoubleSpinBoxTextColor(QtBaseTestCase):
         self.assertNotIn("#ff5555", sb.styleSheet())
         sb.set_text_color(None)  # clear color
         self.assertEqual(sb.styleSheet().strip(), "border-right-width: 0px;")
+
+
+class TestDoubleSpinBoxWheelPositionGate(QtBaseTestCase):
+    """Parity with SpinBox: the wheel steps only on (or near) the value.
+
+    The gate lives in the shared WheelStepMixin -- test_spinbox.py pins its
+    full contract; this is the mirror that keeps the float box on it (both
+    the AttributeWindow and the bridge build these for float rows).
+    """
+
+    VALUE = 5.0
+    WIDTH = 400
+    EMPTY_FIELD_X = 200
+
+    def _make_spinbox(self):
+        """In a panel that can scroll: the case the gate exists for."""
+        from uitk.widgets.doubleSpinBox import DoubleSpinBox
+
+        sb = DoubleSpinBox()
+        sb.setDecimals(2)
+        sb.setRange(-100, 100)
+        sb.setSingleStep(1.0)
+        sb.setValue(self.VALUE)
+        sb.setFixedWidth(self.WIDTH)
+        host = self.track_widget(QtWidgets.QScrollArea())
+        inner = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(inner)
+        layout.addWidget(sb)
+        for _ in range(40):
+            layout.addWidget(QtWidgets.QLabel("row"))
+        host.setWidget(inner)
+        host.setWidgetResizable(True)
+        host.resize(self.WIDTH + 40, 120)
+        host.show()
+        QtWait.pump()
+        return sb
+
+    def _wheel_at(self, widget, x, delta=120):
+        local = QtCore.QPointF(x, widget.height() / 2)
+        return QtGui.QWheelEvent(
+            local,
+            QtCore.QPointF(widget.mapToGlobal(local.toPoint())),
+            QtCore.QPoint(0, 0),
+            QtCore.QPoint(0, delta),
+            QtCore.Qt.NoButton,
+            QtCore.Qt.NoModifier,
+            QtCore.Qt.NoScrollPhase,
+            False,
+        )
+
+    def test_wheel_on_the_value_steps(self):
+        sb = self._make_spinbox()
+        event = self._wheel_at(sb, 8)
+
+        sb.wheelEvent(event)
+
+        self.assertAlmostEqual(sb.value(), self.VALUE + 1.0, places=5)
+        self.assertTrue(event.isAccepted())
+
+    def test_wheel_out_on_the_empty_field_is_left_for_the_parent(self):
+        sb = self._make_spinbox()
+        event = self._wheel_at(sb, self.EMPTY_FIELD_X)
+
+        sb.wheelEvent(event)
+
+        self.assertAlmostEqual(sb.value(), self.VALUE, places=5)
+        self.assertFalse(event.isAccepted())
 
 
 if __name__ == "__main__":

@@ -697,6 +697,7 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
 - **[`class StateManager(ptk.LoggingMixin)`](uitk/uitk/managers/state_manager.py#L13)** — Manages widget state persistence using QSettings.
   - `StateManager.apply(self, widget: QtWidgets.QWidget, value: Any) -> None` — Apply the given value to the widget using ValueManager.
   - `StateManager.suppress_save(self)` — Context manager that temporarily suppresses QSettings writes.
+  - `StateManager.is_applying(self) -> bool` *(property)* — True while values are applied FOR the user rather than BY them.
   - `StateManager.save(self, widget: QtWidgets.QWidget, value: Any = None) -> None` — Save the current value of the widget to QSettings.
   - `StateManager.save_value(self, key: str, value: Any) -> bool` — Serialize and persist ``value`` at an explicit state ``key``.
   - `StateManager.load(self, widget: QtWidgets.QWidget) -> None` — Load the saved value from QSettings and apply it to the widget.
@@ -706,7 +707,7 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
   - `StateManager.clear(self, widget: QtWidgets.QWidget) -> None` — Removes the stored state for the widget from QSettings.
   - `StateManager.has_default(self, widget: QtWidgets.QWidget) -> bool` — Check if a widget has a stored default value.
   - `StateManager.default_for(self, widget: QtWidgets.QWidget) -> Any` — The value a reset puts *widget* at.
-  - `StateManager.save_defaults(self, widgets=None) -> int` — Make the widgets' current values their defaults (persisted).
+  - `StateManager.save_defaults(self, widgets=None) -> int` — Make the widgets' current values — and their option state — their defaults.
   - `StateManager.clear_saved_defaults(self, widgets=None) -> int` — Forget saved defaults, so the widgets' factory defaults apply again.
   - `StateManager.has_saved_defaults(self, widgets=None) -> bool` — Whether any of the widgets (default: all) has a saved default.
   - `StateManager.capture_default(self, widget: QtWidgets.QWidget) -> None` — Capture the current widget value as its default.
@@ -855,10 +856,8 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
 <a id="switchboard--utils"></a>
 ### `switchboard/utils.py`
 
-- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L31)** — Utility methods for widget positioning, centering, and screen geometry.
+- **[`class SwitchboardUtilsMixin`](uitk/uitk/switchboard/utils.py#L25)** — Utility methods for widget positioning, centering, and screen geometry.
   - `SwitchboardUtilsMixin.busy_cursor(shape=QtCore.Qt.WaitCursor)` *(static)* — Application busy cursor for the duration of a ``with`` block.
-  - `SwitchboardUtilsMixin.pop_override_cursor_stack(app)` *(static)* — Deprecated alias of :meth:`CursorManager.pop_stack` (2026-09;
-  - `SwitchboardUtilsMixin.push_override_cursor_stack(app, saved)` *(static)* — Deprecated alias of :meth:`CursorManager.push_stack` (2026-09;
   - `SwitchboardUtilsMixin.get_cursor_offset_from_center(widget)` *(static)* — Get the relative position of the cursor with respect to the center of a given widget.
   - `SwitchboardUtilsMixin.center_widget(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)` *(static)* — Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor…
   - `SwitchboardUtilsMixin.unpack_names(cls, name_string)` *(class)* — Unpacks a comma-separated string of names and returns a list of individual names.
@@ -1017,17 +1016,16 @@ Test isolation for every suite in the ecosystem — keep test runs off live user
 <a id="widgets--comboBox"></a>
 ### `widgets/comboBox.py`
 
-- **[`class CustomStyle(QtWidgets.QProxyStyle)`](uitk/uitk/widgets/comboBox.py#L17)** — Custom proxy style for ComboBox that handles header text display.
-  - `CustomStyle.drawControl(self, element, opt, painter, widget=None)` — Override control drawing to handle header text display.
+- **[`class CustomStyle(QtWidgets.QProxyStyle)`](uitk/uitk/widgets/comboBox.py#L17)** — Fusion-based proxy style for ComboBox: focus, popup and row-metric fixes.
   - `CustomStyle.drawComplexControl(self, control, opt, painter, widget=None)`
   - `CustomStyle.styleHint(self, hint, option=None, widget=None, returnData=None)`
   - `CustomStyle.pixelMetric(self, metric, option=None, widget=None)`
-- **[`class AlignedComboBox(QtWidgets.QComboBox)`](uitk/uitk/widgets/comboBox.py#L97)** — ComboBox with header text and alignment support.
+- **[`class AlignedComboBox(QtWidgets.QComboBox)`](uitk/uitk/widgets/comboBox.py#L75)** — ComboBox with header text and alignment support.
   - `AlignedComboBox.setHeaderText(self, text)` — Set the header text displayed when no item is selected.
   - `AlignedComboBox.setHeaderAlignment(self, alignment)` — Set the alignment for header text.
   - `AlignedComboBox.get_stylesheet_property(self, property_name)` — Extract a numeric property value from the widget's stylesheet.
   - `AlignedComboBox.format_current_display_text(self, text: str) -> str` — Compose the text painted for the *current* selection only.
-  - `AlignedComboBox.paintEvent(self, event)` — Custom paint event to draw header text when no selection.
+  - `AlignedComboBox.paintEvent(self, event)` — Paint the box and its label -- adorned -- then any header text.
 - **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L600)** — QComboBox with automatic Menu and OptionBox integration.
   - `ComboBox.clear(self)`
   - `ComboBox.addItem(self, *args, **kwargs)`
@@ -1887,10 +1885,10 @@ Reusable helper for attaching a QSizeGrip to arbitrary widgets.
 
 Shared display behaviour for the spin-box widgets.
 
-- **[`class SpinBoxTextColorMixin`](uitk/uitk/widgets/mixins/spin_box_display.py#L24)** — Tint a spin box's displayed value text.
+- **[`class SpinBoxTextColorMixin`](uitk/uitk/widgets/mixins/spin_box_display.py#L57)** — Tint a spin box's displayed value text.
   - `SpinBoxTextColorMixin.set_text_color(self, color) -> None` — Tint the displayed value text.
   - `SpinBoxTextColorMixin.text_color(self)` — The current value-text color override, or ``None`` if unset.
-- **[`class PrefixColumnMixin`](uitk/uitk/widgets/mixins/spin_box_display.py#L54)** — Lay a spin box's ``prefix`` label and its value out as a column.
+- **[`class PrefixColumnMixin`](uitk/uitk/widgets/mixins/spin_box_display.py#L87)** — Lay a spin box's ``prefix`` label and its value out as a column.
   - `PrefixColumnMixin.setPrefix(self, prefix: str) -> None` — Set the label shown ahead of the value (separator managed here).
   - `PrefixColumnMixin.prefix_label(self) -> str` — The prefix as set, without the separator (or elision) applied here.
   - `PrefixColumnMixin.resizeEvent(self, event)`
@@ -1971,9 +1969,9 @@ Validation feedback for a text field -- the red "refused" state.
 
 Shared input handling for spin-box widgets: the modifier-driven wheel
 
-- **[`class WheelStepMixin`](uitk/uitk/widgets/mixins/wheel_step.py#L43)** — Mixin: modifier-driven wheel handling for ``QAbstractSpinBox`` subclasses.
+- **[`class WheelStepMixin`](uitk/uitk/widgets/mixins/wheel_step.py#L56)** — Mixin: modifier-driven wheel handling for ``QAbstractSpinBox`` subclasses.
   - `WheelStepMixin.wheelEvent(self, event: QtGui.QWheelEvent) -> None`
-- **[`class SpinBoxAdjustingMixin`](uitk/uitk/widgets/mixins/wheel_step.py#L119)** — Mixin: the *adjusting* state of a ``QAbstractSpinBox`` subclass.
+- **[`class SpinBoxAdjustingMixin`](uitk/uitk/widgets/mixins/wheel_step.py#L287)** — Mixin: the *adjusting* state of a ``QAbstractSpinBox`` subclass.
   - `SpinBoxAdjustingMixin.adjusting(self) -> bool` *(property)* — True while a mouse button is held on the box or a typed edit is
   - `SpinBoxAdjustingMixin.mousePressEvent(self, event) -> None`
   - `SpinBoxAdjustingMixin.mouseReleaseEvent(self, event) -> None`
@@ -2011,22 +2009,24 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
   - `BaseOption.setup_widget(self)` — Setup the widget after creation.
   - `BaseOption.on_wrap(self, option_box, container)` — Called when the option is added to a wrapped widget.
   - `BaseOption.sibling_options(self)` — The other options sharing this field's OptionBox (never ``self``).
-  - `BaseOption.restore_default(self) -> None` — Return this option's *own* state to its as-constructed default.
+  - `BaseOption.restore_default(self) -> None` — Return this option's *own* state to its default.
+  - `BaseOption.save_default(self) -> bool` — Make this option's current state the one :meth:`restore_default` returns to.
+  - `BaseOption.clear_saved_default(self) -> bool` — Forget a :meth:`save_default`, so the as-constructed default applies again.
   - `BaseOption.refresh(self) -> None` — Re-pull anything this option DERIVES from a source outside itself.
   - `BaseOption.set_wrapped_widget(self, widget)` — Set or update the wrapped widget.
-- **[`class ButtonOption(BaseOption)`](uitk/uitk/widgets/optionBox/options/_options.py#L165)** — Base class for button-based options.
+- **[`class ButtonOption(BaseOption)`](uitk/uitk/widgets/optionBox/options/_options.py#L195)** — Base class for button-based options.
   - `ButtonOption.create_widget(self)` — Create a QPushButton widget.
   - `ButtonOption.setup_widget(self)` — Setup button connections.
   - `ButtonOption.block_next_click(self)` — Block the next click event (used when popup closes to prevent immediate reopen).
   - `ButtonOption.set_checked(self, checked)` — Set the checked state of the button.
-- **[`class GatingMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L380)** — Reusable *gating button* capability for option plugins.
+- **[`class GatingMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L410)** — Reusable *gating button* capability for option plugins.
 
 <a id="widgets--optionBox--options--_persistence"></a>
 ### `widgets/optionBox/options/_persistence.py`
 
 Shared persistence wiring for OptionBox plugins.
 
-- **[`class PersistedOption`](uitk/uitk/widgets/optionBox/options/_persistence.py#L28)** — Mixin that adds ``settings_key`` resolution + lazy SettingsManager.
+- **[`class PersistedOption`](uitk/uitk/widgets/optionBox/options/_persistence.py#L29)** — Mixin that adds ``settings_key`` resolution + lazy SettingsManager.
   - `PersistedOption.host_suffix_for(widget) -> str` *(static)* — Host-context suffix (``"_maya"`` / ``"_blender"`` / ``""``) for *widget*.
   - `PersistedOption.settings_for(app: str, key: str, widget=None) -> Optional['SettingsManager']` *(static)* — A :class:`SettingsManager` for an option plugin's persisted state.
 
@@ -2040,7 +2040,7 @@ Action option for OptionBox - provides customizable action buttons.
   - `ActionOption.set_action_handler(self, handler)` — Set or update the action handler.
   - `ActionOption.current_state(self)` *(property)* — The current state index (0-based).
   - `ActionOption.set_states(self, states)` — Set multiple cycling states.
-- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L213)** — A menu action option specifically for showing menus.
+- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L210)** — A menu action option specifically for showing menus.
   - `MenuOption.set_menu(self, menu)` — Set or update the menu.
   - `MenuOption.set_wrapped_widget(self, widget)` — Update wrapped widget and reparent menu if needed.
 
@@ -2063,7 +2063,9 @@ Affix-mode picker option for OptionBox.
   - `AffixOption.setup_widget(self)` — Wire the cycle click, show the tooltip, apply the mode's field effects.
   - `AffixOption.mode(self) -> str` *(property)* — Current mode key.
   - `AffixOption.set_mode(self, mode: str) -> None` — Select *mode* if it is one of :attr:`modes` (else no-op).
-  - `AffixOption.restore_default(self) -> None` — Return the picker to its constructed ``default`` mode.
+  - `AffixOption.restore_default(self) -> None` — Return the picker to its default mode.
+  - `AffixOption.save_default(self) -> bool` — Make the current mode the one :meth:`restore_default` returns to.
+  - `AffixOption.clear_saved_default(self) -> bool` — Forget a :meth:`save_default`;
   - `AffixOption.refresh(self) -> None` — Re-pull a text-supplying mode's value into the field.
   - `AffixOption.resolve(self, text: Optional[str] = None, *, default: str = 'prefix') -> Tuple[str, str]` — Return ``(prefix, suffix)`` for *text* under the current mode.
 
@@ -2202,9 +2204,11 @@ Toggle option for OptionBox — a persisted binary on/off button.
 - **[`class BinaryToggleOption(GatingMixin, PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/toggle.py#L36)** — Shared base for binary on/off option buttons.
   - `BinaryToggleOption.is_on(self) -> bool` *(property)* — Current state.
   - `BinaryToggleOption.set_on(self, value: bool, *, emit: bool = True) -> None` — Programmatically set the toggle state.
-  - `BinaryToggleOption.restore_default(self) -> None` — Return the toggle to its constructed ``initial`` state.
+  - `BinaryToggleOption.restore_default(self) -> None` — Return the toggle to its default state.
+  - `BinaryToggleOption.save_default(self) -> bool` — Make the current state the one :meth:`restore_default` returns to.
+  - `BinaryToggleOption.clear_saved_default(self) -> bool` — Forget a :meth:`save_default`;
   - `BinaryToggleOption.setup_widget(self)`
-- **[`class ToggleOption(BinaryToggleOption)`](uitk/uitk/widgets/optionBox/options/toggle.py#L201)** — Persisted binary toggle button.
+- **[`class ToggleOption(BinaryToggleOption)`](uitk/uitk/widgets/optionBox/options/toggle.py#L229)** — Persisted binary toggle button.
 
 <a id="widgets--optionBox--options--value"></a>
 ### `widgets/optionBox/options/value.py`
@@ -2246,6 +2250,8 @@ Utilities and helper functions for OptionBox.
   - `OptionBoxManager.clear_options(self)` — Clear all added options.
   - `OptionBoxManager.get_options(self)` — Every option on this widget — pending (not yet wrapped) and live.
   - `OptionBoxManager.restore_option_defaults(self)` — Ask every option to return its own state to its default.
+  - `OptionBoxManager.save_option_defaults(self) -> int` — Make every option's current state its default (``BaseOption.save_default``).
+  - `OptionBoxManager.clear_option_defaults(self) -> int` — Forget every option's saved default (``BaseOption.clear_saved_default``).
   - `OptionBoxManager.find_option(self, option_type)` — Find the first option of the given type.
   - `OptionBoxManager.set_order(self, order)` — Set option order (fluent interface)
   - `OptionBoxManager.clear_first(self)` — Set clear button to appear first (fluent interface)
@@ -2470,7 +2476,7 @@ The interactive items of an expanded attribute sub-row.
   - `TangentHandleItem.mouseMoveEvent(self, event)`
   - `TangentHandleItem.mouseReleaseEvent(self, event)`
   - `TangentHandleItem.contextMenuEvent(self, event)`
-- **[`class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L948)** — The scale box Shift raises around a key selection.
+- **[`class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L942)** — The scale box Shift raises around a key selection.
   - `KeyScaleBoxItem.lo(self) -> float` *(property)* — Frame of the box's left edge.
   - `KeyScaleBoxItem.hi(self) -> float` *(property)* — Frame of the box's right edge.
   - `KeyScaleBoxItem.side(self) -> str` *(property)* — Which handle is being dragged, or ``""`` when none is.

@@ -1820,6 +1820,62 @@ class TestToggleOption(QtBaseTestCase):
             toggle2._settings.clear()
             toggle2._settings.sync()
 
+    def _saved_default(self, key, on=False):
+        """A toggle on *key* whose saved default is *on*, session state cleared.
+
+        Cleared so the next toggle built on the key has nothing but the saved
+        default to open at -- which is the case the fallback exists for.
+        """
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        widget = self.track_widget(QtWidgets.QLineEdit())
+        toggle = ToggleOption(wrapped_widget=widget, initial=True, settings_key=key)
+        toggle.set_on(on)
+        self.assertTrue(toggle.save_default())
+        toggle._settings.remove(toggle._STATE_KEY)
+        toggle._settings.sync()
+        return toggle
+
+    def test_a_saved_default_is_what_a_reset_returns_to(self):
+        toggle = self._saved_default("test_toggle_saved_default")
+        try:
+            toggle.set_on(True)
+            toggle.restore_default()
+            self.assertFalse(toggle.is_on, "reset lands on the saved default")
+
+            self.assertTrue(toggle.clear_saved_default())
+            toggle.restore_default()
+            self.assertTrue(toggle.is_on, "and initial= is the default once more")
+            self.assertFalse(
+                toggle.clear_saved_default(), "nothing left to forget the second time"
+            )
+        finally:
+            toggle._settings.clear()
+            toggle._settings.sync()
+
+    def test_a_fresh_toggle_opens_at_the_saved_default(self):
+        """No session state (a first open on this machine) falls back to the
+        saved default rather than to the shipped ``initial``."""
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        key = "test_toggle_default_opens"
+        toggle = self._saved_default(key)
+        try:
+            widget = self.track_widget(QtWidgets.QLineEdit())
+            fresh = ToggleOption(wrapped_widget=widget, initial=True, settings_key=key)
+            self.assertFalse(fresh.is_on)
+        finally:
+            toggle._settings.clear()
+            toggle._settings.sync()
+
+    def test_a_toggle_without_persistence_saves_no_default(self):
+        _, toggle = self._make_toggle(initial=True)  # settings_key=False
+        self.assertFalse(toggle.save_default())
+        self.assertFalse(toggle.clear_saved_default())
+        toggle.set_on(False)
+        toggle.restore_default()
+        self.assertTrue(toggle.is_on, "still the constructed default")
+
 
 class TestDisableOption(QtBaseTestCase):
     """Tests for DisableOption — the universal 'disable this widget' button."""

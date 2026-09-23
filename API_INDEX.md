@@ -145,7 +145,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `managers/state_manager.py`
 - `class StateManager(ptk.LoggingMixin)`
-  - methods: apply, suppress_save, save, save_value, load, for_widget, reset_all, reset, clear, has_default, default_for, save_defaults, clear_saved_defaults, has_saved_defaults, capture_default, set_default, save_custom, load_custom, clear_custom
+  - methods: apply, suppress_save, is_applying, save, save_value, load, for_widget, reset_all, reset, clear, has_default, default_for, save_defaults, clear_saved_defaults, has_saved_defaults, capture_default, set_default, save_custom, load_custom, clear_custom
 
 ### `managers/value_manager.py`
 - `class ValueManager`
@@ -193,7 +193,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `switchboard/utils.py`
 - `class SwitchboardUtilsMixin`
-  - methods: busy_cursor, pop_override_cursor_stack, push_override_cursor_stack, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, show_when, text_from, value_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, confirm, message_box, text_view_dialog, data_view_dialog, save_data_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
+  - methods: busy_cursor, get_cursor_offset_from_center, center_widget, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, enable_when, show_when, text_from, value_from, refresh_dependencies, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, invert_on_modifier, progress, progress_adapter, confirm, message_box, text_view_dialog, data_view_dialog, save_data_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, simulate_key_press, defer_with_timer, gc_protect, modal_menu
 
 ### `switchboard/widgets.py`
 - `class SwitchboardWidgetMixin`
@@ -225,7 +225,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/comboBox.py`
 - `class CustomStyle(QtWidgets.QProxyStyle)`
-  - methods: drawControl, drawComplexControl, styleHint, pixelMetric
+  - methods: drawComplexControl, styleHint, pixelMetric
 - `class AlignedComboBox(QtWidgets.QComboBox)`
   - methods: setHeaderText, setHeaderAlignment, get_stylesheet_property, format_current_display_text, paintEvent
 - `class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`
@@ -483,7 +483,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class OptionButton(QtWidgets.QPushButton, AttributesMixin)`
 - `class QObjectABCMeta(type(QtCore.QObject), ABCMeta)`
 - `class BaseOption(QtCore.QObject, ABC)`
-  - methods: is_compatible, widget, create_widget, setup_widget, on_wrap, sibling_options, restore_default, refresh, set_wrapped_widget
+  - methods: is_compatible, widget, create_widget, setup_widget, on_wrap, sibling_options, restore_default, save_default, clear_saved_default, refresh, set_wrapped_widget
 - `class ButtonOption(BaseOption)`
   - methods: create_widget, setup_widget, block_next_click, set_checked
 - `class GatingMixin`
@@ -503,7 +503,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class AffixMode`
   - methods: resolve, text, convention
 - `class AffixOption(PersistedOption, ButtonOption)`
-  - methods: modes, mode_spec, is_compatible, create_widget, setup_widget, mode, set_mode, restore_default, refresh, resolve
+  - methods: modes, mode_spec, is_compatible, create_widget, setup_widget, mode, set_mode, restore_default, save_default, clear_saved_default, refresh, resolve
 
 ### `widgets/optionBox/options/browse.py` — Browse option for OptionBox - provides file/folder browsing buttons.
 - `class BrowseOption(ButtonOption)`
@@ -548,7 +548,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/optionBox/options/toggle.py` — Toggle option for OptionBox — a persisted binary on/off button.
 - `class BinaryToggleOption(GatingMixin, PersistedOption, ButtonOption)`
-  - methods: is_on, set_on, restore_default, setup_widget
+  - methods: is_on, set_on, restore_default, save_default, clear_saved_default, setup_widget
 - `class ToggleOption(BinaryToggleOption)`
 
 ### `widgets/optionBox/options/value.py` — Inline editable value readout for OptionBox.
@@ -557,7 +557,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/optionBox/utils.py` — Utilities and helper functions for OptionBox.
 - `class OptionBoxManager(ptk.LoggingMixin)`
-  - methods: clear_option, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_affix, affix_mode, resolve_affix, set_reset, browse, enable_clear, disable_clear, clear_options, get_options, restore_option_defaults, find_option, set_order, clear_first, enabled, widget, menu, get_menu, enable_menu, enable_option_menu, disable_menu, add_option, container, remove, add_option_box, add_clear_option, add_menu_option, patch_widget_class, patch_common_widgets
+  - methods: clear_option, option_order, pin, recent, set_action, add_action, set_toggle, add_toggle, set_filter, set_disable, add_disable, add_value, set_affix, affix_mode, resolve_affix, set_reset, browse, enable_clear, disable_clear, clear_options, get_options, restore_option_defaults, save_option_defaults, clear_option_defaults, find_option, set_order, clear_first, enabled, widget, menu, get_menu, enable_menu, enable_option_menu, disable_menu, add_option, container, remove, add_option_box, add_clear_option, add_menu_option, patch_widget_class, patch_common_widgets
 
 ### `widgets/overflow_indicator.py` — Arrows at the edges of a scroll view where its content continues past them.
 - `class OverflowIndicator(QtWidgets.QWidget)`

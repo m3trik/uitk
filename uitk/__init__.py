@@ -44,7 +44,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.4.2"
+__version__ = "1.5.0"
 
 
 DEFAULT_INCLUDE = {
@@ -66,8 +66,7 @@ DEFAULT_INCLUDE = {
     "handlers.handler_entry": "HandlerEntry",
     "handlers.ui_handler": "UiHandler",
     "handlers.external_app_handler": "ExternalAppHandler",
-    # Deprecated aliases for the registry classes (moved to
-    # uitk.managers.registry_manager); resolving them warns via the shim.
+    # ``.ui`` compilation and the two loaders (compiled ``_ui.py`` / runtime).
     "compile": ["UiCompiler", "PrecompileJob"],
     "loaders": ["CompiledLoader", "RuntimeLoader"],
     # Qt Designer widget-box registrar (`python -m uitk.designer`).

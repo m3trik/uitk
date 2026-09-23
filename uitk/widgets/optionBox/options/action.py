@@ -162,10 +162,7 @@ class ActionOption(PersistedOption, ButtonOption):
         )
 
     def _save_state(self):
-        if not self._settings:
-            return
-        self._settings.setValue("current_state", self._state_cycle.current_state)
-        self._settings.sync()
+        self._store("current_state", self._state_cycle.current_state)
 
     def _load_state(self):
         if not self._settings:

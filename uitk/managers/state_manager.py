@@ -72,6 +72,7 @@ class StateManager(ptk.LoggingMixin):
         # whose C++ object is long gone.
         self._defaults = weakref.WeakKeyDictionary()
         self._save_suppressed = 0
+        self._applying_defaults = 0
 
     def _get_settings(self, widget: QtWidgets.QWidget) -> QtCore.QSettings:
         return self.qsettings
@@ -286,6 +287,28 @@ class StateManager(ptk.LoggingMixin):
             yield
         finally:
             self._save_suppressed -= 1
+
+    @contextmanager
+    def _applying(self):
+        """Mark a reset in progress (see :attr:`is_applying`)."""
+        self._applying_defaults += 1
+        try:
+            yield
+        finally:
+            self._applying_defaults -= 1
+
+    @property
+    def is_applying(self) -> bool:
+        """True while values are applied FOR the user rather than BY them.
+
+        A preset or session restore (:meth:`suppress_save`) or a reset
+        (:meth:`reset_all` / :meth:`reset`). A handler that turns one field's
+        edit into edits of OTHER fields -- a ``link_spinboxes`` lock -- must
+        only re-baseline then: a reset applies field by field, and a lock
+        whose saved default is ON is back on before the values land, so every
+        reset field shoved its delta into its locked siblings.
+        """
+        return bool(self._save_suppressed or self._applying_defaults)
 
     def _coerce_for_store(self, value: Any) -> Any:
         """Coerce a value into something the backing store round-trips losslessly.
@@ -507,7 +530,11 @@ class StateManager(ptk.LoggingMixin):
         if factory:
             self.clear_saved_defaults(widgets)
         targets = self._reset_targets(widgets)
+        with self._applying():
+            self._reset_targets_to_defaults(targets, block_signals)
 
+    def _reset_targets_to_defaults(self, targets, block_signals: bool) -> None:
+        """The two passes of :meth:`reset_all`, over its resolved *targets*."""
         # Per-field option state is cleared FIRST, in its own pass, because some
         # of it CHANGES WHAT APPLYING A VALUE DOES. A ``link_spinboxes`` lock
         # links its field's value changes to its locked siblings' by an equal
@@ -517,8 +544,10 @@ class StateManager(ptk.LoggingMixin):
         # (0, 0, 0). Clearing per widget inside the apply loop is not enough;
         # it only shortens the window. An excluded field keeps its lock (it is
         # opting out of the reset entirely) and is still safe: propagation is
-        # driven by the lock on the field being *changed*, and every field that
-        # changes here has just been unlocked.
+        # driven by the lock on the field being *changed*. Nor is the order
+        # alone enough, which is why the whole reset runs under
+        # :attr:`is_applying`: a lock whose saved (or initial) default is ON is
+        # back ON before the values land.
         for widget in targets:
             self._restore_option_defaults(widget)
 
@@ -546,7 +575,8 @@ class StateManager(ptk.LoggingMixin):
         """Reset a widget to its default (see :meth:`default_for`)."""
         if widget in self._defaults:
             default = self.default_for(widget)
-            self.apply(widget, default)
+            with self._applying():
+                self.apply(widget, default)
             self._sync_stored_default(widget, default)
 
     def _sync_stored_default(
@@ -574,7 +604,15 @@ class StateManager(ptk.LoggingMixin):
 
         A panel-wide "Reset to Defaults" resets *fields*, not just values — so a
         per-field lock or disable toggle clears with the value it was modifying,
-        matching what that field's own reset button does. Read through the
+        matching what that field's own reset button does.
+        """
+        self._option_box_call(widget, "restore_option_defaults")
+
+    def _option_box_call(self, widget: QtWidgets.QWidget, method: str) -> int:
+        """Run *method* on *widget*'s option-box manager; ``0`` when it has none.
+
+        The one bridge from a field's value state to its option state -- reset,
+        save-as-default and factory-reset all cross here. Read through the
         cached ``_option_box_manager`` rather than the ``option_box`` property:
         the property CREATES a manager on first access (it is auto-patched onto
         every QWidget), so touching it here would spin one up for every widget
@@ -582,12 +620,17 @@ class StateManager(ptk.LoggingMixin):
         option box, and a widget that never had one is skipped.
         """
         mgr = getattr(widget, "_option_box_manager", None)
-        restore = getattr(mgr, "restore_option_defaults", None)
-        if callable(restore):
-            try:
-                restore()
-            except Exception as e:
-                self.logger.debug(f"restore_option_defaults failed: {e}")
+        call = getattr(mgr, method, None)
+        if not callable(call):
+            return 0
+        try:
+            done = call()
+        except Exception as e:
+            self.logger.debug(f"{method} failed: {e}")
+            return 0
+        # The counting methods answer with one; the fluent ones answer with
+        # the manager, which counts as nothing rather than as a failure.
+        return done if isinstance(done, int) else 0
 
     def clear(self, widget: QtWidgets.QWidget) -> None:
         """Removes the stored state for the widget from QSettings."""
@@ -621,7 +664,13 @@ class StateManager(ptk.LoggingMixin):
         return self._defaults.get(widget)
 
     def save_defaults(self, widgets=None) -> int:
-        """Make the widgets' current values their defaults (persisted).
+        """Make the widgets' current values — and their option state — their defaults.
+
+        A field is its value *and* its switches: a panel where a toggle can't
+        be saved as a default is one where the same gesture answers "saved"
+        for half the controls the user just set (see
+        ``BaseOption.save_default``, the mirror of the option pass
+        :meth:`reset_all` already makes).
 
         Parameters:
             widgets: Optional iterable limiting the save; ``None`` saves every
@@ -631,15 +680,22 @@ class StateManager(ptk.LoggingMixin):
             How many defaults were written (none while ``suppress_save`` is
             active).
         """
+        if self._save_suppressed:
+            return 0
         saved = 0
         for widget in self._reset_targets(widgets):
             key = self._saved_default_key(widget)
             if key and self.save_value(key, self._get_current_value(widget)):
                 saved += 1
+            saved += self._option_box_call(widget, "save_option_defaults")
         return saved
 
     def clear_saved_defaults(self, widgets=None) -> int:
         """Forget saved defaults, so the widgets' factory defaults apply again.
+
+        Option state included (``BaseOption.clear_saved_default``), and before
+        :meth:`reset_all` restores anything — so a factory reset puts the
+        switches back at what the panel shipped, not at what was saved over it.
 
         Parameters:
             widgets: Optional iterable limiting the clear; ``None`` clears all.
@@ -655,6 +711,7 @@ class StateManager(ptk.LoggingMixin):
             if key:
                 self._get_settings(widget).remove(key)
                 cleared += 1
+            cleared += self._option_box_call(widget, "clear_option_defaults")
         if cleared:
             self._sync_store()
         return cleared

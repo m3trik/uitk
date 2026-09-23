@@ -304,11 +304,6 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     # the preview's control points already show the new shape, and the
     # consumer rebuilds from the scene after writing the tangents.
     keys_tangent_dragged = QtCore.Signal(list, str, bool)
-    # DEPRECATED, one release: superseded by ``keys_tangent_dragged``, which
-    # carries the whole gesture.  Still emitted -- alone, after it -- for the
-    # single-key unbroken drag it always described, so an existing consumer
-    # keeps working.  Connect ONE of the two, never both.
-    key_tangent_dragged = QtCore.Signal(int, float, str, float, float)
 
     def __init__(self, parent=None, **kwargs):
         super().__init__(QtCore.Qt.Horizontal, parent)
@@ -1416,9 +1411,6 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._timeline.horizontalScrollBar().setValue(
             int(self._timeline.time_to_x(t_min) - padding)
         )
-
-    # Keep legacy alias so external callers aren't broken
-    frame_all = frame_shot
 
     # -- drag cancel -------------------------------------------------------
     def _cancel_active_drag(self) -> bool:

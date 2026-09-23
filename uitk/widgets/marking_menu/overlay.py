@@ -4,7 +4,7 @@ import sys
 from operator import methodcaller
 from qtpy import QtWidgets, QtGui, QtCore
 
-from uitk.switchboard import OverrideCursorGuard
+from uitk.managers.cursor_manager import OverrideCursorGuard
 
 
 class OverlayFactoryFilter(QtCore.QObject):

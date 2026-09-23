@@ -430,7 +430,12 @@ class PinValuesOption(ButtonOption):
             )
 
     def _save_pinned_values(self):
-        """Save pinned values to persistent storage."""
+        """Save pinned values to persistent storage.
+
+        Not ``PersistedOption._store``: this option uses that class as a
+        namespace (``settings_for``) rather than a mixin, because its key
+        resolution differs -- see that module's docstring.
+        """
         if not self._settings:
             return
 

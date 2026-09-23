@@ -130,7 +130,7 @@ class BaseOption(QtCore.QObject, ABC, metaclass=QObjectABCMeta):
         return [o for o in box.get_options() if o is not self]
 
     def restore_default(self) -> None:
-        """Return this option's *own* state to its as-constructed default.
+        """Return this option's *own* state to its default.
 
         The field-level counterpart to a value reset: a sibling ``ResetOption``
         calls this on every other option when the user resets the field, so a
@@ -138,8 +138,38 @@ class BaseOption(QtCore.QObject, ABC, metaclass=QObjectABCMeta):
         its value. No-op by default — an option with no state of its own, or
         whose state is user data worth keeping (pinned/recent values), simply
         doesn't override it.
+
+        "Default" means the saved one where :meth:`save_default` has written
+        one, else the as-constructed one.
         """
         pass
+
+    def save_default(self) -> bool:
+        """Make this option's current state the one :meth:`restore_default` returns to.
+
+        The other half of the reset grammar: a panel-wide *Save as Defaults*
+        (``StateManager.save_defaults``, the Shift+Click of ``ResetGesture``)
+        reaches a field's options through here, so a switch the user keeps off
+        stays off across a reset exactly as a spin box's value does. Without
+        it a toggle is the one control on a panel that a save cannot move.
+
+        Returns:
+            Whether a default was written (``False`` from the no-op default,
+            and from an option whose persistence is disabled).
+        """
+        return False
+
+    def clear_saved_default(self) -> bool:
+        """Forget a :meth:`save_default`, so the as-constructed default applies again.
+
+        Reached by a factory reset (``StateManager.clear_saved_defaults``),
+        which runs before the values are restored — so :meth:`restore_default`
+        then answers with the shipped state.
+
+        Returns:
+            Whether a saved default was removed.
+        """
+        return False
 
     def refresh(self) -> None:
         """Re-pull anything this option DERIVES from a source outside itself.

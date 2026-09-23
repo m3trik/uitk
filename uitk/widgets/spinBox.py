@@ -28,7 +28,8 @@ class SpinBox(
 
     Features:
     - Custom value-to-text mapping (e.g. -1 -> "Auto")
-    - Modifier-driven wheel stepping (see
+    - Modifier-driven wheel stepping, gated to the drawn value so a
+      stretched field does not eat a panel's scroll (see
       :class:`uitk.widgets.mixins.wheel_step.WheelStepMixin`)
     - ``adjusting`` for a debounced slot (``widget.debounce``): the slot
       waits while a mouse button is held on the box or a typed edit is

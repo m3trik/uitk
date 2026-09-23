@@ -54,6 +54,11 @@ class BinaryToggleOption(GatingMixin, PersistedOption, ButtonOption):
 
     SETTINGS_APP = "ToggleOption"
 
+    #: Settings keys: the live state, and the default a :meth:`save_default`
+    #: writes for :meth:`restore_default` to return to.
+    _STATE_KEY = "is_on"
+    _DEFAULT_KEY = "default_on"
+
     toggled = QtCore.Signal(bool)
 
     def __init__(
@@ -134,14 +139,25 @@ class BinaryToggleOption(GatingMixin, PersistedOption, ButtonOption):
             self.toggled.emit(self._is_on)
 
     def restore_default(self) -> None:
-        """Return the toggle to its constructed ``initial`` state.
+        """Return the toggle to its default state.
 
         Called by a sibling ``ResetOption`` when the user resets the field, so
         a reset also clears the toggle (a spacing *lock*, a *disable*). Routed
         through :meth:`set_on`, so the cleared state persists and ``toggled``
         fires exactly as it would for a click.
+
+        The default is the one :meth:`save_default` stored, else the
+        constructed ``initial``.
         """
-        self.set_on(self._initial)
+        self.set_on(self._default_on())
+
+    def save_default(self) -> bool:
+        """Make the current state the one :meth:`restore_default` returns to."""
+        return self._store(self._DEFAULT_KEY, bool(self._is_on))
+
+    def clear_saved_default(self) -> bool:
+        """Forget a :meth:`save_default`; ``initial`` is the default again."""
+        return self._forget(self._DEFAULT_KEY)
 
     # ------------------------------------------------------------------
     # ButtonOption overrides
@@ -181,21 +197,33 @@ class BinaryToggleOption(GatingMixin, PersistedOption, ButtonOption):
         )
 
     def _save_state(self):
-        if not self._settings:
-            return
-        self._settings.setValue("is_on", bool(self._is_on))
-        self._settings.sync()
+        self._store(self._STATE_KEY, bool(self._is_on))
 
     def _load_state(self):
-        if not self._settings:
-            return
-        saved = self._settings.value("is_on")
+        """Open at the last session's state; failing that, at the default
+        (a saved one, else the constructed ``initial`` already in place)."""
+        saved = self._stored_bool(self._STATE_KEY)
         if saved is None:
-            return
-        # QSettings stringifies bools on some backends.
-        if isinstance(saved, str):
-            saved = saved.lower() in ("1", "true", "yes")
-        self._is_on = bool(saved)
+            saved = self._stored_bool(self._DEFAULT_KEY)
+        if saved is not None:
+            self._is_on = saved
+
+    def _default_on(self) -> bool:
+        """What :meth:`restore_default` returns to: a saved default, else ``initial``."""
+        stored = self._stored_bool(self._DEFAULT_KEY)
+        return self._initial if stored is None else stored
+
+    def _stored_bool(self, key: str) -> Optional[bool]:
+        """*key* from this option's settings as a bool, ``None`` when unset.
+        QSettings stringifies bools on some backends."""
+        if not self._settings:
+            return None
+        value = self._settings.value(key)
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value.lower() in ("1", "true", "yes")
+        return bool(value)
 
 
 class ToggleOption(BinaryToggleOption):

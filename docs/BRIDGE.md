@@ -20,7 +20,7 @@ The subsystem is five modules under [`uitk/bridge/`](../uitk/bridge/), all re-ex
 | [`tooltip.py`](../uitk/bridge/tooltip.py) | `Tooltip` — rich-text parameter tooltips + per-template description extraction |
 | [`slots.py`](../uitk/bridge/slots.py) | `BridgeSlotsBase` — the slot base class that assembles it all into a panel |
 
-**The surface is class-only.** Each module exposes one class namespace; there are no flat function re-exports (`KindFactory.make_widget`, `Formatters.python_literal`, `Parameters.referenced_keys`, `Tooltip.format_param_tooltip`). `BridgeParam` is an alias for `AttributeSpec` (kept in `__init__.py` for existing call sites).
+**The surface is class-only.** Each module exposes one class namespace; there are no flat function re-exports (`KindFactory.make_widget`, `Formatters.python_literal`, `Parameters.referenced_keys`, `Tooltip.format_param_tooltip`).
 
 ### The panel `.ui` contract
 

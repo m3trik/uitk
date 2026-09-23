@@ -645,6 +645,38 @@ class TestWidgetComboBoxArrowAffordance(QtBaseTestCase):
         combo.arrow_alpha = 0.3
         _render()
 
+    def test_arrow_follows_the_whole_painted_label(self):
+        """The arrow sits after what the label PAINTS -- prefix included.
+
+        It measured the item text plus the suffix only; harmless while no
+        adornment painted, but once they did (2026-09-22) a prefixed combo
+        drew its arrow over its own text, one prefix-width short.
+        """
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from qtpy import QtGui
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.add(["Alpha", "Beta"])
+        combo.resize(220, 24)
+        combo.arrow_direction = "down"
+        combo.current_text_prefix = "Source:  "
+        combo.current_text_suffix = " *"
+        widths = []
+        measure = combo._compute_text_end_x
+
+        def spy(rect, width, alignment):
+            widths.append(width)
+            return measure(rect, width, alignment)
+
+        combo._compute_text_end_x = spy
+        combo.render(QtGui.QPixmap(combo.size()))
+
+        painted = combo.format_current_display_text(combo.currentText())
+        self.assertEqual(painted, f"Source:  {combo.currentText()} *")
+        self.assertEqual(
+            widths, [QtGui.QFontMetrics(combo.font()).horizontalAdvance(painted)]
+        )
+
 
 class TestWidgetComboBoxRowTracking(QtBaseTestCase):
     """Row-index bookkeeping across ascending inserts and takeWidgetAt on a
