@@ -1225,7 +1225,7 @@ class SwitchboardUtilsMixin:
         naming a tier the bake is no longer using::
 
             sb.value_from(ui, "cmb000", ["cmb_resolution", "spn_samples"],
-                          self._preset_for_dials)      # -> "quest" | "Custom"
+                          self._preset_for_dials)      # -> "mobile" | "Custom"
 
             sb.value_from(m, "cmb_mode", "chk_advanced",
                           lambda on: "advanced" if on else "basic")

@@ -117,7 +117,17 @@ class Tooltip(_TooltipInternal):
             if spec.step is not None:
                 rows.append(("Step", str(spec.step)))
 
-        rows.append(("Default", repr(spec.default)))
+        default = repr(spec.default)
+        if (
+            spec.kind == "int"
+            and spec.placeholder
+            and spec.minimum is not None
+            and spec.default == spec.minimum
+        ):
+            # The field shows its "unset" minimum as the placeholder, so the
+            # tooltip names it the same way rather than as a bare number.
+            default = f"{spec.placeholder} ({default})"
+        rows.append(("Default", default))
 
         bullets = None
         if spec.kind in ("choice", "check_list") and spec.choices:

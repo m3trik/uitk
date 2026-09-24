@@ -791,6 +791,66 @@ class TestLegacyMigration(BaseTestCase):
         )
 
 
+class TestSetupComboIdempotent(BaseTestCase):
+    """Repeat ``setup()`` on a Menu parent wires ONE preset combo.
+
+    ``setup()`` is also the re-configuration path (widgets, dirs); its
+    Menu-parent branch used to add a fresh ``cmb_presets`` on every call — a
+    second selector beside the first, and likewise after ``add_presets`` or a
+    manual ``wire_combo`` had already produced one. The guard keys off the
+    wired-combo closure (``_refresh_combo``), so any wiring route claims the
+    one slot.
+    """
+
+    class _Menu:
+        """Menu stand-in: ``add`` builds the real widget class, like Menu.add."""
+
+        def __init__(self):
+            self.added = []
+
+        def add(self, widget_cls, **kwargs):
+            w = widget_cls()
+            for k, v in kwargs.items():
+                getattr(w, k)(v)
+            self.added.append(w)
+            return w
+
+        def get_items(self):
+            return list(self.added)
+
+        def objectName(self):  # a real Menu is a QWidget; wire_combo may ask
+            return "probe_menu"
+
+    def setUp(self):
+        super().setUp()
+        self._tmp = Path(tempfile.mkdtemp(prefix="presets_setup_"))
+        self.menu = self._Menu()
+        self.mgr = PresetManager(parent=self.menu)
+
+    def tearDown(self):
+        for w in self.menu.added:
+            w.deleteLater()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        super().tearDown()
+
+    def test_repeat_setup_wires_one_combo(self):
+        self.mgr.setup(preset_dir=str(self._tmp))
+        self.mgr.setup(preset_dir=str(self._tmp))  # re-configure, not re-add
+        combos = [w for w in self.menu.added if w.objectName() == "cmb_presets"]
+        self.assertEqual(len(combos), 1)
+
+    def test_setup_respects_a_manually_wired_combo(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = ComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        self.mgr.setup(preset_dir=str(self._tmp))
+        self.assertEqual(
+            [w for w in self.menu.added if w.objectName() == "cmb_presets"], []
+        )
+
+
 class TestUncoveredKeyWarning(BaseTestCase):
     """``load()`` warns when the stored preset doesn't cover managed widgets.
 

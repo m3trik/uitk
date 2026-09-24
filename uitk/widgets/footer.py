@@ -46,6 +46,14 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
     # Pixel height of the slim progress indicator at the bottom edge.
     PROGRESS_BAR_HEIGHT = 3
 
+    #: Gap between the footer's visible items, so two background-styled
+    #: buttons added side by side don't render edge to edge as one button.
+    #: Qt skips it around hidden widgets and spacer items.
+    WIDGET_SPACING = 4
+    #: Total gap before the size grip. Its spacer supplies what the layout
+    #: spacing doesn't (see _setup_size_grip).
+    GRIP_GAP = 6
+
     #: Busy indicator: a uitk icon rotated through BUSY_FRAMES steps, one
     #: step per BUSY_FRAME_MS while the event loop is free and one per
     #: ``update()`` tick while a synchronous slot holds it (see set_busy).
@@ -92,7 +100,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         # Main outer layout (horizontal — leaves room for the size grip on the right)
         self.main_layout = QtWidgets.QHBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(0)
+        self.main_layout.setSpacing(self.WIDGET_SPACING)
 
         # Stacked widget keeps room for future alternate pages (search,
         # filter, etc.) without restructuring the footer.
@@ -189,9 +197,17 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         return self._status_label.font()
 
     def _setup_size_grip(self):
-        """Set up the size grip in the footer."""
+        """Set up the size grip in the footer.
+
+        A spacer item takes no layout spacing of its own, so the one spacing
+        between the grip and the item before it plus the spacer's width make
+        up ``GRIP_GAP``.
+        """
         self._grip_spacer = QtWidgets.QSpacerItem(
-            6, 0, QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Minimum
+            max(self.GRIP_GAP - self.WIDGET_SPACING, 0),
+            0,
+            QtWidgets.QSizePolicy.Fixed,
+            QtWidgets.QSizePolicy.Minimum,
         )
         self.main_layout.addItem(self._grip_spacer)
         self._size_grip = self.create_size_grip(
@@ -312,11 +328,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             self.main_layout.insertWidget(self._center_index(), widget)
             self._center_stretch()
         else:
-            if self._size_grip:
-                idx = self.main_layout.indexOf(self._grip_spacer)
-                self.main_layout.insertWidget(idx, widget)
-            else:
-                self.main_layout.addWidget(widget)
+            self._insert_right(widget)
 
         # Grow the footer's fixed height if the new child is taller, so
         # callers can drop in prebuilt widgets without clipping.
@@ -399,14 +411,17 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         elif callback:
             btn.clicked.connect(callback)
 
-        # Insert before grip spacer if present, otherwise append
+        self._insert_right(btn)
+        return btn
+
+    def _insert_right(self, widget: QtWidgets.QWidget) -> None:
+        """Place *widget* rightmost, just before the size grip if there is one,
+        so add order is left-to-right order."""
         if self._size_grip:
             idx = self.main_layout.indexOf(self._grip_spacer)
-            self.main_layout.insertWidget(idx, btn)
+            self.main_layout.insertWidget(idx, widget)
         else:
-            self.main_layout.addWidget(btn)
-
-        return btn
+            self.main_layout.addWidget(widget)
 
     @property
     def progress_bar(self) -> ProgressBar:

@@ -311,8 +311,16 @@ class PresetManager(ptk.LoggingMixin):
         if value_applier is not None:
             self.value_applier = value_applier
 
-        # Auto-create and wire a preset combo when parent is a Menu
-        if hasattr(self.parent, "add") and hasattr(self.parent, "get_items"):
+        # Auto-create and wire a preset combo when parent is a Menu — but only
+        # while none is wired yet: setup() is also the re-configuration path
+        # (widgets, dirs), and repeating the add would stack a second
+        # ``cmb_presets`` beside the first (likewise when ``add_presets`` /
+        # a manual ``wire_combo`` already produced the selector).
+        if (
+            self._refresh_combo is None
+            and hasattr(self.parent, "add")
+            and hasattr(self.parent, "get_items")
+        ):
             from uitk.widgets.comboBox import ComboBox
 
             combo = self.parent.add(

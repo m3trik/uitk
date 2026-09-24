@@ -556,6 +556,51 @@ class TestFooterWidgetRounding(QtBaseTestCase):
         self.assertFalse(btn.property("footerRounded"))
 
 
+class TestFooterWidgetSpacing(QtBaseTestCase):
+    """Adjacent footer widgets never touch.
+
+    Bug: the footer layout had zero spacing, so two background-styled buttons
+    added side by side (reference_manager's Un-Reference All + Save To
+    Workspace) rendered edge to edge and read as one button.
+    Fixed: 2026-09-23
+    """
+
+    def _laid_out(self, *widgets, hidden=()):
+        host = self.track_widget(QtWidgets.QWidget())
+        footer = Footer(add_size_grip=True)
+        QtWidgets.QVBoxLayout(host).addWidget(footer)
+        for w in widgets:
+            footer.add_widget(w, background=True)
+        for w in hidden:
+            footer.add_widget(w, background=True)
+            w.hide()
+        host.resize(500, 40)
+        host.show()
+        QtWidgets.QApplication.processEvents()
+        return footer
+
+    def test_side_by_side_buttons_are_separated(self):
+        a, b = QtWidgets.QPushButton("Un-Reference All"), QtWidgets.QPushButton("Save")
+        self._laid_out(a, b)
+        gap = b.geometry().left() - a.geometry().right() - 1
+        self.assertEqual(gap, Footer.WIDGET_SPACING)
+        self.assertGreater(gap, 0)
+
+    def test_status_text_does_not_touch_the_first_button(self):
+        a = QtWidgets.QPushButton("A")
+        footer = self._laid_out(a)
+        gap = a.geometry().left() - footer._stacked_widget.geometry().right() - 1
+        self.assertEqual(gap, Footer.WIDGET_SPACING)
+
+    def test_gap_before_the_size_grip_is_unchanged(self):
+        """The spacing must not widen the historical 6px gap before the grip,
+        and a hidden widget there adds no gap of its own."""
+        a = QtWidgets.QPushButton("A")
+        footer = self._laid_out(a, hidden=[QtWidgets.QPushButton("hidden")])
+        gap = footer.size_grip.geometry().left() - a.geometry().right() - 1
+        self.assertEqual(gap, Footer.GRIP_GAP)
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
