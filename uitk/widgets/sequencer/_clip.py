@@ -760,8 +760,8 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
 
         ``clearSelection()`` and ``setSelected()`` fire the scene's signal
         separately, and every consumer does real work on each one -- the Maya
-        adapter mirrors the selection into the scene and reopens the Graph
-        Editor -- so the pair costs twice what it should on every click.
+        adapter mirrors the selection into the scene and the Channel Box --
+        so the pair costs twice what it should on every click.
         Block, then re-emit once: the idiom the marquee already uses.
         """
         scene = self.scene()

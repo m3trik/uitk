@@ -687,6 +687,48 @@ class TestPlaceholderExplainsAnEmptyField(BaseTestCase):
         )
         self.assertEqual(KindFactory.read_value(widget), "")
 
+    def test_an_int_field_says_what_its_minimum_means(self):
+        """A number field has no EMPTY state, so the minimum is its "unset" --
+        a bridge's "0 uses the Quality tier". Shown as that sentence, not as a
+        0 the user would read as zero samples; read back, it is still the number."""
+        widget = KindFactory.make_widget(
+            AttributeSpec(
+                key="n",
+                kind="int",
+                minimum=-1,
+                maximum=16,
+                default=-1,
+                placeholder="From Quality",
+            )
+        )
+        self.assertEqual(widget.specialValueText(), "From Quality")
+        self.assertEqual(widget.text(), "From Quality")
+        self.assertEqual(KindFactory.read_value(widget), -1)
+        widget.setValue(3)
+        self.assertEqual(widget.text(), "3")
+
+    def test_an_int_field_without_one_shows_its_minimum_as_a_number(self):
+        widget = KindFactory.make_widget(
+            AttributeSpec(key="n", kind="int", minimum=0, default=0)
+        )
+        self.assertEqual(widget.specialValueText(), "")
+        self.assertEqual(widget.text(), "0")
+
+    def test_the_tooltip_names_an_unset_default_as_the_field_shows_it(self):
+        """The row says "From Quality"; its tooltip must not say "Default: -1"."""
+        from uitk.bridge.tooltip import Tooltip
+
+        tip = Tooltip.format_param_tooltip(
+            AttributeSpec(
+                key="n", kind="int", minimum=-1, default=-1, placeholder="From Quality"
+            )
+        )
+        self.assertIn("From Quality", tip)
+        plain = Tooltip.format_param_tooltip(
+            AttributeSpec(key="n", kind="int", minimum=-1, default=2)
+        )
+        self.assertNotIn("From Quality", plain)
+
 
 class TestKindWidgetPresetRoundTrip(BaseTestCase):
     """Every kind the bridges build must survive a widget-state preset.

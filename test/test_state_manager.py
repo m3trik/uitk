@@ -388,8 +388,8 @@ class TestLegacyIndexMigration(_ComboPersistBase):
     the combo keeps its default.
 
     So a stored value that is not present as text, IS integral, and lands in
-    range is read once as a legacy index. The next save writes text, so each
-    stored value is migrated at most once.
+    range is read once as a legacy index, and the load that reads it stores the
+    item's text in its place, so each stored value is migrated exactly once.
     """
 
     def test_an_int_saved_under_index_mode_still_selects_its_item(self):
@@ -426,6 +426,109 @@ class TestLegacyIndexMigration(_ComboPersistBase):
         c2 = self.make_combo({"9": None, "8": None, "2": None}, restore_by="text")
         self.sm.load(c2)
         self.assertEqual(c2.currentText(), "2", "matched by index instead of text")
+
+    def test_the_load_that_reads_a_legacy_index_stores_the_item_it_named(self):
+        """Read once means written once. Left on disk, the integer was read
+        again every session until the user happened to change the combo --
+        against whatever the list had become by then, the very drift the
+        identity modes exist to end."""
+        c1 = self.make_combo(LIST_ORIG)  # default: index mode
+        c1.setCurrentIndex(2)  # presetB
+        self.sm.save(c1)
+
+        c2 = self.make_combo(LIST_ORIG, restore_by="text")
+        self.sm.load(c2)
+        self.assertEqual(self.store.value("cmb000/currentIndexChanged"), "presetB")
+
+        # The list changes before anyone touches the combo: still presetB.
+        c3 = self.make_combo(LIST_REORDERED, restore_by="text")
+        self.sm.load(c3)
+        self.assertEqual(c3.currentText(), "presetB")
+
+    def test_the_rewrite_lands_inside_a_window_restore_batch_too(self):
+        """A window restores its widgets under ``suppress_save`` (the
+        switchboard's ``_process_deferred_widgets``). The rewrite re-spells the
+        value already stored -- the same selection, never a new one -- so it
+        has to land there too, or in a real panel it never lands at all
+        (measured: blendertk's Lightmap Baker kept its ``3``)."""
+        c1 = self.make_combo(LIST_ORIG)
+        c1.setCurrentIndex(2)  # presetB
+        self.sm.save(c1)
+
+        c2 = self.make_combo(LIST_ORIG, restore_by="text")
+        with self.sm.suppress_save():
+            self.sm.load(c2)
+        self.assertEqual(self.store.value("cmb000/currentIndexChanged"), "presetB")
+
+    def test_a_restore_that_does_not_land_on_the_legacy_row_stores_nothing(self):
+        """The rewrite records what the index NAMED, once the combo shows it.
+        A slot that moves the selection on the restore signal (or an apply
+        that failed) must not have ITS row stored as the user's choice."""
+        c1 = self.make_combo(LIST_ORIG)
+        c1.setCurrentIndex(2)  # presetB
+        self.sm.save(c1)
+
+        c2 = self.make_combo(LIST_ORIG, restore_by="text")
+        c2.currentIndexChanged.connect(lambda _index: c2.setCurrentIndex(0))
+        self.sm.load(c2)
+        self.assertEqual(c2.currentText(), "None")
+        self.assertEqual(str(self.store.value("cmb000/currentIndexChanged")), "2")
+
+    def test_applying_a_legacy_index_under_suppress_save_stores_nothing(self):
+        """``apply`` also loads PRESETS, under ``suppress_save``: only ``load``,
+        restoring the session's own key, may rewrite it."""
+        c1 = self.make_combo(LIST_ORIG)
+        c1.setCurrentIndex(1)  # presetA
+        self.sm.save(c1)
+
+        c2 = self.make_combo(LIST_ORIG, restore_by="text")
+        with self.sm.suppress_save():
+            self.sm.apply(c2, 2)
+        self.assertEqual(c2.currentText(), "presetB")
+        self.assertEqual(str(self.store.value("cmb000/currentIndexChanged")), "1")
+
+    def test_a_legacy_row_whose_text_names_an_earlier_row_stores_nothing(self):
+        """The rewrite may only store an identity that restores the SAME row.
+        Two rows sharing a text cannot be told apart by it: stored, the next
+        load lands on the first of them, not the row the index named -- the
+        user's choice silently changed. Such a combo keeps its index."""
+        c1 = self.make_combo(["A", "B", "A"])
+        c1.setCurrentIndex(2)  # the SECOND "A"
+        self.sm.save(c1)
+
+        c2 = self.make_combo(["A", "B", "A"], restore_by="text")
+        self.sm.load(c2)
+        self.assertEqual(c2.currentIndex(), 2)
+        self.assertEqual(str(self.store.value("cmb000/currentIndexChanged")), "2")
+
+        c3 = self.make_combo(["A", "B", "A"], restore_by="text")
+        self.sm.load(c3)
+        self.assertEqual(c3.currentIndex(), 2, "the next load moved the choice")
+
+    def test_a_legacy_row_whose_data_names_an_earlier_row_stores_nothing(self):
+        """The same for ``restore_by = "data"``: two rows carrying one value."""
+        items = {"None": None, "a": "/same", "b": "/same"}
+        c1 = self.make_combo(items)
+        c1.setCurrentIndex(2)  # "b"
+        self.sm.save(c1)
+
+        c2 = self.make_combo(items, restore_by="data")
+        self.sm.load(c2)
+        self.assertEqual(c2.currentText(), "b")
+        self.assertEqual(str(self.store.value("cmb000/currentIndexChanged")), "2")
+
+    def test_a_legacy_row_without_data_stores_nothing(self):
+        """``restore_by = "data"`` on a row whose data is ``None``: there is no
+        identity to store (``None`` reads back as "nothing saved")."""
+        c1 = self.make_combo(LIST_ORIG)  # row 0 "None" carries no data
+        c1.setCurrentIndex(0)
+        self.sm.save(c1)
+
+        c2 = self.make_combo(LIST_ORIG, restore_by="data")
+        c2.setCurrentIndex(1)
+        self.sm.load(c2)
+        self.assertEqual(c2.currentIndex(), 0)
+        self.assertEqual(str(self.store.value("cmb000/currentIndexChanged")), "0")
 
     def test_a_non_integral_missing_value_is_still_a_no_op(self):
         """The pre-existing contract: a deleted preset keeps the current item."""

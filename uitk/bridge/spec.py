@@ -108,6 +108,10 @@ class AttributeSpec:
             unreadable from the row otherwise: the control looks unset and
             unexplained, and a tooltip only says so once the user suspects
             there is something to ask about. Never restate the label here.
+            On an ``"int"`` field, which has no empty state, it is the text
+            shown AT the minimum (Qt's special value text): for a minimum that
+            means "unset" -- a bridge's "0 uses the preset's value" -- which a
+            bare 0 would read as zero. The value read back is still the number.
     """
 
     key: str
@@ -258,6 +262,10 @@ class _KindFactoryInternal(object):
         w.setMaximum(int(spec.maximum) if spec.maximum is not None else INT_MAX)
         if spec.step is not None:
             w.setSingleStep(int(spec.step))
+        if spec.placeholder:
+            # A number field has no EMPTY state: its minimum is the "unset"
+            # value, and Qt shows this text in place of it.
+            w.setSpecialValueText(spec.placeholder)
         if spec.default is not None:
             w.setValue(int(spec.default))
         return w

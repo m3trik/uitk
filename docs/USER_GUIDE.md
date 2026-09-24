@@ -183,6 +183,13 @@ the wrong item — restore by the item's identity instead:
 combo.restore_by = "text"   # match the saved item by display text (or "data")
 ```
 
+Switching an existing combo to `restore_by` keeps each user's saved choice: an
+index stored under the old mode is read once, against the rows as they are on
+that load, and stored back as the item's text (or data) -- unless an earlier row
+shares that text, which would restore the wrong row, so the index stays. So a
+release that switches a combo must not also reorder its rows -- renaming an item
+that sorts elsewhere included -- or that one read lands on the wrong item.
+
 Per-UI opt-out:
 ```python
 ui.restore_widget_states = False

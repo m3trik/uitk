@@ -199,7 +199,8 @@ class StateManager(ptk.LoggingMixin):
     def _legacy_combo_index(widget: QtWidgets.QWidget, value: Any) -> int:
         """*value* read as an index saved under the old ``"index"`` mode, or -1.
 
-        Only for the migration in :meth:`_apply_combo_identity`. QSettings' ini
+        Only for the legacy-index migration (:meth:`_apply_combo_identity`,
+        :meth:`_legacy_restore_index`). QSettings' ini
         backend returns everything as text, so a stored index arrives as
         ``"2"`` rather than ``2`` and both have to be accepted.
 
@@ -216,6 +217,31 @@ class StateManager(ptk.LoggingMixin):
         except (TypeError, ValueError):
             return -1
         return index if 0 <= index < widget.count() else -1
+
+    @staticmethod
+    def _identity_index(widget: QtWidgets.QWidget, value: Any, mode: str) -> int:
+        """The item whose text / data IS *value* (by *mode*), or -1."""
+        index = (
+            widget.findText(str(value)) if mode == "text" else widget.findData(value)
+        )
+        return -1 if index is None else index
+
+    def _legacy_restore_index(self, widget: QtWidgets.QWidget, value: Any) -> int:
+        """The row restoring *value* selects through the legacy reading, or -1.
+
+        An identity-mode combo whose stored *value* matches no item's text /
+        data but is an in-range integer -- an index saved under the old
+        ``"index"`` mode -- restores to that row (:meth:`_apply_combo_identity`).
+        :meth:`load` asks before applying, and once the combo shows that row it
+        stores the item's identity in the index's place -- when that identity
+        restores the same row (no earlier row shares it).
+        """
+        mode = self._restore_mode(widget)
+        if mode == "index" or value is None or not hasattr(widget, "findText"):
+            return -1
+        if self._identity_index(widget, value, mode) >= 0:
+            return -1
+        return self._legacy_combo_index(widget, value)
 
     def _apply_combo_identity(
         self, widget: QtWidgets.QWidget, value: Any, mode: str
@@ -234,9 +260,11 @@ class StateManager(ptk.LoggingMixin):
         mode is an integer, which no ``findText``/``findData`` can match. Rather
         than discard every choice already on disk the first time a combo opts
         in, an unmatched value that is integral and in range is read ONCE as a
-        legacy index; the next save writes the stable identity. Text/data is
-        always tried FIRST, so a combo whose items are literally named "1",
-        "2", ... still matches by name rather than by position.
+        legacy index, and :meth:`load` then stores the item's identity in its
+        place (never this method: :meth:`apply` also loads presets under
+        ``suppress_save``, which must write nothing). Text/data is always tried
+        FIRST, so a combo whose items are literally named "1", "2", ... still
+        matches by name rather than by position.
         """
         # ``None`` is the *absence* of a stored selection, not a request to pick
         # an item literally named "None" (which ``findText(str(None))`` would do).
@@ -244,11 +272,8 @@ class StateManager(ptk.LoggingMixin):
             return
         with self._restore_signal_scope(widget):
             try:
-                if mode == "text":
-                    index = widget.findText(str(value))
-                else:  # "data"
-                    index = widget.findData(value)
-                if index is None or index < 0:
+                index = self._identity_index(widget, value, mode)
+                if index < 0:
                     legacy = self._legacy_combo_index(widget, value)
                     if legacy >= 0:
                         self.logger.debug(
@@ -257,7 +282,7 @@ class StateManager(ptk.LoggingMixin):
                             "index saved under the previous persistence mode."
                         )
                         index = legacy
-                if index is not None and index >= 0:
+                if index >= 0:
                     widget.setCurrentIndex(index)
                     widget.update()
                 else:
@@ -384,7 +409,15 @@ class StateManager(ptk.LoggingMixin):
         """
         if self._save_suppressed:
             return False
+        return self._write_value(key, value)
 
+    def _write_value(self, key: str, value: Any) -> bool:
+        """:meth:`save_value` past ``suppress_save``: the one write path.
+
+        Only for a write that re-spells what *key* already stores -- the
+        legacy-index rewrite in :meth:`load`, which a window runs inside the
+        suppression that keeps init-time values from being saved.
+        """
         # Combo/index widgets briefly report ``-1`` (no selection) while
         # their model is being (re)populated; persisting that transient
         # would wipe a valid stored index. The real selection saves on the
@@ -452,8 +485,28 @@ class StateManager(ptk.LoggingMixin):
         try:
             parsed_value = self._read_stored(key, widget)
             if parsed_value is not self._NO_VALUE:
+                legacy = self._legacy_restore_index(widget, parsed_value)
                 with self.suppress_save():
                     self.apply(widget, parsed_value)
+                if legacy >= 0 and widget.currentIndex() == legacy:
+                    # Store what the legacy index named, now: left on disk, the
+                    # integer is read again next session against whatever the
+                    # list has become -- the drift identity modes exist to end.
+                    # Past ``suppress_save``: a window restores inside one, and
+                    # this re-spells the stored selection, never a new value --
+                    # hence only once the combo SHOWS that row (an apply that
+                    # failed, or a slot that moved it, stores nothing), and only
+                    # an identity that restores that same row: two rows sharing
+                    # a text / data cannot be told apart by it, and storing it
+                    # would move the choice to the first of them.
+                    identity = self._get_current_value(widget)
+                    mode = self._restore_mode(widget)
+                    if (
+                        identity is not None
+                        and identity != ""
+                        and self._identity_index(widget, identity, mode) == legacy
+                    ):
+                        self._write_value(key, identity)
                 self.logger.debug(f"Loaded state: {key} -> {parsed_value}")
         except EOFError:
             self.logger.debug(f"EOFError reading state for {key}")

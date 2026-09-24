@@ -556,7 +556,7 @@
               "kind": "classmethod",
               "signature": "(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'",
               "summary": "Build a minimal spec from a Python value (AttributeWindow style).",
-              "line": 138,
+              "line": 142,
               "deprecated": false
             },
             {
@@ -565,7 +565,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "",
-              "line": 148,
+              "line": 152,
               "deprecated": false
             }
           ]
@@ -573,14 +573,14 @@
         {
           "name": "KindHandler",
           "summary": "Bundle of callables that build / read / write a widget kind.",
-          "line": 153,
+          "line": 157,
           "bases": [],
           "members": []
         },
         {
           "name": "KindFactory",
           "summary": "Build / read / write Qt widgets by ``kind``, backed by the registry.",
-          "line": 1020,
+          "line": 1028,
           "bases": [
             "_KindFactoryInternal"
           ],
@@ -591,7 +591,7 @@
               "kind": "staticmethod",
               "signature": "(value: Any) -> str",
               "summary": "Map a Python value to one of the built-in kinds.",
-              "line": 1035,
+              "line": 1043,
               "deprecated": false
             },
             {
@@ -600,7 +600,7 @@
               "kind": "staticmethod",
               "signature": "(name: str, handler: KindHandler) -> None",
               "summary": "Register a new kind (or override an existing one).",
-              "line": 1060,
+              "line": 1068,
               "deprecated": false
             },
             {
@@ -609,7 +609,7 @@
               "kind": "staticmethod",
               "signature": "(kind: str) -> KindHandler",
               "summary": "Return the handler for *kind* (raises KeyError if unregistered).",
-              "line": 1065,
+              "line": 1073,
               "deprecated": false
             },
             {
@@ -618,7 +618,7 @@
               "kind": "staticmethod",
               "signature": "(spec: AttributeSpec, parent: Optional[QtWidgets.QWidget] = None) -> QtWidgets.QWidget",
               "summary": "Build a Qt widget for *spec*.",
-              "line": 1075,
+              "line": 1083,
               "deprecated": false
             },
             {
@@ -627,7 +627,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget) -> Optional[str]",
               "summary": "The kind stamped on *widget*, or ``None`` if this factory didn't build it.",
-              "line": 1091,
+              "line": 1099,
               "deprecated": false
             },
             {
@@ -636,7 +636,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget) -> Any",
               "summary": "Return the current value of a factory-built widget.",
-              "line": 1107,
+              "line": 1115,
               "deprecated": false
             },
             {
@@ -645,7 +645,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Set the value of a factory-built widget.",
-              "line": 1114,
+              "line": 1122,
               "deprecated": false
             },
             {
@@ -654,7 +654,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget, choices: ChoicesSeq) -> None",
               "summary": "Repopulate a choice-driven widget's entries after it was built.",
-              "line": 1121,
+              "line": 1129,
               "deprecated": false
             },
             {
@@ -663,7 +663,7 @@
               "kind": "staticmethod",
               "signature": "(spec: AttributeSpec, value: Any) -> Any",
               "summary": "The scalar stand-in *value* substitutes as, for a composite kind.",
-              "line": 1141,
+              "line": 1149,
               "deprecated": false
             },
             {
@@ -672,7 +672,7 @@
               "kind": "staticmethod",
               "signature": "(value: Any, *, default: str = 'prefix') -> Tuple[str, str]",
               "summary": "``(prefix, suffix)`` for an ``affix``-kind value.",
-              "line": 1164,
+              "line": 1172,
               "deprecated": false
             },
             {
@@ -681,7 +681,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget, callback: Callable[[Any], None]) -> None",
               "summary": "Wire the widget's value-change signal to ``callback(new_value)``.",
-              "line": 1192,
+              "line": 1200,
               "deprecated": false
             }
           ]
@@ -754,7 +754,7 @@
               "kind": "staticmethod",
               "signature": "(template_path: Path) -> Optional[str]",
               "summary": "Return *template_path*'s leading docstring / comment block, or *None*.",
-              "line": 152,
+              "line": 162,
               "deprecated": false
             }
           ]
@@ -2652,7 +2652,7 @@
               "kind": "property",
               "signature": "(self) -> Path",
               "summary": "The directory where preset files are stored.",
-              "line": 328,
+              "line": 336,
               "deprecated": false
             },
             {
@@ -2661,7 +2661,7 @@
               "kind": "method",
               "signature": "(self, callback) -> None",
               "summary": "Register a callback invoked when presets are modified.",
-              "line": 384,
+              "line": 392,
               "deprecated": false
             },
             {
@@ -2670,7 +2670,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Which widget set a save/load operates on.",
-              "line": 407,
+              "line": 415,
               "deprecated": false
             },
             {
@@ -2679,7 +2679,7 @@
               "kind": "method",
               "signature": "(self, *names_or_widgets) -> 'PresetManager'",
               "summary": "Exclude widgets (by ``objectName`` or instance) from capture/restore.",
-              "line": 447,
+              "line": 455,
               "deprecated": false
             },
             {
@@ -2688,7 +2688,7 @@
               "kind": "method",
               "signature": "(self, *names_or_widgets) -> 'PresetManager'",
               "summary": "Restrict capture/restore to *only* these widgets (allowlist).",
-              "line": 457,
+              "line": 465,
               "deprecated": false
             },
             {
@@ -2697,7 +2697,7 @@
               "kind": "property",
               "signature": "(self) -> Optional[str]",
               "summary": "Name of the preset currently in use, or ``None``.",
-              "line": 504,
+              "line": 512,
               "deprecated": false
             },
             {
@@ -2706,7 +2706,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "True when live values diverge from the active preset's stored values.",
-              "line": 531,
+              "line": 539,
               "deprecated": false
             },
             {
@@ -2715,7 +2715,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable[[bool], None]) -> None",
               "summary": "Register *callback(bool)* invoked when the modified state flips.",
-              "line": 557,
+              "line": 565,
               "deprecated": false
             },
             {
@@ -2724,7 +2724,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Recompute the modified state;",
-              "line": 561,
+              "line": 569,
               "deprecated": false
             },
             {
@@ -2733,7 +2733,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Wire managed widgets' change signals so the dirty marker updates live.",
-              "line": 577,
+              "line": 585,
               "deprecated": false
             },
             {
@@ -2742,7 +2742,7 @@
               "kind": "method",
               "signature": "(self, name: str, scope: Optional[QtWidgets.QWidget] = None) -> Path",
               "summary": "Save the current widget values as a named preset.",
-              "line": 634,
+              "line": 642,
               "deprecated": false
             },
             {
@@ -2751,7 +2751,7 @@
               "kind": "method",
               "signature": "(self, name: str, scope: Optional[QtWidgets.QWidget] = None, block_signals: bool = True) -> int",
               "summary": "Load a named preset and apply its values to the matching widgets.",
-              "line": 716,
+              "line": 724,
               "deprecated": false
             },
             {
@@ -2760,7 +2760,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "Return a sorted list of available preset names across both tiers.",
-              "line": 898,
+              "line": 906,
               "deprecated": false
             },
             {
@@ -2769,7 +2769,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> Optional[str]",
               "summary": "Which tier *name* resolves from: ``\"user\"``, ``\"builtin\"``, or ``None``.",
-              "line": 906,
+              "line": 914,
               "deprecated": false
             },
             {
@@ -2778,7 +2778,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Delete a *user* preset (built-ins are read-only).",
-              "line": 913,
+              "line": 921,
               "deprecated": false
             },
             {
@@ -2787,7 +2787,7 @@
               "kind": "method",
               "signature": "(self, old_name: str, new_name: str) -> bool",
               "summary": "Rename a *user* preset.",
-              "line": 928,
+              "line": 936,
               "deprecated": false
             },
             {
@@ -2796,7 +2796,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Check whether a named preset exists in either tier.",
-              "line": 946,
+              "line": 954,
               "deprecated": false
             },
             {
@@ -2805,7 +2805,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> Optional[Dict[str, Any]]",
               "summary": "Return preset *name*'s stored values WITHOUT applying them.",
-              "line": 950,
+              "line": 958,
               "deprecated": false
             },
             {
@@ -2814,7 +2814,7 @@
               "kind": "method",
               "signature": "(self, select_name: Optional[str] = None) -> None",
               "summary": "Repopulate the wired preset combo from disk (no-op when none).",
-              "line": 965,
+              "line": 973,
               "deprecated": false
             },
             {
@@ -2823,7 +2823,7 @@
               "kind": "method",
               "signature": "(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None, placeholder: Optional[str] = None) -> 'QtWidgets.QWidget'",
               "summary": "Create a fully-wired preset selector and return its layout container.",
-              "line": 1217,
+              "line": 1225,
               "deprecated": false
             },
             {
@@ -2832,7 +2832,7 @@
               "kind": "method",
               "signature": "(self, combo, on_loaded=None, placeholder=None)",
               "summary": "Wire a uitk ``ComboBox`` as a fully-functional preset selector.",
-              "line": 1260,
+              "line": 1268,
               "deprecated": false
             },
             {
@@ -2841,7 +2841,7 @@
               "kind": "staticmethod",
               "signature": "() -> str",
               "summary": "Return Qt's per-application writable config directory.",
-              "line": 1608,
+              "line": 1616,
               "deprecated": false
             },
             {
@@ -2850,7 +2850,7 @@
               "kind": "staticmethod",
               "signature": "() -> str",
               "summary": "Return Qt's host-independent writable config directory.",
-              "line": 1625,
+              "line": 1633,
               "deprecated": false
             },
             {
@@ -2859,7 +2859,7 @@
               "kind": "staticmethod",
               "signature": "() -> Path",
               "summary": "Root directory under which every relative ``preset_dir`` is resolved.",
-              "line": 1638,
+              "line": 1646,
               "deprecated": false
             }
           ]
@@ -2872,7 +2872,7 @@
           "kind": "constant",
           "signature": "",
           "summary": "",
-          "line": 2167,
+          "line": 2175,
           "deprecated": false
         }
       ]
@@ -3685,7 +3685,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Context manager that temporarily suppresses QSettings writes.",
-              "line": 274,
+              "line": 299,
               "deprecated": false
             },
             {
@@ -3694,7 +3694,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "True while values are applied FOR the user rather than BY them.",
-              "line": 301,
+              "line": 326,
               "deprecated": false
             },
             {
@@ -3703,7 +3703,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any = None) -> None",
               "summary": "Save the current value of the widget to QSettings.",
-              "line": 337,
+              "line": 362,
               "deprecated": false
             },
             {
@@ -3712,7 +3712,7 @@
               "kind": "method",
               "signature": "(self, key: str, value: Any) -> bool",
               "summary": "Serialize and persist ``value`` at an explicit state ``key``.",
-              "line": 371,
+              "line": 396,
               "deprecated": false
             },
             {
@@ -3721,7 +3721,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Load the saved value from QSettings and apply it to the widget.",
-              "line": 443,
+              "line": 476,
               "deprecated": false
             },
             {
@@ -3730,7 +3730,7 @@
               "kind": "staticmethod",
               "signature": "(widget: QtWidgets.QWidget) -> Optional['StateManager']",
               "summary": "The state manager that owns *widget*, or ``None``.",
-              "line": 462,
+              "line": 515,
               "deprecated": false
             },
             {
@@ -3739,7 +3739,7 @@
               "kind": "method",
               "signature": "(self, block_signals: bool = False, widgets=None, factory: bool = False) -> None",
               "summary": "Reset widgets to their defaults (see :meth:`default_for`).",
-              "line": 514,
+              "line": 567,
               "deprecated": false
             },
             {
@@ -3748,7 +3748,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Reset a widget to its default (see :meth:`default_for`).",
-              "line": 574,
+              "line": 627,
               "deprecated": false
             },
             {
@@ -3757,7 +3757,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Removes the stored state for the widget from QSettings.",
-              "line": 635,
+              "line": 688,
               "deprecated": false
             },
             {
@@ -3766,7 +3766,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> bool",
               "summary": "Check if a widget has a stored default value.",
-              "line": 642,
+              "line": 695,
               "deprecated": false
             },
             {
@@ -3775,7 +3775,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> Any",
               "summary": "The value a reset puts *widget* at.",
-              "line": 652,
+              "line": 705,
               "deprecated": false
             },
             {
@@ -3784,7 +3784,7 @@
               "kind": "method",
               "signature": "(self, widgets=None) -> int",
               "summary": "Make the widgets' current values — and their option state — their defaults.",
-              "line": 666,
+              "line": 719,
               "deprecated": false
             },
             {
@@ -3793,7 +3793,7 @@
               "kind": "method",
               "signature": "(self, widgets=None) -> int",
               "summary": "Forget saved defaults, so the widgets' factory defaults apply again.",
-              "line": 693,
+              "line": 746,
               "deprecated": false
             },
             {
@@ -3802,7 +3802,7 @@
               "kind": "method",
               "signature": "(self, widgets=None) -> bool",
               "summary": "Whether any of the widgets (default: all) has a saved default.",
-              "line": 719,
+              "line": 772,
               "deprecated": false
             },
             {
@@ -3811,7 +3811,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Capture the current widget value as its default.",
-              "line": 768,
+              "line": 821,
               "deprecated": false
             },
             {
@@ -3820,7 +3820,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Explicitly set a widget's default value.",
-              "line": 801,
+              "line": 854,
               "deprecated": false
             },
             {
@@ -3829,7 +3829,7 @@
               "kind": "method",
               "signature": "(self, key: str, value: Any) -> None",
               "summary": "Persist an arbitrary key/value pair through QSettings.",
-              "line": 819,
+              "line": 872,
               "deprecated": false
             },
             {
@@ -3838,7 +3838,7 @@
               "kind": "method",
               "signature": "(self, key: str, default: Any = None) -> Any",
               "summary": "Retrieve a previously stored custom key/value pair.",
-              "line": 836,
+              "line": 889,
               "deprecated": false
             },
             {
@@ -3847,7 +3847,7 @@
               "kind": "method",
               "signature": "(self, key: str) -> None",
               "summary": "Remove a single custom key from storage.",
-              "line": 851,
+              "line": 904,
               "deprecated": false
             }
           ]
@@ -8549,7 +8549,7 @@
               "kind": "property",
               "signature": "(self) -> QtWidgets.QHBoxLayout",
               "summary": "Backward compatibility: return main_layout as container_layout.",
-              "line": 175,
+              "line": 183,
               "deprecated": false
             },
             {
@@ -8558,7 +8558,7 @@
               "kind": "method",
               "signature": "(self) -> QtCore.Qt.Alignment",
               "summary": "Get alignment of the status label (backward compatibility).",
-              "line": 179,
+              "line": 187,
               "deprecated": false
             },
             {
@@ -8567,7 +8567,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Public method for updating font size (backward compatibility).",
-              "line": 183,
+              "line": 191,
               "deprecated": false
             },
             {
@@ -8576,7 +8576,7 @@
               "kind": "method",
               "signature": "(self) -> QtGui.QFont",
               "summary": "Get font from status label (backward compatibility).",
-              "line": 187,
+              "line": 195,
               "deprecated": false
             },
             {
@@ -8585,7 +8585,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, side: str = 'right', background: bool = False, rounded: bool = True) -> QtWidgets.QWidget",
               "summary": "Insert an arbitrary widget into the footer on the given side.",
-              "line": 275,
+              "line": 291,
               "deprecated": false
             },
             {
@@ -8594,7 +8594,7 @@
               "kind": "method",
               "signature": "(self, text: str = '', icon_name: str = None, tooltip: str = '', callback=None, rounded: bool = True, states=None) -> QtWidgets.QPushButton",
               "summary": "Add an action button to the right side of the footer.",
-              "line": 331,
+              "line": 343,
               "deprecated": false
             },
             {
@@ -8603,7 +8603,7 @@
               "kind": "property",
               "signature": "(self) -> ProgressBar",
               "summary": "Get the embedded progress bar.",
-              "line": 412,
+              "line": 427,
               "deprecated": false
             },
             {
@@ -8612,7 +8612,7 @@
               "kind": "property",
               "signature": "(self) -> QtWidgets.QLabel",
               "summary": "Get the status label.",
-              "line": 417,
+              "line": 432,
               "deprecated": false
             },
             {
@@ -8621,7 +8621,7 @@
               "kind": "property",
               "signature": "(self) -> Optional[QtWidgets.QSizeGrip]",
               "summary": "Get the size grip widget if it exists.",
-              "line": 422,
+              "line": 437,
               "deprecated": false
             },
             {
@@ -8630,7 +8630,7 @@
               "kind": "method",
               "signature": "(self, text: str, level: Optional[str] = None) -> None",
               "summary": "Set the status text (convenience method matching QLabel API).",
-              "line": 439,
+              "line": 454,
               "deprecated": false
             },
             {
@@ -8639,7 +8639,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Get the current displayed text (convenience method matching QLabel API).",
-              "line": 450,
+              "line": 465,
               "deprecated": false
             },
             {
@@ -8648,7 +8648,7 @@
               "kind": "method",
               "signature": "(self, text: str | None = None, level: Optional[str] = None) -> None",
               "summary": "Set the status text of the footer.",
-              "line": 458,
+              "line": 473,
               "deprecated": false
             },
             {
@@ -8657,7 +8657,7 @@
               "kind": "method",
               "signature": "(self, text: str | None = None) -> None",
               "summary": "Set fallback text shown when no explicit status is provided.",
-              "line": 492,
+              "line": 507,
               "deprecated": false
             },
             {
@@ -8666,7 +8666,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Get the status text of the footer.",
-              "line": 498,
+              "line": 513,
               "deprecated": false
             },
             {
@@ -8675,7 +8675,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Get the fallback text shown when no explicit status is set.",
-              "line": 506,
+              "line": 521,
               "deprecated": false
             },
             {
@@ -8684,7 +8684,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Whether the footer currently shows a resize grip.",
-              "line": 510,
+              "line": 525,
               "deprecated": false
             },
             {
@@ -8693,7 +8693,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Show or hide the resize grip, creating it on first enable.",
-              "line": 514,
+              "line": 529,
               "deprecated": false
             },
             {
@@ -8702,7 +8702,7 @@
               "kind": "method",
               "signature": "(self, value: str) -> None",
               "summary": "Set the status text (Qt-property setter for :meth:`setStatusText`).",
-              "line": 525,
+              "line": 540,
               "deprecated": false
             },
             {
@@ -8711,7 +8711,7 @@
               "kind": "method",
               "signature": "(self, total: Optional[int] = None, text: str = '', busy: Optional[bool] = None) -> Callable[[Optional[int], Optional[str]], bool]",
               "summary": "Start showing progress in the footer.",
-              "line": 545,
+              "line": 560,
               "deprecated": false
             },
             {
@@ -8720,7 +8720,7 @@
               "kind": "method",
               "signature": "(self, value: Optional[int] = None, text: Optional[str] = None) -> bool",
               "summary": "Tick the progress bar and optionally update the status text.",
-              "line": 600,
+              "line": 615,
               "deprecated": false
             },
             {
@@ -8729,7 +8729,7 @@
               "kind": "method",
               "signature": "(self, text: Optional[str] = None, delay_ms: int = 1000)",
               "summary": "Finish the progress and hide the bar.",
-              "line": 643,
+              "line": 658,
               "deprecated": false
             },
             {
@@ -8738,7 +8738,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Cancel the current progress operation.",
-              "line": 656,
+              "line": 671,
               "deprecated": false
             },
             {
@@ -8747,7 +8747,7 @@
               "kind": "method",
               "signature": "(self, total: int) -> None",
               "summary": "Adjust the bar's task total mid-flight.",
-              "line": 660,
+              "line": 675,
               "deprecated": false
             },
             {
@@ -8756,7 +8756,7 @@
               "kind": "method",
               "signature": "(self, total: Optional[int] = None, text: str = '', busy: Optional[bool] = None) -> 'FooterProgressContext'",
               "summary": "Context manager for cooperative progress / task feedback.",
-              "line": 669,
+              "line": 684,
               "deprecated": false
             },
             {
@@ -8765,7 +8765,7 @@
               "kind": "property",
               "signature": "(self) -> QtWidgets.QLabel",
               "summary": "The spinner label shown beside the status text while busy.",
-              "line": 737,
+              "line": 752,
               "deprecated": false
             },
             {
@@ -8774,7 +8774,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the busy indicator is showing.",
-              "line": 742,
+              "line": 757,
               "deprecated": false
             },
             {
@@ -8783,7 +8783,7 @@
               "kind": "method",
               "signature": "(self, busy: bool) -> None",
               "summary": "Show or hide the busy spinner beside the status text.",
-              "line": 746,
+              "line": 761,
               "deprecated": false
             },
             {
@@ -8792,7 +8792,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Debounce resize: restart timer on each event so we only",
-              "line": 830,
+              "line": 845,
               "deprecated": false
             },
             {
@@ -8801,7 +8801,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Ensure text is properly sized and elided on first show.",
-              "line": 836,
+              "line": 851,
               "deprecated": false
             },
             {
@@ -8810,7 +8810,7 @@
               "kind": "method",
               "signature": "(self, resolver: Optional[Callable[[], str]] = None, default_text: str | None = '', truncate_kwargs: Optional[Mapping[str, Any]] = None) -> 'FooterStatusController'",
               "summary": "Bind a :class:`FooterStatusController` to this footer and return it.",
-              "line": 907,
+              "line": 922,
               "deprecated": false
             },
             {
@@ -8819,7 +8819,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget.",
-              "line": 927,
+              "line": 942,
               "deprecated": false
             }
           ]
@@ -8827,14 +8827,14 @@
         {
           "name": "FooterProgressContext",
           "summary": "Context manager for footer progress tracking.",
-          "line": 945,
+          "line": 960,
           "bases": [],
           "members": []
         },
         {
           "name": "FooterStatusController",
           "summary": "Helper that keeps a footer in sync with a resolver function.",
-          "line": 973,
+          "line": 988,
           "bases": [],
           "members": [
             {
@@ -8843,7 +8843,7 @@
               "kind": "method",
               "signature": "(self, resolver: Callable[[], str]) -> None",
               "summary": "",
-              "line": 990,
+              "line": 1005,
               "deprecated": false
             },
             {
@@ -8852,7 +8852,7 @@
               "kind": "method",
               "signature": "(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None",
               "summary": "Configure truncation behavior for footer updates via StrUtils.truncate kwargs.",
-              "line": 994,
+              "line": 1009,
               "deprecated": false
             },
             {
@@ -8861,7 +8861,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "",
-              "line": 1008,
+              "line": 1023,
               "deprecated": false
             }
           ]
