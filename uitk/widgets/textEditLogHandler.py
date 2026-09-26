@@ -159,11 +159,16 @@ class TextEditLogHandler(logging.Handler):
     )
 
     #: Every glyph pythontk's boxes, dividers, groups and tables draw (and the
-    #: space they are padded with), measured by available_columns(). Measuring
-    #: only the box rows' own glyphs missed the divider's: under Linux's
-    #: fontconfig the rule's glyph came from a wider fallback, and a divider
-    #: sized to the count wrapped at 313, 472 and 631 px (CI, 2026-09-26).
+    #: space they are padded with): available_columns() counts in the widest,
+    #: so a glyph a fallback font supplies wider cannot overrun.
     _BOX_GLYPHS = " ─═║╔╗╚╝╟╢▎"
+
+    #: What Qt's line breaking takes beyond a line's summed advances. Measured
+    #: 2026-09-26 under FreeType (Linux, DejaVu Sans Mono): 40 / 47 / 80
+    #: dividers fit only at n x advance + 1.05 / 1.02 / 1.00 px, so a divider
+    #: sized to the bare count wrapped wherever the slack was under a pixel
+    #: (313, 472 and 631 px in CI); DirectWrite (Windows) takes none.
+    _LINE_OVERHEAD_PX = 1.5
 
     @classmethod
     def _get_monospace_font(cls) -> QtGui.QFont:
@@ -251,7 +256,8 @@ class TextEditLogHandler(logging.Handler):
         document's font and with fractional advances, against the width a
         line really gets: the viewport, less the document margins, less a
         vertical scrollbar that is not showing yet (see
-        :meth:`_scrollbar_to_come`).
+        :meth:`_scrollbar_to_come`), less what Qt's line breaking takes beyond
+        the advances (:attr:`_LINE_OVERHEAD_PX`).
 
         Returns:
             The column count, however narrow the pane (a narrow box stays
@@ -277,7 +283,9 @@ class TextEditLogHandler(logging.Handler):
             if char_w <= 0:
                 return 0
             viewport = widget.viewport() if hasattr(widget, "viewport") else widget
-            width = viewport.width() - self._scrollbar_to_come()
+            width = (
+                viewport.width() - self._scrollbar_to_come() - self._LINE_OVERHEAD_PX
+            )
             if document is not None:
                 width -= 2 * document.documentMargin()
             return max(int(width // char_w), 0)
