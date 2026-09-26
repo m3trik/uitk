@@ -4,7 +4,7 @@
 
 Covers the regression scenarios that motivated the consolidation:
 
-* root resolution (default vs ``M3TRIK_PRESETS_ROOT`` env override),
+* root resolution (default vs ``UITK_PRESETS_ROOT`` env override),
 * relative-vs-absolute path handling in ``_resolve_preset_dir``,
 * legacy migration copying the **entire** legacy package on first
   access — important for bridges whose presets live in per-template

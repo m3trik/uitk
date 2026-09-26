@@ -2235,10 +2235,78 @@ class TestLiveParamsStayOutOfPresets(BaseTestCase):
         self._set(slots, "quality", "high")
         self._set(slots, "share", "auto")
         self.changes.clear()
-        slots._reset_to_defaults()
+        slots._reset_btn.click()
         self.assertEqual(self._read(slots, "quality"), "low")
         self.assertEqual(self._read(slots, "share"), "auto")
         self.assertEqual(self.changes, [])
+
+
+class TestBridgeResetGrammar(BaseTestCase):
+    """A bridge's Reset to Defaults speaks uitk's shared reset grammar.
+
+    It used to wire its own click and a one-line tooltip, so the rizom (and
+    every other bridge) panel never offered Shift+Click (save the current
+    values as the defaults) or Ctrl+Shift+Click (back to the factory ones)
+    that the menu footer and the Lightmap Baker teach.
+    """
+
+    SPECS = TestLiveParamsStayOutOfPresets.SPECS
+    _slots = TestLiveParamsStayOutOfPresets._slots
+    _read = TestLiveParamsStayOutOfPresets._read
+    _set = TestLiveParamsStayOutOfPresets._set
+
+    def _hosted(self):
+        """A bridge whose window keeps settings (the saved defaults' store)."""
+        from uitk.managers.state_manager import StateManager
+
+        slots = self._slots()
+        settings = QtCore.QSettings("uitk_test", "bridge_reset_grammar")
+        settings.clear()
+        self.addCleanup(settings.clear)
+        slots.ui.grp_process.state = StateManager(settings)
+        return slots
+
+    def _click(self, slots, modifiers=QtCore.Qt.NoModifier):
+        slots._reset_gesture._modifiers = lambda: modifiers
+        slots._reset_btn.click()
+
+    def test_the_tooltip_teaches_the_modifiers(self):
+        tip = self._hosted()._reset_btn.toolTip()
+        self.assertIn("Shift", tip)
+        self.assertIn("Ctrl", tip)
+
+    def test_shift_click_makes_the_current_values_the_defaults(self):
+        slots = self._hosted()
+        self._set(slots, "quality", "high")
+        self._set(slots, "share", "auto")
+        self._click(slots, QtCore.Qt.ShiftModifier)
+        self._set(slots, "quality", "low")
+        self._set(slots, "share", "off")
+        self._click(slots)
+        self.assertEqual(self._read(slots, "quality"), "high")
+        # A live switch is neither saved as a default nor reset.
+        self.assertEqual(self._read(slots, "share"), "off")
+        slots._reset_gesture.refresh_tooltip()
+        self.assertIn("saved defaults are in use", slots._reset_btn.toolTip())
+
+    def test_ctrl_shift_click_forgets_them(self):
+        slots = self._hosted()
+        self._set(slots, "quality", "high")
+        self._click(slots, QtCore.Qt.ShiftModifier)
+        self._click(slots, QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier)
+        self.assertEqual(self._read(slots, "quality"), "low")
+        self._set(slots, "quality", "high")
+        self._click(slots)
+        self.assertEqual(self._read(slots, "quality"), "low")
+
+    def test_a_reset_lets_go_of_the_preset_a_save_keeps_it(self):
+        slots = self._hosted()
+        slots._preset_mgr.save("p")
+        slots._preset_mgr.load("p")
+        self._click(slots, QtCore.Qt.ShiftModifier)
+        self.assertEqual(slots._preset_mgr.active_preset, "p")
+        self._click(slots)
+        self.assertIsNone(slots._preset_mgr.active_preset)
 
 
 if __name__ == "__main__":

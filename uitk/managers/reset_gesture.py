@@ -16,13 +16,19 @@ lists every modifier (and says whether saved defaults are in use), the button
 text previews the action while a modifier is held over it, and the result
 flashes on the button after the click::
 
+    ResetGesture(button)  # every field of the window the button is in
     ResetGesture(button, state=window.state, widgets=fields)
+
+Every reset control goes through this class: a button wired to
+``state.reset_all()`` by hand drops the modifiers and the tooltip that teaches
+them. ``m3trik/scripts/check_tooltips.py`` fails a build that does.
 """
 
 from typing import List, Optional
 
 from qtpy import QtCore, QtWidgets
 
+from uitk.managers.state_manager import StateManager
 from uitk.widgets.mixins.tooltip_mixin import TooltipFormat, TooltipProxy
 
 
@@ -34,8 +40,11 @@ class ResetGesture(QtCore.QObject):
             parented to it and lives as long as it does.
         state: The ``StateManager`` to act through, or a zero-argument callable
             returning it (resolved on every use -- a popup menu's host is only
-            reachable once it is built). A stand-in exposing only ``reset_all``
-            gets a plain reset and a tooltip that doesn't offer saving.
+            reachable once it is built). ``None`` (the default) is the manager
+            that owns *button* (``StateManager.for_widget``), resolved the same
+            way. Any object speaking the same calls works; one exposing only
+            ``reset_all`` gets a plain reset and a tooltip that doesn't offer
+            saving.
         widgets: The widgets in scope: an iterable, a zero-argument callable
             returning one, or ``None`` for every widget the state manages.
         title: Tooltip title.
@@ -74,7 +83,7 @@ class ResetGesture(QtCore.QObject):
     def __init__(
         self,
         button: QtWidgets.QAbstractButton,
-        state,
+        state=None,
         widgets=None,
         *,
         title: str = "Restore Defaults",
@@ -271,6 +280,8 @@ class ResetGesture(QtCore.QObject):
             self._preview()
 
     def _resolve_state(self):
+        if self._state is None:
+            return StateManager.for_widget(self._button)
         return self._state() if callable(self._state) else self._state
 
     def _scope(self) -> Optional[list]:

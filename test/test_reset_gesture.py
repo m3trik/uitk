@@ -215,6 +215,21 @@ class TestAttachedButton(QtBaseTestCase):
         button.click()
         self.assertEqual(seen, [ResetGesture.SAVE])
 
+    def test_no_state_means_the_window_the_button_is_in(self):
+        """``ResetGesture(button)`` is the whole wiring for a panel's button:
+        the state is the manager that owns it, looked up at use."""
+
+        class _WindowState(_SavingState):
+            def reset(self, widget):
+                pass
+
+        host = self.track_widget(QtWidgets.QWidget())
+        button = QtWidgets.QPushButton("Reset to Defaults", host)
+        ResetGesture(button, modifiers=lambda: Qt.ShiftModifier)
+        host.state = _WindowState()  # resolved on use, not at construction
+        button.click()
+        self.assertEqual(host.state.calls, [("save", None)])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

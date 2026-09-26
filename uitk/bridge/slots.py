@@ -50,9 +50,82 @@ from uitk.widgets.mixins.text import RichTextFormatter
 from uitk.widgets.separator import Separator
 from uitk.managers.preset_manager import PresetManager
 from uitk.managers.field_visibility import FieldVisibility
+from uitk.managers.reset_gesture import ResetGesture
+from uitk.managers.state_manager import StateManager
 
 from uitk.bridge.spec import AttributeSpec, KindFactory
 from uitk.bridge.tooltip import Tooltip
+
+
+# ----------------------------------------------------------------------
+# Reset to Defaults
+# ----------------------------------------------------------------------
+
+
+class _BridgeDefaults(object):
+    """A bridge panel's defaults, in the calls :class:`ResetGesture` makes.
+
+    The window's ``StateManager`` can't be the gesture's state: a bridge's
+    fields are kind-built composites it neither reads nor restores. This speaks
+    the same four calls over the bridge's own param IO. A reset writes each
+    field's registry default, or the value saved over it; a save records the
+    current values; a factory reset forgets them. The saved values persist in
+    the window's settings (``StateManager.save_custom``), one set per panel.
+
+    A live switch (``AttributeSpec.preset=False``) is outside every action:
+    Reset is about settings, and switching one would act (a share toggled Off
+    takes every guest's link down).
+    """
+
+    KEY = "bridge_saved_defaults"
+
+    def __init__(self, slots: "BridgeSlotsBase"):
+        self._slots = slots
+
+    def reset_all(self, block_signals=False, widgets=None, factory=False) -> None:
+        if factory:
+            self.clear_saved_defaults()
+        slots = self._slots
+        saved = self._saved()
+        live = slots._live_param_keys()
+        for key, spec in slots.params_module.PARAMS.items():
+            if key not in slots._param_widgets or key in live:
+                continue
+            try:
+                slots._write_param(key, saved.get(key, spec.default))
+            except Exception:  # noqa: BLE001
+                # A bad handler (or a saved value the registry no longer
+                # accepts) shouldn't poison the rest of the reset -- keep
+                # going so the user gets as close to "defaults" as possible.
+                continue
+
+    def save_defaults(self, widgets=None) -> int:
+        store = self._store()
+        if store is None:
+            return 0
+        live = self._slots._live_param_keys()
+        values = {
+            k: v for k, v in self._slots.collect_param_values().items() if k not in live
+        }
+        store.save_custom(self.KEY, values)
+        return len(values)
+
+    def clear_saved_defaults(self, widgets=None) -> int:
+        count = len(self._saved())
+        if count:
+            self._store().clear_custom(self.KEY)
+        return count
+
+    def has_saved_defaults(self, widgets=None) -> bool:
+        return bool(self._saved())
+
+    def _saved(self) -> Dict[str, Any]:
+        store = self._store()
+        saved = store.load_custom(self.KEY) if store is not None else None
+        return saved if isinstance(saved, dict) else {}
+
+    def _store(self) -> Optional[StateManager]:
+        return StateManager.for_widget(self._slots.ui.grp_process)
 
 
 # ----------------------------------------------------------------------
@@ -1259,8 +1332,12 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         reset_btn.setText("Reset to Defaults")
         reset_btn.setMinimumHeight(19)
         reset_btn.setMaximumHeight(19)
-        reset_btn.setToolTip("Restore every parameter widget to its registry default.")
-        reset_btn.clicked.connect(self._reset_to_defaults)
+        # uitk's shared reset grammar -- Click, Shift+Click saves the current
+        # values as the defaults, Ctrl+Shift+Click forgets them -- with the
+        # tooltip that teaches it, over the bridge's own defaults.
+        self._reset_gesture = ResetGesture(
+            reset_btn, state=_BridgeDefaults(self), on_performed=self._after_reset
+        )
 
         insert_at = layout.indexOf(self.ui.b000)
         layout.insertWidget(insert_at, combo)
@@ -1367,24 +1444,15 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             if not getattr(spec, "preset", True)
         }
 
-    def _reset_to_defaults(self) -> None:
-        """Restore every parameter widget to its registry default via KindHandler.
+    def _after_reset(self, action: str) -> None:
+        """Let go of the active preset when a reset moved the fields off it.
 
-        A live switch keeps its value: Reset is about settings, and switching
-        one would act (a share toggled Off takes every guest's link down).
+        The values are the defaults now, not the preset the combo still names.
+        Saving the current values as the defaults (Shift+Click) moves no field,
+        so it keeps the selection.
         """
-        live = self._live_param_keys()
-        for key, spec in self.params_module.PARAMS.items():
-            if key not in self._param_widgets or key in live:
-                continue
-            try:
-                self._write_param(key, spec.default)
-            except Exception:  # noqa: BLE001
-                # A bad handler shouldn't poison the rest of the reset --
-                # keep going so the user gets as close to "defaults" as
-                # possible even if one kind misbehaves.
-                continue
-
+        if action == ResetGesture.SAVE:
+            return
         if self._preset_combo is not None:
             self._preset_combo.blockSignals(True)
             try:
@@ -1392,8 +1460,7 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             finally:
                 self._preset_combo.blockSignals(False)
 
-        # Reset abandons the active preset (values are now registry defaults,
-        # not any saved preset); clears the pointer + modified marker.
+        # Clears the pointer + the modified marker.
         if self._preset_mgr is not None:
             self._preset_mgr.active_preset = None
 

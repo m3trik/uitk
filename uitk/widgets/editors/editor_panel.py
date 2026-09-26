@@ -72,7 +72,7 @@ class EditorPanel(WindowPanel):
             Relative subdirectory under :func:`get_presets_root` (the
             ecosystem-wide preset root). The editor's presets live in
             ``<presets_root>/<package>/<dir_name>/``. ``PresetManager``
-            handles root resolution, the ``M3TRIK_PRESETS_ROOT`` override,
+            handles root resolution, the ``UITK_PRESETS_ROOT`` override,
             and legacy migration.
         package : str, optional
             Namespace segment above *dir_name* (defaults to ``"uitk"``).
@@ -161,7 +161,7 @@ class EditorPanel(WindowPanel):
         """The directory where this editor's preset files live.
 
         Delegates to the underlying :class:`PresetManager`, which handles
-        consolidated-root resolution (``M3TRIK_PRESETS_ROOT`` override),
+        consolidated-root resolution (``UITK_PRESETS_ROOT`` override),
         legacy migration, and directory creation.
         """
         if self._preset_mgr is None:
