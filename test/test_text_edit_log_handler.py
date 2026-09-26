@@ -359,6 +359,21 @@ class TestBoxesFitThePane(QtBaseTestCase):
                 logger.log_divider()
                 self.assertEqual(self._broken_rows(pane), [])
 
+    def test_every_glyph_pythontk_draws_is_measured(self):
+        """available_columns counts in the widest glyph it measures, so one it
+        skips can be wider and wrap its row: the divider's was, under Linux
+        fontconfig (CI, 2026-09-26). Drift guard over pythontk's source."""
+        import inspect
+
+        from pythontk.core_utils import logging_mixin
+        from uitk.widgets.textEditLogHandler import TextEditLogHandler
+
+        drawn = {
+            ch for ch in inspect.getsource(logging_mixin) if 0x2500 <= ord(ch) <= 0x259F
+        }
+        self.assertTrue(drawn)
+        self.assertEqual(drawn - set(TextEditLogHandler._BOX_GLYPHS), set())
+
     def test_a_narrow_pane_gets_a_narrow_box(self):
         pane, logger = self._pane(150)
         self.assertGreater(logger.handlers[0].available_columns(), 0)
