@@ -158,6 +158,13 @@ class TextEditLogHandler(logging.Handler):
         family.strip("'\" ") for family in LoggerExt.MONOSPACE_FAMILIES.split(",")
     )
 
+    #: Every glyph pythontk's boxes, dividers, groups and tables draw (and the
+    #: space they are padded with), measured by available_columns(). Measuring
+    #: only the box rows' own glyphs missed the divider's: under Linux's
+    #: fontconfig the rule's glyph came from a wider fallback, and a divider
+    #: sized to the count wrapped at 313, 472 and 631 px (CI, 2026-09-26).
+    _BOX_GLYPHS = " ─═║╔╗╚╝╟╢▎"
+
     @classmethod
     def _get_monospace_font(cls) -> QtGui.QFont:
         """The monospace font, resolved the way Qt resolves a CSS
@@ -266,7 +273,7 @@ class TextEditLogHandler(logging.Handler):
             # Rows are box-drawing glyphs and (no-break) spaces: the widest
             # advance counts, so a glyph borrowed from a fallback font cannot
             # overrun.
-            char_w = max(metrics.horizontalAdvance(ch) for ch in " ═║")
+            char_w = max(metrics.horizontalAdvance(ch) for ch in self._BOX_GLYPHS)
             if char_w <= 0:
                 return 0
             viewport = widget.viewport() if hasattr(widget, "viewport") else widget
