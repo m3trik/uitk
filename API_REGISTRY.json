@@ -196,7 +196,7 @@
         {
           "name": "BridgeSlotsBase",
           "summary": "Base class for DCC-bridge slot panels.",
-          "line": 111,
+          "line": 184,
           "bases": [
             "_BridgeSlotsInternal"
           ],
@@ -207,7 +207,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "",
-              "line": 273,
+              "line": 346,
               "deprecated": false
             },
             {
@@ -216,7 +216,7 @@
               "kind": "property",
               "signature": "(self) -> Path",
               "summary": "",
-              "line": 277,
+              "line": 350,
               "deprecated": false
             },
             {
@@ -225,7 +225,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return a fresh bridge instance.",
-              "line": 280,
+              "line": 353,
               "deprecated": false
             },
             {
@@ -234,7 +234,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "This panel's :class:`OptionalPackageManager` (built once, lazily).",
-              "line": 289,
+              "line": 362,
               "deprecated": false
             },
             {
@@ -243,7 +243,7 @@
               "kind": "staticmethod",
               "signature": "(spec: str, import_name: str = None) -> bool",
               "summary": "Is an optional package importable in THIS interpreter? Silent.",
-              "line": 308,
+              "line": 381,
               "deprecated": false
             },
             {
@@ -252,7 +252,7 @@
               "kind": "method",
               "signature": "(self, spec: str, import_name: str = None, *, feature: str = None) -> bool",
               "summary": "Make an optional package importable, offering to install it on demand.",
-              "line": 319,
+              "line": 392,
               "deprecated": false
             },
             {
@@ -261,7 +261,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Hook: return a :class:`pythontk.PresetStore` to switch presets into",
-              "line": 341,
+              "line": 414,
               "deprecated": false
             },
             {
@@ -270,7 +270,7 @@
               "kind": "method",
               "signature": "(self) -> List[Tuple[str, str]]",
               "summary": "",
-              "line": 359,
+              "line": 432,
               "deprecated": false
             },
             {
@@ -279,7 +279,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Implement the per-bridge send action.",
-              "line": 362,
+              "line": 435,
               "deprecated": false
             },
             {
@@ -288,7 +288,7 @@
               "kind": "method",
               "signature": "(self, scope: str)",
               "summary": "Hook: turn a ``SCOPE`` value into host objects.",
-              "line": 367,
+              "line": 440,
               "deprecated": false
             },
             {
@@ -297,7 +297,7 @@
               "kind": "staticmethod",
               "signature": "(scope: str) -> str",
               "summary": "The message shown when a scope resolves to nothing.",
-              "line": 381,
+              "line": 454,
               "deprecated": false
             },
             {
@@ -306,7 +306,7 @@
               "kind": "method",
               "signature": "(self, params, warn: bool = True)",
               "summary": "Objects for the ``SCOPE`` in *params*;",
-              "line": 396,
+              "line": 469,
               "deprecated": false
             },
             {
@@ -315,7 +315,7 @@
               "kind": "method",
               "signature": "(self, pairs: List[Tuple[str, str]]) -> int",
               "summary": "Return the index of the preferred initial entry in *pairs*.",
-              "line": 410,
+              "line": 483,
               "deprecated": false
             },
             {
@@ -324,7 +324,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Hook: fallback path when the user leaves Output Dir blank.",
-              "line": 418,
+              "line": 491,
               "deprecated": false
             },
             {
@@ -333,7 +333,7 @@
               "kind": "method",
               "signature": "(self, template_path: Path) -> Optional[str]",
               "summary": "Hook: extract a brief description from a template file.",
-              "line": 427,
+              "line": 500,
               "deprecated": false
             },
             {
@@ -342,7 +342,7 @@
               "kind": "method",
               "signature": "(self, spec: AttributeSpec) -> str",
               "summary": "Hook: build the rich-text tooltip for one parameter spec.",
-              "line": 431,
+              "line": 504,
               "deprecated": false
             },
             {
@@ -351,7 +351,7 @@
               "kind": "staticmethod",
               "signature": "(handler: Callable) -> None",
               "summary": "Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel",
-              "line": 438,
+              "line": 511,
               "deprecated": false
             },
             {
@@ -360,7 +360,7 @@
               "kind": "staticmethod",
               "signature": "(tag: str) -> str",
               "summary": "Create (once per host process) and return a temp Output Dir for *tag*.",
-              "line": 451,
+              "line": 524,
               "deprecated": false
             },
             {
@@ -369,7 +369,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-instantiated bridge (caches a single instance per slot).",
-              "line": 532,
+              "line": 605,
               "deprecated": false
             },
             {
@@ -378,7 +378,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "The bridge if it can be built, else ``None`` — never raises.",
-              "line": 553,
+              "line": 626,
               "deprecated": false
             },
             {
@@ -387,7 +387,7 @@
               "kind": "method",
               "signature": "(self, message: str, level: str = 'info') -> None",
               "summary": "Log to the panel, working whether or not the engine exists.",
-              "line": 576,
+              "line": 649,
               "deprecated": false
             },
             {
@@ -396,7 +396,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Return the current Output Dir text trimmed of whitespace.",
-              "line": 721,
+              "line": 794,
               "deprecated": false
             },
             {
@@ -405,7 +405,7 @@
               "kind": "method",
               "signature": "(self, mode: Optional[str] = None) -> Optional[str]",
               "summary": "Return the Output Dir for a run in *mode*, or log an error on empty.",
-              "line": 731,
+              "line": 804,
               "deprecated": false
             },
             {
@@ -414,7 +414,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Callable[[], str]]",
               "summary": "Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.",
-              "line": 933,
+              "line": 1006,
               "deprecated": false
             },
             {
@@ -423,7 +423,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Callable[[], str]]",
               "summary": "Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.",
-              "line": 962,
+              "line": 1035,
               "deprecated": false
             },
             {
@@ -432,7 +432,7 @@
               "kind": "method",
               "signature": "(self, key: str, enabled: bool, reason: str = '') -> None",
               "summary": "Grey out (or re-enable) one parameter row, with *reason* as its tooltip.",
-              "line": 1087,
+              "line": 1160,
               "deprecated": false
             },
             {
@@ -441,7 +441,7 @@
               "kind": "method",
               "signature": "(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]",
               "summary": "The ``(trigger, governed, reason)`` triples in effect for this panel.",
-              "line": 1147,
+              "line": 1220,
               "deprecated": false
             },
             {
@@ -450,7 +450,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Any]",
               "summary": "Snapshot every widget's current value, regardless of visibility.",
-              "line": 1197,
+              "line": 1270,
               "deprecated": false
             },
             {
@@ -459,7 +459,7 @@
               "kind": "method",
               "signature": "(self, widget) -> None",
               "summary": "Switchboard hook: populate the template combobox + wire change handler.",
-              "line": 1411,
+              "line": 1478,
               "deprecated": false
             },
             {
@@ -468,7 +468,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Re-scan disk and rebuild the template combo + parameter UI.",
-              "line": 1456,
+              "line": 1523,
               "deprecated": false
             },
             {
@@ -477,7 +477,7 @@
               "kind": "method",
               "signature": "(self) -> Tuple[Tuple[str, str, str, str], ...]",
               "summary": "Hook: the header-menu items.",
-              "line": 1596,
+              "line": 1663,
               "deprecated": false
             },
             {
@@ -486,7 +486,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[Dict[str, Any]]",
               "summary": "Hook: the ``fmt()`` keyword dict for the header help, or ``None``.",
-              "line": 1600,
+              "line": 1667,
               "deprecated": false
             },
             {
@@ -495,7 +495,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Hook: the panel's documentation URL, or ``\"\"`` for no docs link.",
-              "line": 1607,
+              "line": 1674,
               "deprecated": false
             },
             {
@@ -504,7 +504,7 @@
               "kind": "method",
               "signature": "(self, widget) -> None",
               "summary": "Default header menu: a \"Utilities\" separator, the declared",
-              "line": 1614,
+              "line": 1681,
               "deprecated": false
             },
             {
@@ -513,7 +513,7 @@
               "kind": "method",
               "signature": "(self, path) -> bool",
               "summary": "Open *path* in the OS file manager (logs + returns False if missing).",
-              "line": 1642,
+              "line": 1709,
               "deprecated": false
             },
             {
@@ -522,7 +522,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Reveal :attr:`template_dir` in the OS file manager.",
-              "line": 1658,
+              "line": 1725,
               "deprecated": false
             },
             {
@@ -531,7 +531,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear the log panel (wired by subclass header menus).",
-              "line": 1662,
+              "line": 1729,
               "deprecated": false
             }
           ]
@@ -3117,7 +3117,7 @@
         {
           "name": "ResetGesture",
           "summary": "Modifier-aware reset for a button: dispatch, tooltip, live preview.",
-          "line": 29,
+          "line": 35,
           "bases": [
             "QtCore.QObject"
           ],
@@ -3128,7 +3128,7 @@
               "kind": "classmethod",
               "signature": "(cls, modifiers, bypass_modifier=None) -> str",
               "summary": "The action a click with *modifiers* held performs.",
-              "line": 111,
+              "line": 120,
               "deprecated": false
             },
             {
@@ -3137,7 +3137,7 @@
               "kind": "classmethod",
               "signature": "(cls, modifiers) -> List[str]",
               "summary": "Key names (``\"Ctrl\"``, ``\"Alt\"``...) for the flags set in *modifiers*.",
-              "line": 136,
+              "line": 145,
               "deprecated": false
             },
             {
@@ -3146,7 +3146,7 @@
               "kind": "staticmethod",
               "signature": "(state) -> bool",
               "summary": "Whether *state* can persist and forget saved defaults.",
-              "line": 141,
+              "line": 150,
               "deprecated": false
             },
             {
@@ -3155,7 +3155,7 @@
               "kind": "staticmethod",
               "signature": "(title: str = 'Restore Defaults', *, saving: bool = True, saved: Optional[bool] = None, bypass: Optional[List[str]] = None) -> str",
               "summary": "The rich tooltip that teaches the grammar.",
-              "line": 149,
+              "line": 158,
               "deprecated": false
             },
             {
@@ -3164,7 +3164,7 @@
               "kind": "classmethod",
               "signature": "(cls, state, action: str, widgets=None) -> Optional[str]",
               "summary": "Apply *action* through *state* over *widgets*.",
-              "line": 186,
+              "line": 195,
               "deprecated": false
             },
             {
@@ -3173,7 +3173,7 @@
               "kind": "method",
               "signature": "(self, *_) -> str",
               "summary": "Run the action the held modifiers select.",
-              "line": 208,
+              "line": 217,
               "deprecated": false
             },
             {
@@ -3182,7 +3182,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Rebuild the tooltip for the current state now.",
-              "line": 219,
+              "line": 228,
               "deprecated": false
             },
             {
@@ -3191,7 +3191,7 @@
               "kind": "method",
               "signature": "(self, message: str) -> None",
               "summary": "Show *message* on the button for :data:`FLASH_MS`, then its label.",
-              "line": 234,
+              "line": 243,
               "deprecated": false
             },
             {
@@ -3200,7 +3200,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "",
-              "line": 240,
+              "line": 249,
               "deprecated": false
             }
           ]
@@ -19349,7 +19349,7 @@
               "kind": "method",
               "signature": "(self, record: logging.LogRecord) -> None",
               "summary": "",
-              "line": 176,
+              "line": 188,
               "deprecated": false
             },
             {
@@ -19358,7 +19358,7 @@
               "kind": "method",
               "signature": "(self, level: str) -> str",
               "summary": "",
-              "line": 235,
+              "line": 247,
               "deprecated": false
             },
             {
@@ -19367,7 +19367,7 @@
               "kind": "method",
               "signature": "(self) -> int",
               "summary": "Return how many monospace columns fit on one line of the pane.",
-              "line": 238,
+              "line": 250,
               "deprecated": false
             }
           ]

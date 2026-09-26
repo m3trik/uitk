@@ -192,7 +192,7 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L111)** — Base class for DCC-bridge slot panels.
+- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L184)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
@@ -622,7 +622,7 @@ Typed file registries backing Switchboard discovery.
 
 ``ResetGesture`` — the click grammar every *Restore Defaults* control shares.
 
-- **[`class ResetGesture(QtCore.QObject)`](uitk/uitk/managers/reset_gesture.py#L29)** — Modifier-aware reset for a button: dispatch, tooltip, live preview.
+- **[`class ResetGesture(QtCore.QObject)`](uitk/uitk/managers/reset_gesture.py#L35)** — Modifier-aware reset for a button: dispatch, tooltip, live preview.
   - `ResetGesture.action_for(cls, modifiers, bypass_modifier=None) -> str` *(class)* — The action a click with *modifiers* held performs.
   - `ResetGesture.modifier_keys(cls, modifiers) -> List[str]` *(class)* — Key names (``"Ctrl"``, ``"Alt"``...) for the flags set in *modifiers*.
   - `ResetGesture.supports_saving(state) -> bool` *(static)* — Whether *state* can persist and forget saved defaults.
