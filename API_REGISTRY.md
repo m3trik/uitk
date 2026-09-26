@@ -192,7 +192,7 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L110)** — Base class for DCC-bridge slot panels.
+- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L111)** — Base class for DCC-bridge slot panels.
   - `BridgeSlotsBase.params_module(self)` *(property)*
   - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
   - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
@@ -243,8 +243,8 @@ Attribute spec + kind-handler registry for parameterised forms.
 - **[`class AttributeSpec`](uitk/uitk/bridge/spec.py#L55)** — Description of one editable attribute / bridge parameter.
   - `AttributeSpec.from_value(cls, key: str, value: Any, *, label: str = '') -> 'AttributeSpec'` *(class)* — Build a minimal spec from a Python value (AttributeWindow style).
   - `AttributeSpec.display_label(self) -> str` *(property)*
-- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L157)** — Bundle of callables that build / read / write a widget kind.
-- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L1028)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
+- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L163)** — Bundle of callables that build / read / write a widget kind.
+- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L1034)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
   - `KindFactory.infer_kind(value: Any) -> str` *(static)* — Map a Python value to one of the built-in kinds.
   - `KindFactory.register_kind(name: str, handler: KindHandler) -> None` *(static)* — Register a new kind (or override an existing one).
   - `KindFactory.get_handler(kind: str) -> KindHandler` *(static)* — Return the handler for *kind* (raises KeyError if unregistered).
@@ -629,7 +629,7 @@ Typed file registries backing Switchboard discovery.
   - `ResetGesture.tooltip(title: str = 'Restore Defaults', *, saving: bool = True, saved: Optional[bool] = None, bypass: Optional[List[str]] = None) -> str` *(static)* — The rich tooltip that teaches the grammar.
   - `ResetGesture.perform(cls, state, action: str, widgets=None) -> Optional[str]` *(class)* — Apply *action* through *state* over *widgets*.
   - `ResetGesture.trigger(self, *_) -> str` — Run the action the held modifiers select.
-  - `ResetGesture.refresh_tooltip(self) -> None` — Rebuild the tooltip for the current state (runs on every hover).
+  - `ResetGesture.refresh_tooltip(self) -> None` — Rebuild the tooltip for the current state now.
   - `ResetGesture.flash(self, message: str) -> None` — Show *message* on the button for :data:`FLASH_MS`, then its label.
   - `ResetGesture.eventFilter(self, obj, event)`
 
@@ -881,7 +881,7 @@ Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
   - `SwitchboardUtilsMixin.progress_adapter(update: Callable[..., bool]) -> Callable[..., bool]` *(static)* — Adapt the footer ``update`` callable to the shape downstream
   - `SwitchboardUtilsMixin.confirm(self, question, yes='Yes', no='No') -> bool` — Ask *question* in a modal :meth:`message_box` and answer True when
   - `SwitchboardUtilsMixin.message_box(self, string, *buttons, location='topMiddle', timeout=3, background=0.75)` — Spawns a message box with the given text and optionally sets buttons.
-  - `SwitchboardUtilsMixin.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None)` — Spawn a scrollable text-viewer window with optional buttons.
+  - `SwitchboardUtilsMixin.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None, link_handler=None)` — Spawn a scrollable text-viewer window with optional buttons.
   - `SwitchboardUtilsMixin.data_view_dialog(self, data: Any, *, title: str = '', save_path: Optional[str] = '', empty_message: str = 'Nothing to show.', size=(720, 560), parent=None)` — Show structured *data* as colour-coded JSON in a text viewer.
   - `SwitchboardUtilsMixin.save_data_dialog(self, data: Any, title: str = '', path: str = '', parent=None) -> Optional[str]` — Write *data* as indented JSON to a ``.json`` file the user picks.
   - `SwitchboardUtilsMixin.file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]` *(static)* — Open a file dialog to select files of the given type(s) using qtpy.
@@ -1016,17 +1016,17 @@ Test isolation for every suite in the ecosystem — keep test runs off live user
 <a id="widgets--comboBox"></a>
 ### `widgets/comboBox.py`
 
-- **[`class CustomStyle(QtWidgets.QProxyStyle)`](uitk/uitk/widgets/comboBox.py#L17)** — Fusion-based proxy style for ComboBox: focus, popup and row-metric fixes.
+- **[`class CustomStyle(QtWidgets.QProxyStyle)`](uitk/uitk/widgets/comboBox.py#L18)** — Fusion-based proxy style for ComboBox: focus, popup and row-metric fixes.
   - `CustomStyle.drawComplexControl(self, control, opt, painter, widget=None)`
   - `CustomStyle.styleHint(self, hint, option=None, widget=None, returnData=None)`
   - `CustomStyle.pixelMetric(self, metric, option=None, widget=None)`
-- **[`class AlignedComboBox(QtWidgets.QComboBox)`](uitk/uitk/widgets/comboBox.py#L75)** — ComboBox with header text and alignment support.
+- **[`class AlignedComboBox(QtWidgets.QComboBox)`](uitk/uitk/widgets/comboBox.py#L76)** — ComboBox with header text and alignment support.
   - `AlignedComboBox.setHeaderText(self, text)` — Set the header text displayed when no item is selected.
   - `AlignedComboBox.setHeaderAlignment(self, alignment)` — Set the alignment for header text.
   - `AlignedComboBox.get_stylesheet_property(self, property_name)` — Extract a numeric property value from the widget's stylesheet.
   - `AlignedComboBox.format_current_display_text(self, text: str) -> str` — Compose the text painted for the *current* selection only.
   - `AlignedComboBox.paintEvent(self, event)` — Paint the box and its label -- adorned -- then any header text.
-- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L600)** — QComboBox with automatic Menu and OptionBox integration.
+- **[`class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`](uitk/uitk/widgets/comboBox.py#L602)** — QComboBox with automatic Menu and OptionBox integration.
   - `ComboBox.clear(self)`
   - `ComboBox.addItem(self, *args, **kwargs)`
   - `ComboBox.addItems(self, *args, **kwargs)`
@@ -1380,7 +1380,7 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
 <a id="widgets--footer"></a>
 ### `widgets/footer.py`
 
-- **[`class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin)`](uitk/uitk/widgets/footer.py#L19)** — Footer is a widget that acts as a status bar with an integrated
+- **[`class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin)`](uitk/uitk/widgets/footer.py#L20)** — Footer is a widget that acts as a status bar with an integrated
   - `Footer.container_layout(self) -> QtWidgets.QHBoxLayout` *(property)* — Backward compatibility: return main_layout as container_layout.
   - `Footer.alignment(self) -> QtCore.Qt.Alignment` — Get alignment of the status label (backward compatibility).
   - `Footer.update_font_size(self)` — Public method for updating font size (backward compatibility).
@@ -1412,8 +1412,8 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `Footer.showEvent(self, event)` — Ensure text is properly sized and elided on first show.
   - `Footer.status_controller(self, resolver: Optional[Callable[[], str]] = None, default_text: str | None = '', truncate_kwargs: Optional[Mapping[str, Any]] = None) -> 'FooterStatusController'` — Bind a :class:`FooterStatusController` to this footer and return it.
   - `Footer.attach_to(self, widget: QtWidgets.QWidget) -> None` — Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget.
-- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L960)** — Context manager for footer progress tracking.
-- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L988)** — Helper that keeps a footer in sync with a resolver function.
+- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L962)** — Context manager for footer progress tracking.
+- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L990)** — Helper that keeps a footer in sync with a resolver function.
   - `FooterStatusController.set_resolver(self, resolver: Callable[[], str]) -> None`
   - `FooterStatusController.set_truncation(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None` — Configure truncation behavior for footer updates via StrUtils.truncate kwargs.
   - `FooterStatusController.update(self) -> None`
@@ -1423,7 +1423,7 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
 
 Themed form window: Header → labelled rows → output log → Footer.
 
-- **[`class FormPanel(WindowPanel)`](uitk/uitk/widgets/formPanel.py#L46)** — Themed form window over a list of field specs.
+- **[`class FormPanel(WindowPanel)`](uitk/uitk/widgets/formPanel.py#L47)** — Themed form window over a list of field specs.
   - `FormPanel.add(self, x, label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), label_align=None, enabled_by: Optional[str] = None, **kwargs)` — :meth:`WindowPanel.add`, and the widget becomes a FIELD when it can.
   - `FormPanel.clear_rows(self) -> None` — The base's, plus the field registries — they point at those rows.
   - `FormPanel.set_fields(self, fields) -> None` — (Re)build the rows from *fields* — each spec is one :meth:`add`.
@@ -1460,7 +1460,7 @@ A slider whose track shows the colour it is about to set.
 <a id="widgets--header"></a>
 ### `widgets/header.py`
 
-- **[`class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`](uitk/uitk/widgets/header.py#L14)** — Header is a QLabel that can be dragged around the screen and can be pinned/unpinned.
+- **[`class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, ptk.LoggingMixin)`](uitk/uitk/widgets/header.py#L15)** — Header is a QLabel that can be dragged around the screen and can be pinned/unpinned.
   - `Header.pin_on_drag_only(self) -> bool` *(property)* — Whether a pin-button click dismisses the window instead of pinning it.
   - `Header.set_default_pin_on_drag_only(cls, value: bool) -> None` *(class)* — Set the process-wide pin-click mode for default-following headers.
   - `Header.pin_on_tap(self) -> bool` *(property)* — Whether a just-shown window pins itself instead of auto-hiding.
@@ -1535,7 +1535,7 @@ A slider whose track shows the colour it is about to set.
 <a id="widgets--mainWindow"></a>
 ### `widgets/mainWindow.py`
 
-- **[`class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.LoggingMixin)`](uitk/uitk/widgets/mainWindow.py#L21)** — Application main window with state persistence and child widget management.
+- **[`class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, ptk.LoggingMixin)`](uitk/uitk/widgets/mainWindow.py#L25)** — Application main window with state persistence and child widget management.
   - `MainWindow.setCentralWidget(self, widget: QtWidgets.QWidget) -> None` — Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or…
   - `MainWindow.initialize_window_flags(self, central_widget: QtWidgets.QWidget) -> None` — Initializes the window flags based on the central widget.
   - `MainWindow.edit_tags(self, target: Union[str, QtWidgets.QWidget] = None, add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]` — Edit tags on a widget or a tag string.
@@ -1669,11 +1669,11 @@ Pure menu-resolution logic for the MarkingMenu.
 <a id="widgets--menu"></a>
 ### `widgets/menu.py`
 
-- **[`class MenuConfig`](uitk/uitk/widgets/menu.py#L76)** — Configuration for Menu initialization.
+- **[`class MenuConfig`](uitk/uitk/widgets/menu.py#L77)** — Configuration for Menu initialization.
   - `MenuConfig.for_context_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides) -> 'MenuConfig'` *(class)* — Create config for a context menu.
   - `MenuConfig.for_dropdown_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides) -> 'MenuConfig'` *(class)* — Create config for a dropdown menu.
   - `MenuConfig.for_popup_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides) -> 'MenuConfig'` *(class)* — Create config for a popup menu.
-- **[`class ActionButtonManager`](uitk/uitk/widgets/menu.py#L164)** — Manages action buttons for Menu widgets.
+- **[`class ActionButtonManager`](uitk/uitk/widgets/menu.py#L165)** — Manages action buttons for Menu widgets.
   - `ActionButtonManager.container(self) -> QtWidgets.QWidget` *(property)* — Get or create the collapsible action button container.
   - `ActionButtonManager.create_button(self, button_id: str, config: _ActionButtonConfig) -> QtWidgets.QPushButton` — Create an action button with the given configuration.
   - `ActionButtonManager.add_button(self, button_id: str, config: _ActionButtonConfig, index: int = -1) -> QtWidgets.QPushButton` — Add an action button to the container.
@@ -1685,13 +1685,13 @@ Pure menu-resolution logic for the MarkingMenu.
   - `ActionButtonManager.hide_button(self, button_id: str) -> bool` — Hide an action button.
   - `ActionButtonManager.remove_button(self, button_id: str) -> bool` — Remove an action button entirely.
   - `ActionButtonManager.has_visible_items(self) -> bool` — Check if any buttons or widgets are currently visible.
-- **[`class MenuPositioner`](uitk/uitk/widgets/menu.py#L340)** — Encapsulates menu positioning and width matching logic.
+- **[`class MenuPositioner`](uitk/uitk/widgets/menu.py#L342)** — Encapsulates menu positioning and width matching logic.
   - `MenuPositioner.center_on_cursor(widget: QtWidgets.QWidget) -> None` *(static)* — Center menu on cursor position.
   - `MenuPositioner.position_at_coordinate(widget: QtWidgets.QWidget, position: Union[QtCore.QPoint, tuple, list]) -> None` *(static)* — Position menu at specific coordinates.
   - `MenuPositioner.position_relative_to_widget(menu: QtWidgets.QWidget, target_widget: QtWidgets.QWidget, position: str) -> None` *(static)* — Position menu relative to another widget.
   - `MenuPositioner.apply_width_matching(menu: QtWidgets.QWidget, anchor_widget: Optional[QtWidgets.QWidget], match_parent_width: bool, position: Union[str, QtCore.QPoint, tuple, list, None], logger: Optional[Any] = None) -> None` *(static)* — Apply width matching if conditions are met.
   - `MenuPositioner.position_and_match_width(menu: QtWidgets.QWidget, anchor_widget: Optional[QtWidgets.QWidget], position: Union[str, QtCore.QPoint, tuple, list, None], match_parent_width: bool, logger: Optional[Any] = None) -> None` *(static)* — Position menu and apply width matching in one operation.
-- **[`class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin)`](uitk/uitk/widgets/menu.py#L577)** — A custom Qt Widget that serves as a popup menu with additional features.
+- **[`class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin)`](uitk/uitk/widgets/menu.py#L579)** — A custom Qt Widget that serves as a popup menu with additional features.
   - `Menu.create_context_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides)` *(class)* — Factory method: Create a standalone context menu with sensible defaults.
   - `Menu.create_dropdown_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides)` *(class)* — Factory method: Create a dropdown menu for option boxes.
   - `Menu.from_config(cls, config: MenuConfig)` *(class)* — Create a Menu from a MenuConfig object.
@@ -1902,16 +1902,17 @@ Shared display behaviour for the spin-box widgets.
 
 Text rendering for uitk widgets.
 
-- **[`class RichTextFormatter`](uitk/uitk/widgets/mixins/text.py#L28)** — Stateless HTML pipeline shared by uitk's rich-text widgets.
+- **[`class RichTextFormatter`](uitk/uitk/widgets/mixins/text.py#L49)** — Stateless HTML pipeline shared by uitk's rich-text widgets.
   - `RichTextFormatter.prefix_styles(cls) -> dict` *(class)* — Map each level-prefix token to its coloured ``<hl>`` span.
   - `RichTextFormatter.apply_prefix_styles(cls, string: str) -> str` *(class)* — Replace level-prefix tokens (``Error:``, ``Warning:`` ...) with styled spans.
   - `RichTextFormatter.apply_inline_styles(cls, string: str) -> str` *(class)* — Replace bare HTML tags with their style-bearing equivalents.
   - `RichTextFormatter.apply_line_breaks(cls, string: str) -> str` *(class)* — Render each newline as a line break instead of collapsing it.
+  - `RichTextFormatter.linkify(cls, string: str) -> str` *(class)* — Make each bare ``http(s)`` address in *string* a link.
   - `RichTextFormatter.wrap_font_color(string: str, color: str) -> str` *(static)*
   - `RichTextFormatter.wrap_font_size(string: str, size) -> str` *(static)*
   - `RichTextFormatter.resolve_background(cls, background) -> Optional[str]` *(class)* — Convert a background parameter to a CSS colour string or ``None``.
   - `RichTextFormatter.format(cls, string: str, *, align: str = 'left', font_color: str = 'white', font_size: Union[int, str, None] = None) -> str` *(class)* — Apply the standard uitk HTML pipeline to a string.
-- **[`class TextTruncation`](uitk/uitk/widgets/mixins/text.py#L217)** — Mixin providing reusable text truncation functionality for UI widgets.
+- **[`class TextTruncation`](uitk/uitk/widgets/mixins/text.py#L292)** — Mixin providing reusable text truncation functionality for UI widgets.
   - `TextTruncation.calculate_text_truncation(self, text, container_width=None, reserved_width=0, min_text_width=100, elide_mode=QtCore.Qt.ElideMiddle, font=None, custom_suffix='...')` — Calculate truncated text that fits within available width using Qt font metrics.
   - `TextTruncation.calculate_character_truncation(self, text, max_chars, elide_mode=QtCore.Qt.ElideMiddle, suffix='...')` — Truncate text by character count (not pixel-based).
   - `TextTruncation.calculate_word_truncation(self, text, max_chars, elide_mode=QtCore.Qt.ElideMiddle, suffix='...', word_boundary=True)` — Truncate text respecting word boundaries.
@@ -1920,7 +1921,7 @@ Text rendering for uitk widgets.
   - `TextTruncation.create_truncated_button(self, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel', **button_kwargs)` — Create a QPushButton with properly truncated text.
   - `TextTruncation.create_truncated_label(self, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel', **label_kwargs)` — Create a QLabel with properly truncated text.
   - `TextTruncation.update_widget_text_truncation(self, widget, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel')` — Update an existing widget's text with proper truncation.
-- **[`class RichText`](uitk/uitk/widgets/mixins/text.py#L658)** — Rich-text support mixin for widgets.
+- **[`class RichText`](uitk/uitk/widgets/mixins/text.py#L733)** — Rich-text support mixin for widgets.
   - `RichText.richTextLabelDict(self)` *(property)* — Returns a list containing any rich text labels that have been created.
   - `RichText.richTextSizeHintDict(self)` *(property)* — Returns a list containing the sizeHint any rich text labels that have been created.
   - `RichText.richTextSizeHint(self, index=0)` — The richTextSizeHint is the sizeHint of the actual widget if it were containing the text.
@@ -1929,7 +1930,7 @@ Text rendering for uitk widgets.
   - `RichText.richText(self, index=None)` — Returns:
   - `RichText.setRichText(self, text, index=0)` — If the text string contains rich text formatting:
   - `RichText.setAlignment(self, alignment='AlignLeft', index=0)` — Override setAlignment to accept string alignment arguments as well as QtCore.Qt.AlignmentFlags.
-- **[`class TextOverlay`](uitk/uitk/widgets/mixins/text.py#L865)**
+- **[`class TextOverlay`](uitk/uitk/widgets/mixins/text.py#L940)**
   - `TextOverlay.textOverlayLabel(self)` *(property)* — Return a QLabel inside a QHBoxLayout.
   - `TextOverlay.setTextOverlay(self, text, color=None, alignment=None)` — If the text string contains rich text formatting:
   - `TextOverlay.setTextOverlayAlignment(self, alignment='AlignLeft')` — Override setAlignment to accept string alignment arguments as well as QtCore.Qt.AlignmentFlags.
@@ -1952,17 +1953,23 @@ Validation feedback for a text field -- the red "refused" state.
 <a id="widgets--mixins--tooltip_mixin"></a>
 ### `widgets/mixins/tooltip_mixin.py`
 
-- **[`class TooltipFormat`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L95)** — Rich-text tooltip formatting DSL — ``kbd`` / ``hl`` / ``fmt``.
+- **[`class TooltipFormat(_TooltipFormatInternal)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L310)** — Rich-text tooltip formatting DSL — ``kbd`` / ``hl`` / ``fmt`` — plus the
   - `TooltipFormat.kbd(*keys: str) -> str` *(static)* — Render keyboard key(s) as styled ``<kbd>``-like chips.
   - `TooltipFormat.hl(text: str, color: str = _C_ACCENT) -> str` *(static)* — Highlight ``text`` in ``color`` (defaults to the accent color).
   - `TooltipFormat.fmt(title: str = None, body: str = None, bullets: list = None, steps: list = None, rows: list = None, sections: list = None, notes: list = None) -> str` *(static)* — Build a rich-text HTML tooltip string.
   - `TooltipFormat.placeholder_preview(template: str, context: dict, *, title: str = None, body: str = None, descriptions: dict = None, wildcards: dict = None, final: str = None, final_label: str = '→', empty_text: str = None, notes: list = None) -> str` *(static)* — Build a live, self-documenting tooltip for a pattern/template field.
   - `TooltipFormat.stored_items(items, *, title: str = None, body: str = None, formatter=None, max_items: int = None, noun: str = 'item(s)', empty_text: str = None, notes: list = None) -> str` *(static)* — Build a live tooltip listing what a control currently has STORED.
-- **[`class TooltipProxy(TooltipFormat, _TooltipBindInternal)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L528)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
+  - `TooltipFormat.wrap(cls, text: str, width: int = None, slack: int = None, rich: bool = None) -> str` *(class)* — Break *text* into lines of a readable width, as a tooltip shows it.
+  - `TooltipFormat.display_ms(cls, text: str, rich: bool = None) -> int` *(class)* — How long a tooltip showing *text* should stay up, in milliseconds.
+- **[`class TooltipPresenter`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L831)** — The one path a managed widget's tooltip is shown through.
+  - `TooltipPresenter.manage(cls, widget) -> '_TooltipFilter'` *(class)* — Show *widget*'s tooltips through the presenter.
+  - `TooltipPresenter.show_text(cls, pos, text: str, widget=None, rect=None, duration=None) -> None` *(class)* — Show *text* as a tooltip the way every managed tooltip is shown.
+- **[`class TooltipProxy(TooltipFormat)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L994)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
   - `TooltipProxy.bind(self, provider) -> None` — Register a callable() -> str called lazily on QEvent.ToolTip hover.
-- **[`class TooltipNamespace(TooltipFormat, _TooltipBindInternal)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L575)** — The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
+- **[`class TooltipNamespace(TooltipFormat)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L1041)** — The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
   - `TooltipNamespace.bind(self, widgets, provider, ui=None) -> list` — Bind a lazy tooltip *provider* to one widget, several, or a name range.
-- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L634)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
+  - `TooltipNamespace.manage(self, widgets, ui=None) -> list` — Show these widgets' tooltips through :class:`TooltipPresenter`.
+- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L1124)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
 
 <a id="widgets--mixins--wheel_step"></a>
 ### `widgets/mixins/wheel_step.py`
@@ -2000,9 +2007,9 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
 <a id="widgets--optionBox--options--_options"></a>
 ### `widgets/optionBox/options/_options.py`
 
-- **[`class OptionButton(QtWidgets.QPushButton, AttributesMixin)`](uitk/uitk/widgets/optionBox/options/_options.py#L14)** — Icon-only push button used for every option-box action button.
-- **[`class QObjectABCMeta(type(QtCore.QObject), ABCMeta)`](uitk/uitk/widgets/optionBox/options/_options.py#L24)**
-- **[`class BaseOption(QtCore.QObject, ABC)`](uitk/uitk/widgets/optionBox/options/_options.py#L28)** — Base class for all option plugins.
+- **[`class OptionButton(QtWidgets.QPushButton, AttributesMixin)`](uitk/uitk/widgets/optionBox/options/_options.py#L15)** — Icon-only push button used for every option-box action button.
+- **[`class QObjectABCMeta(type(QtCore.QObject), ABCMeta)`](uitk/uitk/widgets/optionBox/options/_options.py#L25)**
+- **[`class BaseOption(QtCore.QObject, ABC)`](uitk/uitk/widgets/optionBox/options/_options.py#L29)** — Base class for all option plugins.
   - `BaseOption.is_compatible(cls, widget) -> bool` *(class)* — Whether this option type may attach to *widget*.
   - `BaseOption.widget(self)` *(property)* — Get the widget for this option.
   - `BaseOption.create_widget(self)` — Create and return the widget for this option.
@@ -2014,12 +2021,12 @@ OptionBox - Plugin-based container for wrapping widgets with action buttons.
   - `BaseOption.clear_saved_default(self) -> bool` — Forget a :meth:`save_default`, so the as-constructed default applies again.
   - `BaseOption.refresh(self) -> None` — Re-pull anything this option DERIVES from a source outside itself.
   - `BaseOption.set_wrapped_widget(self, widget)` — Set or update the wrapped widget.
-- **[`class ButtonOption(BaseOption)`](uitk/uitk/widgets/optionBox/options/_options.py#L195)** — Base class for button-based options.
+- **[`class ButtonOption(BaseOption)`](uitk/uitk/widgets/optionBox/options/_options.py#L198)** — Base class for button-based options.
   - `ButtonOption.create_widget(self)` — Create a QPushButton widget.
   - `ButtonOption.setup_widget(self)` — Setup button connections.
   - `ButtonOption.block_next_click(self)` — Block the next click event (used when popup closes to prevent immediate reopen).
   - `ButtonOption.set_checked(self, checked)` — Set the checked state of the button.
-- **[`class GatingMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L410)** — Reusable *gating button* capability for option plugins.
+- **[`class GatingMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L413)** — Reusable *gating button* capability for option plugins.
 
 <a id="widgets--optionBox--options--_persistence"></a>
 ### `widgets/optionBox/options/_persistence.py`
@@ -2581,9 +2588,9 @@ Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 
 An NLE-style timeline sequencer widget.
 
-- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L75)** — Dialog for configuring attribute-type color mappings.
+- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L76)** — Dialog for configuring attribute-type color mappings.
   - `AttributeColorDialog.load_color_map() -> Dict[str, str]` *(static)* — Return the persisted attribute color map without opening a dialog.
-- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L197)** — A split-view NLE sequencer widget.
+- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L198)** — A split-view NLE sequencer widget.
   - `SequencerWidget.window_shortcuts(self) -> bool` *(property)* — When ``True``, sequencer shortcuts are active whenever the
   - `SequencerWidget.showEvent(self, event: QtGui.QShowEvent) -> None`
   - `SequencerWidget.resizeEvent(self, event: QtGui.QResizeEvent) -> None`
@@ -2718,16 +2725,16 @@ Timeline view, scene, and track-header widgets.
 
 Reusable Maya-style transport controls for :class:`SequencerWidget`.
 
-- **[`class PlayController(Protocol)`](uitk/uitk/widgets/sequencer/_transport_controls.py#L32)** — Minimal transport API the controls drive.
+- **[`class PlayController(Protocol)`](uitk/uitk/widgets/sequencer/_transport_controls.py#L33)** — Minimal transport API the controls drive.
   - `PlayController.is_playing(self) -> bool`
   - `PlayController.play(self, forward: bool) -> None`
   - `PlayController.stop(self) -> None`
-- **[`class ScrubPlayerPlayController`](uitk/uitk/widgets/sequencer/_transport_controls.py#L40)** — Default :class:`PlayController` backed by the sequencer's ScrubPlayer.
+- **[`class ScrubPlayerPlayController`](uitk/uitk/widgets/sequencer/_transport_controls.py#L41)** — Default :class:`PlayController` backed by the sequencer's ScrubPlayer.
   - `ScrubPlayerPlayController.set_fps(self, fps: float) -> None`
   - `ScrubPlayerPlayController.is_playing(self) -> bool`
   - `ScrubPlayerPlayController.play(self, forward: bool) -> None`
   - `ScrubPlayerPlayController.stop(self) -> None`
-- **[`class TransportControls(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_transport_controls.py#L102)** — Maya-style 8-button transport row bound to a :class:`SequencerWidget`.
+- **[`class TransportControls(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_transport_controls.py#L103)** — Maya-style 8-button transport row bound to a :class:`SequencerWidget`.
   - `TransportControls.showEvent(self, event) -> None`
   - `TransportControls.hideEvent(self, event) -> None`
   - `TransportControls.play_controller(self) -> PlayController` *(property)*
@@ -2863,19 +2870,19 @@ Reusable action-column management for :class:`TableWidget`.
 <a id="widgets--textEditLogHandler"></a>
 ### `widgets/textEditLogHandler.py`
 
-- **[`class TextEditLogHandler(logging.Handler)`](uitk/uitk/widgets/textEditLogHandler.py#L30)** — Custom logging handler for Qt QTextEdit widgets.
+- **[`class TextEditLogHandler(logging.Handler)`](uitk/uitk/widgets/textEditLogHandler.py#L31)** — Custom logging handler for Qt QTextEdit widgets.
   - `TextEditLogHandler.route_links(cls, widget) -> None` *(class)* — Make *widget*'s anchors behave like a log pane's (idempotent).
   - `TextEditLogHandler.open_web_link(url) -> bool` *(static)* — Open an ``http``/``https`` :class:`QUrl` in the default browser.
   - `TextEditLogHandler.emit(self, record: logging.LogRecord) -> None`
   - `TextEditLogHandler.get_color(self, level: str) -> str`
-  - `TextEditLogHandler.available_columns(self) -> int` — Return the number of monospace columns that fit in the viewport.
+  - `TextEditLogHandler.available_columns(self) -> int` — Return how many monospace columns fit on one line of the pane.
 
 <a id="widgets--textViewBox"></a>
 ### `widgets/textViewBox.py`
 
 Scrollable rich-text viewer window.
 
-- **[`class TextViewBox(WindowPanel)`](uitk/uitk/widgets/textViewBox.py#L46)** — Read-only rich-text viewer with optional standard buttons.
+- **[`class TextViewBox(WindowPanel)`](uitk/uitk/widgets/textViewBox.py#L50)** — Read-only rich-text viewer with optional standard buttons.
   - `TextViewBox.format_data(cls, data, indent: int = 2) -> str` *(class)* — *data* as indented, colour-coded JSON HTML (one ``<pre>`` block).
   - `TextViewBox.setStandardButtons(self, *buttons) -> None` — Configure the visible buttons by name.
   - `TextViewBox.setText(self, string: str, fontColor: str = 'white', background=False, fontSize=None) -> None` — Set the body text, replacing any existing content.
@@ -2895,12 +2902,12 @@ Scrollable rich-text viewer window.
 <a id="widgets--treeWidget"></a>
 ### `widgets/treeWidget.py`
 
-- **[`class HierarchyIconMixin`](uitk/uitk/widgets/treeWidget.py#L16)** — Mixin to handle custom hierarchy icons in tree widgets using CSS branch styling.
+- **[`class HierarchyIconMixin`](uitk/uitk/widgets/treeWidget.py#L17)** — Mixin to handle custom hierarchy icons in tree widgets using CSS branch styling.
   - `HierarchyIconMixin.set_icon_style(self, style: str)` — Set the icon style for hierarchy indicators.
   - `HierarchyIconMixin.enable_hierarchy_icons(self, enabled=True)` — Enable or disable custom hierarchy icons.
   - `HierarchyIconMixin.get_available_icon_styles(self) -> list` — Get list of available icon styles.
   - `HierarchyIconMixin.get_current_icon_style(self) -> str` — Get the currently active icon style.
-- **[`class TreeFormatMixin(ConvertMixin)`](uitk/uitk/widgets/treeWidget.py#L188)** — Generic item/column formatting for QTreeWidget.
+- **[`class TreeFormatMixin(ConvertMixin)`](uitk/uitk/widgets/treeWidget.py#L189)** — Generic item/column formatting for QTreeWidget.
   - `TreeFormatMixin.set_item_formatter(self, item_id, formatter, append=False)` — Set a formatter for a specific item by ID.
   - `TreeFormatMixin.set_column_formatter(self, col, formatter, append=False)` — Set a formatter for a specific column.
   - `TreeFormatMixin.clear_formatters(self)` — Clear all item and column formatters.
@@ -2909,7 +2916,7 @@ Scrollable rich-text viewer window.
   - `TreeFormatMixin.set_action_color(self, item: QtWidgets.QTreeWidgetItem, key: str, col: int = 0, use_bg: bool = False)` — Apply semantic color to a tree item.
   - `TreeFormatMixin.action_color_formatter(self, item, value, col, *_)` — Formatter that applies action colors based on item value.
   - `TreeFormatMixin.make_color_map_formatter(self, color_map: dict)` — Create a formatter from a color mapping dictionary.
-- **[`class TreeWidget(QtWidgets.QTreeWidget, MenuMixin, AttributesMixin, TreeFormatMixin, HierarchyIconMixin)`](uitk/uitk/widgets/treeWidget.py#L583)** — Enhanced QTreeWidget with flexible data handling, formatting capabilities, and custom hierarchy ico…
+- **[`class TreeWidget(QtWidgets.QTreeWidget, MenuMixin, AttributesMixin, TreeFormatMixin, HierarchyIconMixin)`](uitk/uitk/widgets/treeWidget.py#L585)** — Enhanced QTreeWidget with flexible data handling, formatting capabilities, and custom hierarchy ico…
   - `TreeWidget.selection_style(self) -> str` *(property)* — Visual style for selected items: ``"border"`` or ``"tint"``.
   - `TreeWidget.header_actions(self) -> _HeaderActionBar` *(property)* — Right-aligned icon-button strip overlaid on the tree header.
   - `TreeWidget.setChildRowColor(self, color) -> None` — Set the child-row background (Qt-property setter).
@@ -2955,7 +2962,7 @@ Scrollable rich-text viewer window.
 <a id="widgets--widgetComboBox"></a>
 ### `widgets/widgetComboBox.py`
 
-- **[`class WidgetComboBox(ComboBox)`](uitk/uitk/widgets/widgetComboBox.py#L135)** — ComboBox extended with widget embedding support.
+- **[`class WidgetComboBox(ComboBox)`](uitk/uitk/widgets/widgetComboBox.py#L136)** — ComboBox extended with widget embedding support.
   - `WidgetComboBox.setItemText(self, index, text)` — Override to work with QStandardItemModel.
   - `WidgetComboBox.addWidgetItem(self, widget: QtWidgets.QWidget, label: str = '', *, data: Any = None, select: bool = False) -> int` — Insert *widget* as a selectable row.
   - `WidgetComboBox.addWidgetAction(self, action: QtWidgets.QAction, label: str = '', *, select: bool = False) -> int` — Insert a QWidgetAction (or plain QAction) as a widget row.

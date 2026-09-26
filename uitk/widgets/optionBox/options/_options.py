@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod, ABCMeta
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 
 
 # Default tint for the "inactive/disabled" icon state, shared by every gating
@@ -79,6 +80,8 @@ class BaseOption(QtCore.QObject, ABC, metaclass=QObjectABCMeta):
         """
         if self._widget is None:
             self._widget = self.create_widget()
+            # Built in code, never registered: join the tooltip presenter here.
+            TooltipPresenter.manage(self._widget)
             self.setup_widget()
         return self._widget
 

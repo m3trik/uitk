@@ -573,7 +573,7 @@ uitk/
 │       ├── menu_mixin.py      # .menu descriptor
 │       ├── option_box_mixin.py # .option_box descriptor
 │       ├── text.py            # RichText, TextOverlay, TextTruncation
-│       ├── tooltip_mixin.py   # lazy-refreshed tooltips via event filter
+│       ├── tooltip_mixin.py   # TooltipFormat DSL + TooltipPresenter (wrap, display time, providers)
 │       ├── convert.py, docking.py, size_grip.py, feedback.py,
 │       ├── icon_states.py, spin_box_display.py, wheel_step.py
 │

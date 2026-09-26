@@ -46,6 +46,7 @@ from qtpy import QtCore, QtWidgets
 from uitk.widgets.pushButton import PushButton
 from uitk.widgets.comboBox import ComboBox
 from uitk.widgets.textEditLogHandler import TextEditLogHandler
+from uitk.widgets.mixins.text import RichTextFormatter
 from uitk.widgets.separator import Separator
 from uitk.managers.preset_manager import PresetManager
 from uitk.managers.field_visibility import FieldVisibility
@@ -589,7 +590,8 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             except Exception:  # noqa: BLE001 - fall through to the raw sinks
                 pass
         try:
-            self.ui.txt000.append(message)
+            # Linked the way the log handler links what it appends.
+            self.ui.txt000.append(RichTextFormatter.linkify(message))
         except Exception:  # noqa: BLE001 - some panels have no log widget
             pass
         getattr(self.sb.logger, level, self.sb.logger.info)(message)
@@ -1267,6 +1269,9 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         store = self.make_preset_store()
         self._preset_store = store
         self._semantic_presets = store is not None
+        # A live switch acts the moment it changes, so a preset carrying one
+        # would act on load: in either mode a preset neither holds nor sets it.
+        live = self._live_param_keys()
 
         if store is not None:
             # Semantic mode: presets are {param_key: value} run-templates shared
@@ -1276,8 +1281,14 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             self._preset_mgr = PresetManager(
                 preset_dir=str(store.user_dir),
                 builtin_dir=str(store.builtin_dir) if store.builtin_dir else None,
-                value_provider=self.collect_param_values,
-                value_applier=self._apply_param_dict,
+                value_provider=lambda: {
+                    k: v
+                    for k, v in self.collect_param_values().items()
+                    if k not in live
+                },
+                value_applier=lambda data: self._apply_param_dict(
+                    {k: v for k, v in data.items() if k not in live}
+                ),
             )
         else:
             # Widget-state mode (DCC bridges): raw snapshots keyed by objectName,
@@ -1290,7 +1301,7 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             # the only way a `path` row survived a preset (the manager could not
             # read the container), but it drops the stamp and reaches exactly one
             # composite: `file_list` and `check_list` were silently unsaveable.
-            managed = list(self._param_widgets.values())
+            managed = [w for k, w in self._param_widgets.items() if k not in live]
             if self.PRESETS_ROOT is None:
                 raise ValueError(
                     f"{type(self).__name__} must set PRESETS_ROOT "
@@ -1348,10 +1359,23 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         pairs = self.list_template_modes()
         return pairs[0][0] if pairs else "default"
 
+    def _live_param_keys(self) -> set:
+        """The params that are live switches (``AttributeSpec.preset=False``)."""
+        return {
+            key
+            for key, spec in self.params_module.PARAMS.items()
+            if not getattr(spec, "preset", True)
+        }
+
     def _reset_to_defaults(self) -> None:
-        """Restore every parameter widget to its registry default via KindHandler."""
+        """Restore every parameter widget to its registry default via KindHandler.
+
+        A live switch keeps its value: Reset is about settings, and switching
+        one would act (a share toggled Off takes every guest's link down).
+        """
+        live = self._live_param_keys()
         for key, spec in self.params_module.PARAMS.items():
-            if key not in self._param_widgets:
+            if key not in self._param_widgets or key in live:
                 continue
             try:
                 self._write_param(key, spec.default)
@@ -1549,15 +1573,8 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         if bridge is None:  # optional engine missing — the panel still opens
             return
         info = getattr(bridge, "STARTUP_INFO", "")
-        if not info:
-            return
-        try:
-            bridge.logger.info(info)
-        except Exception:  # noqa: BLE001
-            try:
-                self.ui.txt000.append(info)
-            except Exception:  # noqa: BLE001
-                pass
+        if info:
+            self.panel_log(info)
 
     def _show_docs_link(self) -> None:
         """Log the panel's documentation link once at startup (opt-in).

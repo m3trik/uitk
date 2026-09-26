@@ -27,6 +27,7 @@ from __future__ import annotations
 from typing import Callable, Iterable, Optional, Protocol
 
 from qtpy import QtCore, QtGui, QtWidgets
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 
 
 class PlayController(Protocol):
@@ -265,6 +266,7 @@ class TransportControls(QtWidgets.QWidget):
             btn.setFixedSize(h + 2, h)
             btn.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
             btn.setToolTip(tip)
+            TooltipPresenter.manage(btn)
             IconManager.set_icon(btn, icon_name, size=(icon_size, icon_size))
             btn.setProperty("_icon_name", icon_name)
             btn.clicked.connect(dispatch[key])

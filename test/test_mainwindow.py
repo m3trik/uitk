@@ -290,6 +290,34 @@ class TestMainWindowWidgetRegistration(QtBaseTestCase):
         window.register_widget(widget)
         self.assertEqual(widget.ui, window)
 
+    def test_register_widget_routes_its_tooltip_through_the_presenter(self):
+        """Registration is uitk's one chokepoint every UI widget passes, so it is
+        where Qt's raw tooltip display is swapped for the presenter's: a long
+        authored tooltip shows wrapped instead of as one screen-wide line."""
+        from qtpy import QtGui
+
+        from uitk.widgets.mainWindow import MainWindow
+        from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        central = QtWidgets.QWidget()
+        window.setCentralWidget(central)
+        widget = QtWidgets.QPushButton("Test", central)
+        widget.setObjectName("testButton")
+        long_tip = " ".join(["Exports the selected objects to the output folder."] * 4)
+        widget.setToolTip(long_tip)
+        window.register_widget(widget)
+        window.show()
+        app.processEvents()
+
+        pos = QtCore.QPoint(2, 2)
+        QtWidgets.QApplication.sendEvent(
+            widget,
+            QtGui.QHelpEvent(QtCore.QEvent.ToolTip, pos, widget.mapToGlobal(pos)),
+        )
+        self.addCleanup(QtWidgets.QToolTip.hideText)
+        self.assertEqual(QtWidgets.QToolTip.text(), TooltipFormat.wrap(long_tip))
+
     def test_register_widget_skips_no_object_name(self):
         """Should skip widget without object name."""
         from uitk.widgets.mainWindow import MainWindow

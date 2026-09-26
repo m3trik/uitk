@@ -774,6 +774,37 @@ class TestHeaderHelpButton(QtBaseTestCase):
         self.assertEqual(captured[0][1], "Sample help")
         self.assertIs(captured[0][2], header.buttons["help"])
 
+    def test_long_help_pops_wrapped(self):
+        """The ``?`` popup is a direct ``showText`` call, so it goes through the
+        presenter explicitly -- a paragraph of help must not pop screen-wide."""
+        from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
+
+        header = self.track_widget(Header(config_buttons=["menu"]))
+        long_help = " ".join(["Select the objects to export, then press Run."] * 4)
+        header.set_help_text(long_help)
+        captured = []
+        original = QtWidgets.QToolTip.showText
+
+        def _capture(*args, **kwargs):
+            captured.append(args)
+            return original(*args, **kwargs)
+
+        with patch.object(QtWidgets.QToolTip, "showText", side_effect=_capture):
+            header.buttons["help"].click()
+        QtWidgets.QToolTip.hideText()
+        self.assertEqual(captured[-1][1], TooltipFormat.wrap(long_help))
+        self.assertEqual(captured[-1][-1], TooltipFormat.display_ms(long_help))
+
+    def test_header_buttons_are_managed(self):
+        """Header buttons are built in code and never registered, so the header
+        routes them through the presenter itself."""
+        from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
+
+        header = self.track_widget(Header(config_buttons=["menu", "hide"]))
+        header.set_help_text("Help me")
+        for name, button in header.buttons.items():
+            self.assertIsNotNone(button.property(TooltipPresenter._FILTER_PROP), name)
+
 
 class TestApplyStylesWithHelpButton(QtBaseTestCase):
     """Regression: ``UiHandler.apply_styles`` must not treat the auto-installed

@@ -38,6 +38,7 @@ question which one to read.
 from typing import Callable, Dict, List, Optional, Union
 
 from qtpy import QtCore, QtWidgets
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.managers.cursor_manager import CursorManager
 
 from uitk.widgets.windowPanel import WindowPanel
@@ -508,6 +509,7 @@ class FormPanel(WindowPanel):
         )
         if tip:
             widget.setToolTip(tip)
+            TooltipPresenter.manage(widget)
         self._register_field(widget, spec.get("enabled_by"))
         self._expose_as_attribute(widget)
 

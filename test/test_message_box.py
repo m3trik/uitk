@@ -64,9 +64,7 @@ class TestMessageBoxStandardButtons(QtBaseTestCase):
     def test_multiword_save_all_resolves(self):
         w = self._make()
         w.setStandardButtons("SaveAll")
-        self.assertTrue(
-            _has_button(w.standardButtons(), QtWidgets.QMessageBox.SaveAll)
-        )
+        self.assertTrue(_has_button(w.standardButtons(), QtWidgets.QMessageBox.SaveAll))
 
     def test_single_word_still_resolves(self):
         """A simple name like 'Ok' must still work."""
@@ -144,9 +142,7 @@ class TestMessageBoxMove(QtBaseTestCase):
         rect = screen.geometry()
         offset_x = w.sizeHint().width() / 2
         offset_y = w.sizeHint().height() / 2
-        expected = QtCore.QPoint(
-            rect.left() + offset_x, rect.top() + offset_y
-        )
+        expected = QtCore.QPoint(rect.left() + offset_x, rect.top() + offset_y)
         with patch.object(w, "move") as mock_move:
             w.move_("topLeft")
         mock_move.assert_called_once()
@@ -165,6 +161,7 @@ class TestMessageBoxMove(QtBaseTestCase):
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
+
 
 class TestMessageBoxPromptFlags(QtBaseTestCase):
     """A buttoned, exec_()d box must be answerable.
@@ -258,6 +255,21 @@ class TestMessageBoxPromptFlags(QtBaseTestCase):
             "a parented prompt must stay a top-level Dialog",
         )
         self.assertTrue(box.isWindow(), "the prompt must be a window")
+
+
+class TestMessageBoxLinks(QtBaseTestCase):
+    """An address in a dialog is a link its label opens -- where to install a
+    missing tool, above all, which was text to copy by hand."""
+
+    def test_an_address_in_the_text_opens_in_the_browser(self):
+        url = "https://example.test/install"
+        box = self.track_widget(MessageBox(theme=None))
+        box.setText(f"Install it from {url}.")
+        label = box.findChild(QtWidgets.QLabel, "qt_msgbox_label")
+        self.assertIn(f'<a href="{url}">{url}</a>.', label.text())
+        self.assertTrue(label.openExternalLinks())
+        self.assertTrue(label.textInteractionFlags() & QtCore.Qt.LinksAccessibleByMouse)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

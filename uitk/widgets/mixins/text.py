@@ -24,6 +24,27 @@ _REDUNDANT_NEWLINE = re.compile(
     r"(<br\s*/?>)[^\S\n]*\n|\n[^\S\n]*(?=<br\s*/?>)", re.IGNORECASE
 )
 
+#: Markup, split out (and handed back by :func:`re.split`) so only the text
+#: between tags is searched for addresses.
+_TAG = re.compile(r"(<[^>]*>)")
+
+#: An anchor's opening or closing tag; group 1 is a closing tag's slash.
+_ANCHOR_TAG = re.compile(r"<\s*(/?)\s*a\b", re.IGNORECASE)
+
+#: A web address in running text: up to whitespace, markup, a quote, or an
+#: escaped bracket or quote (``&lt;https://x&gt;``).
+_WEB_ADDRESS = re.compile(
+    r"https?://(?:(?!&(?:lt|gt|quot|apos|#0*39);)[^\s<>\"'])+", re.IGNORECASE
+)
+
+#: What ends the sentence around an address rather than the address:
+#: ``live at http://127.0.0.1:8118/.`` links the address, not the full stop.
+_SENTENCE_END = ".,;:!?…"
+
+#: A closing bracket -> its opener. Trailing, it is the address's own only
+#: when the address opened it: ``(see https://x/a)`` vs ``https://x/Foo_(bar)``.
+_BRACKETS = {")": "(", "]": "[", "}": "{"}
+
 
 class RichTextFormatter:
     """Stateless HTML pipeline shared by uitk's rich-text widgets.
@@ -151,6 +172,58 @@ class RichTextFormatter:
             parts[i] = absorbed.replace("\n", "<br>")
         return "".join(parts)
 
+    @classmethod
+    def linkify(cls, string: str) -> str:
+        """Make each bare ``http(s)`` address in *string* a link.
+
+        Messages give addresses as plain text -- a share link, the page that
+        enables a provider, where to install a tool -- which a dialog or log
+        pane then showed as text to select and copy by hand. Only running text
+        is touched: markup (an ``<img src>``, a ``title``), the text of an
+        existing ``<a>`` and every other scheme (``action://``, ``file://``)
+        pass through, and so does the punctuation ending the sentence around
+        an address. What opens a link is the host widget's (a log pane routes
+        web links to the browser; a message box opens them itself).
+
+        Parameters:
+            string: Raw HTML or plain text.
+
+        Returns:
+            The same string with each bare web address wrapped in ``<a href>``.
+        """
+        if "://" not in string:
+            return string
+        parts = _TAG.split(string)
+        in_anchor = False
+        # split() with one capturing group alternates text/tag, text first.
+        for i, part in enumerate(parts):
+            if i % 2:
+                anchor = _ANCHOR_TAG.match(part)
+                if anchor:
+                    in_anchor = not anchor.group(1)
+            elif not in_anchor and "://" in part:
+                parts[i] = _WEB_ADDRESS.sub(cls._link_address, part)
+        return "".join(parts)
+
+    @staticmethod
+    def _link_address(match) -> str:
+        """One :func:`linkify` match, linked -- less the sentence around it."""
+        address = match.group(0)
+        end = len(address)
+        while end:
+            char = address[end - 1]
+            opener = _BRACKETS.get(char)
+            if char in _SENTENCE_END or (
+                opener and address.count(char, 0, end) > address.count(opener, 0, end)
+            ):
+                end -= 1
+            else:
+                break
+        address, tail = address[:end], address[end:]
+        if address.endswith("://"):  # a scheme with nothing after it
+            return match.group(0)
+        return f'<a href="{address}">{address}</a>{tail}'
+
     @staticmethod
     def wrap_font_color(string: str, color: str) -> str:
         return f"<font color={color}>{string}</font>"
@@ -191,8 +264,9 @@ class RichTextFormatter:
         """Apply the standard uitk HTML pipeline to a string.
 
         Wraps in an alignment ``<div>`` (when no ``align=`` is already
-        present), substitutes prefix tokens and known tags, renders newlines
-        as line breaks (:meth:`apply_line_breaks`), then optionally wraps in
+        present), substitutes prefix tokens and known tags, links bare web
+        addresses (:meth:`linkify`), renders newlines as line breaks
+        (:meth:`apply_line_breaks`), then optionally wraps in
         ``<font color>`` / ``<font size>``.
 
         Parameters:
@@ -206,6 +280,7 @@ class RichTextFormatter:
             string = f"<div align='{align}'>{string}</div>"
         s = cls.apply_prefix_styles(string)
         s = cls.apply_inline_styles(s)
+        s = cls.linkify(s)
         s = cls.apply_line_breaks(s)
         if font_color:
             s = cls.wrap_font_color(s, font_color)

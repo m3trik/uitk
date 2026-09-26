@@ -23,7 +23,7 @@ from typing import List, Optional
 
 from qtpy import QtCore, QtWidgets
 
-from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
+from uitk.widgets.mixins.tooltip_mixin import TooltipFormat, TooltipProxy
 
 
 class ResetGesture(QtCore.QObject):
@@ -100,6 +100,10 @@ class ResetGesture(QtCore.QObject):
         self._flash_timer.timeout.connect(self._end_flash)
         button.installEventFilter(self)
         getattr(button, signal).connect(self.trigger)
+        # Rebuilt on every hover by uitk's tooltip presenter. A provider, not a
+        # QEvent.ToolTip branch in eventFilter: the presenter shows the tip and
+        # consumes the event, so a filter older than it would never be reached.
+        TooltipProxy(button).bind(self._current_tooltip)
         self.refresh_tooltip()
 
     # ------------------------------------------------------------ the grammar
@@ -213,13 +217,19 @@ class ResetGesture(QtCore.QObject):
         return action
 
     def refresh_tooltip(self) -> None:
-        """Rebuild the tooltip for the current state (runs on every hover)."""
+        """Rebuild the tooltip for the current state now.
+
+        A hover rebuilds it anyway, through the provider bound in ``__init__``.
+        """
+        self._button.setToolTip(self._current_tooltip())
+
+    def _current_tooltip(self) -> str:
         state = self._resolve_state()
         saving = self.supports_saving(state)
         saved = False
         if saving and callable(getattr(state, "has_saved_defaults", None)):
             saved = bool(state.has_saved_defaults(self._scope()))
-        self._button.setToolTip(self.tooltip(self._title, saving=saving, saved=saved))
+        return self.tooltip(self._title, saving=saving, saved=saved)
 
     def flash(self, message: str) -> None:
         """Show *message* on the button for :data:`FLASH_MS`, then its label."""
@@ -244,8 +254,6 @@ class ResetGesture(QtCore.QObject):
                 self._poll.stop()
                 if not self._flashing:
                     self._button.setText(self._text)
-            elif kind == QtCore.QEvent.ToolTip:
-                self.refresh_tooltip()
         return super().eventFilter(obj, event)
 
     def _preview(self) -> None:

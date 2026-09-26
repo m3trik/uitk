@@ -2570,6 +2570,20 @@ class TestDialogsYieldToBusyCursor(QtBaseTestCase):
         finally:
             dlg.close()
 
+    def test_text_view_dialog_passes_the_link_handler(self):
+        """A caller's ``link_handler`` reaches the viewer, which routes
+        ``action://`` links to it (a scene report's select-this-mesh)."""
+        sb = Switchboard()
+
+        def handler(url):
+            return True
+
+        dlg = sb.text_view_dialog(text="report", link_handler=handler)
+        try:
+            self.assertIs(dlg.link_handler, handler)
+        finally:
+            dlg.close()
+
     def test_text_view_dialog_logs_a_readable_preview(self):
         """The log preview drops tags AND entities: an escaped JSON report
         logs as ``"key"``, not ``&quot;key&quot;``."""

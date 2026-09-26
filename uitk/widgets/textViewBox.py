@@ -17,8 +17,10 @@ name via :attr:`clicked_button`.
 Structured data renders through :meth:`TextViewBox.format_data` --
 colour-coded JSON, the one place the data viewer's look is tuned.
 """
+
 import html
 import json
+import logging
 import re
 
 from qtpy import QtCore, QtGui, QtWidgets
@@ -27,6 +29,8 @@ import pythontk as ptk
 from uitk.widgets.windowPanel import WindowPanel
 from uitk.widgets.mixins.text import RichTextFormatter
 from uitk.widgets.mixins.shortcut_guard import ShortcutGuardMixin
+
+_logger = logging.getLogger(__name__)
 
 
 class _ViewerTextEdit(ShortcutGuardMixin, QtWidgets.QTextBrowser):
@@ -64,6 +68,13 @@ class TextViewBox(WindowPanel):
     word_wrap : bool
         Wrap long lines. Set ``False`` for tabular content. Default
         ``True``.
+    link_handler : callable, optional
+        ``handler(QUrl) -> bool`` offered every clicked link first; a truthy
+        return means it was handled. How an ``action://VERB?...`` link in a
+        report reaches the host application -- e.g. a DCC's
+        ``UiUtils.dispatch_log_link``, which selects the node a scene report
+        names. Anything unhandled goes to the OS shell, except ``action://``,
+        which no OS can open. Settable later as :attr:`link_handler`.
     """
 
     # Not a Designer widget-box entry: a standalone window, not a form element.
@@ -153,10 +164,12 @@ class TextViewBox(WindowPanel):
         align: str = "left",
         monospace: bool = False,
         word_wrap: bool = True,
+        link_handler=None,
     ):
         super().__init__(title=title, parent=parent)
         self.align = align
         self._result_name = None
+        self.link_handler = link_handler
 
         # Body: read-only QTextBrowser fills the body.
         self.text_edit = _ViewerTextEdit(self)
@@ -221,14 +234,27 @@ class TextViewBox(WindowPanel):
         return fallback
 
     def _on_anchor_clicked(self, url: QtCore.QUrl) -> None:
-        """Open clicked anchors via the host OS shell.
+        """Offer a clicked anchor to :attr:`link_handler`, else the OS shell.
 
-        Routed through ``QDesktopServices`` so ``file://`` URLs hit
+        The OS route is ``QDesktopServices``, so ``file://`` URLs hit
         Explorer / Finder / xdg-open with the system's default handler
-        and the viewer's document stays intact.
+        and the viewer's document stays intact. An ``action://`` link the
+        handler did not take stops here: it names a verb of the host
+        application, and handing it to the OS only raises a "no app is
+        associated" dialog.
         """
-        if not url.isEmpty():
-            QtGui.QDesktopServices.openUrl(url)
+        if url.isEmpty():
+            return
+        if self.link_handler is not None:
+            try:
+                if self.link_handler(url):
+                    return
+            except Exception:  # a failing handler must not take the viewer down
+                _logger.exception(f"Link handler failed for {url.toString()}")
+                return
+        if url.scheme() == "action":
+            return
+        QtGui.QDesktopServices.openUrl(url)
 
     def setStandardButtons(self, *buttons) -> None:
         """Configure the visible buttons by name.
@@ -260,9 +286,7 @@ class TextViewBox(WindowPanel):
             # status row. Widen each button to ~3× its natural width so
             # the controls read as deliberate affordances.
             btn.setMinimumWidth(max(btn.sizeHint().width() * 3, 90))
-            btn.clicked.connect(
-                lambda _=False, n=canonical: self._on_button_clicked(n)
-            )
+            btn.clicked.connect(lambda _=False, n=canonical: self._on_button_clicked(n))
 
     def setText(
         self,
@@ -285,9 +309,7 @@ class TextViewBox(WindowPanel):
 
         bg_css = RichTextFormatter.resolve_background(background)
         if bg_css:
-            self.text_edit.setStyleSheet(
-                f"QTextEdit {{ background-color: {bg_css}; }}"
-            )
+            self.text_edit.setStyleSheet(f"QTextEdit {{ background-color: {bg_css}; }}")
         else:
             self.text_edit.setStyleSheet("")
 

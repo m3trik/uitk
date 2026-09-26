@@ -32,6 +32,7 @@ from uitk.managers.shortcut_manager import ShortcutManager
 from uitk.managers.reset_gesture import ResetGesture
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.convert import ConvertMixin
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 
 # Widget type cache for faster widget creation
 _WIDGET_TYPE_CACHE: Dict[str, type] = {
@@ -215,6 +216,7 @@ class ActionButtonManager:
 
         if config.tooltip:
             button.setToolTip(config.tooltip)
+        TooltipPresenter.manage(button)
         if config.callback:
             button.released.connect(config.callback)
 
