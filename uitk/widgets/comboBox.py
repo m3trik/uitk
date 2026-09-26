@@ -11,6 +11,7 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.overflow_indicator import OverflowIndicator
 
 
@@ -538,6 +539,7 @@ class _CellEditor(QtWidgets.QFrame):
                 field = QtWidgets.QLineEdit("" if value is None else str(value), self)
                 field.setPlaceholderText(cell.get("label", key))
             field.setToolTip(cell.get("label", key))
+            TooltipPresenter.manage(field)
             # Cells keep the column widths the collapsed row is painted with,
             # so double-clicking a row opens fields where its values already
             # are.  Sharing the surplus between every text cell instead (a

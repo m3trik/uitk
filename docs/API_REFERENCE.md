@@ -607,7 +607,7 @@ When a widget registers on a `MainWindow`, it gains these attributes:
 | `widget.type` | `type` | `type(widget)` |
 | `widget.derived_type` | `type` | Nearest `QtWidgets` base |
 | `widget.default_signals()` | `str \| None` | Default signal name for this type |
-| `widget.tooltip` | `TooltipProxy` | Rich-tooltip formatting proxy ([mixins/tooltip_mixin.py](../uitk/widgets/mixins/tooltip_mixin.py)) |
+| `widget.tooltip` | `TooltipProxy` | Rich-tooltip DSL + `bind(provider)`; the widget's tooltip is shown through `TooltipPresenter` ([mixins/tooltip_mixin.py](../uitk/widgets/mixins/tooltip_mixin.py)) |
 | `widget.get_slot()` | `callable \| None` | Connected slot method |
 | `widget.init_slot(*a)` | — | Manually run `<objectName>_init` |
 | `widget.call_slot(*a, **kw)` | — | Manually invoke the handler |

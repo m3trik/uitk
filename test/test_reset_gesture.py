@@ -146,6 +146,32 @@ class TestAttachedButton(QtBaseTestCase):
         QtWidgets.QApplication.sendEvent(button, help_event)
         self.assertIn("saved defaults are in use", button.toolTip())
 
+    def test_hover_refreshes_even_when_the_presenter_came_second(self):
+        """Regression: uitk's tooltip presenter shows the tip itself and consumes
+        the event, and Qt runs event filters newest-first -- so a gesture that
+        refreshed its text from its OWN, older filter never ran once the button
+        was managed after it (a menu registers its defaults button after building
+        the gesture). The refresh is a bound provider the presenter calls first.
+        """
+        from uitk.widgets.mixins.tooltip_mixin import TooltipFormat, TooltipPresenter
+
+        state = _SavingState()
+        button, _ = self._make(state)
+        button.show()
+        TooltipPresenter.manage(button)
+        state.saved = True
+        help_event = QtGui.QHelpEvent(
+            QtCore.QEvent.ToolTip,
+            QtCore.QPoint(1, 1),
+            button.mapToGlobal(QtCore.QPoint(1, 1)),
+        )
+        QtWidgets.QApplication.sendEvent(button, help_event)
+        self.addCleanup(QtWidgets.QToolTip.hideText)
+        self.assertIn("saved defaults are in use", button.toolTip())
+        self.assertEqual(
+            QtWidgets.QToolTip.text(), TooltipFormat.wrap(button.toolTip())
+        )
+
     def test_held_modifier_previews_the_action_on_the_button(self):
         button, gesture = self._make(_SavingState(), Qt.ShiftModifier)
         self._hover(button)

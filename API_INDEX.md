@@ -445,7 +445,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/mixins/text.py` — Text rendering for uitk widgets.
 - `class RichTextFormatter`
-  - methods: prefix_styles, apply_prefix_styles, apply_inline_styles, apply_line_breaks, wrap_font_color, wrap_font_size, resolve_background, format
+  - methods: prefix_styles, apply_prefix_styles, apply_inline_styles, apply_line_breaks, linkify, wrap_font_color, wrap_font_size, resolve_background, format
 - `class TextTruncation`
   - methods: calculate_text_truncation, calculate_character_truncation, calculate_word_truncation, calculate_path_truncation, apply_text_truncation, create_truncated_button, create_truncated_label, update_widget_text_truncation
 - `class RichText`
@@ -458,12 +458,14 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: set_action_color, reset_action_color, set_validator, clear_validator, is_valid, validation_message, validate_now
 
 ### `widgets/mixins/tooltip_mixin.py`
-- `class TooltipFormat`
-  - methods: kbd, hl, fmt, placeholder_preview, stored_items
-- `class TooltipProxy(TooltipFormat, _TooltipBindInternal)`
+- `class TooltipFormat(_TooltipFormatInternal)`
+  - methods: kbd, hl, fmt, placeholder_preview, stored_items, wrap, display_ms
+- `class TooltipPresenter`
+  - methods: manage, show_text
+- `class TooltipProxy(TooltipFormat)`
   - methods: bind
-- `class TooltipNamespace(TooltipFormat, _TooltipBindInternal)`
-  - methods: bind
+- `class TooltipNamespace(TooltipFormat)`
+  - methods: bind, manage
 - `class TooltipMixin`
 
 ### `widgets/mixins/wheel_step.py` — Shared input handling for spin-box widgets: the modifier-driven wheel

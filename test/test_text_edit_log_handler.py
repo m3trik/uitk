@@ -10,7 +10,6 @@ import logging
 import threading
 import unittest
 from unittest import mock
-from unittest.mock import MagicMock
 
 from conftest import QtBaseTestCase, setup_qt_application
 
@@ -246,6 +245,39 @@ class TestTextEditLogHandlerWebLinks(QtBaseTestCase):
             browser.anchorClicked.emit(QtCore.QUrl("https://example.invalid/d"))
         self.assertEqual(opener.call_count, 1)
 
+    def test_clicking_an_address_in_a_log_line_opens_it(self):
+        """The reported case: a warning names the page that enables Tailscale
+        Funnel, as plain text -- the pane showed it, and a click did nothing.
+        Logged the way every panel logs, then clicked where it shows."""
+        from qtpy import QtGui, QtTest
+        from uitk.widgets.textEditLogHandler import TextEditLogHandler
+
+        page = "https://login.example.test/f/funnel?node=abc123"
+        browser = self.track_widget(QtWidgets.QTextBrowser())
+        browser.resize(900, 200)
+        browser.show()
+        logger = logging.getLogger("uitk_test_log_addresses")
+        logger.handlers = [TextEditLogHandler(browser)]
+        logger.propagate = False
+        self.addCleanup(setattr, logger, "handlers", [])
+
+        logger.warning(
+            f"Funnel needs a one-time step first: enable it at {page}, then share."
+        )
+        app.processEvents()
+        self.assertIn(f"{page}, then share", browser.toPlainText())
+
+        found = browser.document().find(page)
+        self.assertFalse(found.isNull(), "the address is not in the pane")
+        cursor = QtGui.QTextCursor(browser.document())
+        cursor.setPosition((found.selectionStart() + found.selectionEnd()) // 2)
+        point = browser.cursorRect(cursor).center()
+        with mock.patch.object(QtGui.QDesktopServices, "openUrl") as opener:
+            QtTest.QTest.mouseClick(
+                browser.viewport(), QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, point
+            )
+        opener.assert_called_once_with(QtCore.QUrl(page))
+
     def test_route_links_disables_navigation_without_a_handler(self):
         """The direct entry point is enough on its own (a panel whose optional
         engine is missing appends links by hand, with no handler built)."""
@@ -255,6 +287,120 @@ class TestTextEditLogHandlerWebLinks(QtBaseTestCase):
         TextEditLogHandler.route_links(browser)
         self.assertFalse(browser.openLinks())
         self.assertFalse(browser.openExternalLinks())
+
+
+class TestBoxesFitThePane(QtBaseTestCase):
+    """Regression: a ``log_box`` redirected into a pane came out wider than
+    the pane, so Qt wrapped its rows and the borders fell apart.
+
+    ``LoggerExt`` sizes boxes, dividers and tables to ``available_columns``,
+    which was wrong four ways. It counted columns in the handler's monospace
+    font while records were marked up ``font-family:monospace`` -- no family
+    of that name exists on Windows, so Qt fell back to Courier New, ~9% wider
+    than the Consolas measured (to Tahoma, proportional, when the widget font
+    carries no monospace hint). It reserved one character where the document
+    margins take 8px. It ignored the vertical scrollbar a box's own rows bring
+    on, which narrows the pane under the box just sized for it. And below 20
+    columns it answered 0 ("unknown"), so a narrow pane got a 100-column box.
+    The span's ``white-space:pre`` never stopped the wrap: Qt keeps an
+    over-long line whole only for a BLOCK format, and a record is inline.
+    Fixed: 2026-09-24
+    """
+
+    BOX_EDGES = "╔║╟╚─"
+
+    def _pane(self, width, height=160):
+        """A shown log pane *width* px wide, and a logger redirected into it."""
+        import pythontk as ptk
+        from conftest import QtWait
+        from uitk.widgets.textEditLogHandler import TextEditLogHandler
+
+        class _Panel(ptk.LoggingMixin):
+            pass
+
+        pane = self.track_widget(QtWidgets.QTextBrowser())
+        pane.resize(width, height)
+        pane.show()
+        QtWait.until(
+            lambda: (
+                not pane.testAttribute(QtCore.Qt.WA_PendingResizeEvent)
+                and pane.width() == width
+            ),
+            "the pane was never laid out at its width",
+        )
+        logger = _Panel.logger
+        logger.handlers = []  # only the pane: a TTY stderr would also cap widths
+        logger.set_text_handler(TextEditLogHandler)
+        logger.setup_logging_redirect(pane)
+        self.addCleanup(setattr, logger, "handlers", [])
+        return pane, logger
+
+    def _broken_rows(self, pane):
+        """The box/divider rows Qt laid out on more than one line."""
+        document = pane.document()
+        layout = document.documentLayout()
+        broken = []
+        block = document.begin()
+        while block.isValid():
+            layout.blockBoundingRect(block)  # lay the block out now
+            text = block.text()
+            if text and text[0] in self.BOX_EDGES and block.layout().lineCount() > 1:
+                broken.append(text)
+            block = block.next()
+        return broken
+
+    def test_a_box_fits_the_pane_at_every_width(self):
+        """Short on purpose: the box's own rows push the log past one screen,
+        so the scrollbar arrives AFTER the width was read."""
+        for width in range(260, 1000, 53):
+            with self.subTest(width=width):
+                pane, logger = self._pane(width)
+                logger.log_box("Scene export summary " * 4, ["word " * 60, "done"])
+                logger.log_divider()
+                self.assertEqual(self._broken_rows(pane), [])
+
+    def test_a_narrow_pane_gets_a_narrow_box(self):
+        pane, logger = self._pane(150)
+        self.assertGreater(logger.handlers[0].available_columns(), 0)
+        logger.log_box("Narrow", ["words that wrap inside the box"])
+        self.assertEqual(self._broken_rows(pane), [])
+
+    def test_a_pane_no_layout_has_sized_reports_unknown(self):
+        """Until its first show a pane's viewport is Qt's placeholder (638px
+        here), not the pane: 0 sends the caller to its default instead."""
+        from uitk.widgets.textEditLogHandler import TextEditLogHandler
+
+        pane = self.track_widget(QtWidgets.QTextBrowser())
+        pane.resize(300, 100)  # sized, but never shown -- no layout has run
+        self.assertEqual(TextEditLogHandler(pane).available_columns(), 0)
+
+    def test_every_record_asks_for_the_family_that_is_measured(self):
+        """Columns are counted in ONE family, so every record must request
+        exactly that one -- never the generic ``monospace``, which each
+        platform resolves differently. A tinted box carries ``log_box``'s own
+        stack instead, which must list the handler's families in the handler's
+        order, or it renders in a font the columns were not counted in."""
+        from uitk.widgets.textEditLogHandler import TextEditLogHandler
+
+        pane, logger = self._pane(600)
+        logger.log_box("Title", ["row"], level="SUCCESS")
+        logger.log_box("Plain", ["row"])
+        logger.log_divider()
+        logger.warning("a regular record")
+        requested = set()
+        block = pane.document().begin()
+        while block.isValid():
+            fragments = block.begin()
+            while not fragments.atEnd():
+                fragment = fragments.fragment()
+                if fragment.isValid() and fragment.text().strip():
+                    requested.add(tuple(fragment.charFormat().fontFamilies() or ()))
+                fragments += 1
+            block = block.next()
+        measured = getattr(logger.handlers[0], "_font_family", None)
+        plain = {families for families in requested if len(families) == 1}
+        self.assertEqual(plain, {(measured,)})
+        self.assertEqual(requested - plain, {TextEditLogHandler._MONOSPACE_FAMILIES})
 
 
 if __name__ == "__main__":

@@ -112,6 +112,11 @@ class AttributeSpec:
             shown AT the minimum (Qt's special value text): for a minimum that
             means "unset" -- a bridge's "0 uses the preset's value" -- which a
             bare 0 would read as zero. The value read back is still the number.
+        preset: False for a live switch rather than a setting -- a control
+            that acts the moment it changes, such as a share toggle that opens
+            a public link. A preset neither saves nor applies it, and Reset to
+            Defaults leaves it as it is, so neither can act on the user's
+            behalf.
     """
 
     key: str
@@ -131,6 +136,7 @@ class AttributeSpec:
     # and a new one in the middle silently re-points a positional caller's
     # `section` at it.
     placeholder: str = ""
+    preset: bool = True
 
     def __post_init__(self):
         # An empty key produces a widget with empty objectName that can't be

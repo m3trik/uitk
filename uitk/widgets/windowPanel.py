@@ -31,7 +31,7 @@ from qtpy import QtWidgets, QtCore
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
+from uitk.widgets.mixins.tooltip_mixin import TooltipFormat, TooltipPresenter
 
 if TYPE_CHECKING:  # pragma: no cover
     from uitk.themes.style_sheet import StyleSheet
@@ -672,6 +672,7 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
             for target in (caption, widget, *companions):
                 if target is not None:
                     target.setToolTip(tip)
+                    TooltipPresenter.manage(target)
 
         if companions:
             cell = QtWidgets.QHBoxLayout()
@@ -846,6 +847,7 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         btn.setFixedSize(size, size)
         if tooltip:
             btn.setToolTip(tooltip)
+        TooltipPresenter.manage(btn)
         if icon_name:
             sz = icon_size if icon_size else (max(8, size - 8), max(8, size - 8))
             IconManager.set_icon(btn, icon_name, size=sz)

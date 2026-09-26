@@ -14,7 +14,11 @@ from uitk.managers.state_manager import StateManager
 from uitk.managers.settings_manager import SettingsManager
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.themes.style_sheet import StyleSheet
-from uitk.widgets.mixins.tooltip_mixin import TooltipMixin, TooltipProxy
+from uitk.widgets.mixins.tooltip_mixin import (
+    TooltipMixin,
+    TooltipPresenter,
+    TooltipProxy,
+)
 from uitk.widgets.mixins.shortcut_guard import ShortcutGuardFilter
 
 
@@ -463,6 +467,10 @@ class MainWindow(
             setattr(self, obj_name, widget)
 
         widget.tooltip = TooltipProxy(widget)
+        # Every UI widget passes here, so this is where Qt's raw tooltip display
+        # is swapped for uitk's (wrapped, dynamic display time) -- installed
+        # before slot init, so filters a slot adds later run ahead of it.
+        TooltipPresenter.manage(widget)
         self._guard_editing_shortcuts(widget)
 
         self._add_child_changed_signal(widget)

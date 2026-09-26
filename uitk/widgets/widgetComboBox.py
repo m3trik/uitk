@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.switchboard import Signals
 from uitk.widgets.comboBox import ComboBox
 
@@ -575,6 +576,7 @@ class WidgetComboBox(ComboBox):
             tip = widget.toolTip()
             if tip:
                 label.setToolTip(tip)
+                TooltipPresenter.manage(label)
             layout.addWidget(label, alignment=QtCore.Qt.AlignVCenter)
             layout.addSpacing(self._ROW_LABEL_SPACING)
         # Vertical-center the widget so rows sized to the uniform max-height
@@ -923,6 +925,7 @@ class WidgetComboBox(ComboBox):
             # discoverable without a visible label; the accessible name keeps it
             # identifiable to screen readers (and tests) in both modes.
             btn.setToolTip(action.toolTip() or action.text())
+            TooltipPresenter.manage(btn)
             btn.setAccessibleName(action.text())
             if icon_only:
                 side = self._ACTION_ICON_BUTTON_SIZE

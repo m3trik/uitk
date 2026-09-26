@@ -1,9 +1,11 @@
 # !/usr/bin/python
 # coding=utf-8
+import html as _html
+import re
 import weakref
 
 try:
-    from qtpy import QtCore, QtWidgets
+    from qtpy import QtCore, QtGui, QtWidgets
 except ImportError:
     # ImportError, not ModuleNotFoundError: qtpy raises QtBindingsNotFoundError
     # (RuntimeError + ImportError) when it is installed but finds no binding,
@@ -18,68 +20,62 @@ except ImportError:
     # hand-rolled markup, so the import is optional: everything below that
     # actually touches Qt is inert without it, and nothing headless binds a
     # live provider anyway.
-    QtCore = QtWidgets = None
+    QtCore = QtGui = QtWidgets = None
 
 #: Base for the event filter — ``object`` when there is no binding to inherit from.
 _QObjectBase = QtCore.QObject if QtCore is not None else object
 
 
-class _ProviderFilter(_QObjectBase):
-    """Event filter that refreshes a widget's toolTip just before Qt shows it."""
+class _TooltipFilter(_QObjectBase):
+    """Hands a managed widget's ``QEvent.ToolTip`` to :class:`TooltipPresenter`.
 
-    def __init__(self, provider, parent: "QtWidgets.QWidget"):
-        super().__init__(parent)
-        self._provider = provider
-
-    def eventFilter(self, obj, event) -> bool:
-        if event.type() == QtCore.QEvent.ToolTip:
-            text = self._provider()
-            if text is not None:
-                obj.setToolTip(text)
-        return False  # always propagate so Qt still shows the tooltip
-
-
-class _TooltipBindInternal:
-    """Internal base carrying the one lazy-provider installer behind ``bind``.
-
-    Shared by both bind-capable namespaces (:class:`TooltipProxy`, the per-widget
-    form, and :class:`TooltipNamespace`, the switchboard-level owner) so the two
-    entry points install identically — and so the module keeps its no-top-level-
-    functions rule (see :class:`TooltipFormat`).
+    One per widget for the widget's lifetime (found again through
+    :attr:`TooltipPresenter._FILTER_PROP`), carrying the widget's bound
+    provider, if any. Every other event returns at the type check.
     """
 
-    #: Dynamic property holding a widget's live provider filter. Kept on the
-    #: WIDGET rather than on whichever namespace installed it, so the
-    #: switchboard-level and per-widget entry points dedupe against each other
-    #: instead of stacking filters (Qt runs filters newest-first, so a stacked
-    #: older provider would run *last* and win — silently reviving stale text).
-    _FILTER_PROP = "_uitk_tooltip_filter"
+    #: Resolved once: this check runs for EVERY event a managed widget gets.
+    _TOOLTIP = QtCore.QEvent.Type.ToolTip if QtCore is not None else None
 
-    @staticmethod
-    def _safe_provider(fn):
-        """Wrap bound-method providers in a weakref to avoid retaining slot instances."""
-        if hasattr(fn, "__self__") and hasattr(fn, "__func__"):
-            obj_ref = weakref.ref(fn.__self__)
-            func = fn.__func__
+    def __init__(self, parent: "QtWidgets.QWidget"):
+        super().__init__(parent)
+        self.provider = None
 
-            def _wrapped():
-                obj = obj_ref()
-                return func(obj) if obj is not None else ""
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() != self._TOOLTIP:
+            return False
+        return TooltipPresenter._on_tooltip(obj, event, self.provider)
 
-            return _wrapped
-        return fn
 
-    @classmethod
-    def _install_provider(cls, widget, provider) -> None:
-        """Install (or replace) *widget*'s lazy tooltip provider."""
-        if widget is None:
-            return
-        previous = widget.property(cls._FILTER_PROP)
-        if previous is not None:
-            widget.removeEventFilter(previous)
-        filt = _ProviderFilter(cls._safe_provider(provider), widget)
-        widget.installEventFilter(filt)
-        widget.setProperty(cls._FILTER_PROP, filt)
+# --- Line layout (TooltipFormat.wrap) --------------------------------------
+
+#: Tags that end a rendered line -- a column count never carries across one.
+_BLOCK_TAGS = frozenset(
+    "address blockquote body br caption center dd div dl dt h1 h2 h3 h4 h5 h6 "
+    "head hr html li ol p pre qt table tbody td tfoot th thead title tr ul".split()
+)
+#: Tags whose content is laid out as written (or not shown) -- never re-broken.
+_VERBATIM_TAGS = frozenset("head nobr pre script style title".split())
+#: The elements Qt's rich-text parser knows: ``Qt.mightBeRichText`` calls text
+#: rich only when its first tag is one of these (``<Enter>`` stays plain).
+_QT_ELEMENTS = frozenset(
+    "a address b big blockquote body br caption center cite code dd dfn div dl "
+    "dt em font h1 h2 h3 h4 h5 h6 head hr html i img kbd li link meta nobr ol p "
+    "pre qt s samp script small span strong style sub sup table tbody td tfoot "
+    "th thead title tr tt u ul var".split()
+)
+_TAG_SPLIT_RE = re.compile(r"(<[^>]*>)")
+_TAG_NAME_RE = re.compile(r"<\s*(/?)\s*([A-Za-z][A-Za-z0-9]*)")
+_TAG_RE = re.compile(r"<[^>]*>")
+_NOWRAP_STYLE_RE = re.compile(r"white-space\s*:\s*(?:pre|nowrap)", re.I)
+_RICH_SPACE_RE = re.compile(r"([ \t\r\n\f]+)")
+_PLAIN_SPACE_RE = re.compile(r"([ \t]+)")
+#: Zero-width split AFTER each path separator: where a too-wide path may break.
+_PATH_BREAK_RE = re.compile(r"(?<=[/\\])")
+#: A plain line's indent plus list marker; its continuation lines hang under it.
+_PLAIN_LEAD_RE = re.compile(r"[ \t]*(?:[-*•▪▸][ \t]+|\d{1,3}[.)][ \t]+)?")
+#: A word that closes a sentence (or clause), allowing trailing quotes/brackets.
+_SENTENCE_END_RE = re.compile(r"[.!?:;][\"'’”)\]]*$")
 
 
 # --- Color palette ---------------------------------------------------------
@@ -92,8 +88,228 @@ _C_ACCENT = "#6fb5d6"  # soft cyan — keywords, headings, term highlights
 _C_TITLE = "#cfe6f5"  # off-white with cool tint for the top title
 
 
-class TooltipFormat:
-    """Rich-text tooltip formatting DSL — ``kbd`` / ``hl`` / ``fmt``.
+class _TooltipFormatInternal:
+    """Line layout behind :meth:`TooltipFormat.wrap` -- pure string work.
+
+    Text is cut into tokens -- ``(kind, raw, width, visible)`` with kind one of
+    ``word`` / ``space`` / ``tag`` (inline, zero width) / ``block`` (ends the
+    line) / ``lead`` (a plain line's indent + list marker) -- and one greedy pass
+    then re-emits every ``raw`` verbatim, swapping a ``space`` for a line break
+    where the soft-width rule says so. Nothing else in the text is touched.
+    """
+
+    #: Opens the container a wrapped rich tooltip is emitted in. Qt squeezes rich
+    #: text under four lines to half, then a quarter, of its wrap width and
+    #: re-wraps it there; ``nowrap`` (inherited by every block inside) makes it
+    #: keep the breaks placed here. Doubles as the already-wrapped marker.
+    _NOWRAP_OPEN = "<div style='white-space:nowrap'>"
+
+    @classmethod
+    def _is_rich(cls, text: str) -> bool:
+        """Qt's own plain/rich call for *text* -- the port when there is no Qt."""
+        if QtGui is not None:
+            return bool(QtGui.Qt.mightBeRichText(text))
+        return cls._is_rich_port(text)
+
+    @staticmethod
+    def _is_rich_port(text: str) -> bool:
+        """A port of ``Qt::mightBeRichText`` (qtextdocument.cpp) for headless use.
+
+        Qt decides from the FIRST line only: it is rich when that line's first
+        tag names a known element, or ``&lt;`` comes before any tag.
+        """
+        n = len(text)
+        start = 0
+        while start < n and text[start].isspace():
+            start += 1
+        if text[start : start + 5] == "<?xml":
+            end = text.find("?>", start)
+            start = n if end < 0 else end + 2
+            while start < n and text[start].isspace():
+                start += 1
+        if text[start : start + 5].lower() == "<!doc":
+            return True
+        open_ = start
+        while open_ < n and text[open_] not in "<\n":
+            if text.startswith("&lt;", open_):
+                return True
+            open_ += 1
+        if open_ >= n or text[open_] != "<":
+            return False
+        close = text.find(">", open_)
+        if close < 0:
+            return False
+        tag = ""
+        for i in range(open_ + 1, close):
+            ch = text[i]
+            if ch.isalnum():
+                tag += ch.lower()
+            elif tag and ch.isspace():
+                break
+            elif tag and ch == "/" and i + 1 == close:
+                break
+            elif not ch.isspace() and (tag or ch != "!"):
+                return False
+        return tag in _QT_ELEMENTS
+
+    @staticmethod
+    def _visible_text(html: str) -> str:
+        """*html*'s rendered words: block tags part them, inline tags vanish."""
+
+        def _tag(match):
+            name = _TAG_NAME_RE.match(match.group(0))
+            return " " if name and name.group(2).lower() in _BLOCK_TAGS else ""
+
+        return _html.unescape(_TAG_RE.sub(_tag, html))
+
+    @staticmethod
+    def _plain_tokens(text: str) -> list:
+        tokens = []
+        for n, line in enumerate(text.replace("\r\n", "\n").split("\n")):
+            if n:
+                tokens.append(("block", "\n", 0, ""))
+            lead = _PLAIN_LEAD_RE.match(line).group(0)
+            if lead:
+                tokens.append(("lead", lead, len(lead), ""))
+                line = line[len(lead) :]
+            for piece in _PLAIN_SPACE_RE.split(line):
+                if piece:
+                    kind = "space" if piece[0] in " \t" else "word"
+                    tokens.append((kind, piece, len(piece), piece))
+        return tokens
+
+    @classmethod
+    def _rich_tokens(cls, text: str) -> list:
+        tokens = []
+        verbatim = None  # [tag name, nesting depth, raw parts] while inside one
+        for i, part in enumerate(_TAG_SPLIT_RE.split(text)):
+            if not part:
+                continue
+            is_tag = i % 2 == 1
+            match = _TAG_NAME_RE.match(part) if is_tag else None
+            name = match.group(2).lower() if match else ""
+            closing = bool(match and match.group(1))
+            self_closing = part.rstrip().endswith("/>")
+            if verbatim is not None:
+                verbatim[2].append(part)
+                if name == verbatim[0] and not self_closing:
+                    verbatim[1] += -1 if closing else 1
+                    if not verbatim[1]:
+                        tokens.append(cls._verbatim_token(*verbatim[::2]))
+                        verbatim = None
+                continue
+            if is_tag:
+                if (
+                    match
+                    and not closing
+                    and not self_closing
+                    and (name in _VERBATIM_TAGS or _NOWRAP_STYLE_RE.search(part))
+                ):
+                    verbatim = [name, 1, [part]]
+                else:
+                    kind = "block" if name in _BLOCK_TAGS else "tag"
+                    tokens.append((kind, part, 0, ""))
+                continue
+            for piece in _RICH_SPACE_RE.split(part):
+                if not piece:
+                    continue
+                if _RICH_SPACE_RE.fullmatch(piece):
+                    tokens.append(("space", piece, 1, ""))
+                else:
+                    visible = _html.unescape(piece)
+                    tokens.append(("word", piece, len(visible), visible))
+        if verbatim is not None:  # never closed: keep it as written
+            tokens.append(cls._verbatim_token(*verbatim[::2]))
+        return tokens
+
+    @staticmethod
+    def _verbatim_token(name: str, parts: list) -> tuple:
+        """A ``<pre>``-like element as ONE token: a line of its own when it is a
+        block, else an unbreakable word as wide as its visible text."""
+        raw = "".join(parts)
+        if name in _BLOCK_TAGS or name in ("script", "style"):
+            return ("block", raw, 0, "")
+        visible = _html.unescape(_TAG_RE.sub("", raw))
+        return ("word", raw, len(visible), visible)
+
+    @classmethod
+    def _layout(
+        cls, tokens: list, width: int, slack: int, brk: str, split_paths: bool = False
+    ) -> str:
+        """Re-emit *tokens*, breaking with *brk* where the soft-width rule says.
+
+        With *split_paths*, a word too wide for any line breaks after its path
+        separators (the rich layout: its nowrap container stops Qt's own
+        wider-than-the-screen fallback, so the word would run off-screen).
+        """
+        out = []
+        col = 0
+        hang, hang_w = "", 0
+        count = len(tokens)
+        for i, (kind, raw, w, _) in enumerate(tokens):
+            if split_paths and kind == "word" and w > width + slack and "<" not in raw:
+                pieces = [p for p in _PATH_BREAK_RE.split(raw) if p]
+                if len(pieces) > 1:
+                    for piece in pieces:
+                        piece_w = len(_html.unescape(piece))
+                        if col > hang_w and col + piece_w > width:
+                            out.append(brk + hang)
+                            col = hang_w
+                        out.append(piece)
+                        col += piece_w
+                    continue
+            if kind == "block":
+                out.append(raw)
+                col, hang, hang_w = 0, "", 0
+                continue
+            if kind == "lead":
+                out.append(raw)
+                col += w
+                hang = "".join(c if c == "\t" else " " for c in raw)
+                hang_w = w
+                continue
+            if kind != "space" or col == 0:
+                out.append(raw)
+                col += w if kind != "space" else 0
+                continue
+            # A space: the one place a break can go. Width of the word after it:
+            nxt, j = 0, i + 1
+            while j < count and tokens[j][0] in ("word", "tag"):
+                nxt += tokens[j][2]
+                j += 1
+            if not nxt or col + w + nxt <= width:
+                out.append(raw)
+                col += w
+            elif cls._fits_to_sentence_end(tokens, i, width + slack - col):
+                out.append(raw)  # nearly done: finish the sentence on this line
+                col += w
+            else:
+                out.append(brk + hang)
+                col = hang_w
+        return "".join(out)
+
+    @staticmethod
+    def _fits_to_sentence_end(tokens: list, i: int, budget: int) -> bool:
+        """Whether the sentence running on from the space at *i* ends within
+        *budget* characters. A paragraph end closes a sentence too."""
+        total, last_word = 0, ""
+        for j in range(i, len(tokens)):
+            kind, _, w, visible = tokens[j]
+            if kind in ("block", "lead"):
+                return True
+            if kind == "space" and j > i and _SENTENCE_END_RE.search(last_word):
+                return True
+            if kind == "word":
+                last_word = visible
+            total += w
+            if total > budget:
+                return False
+        return True
+
+
+class TooltipFormat(_TooltipFormatInternal):
+    """Rich-text tooltip formatting DSL — ``kbd`` / ``hl`` / ``fmt`` — plus the
+    layout rules every shown tooltip goes through (``wrap`` / ``display_ms``).
 
     Staticmethods so the module carries no top-level function *definitions*.
     Imported and called class-qualified across the ecosystem
@@ -524,8 +740,258 @@ class TooltipFormat:
             + tail
         )
 
+    # --- Layout: applied to every tooltip TooltipPresenter shows ------------
 
-class TooltipProxy(TooltipFormat, _TooltipBindInternal):
+    #: Soft line width, in characters (~45-75 is the readable band; Qt's own
+    #: rich-text wrap is ~80 average-width characters, and plain text it never
+    #: wraps below the screen width). A non-positive value disables wrapping.
+    WRAP_WIDTH = 60
+    #: How far past :attr:`WRAP_WIDTH` a line may run -- only to finish the
+    #: sentence it is in, so a nearly complete one isn't broken to strand its
+    #: last word or two on a line of their own.
+    WRAP_SLACK = 15
+    #: Display-time floor: Qt's own base timer.
+    DISPLAY_BASE_MS = 10000
+    #: Display time added per visible word -- 400 ms is ~150 words a minute, an
+    #: unhurried read with room to glance back at the control.
+    DISPLAY_MS_PER_WORD = 400
+
+    @classmethod
+    def wrap(
+        cls, text: str, width: int = None, slack: int = None, rich: bool = None
+    ) -> str:
+        """Break *text* into lines of a readable width, as a tooltip shows it.
+
+        Greedy, word by word: a line breaks before the word that would take it
+        past *width* -- unless the sentence under way ends within *slack* more
+        characters, in which case the line runs on to finish it. Authored line
+        breaks, paragraphs and list items are kept; a word is never split, so an
+        unbreakable token may still run wide -- except a path too wide for any
+        line in rich text, which breaks after its separators (the nowrap
+        container would otherwise keep it on one line past the screen edge;
+        Qt still wraps a plain one at the screen width).
+
+        Plain text gets ``\\n`` breaks (a bullet's continuation lines hang under
+        its text) and stays plain. Rich text gets ``<br>`` breaks, counting only
+        visible characters (markup is free, an entity is one), and comes back
+        inside a ``white-space:nowrap`` container, without which Qt squeezes a
+        short rich tooltip narrow and re-wraps it. ``<pre>`` / ``<nobr>`` /
+        ``white-space:pre|nowrap`` content is left as written. Idempotent.
+
+        Parameters:
+            text: Tooltip text, plain or rich.
+            width: Soft line width in characters. Default :attr:`WRAP_WIDTH`;
+                non-positive returns *text* unchanged.
+            slack: The sentence-finishing allowance. Default :attr:`WRAP_SLACK`.
+            rich: Whether *text* is rich text. ``None`` decides exactly as Qt
+                will (``Qt.mightBeRichText``, which reads only the first line):
+                breaking a plain tooltip as HTML would make Qt render it as HTML.
+
+        Returns:
+            (str) The wrapped text.
+        """
+        width = cls.WRAP_WIDTH if width is None else width
+        slack = cls.WRAP_SLACK if slack is None else slack
+        if not text or width <= 0:
+            return text
+        if rich is None:
+            rich = cls._is_rich(text)
+        if not rich:
+            return cls._layout(cls._plain_tokens(text), width, slack, "\n")
+        if text.startswith(cls._NOWRAP_OPEN):
+            return text
+        body = cls._layout(
+            cls._rich_tokens(text), width, slack, "<br>", split_paths=True
+        )
+        return f"{cls._NOWRAP_OPEN}{body}</div>"
+
+    @classmethod
+    def display_ms(cls, text: str, rich: bool = None) -> int:
+        """How long a tooltip showing *text* should stay up, in milliseconds.
+
+        :attr:`DISPLAY_BASE_MS` plus :attr:`DISPLAY_MS_PER_WORD` per visible
+        word, and never less than Qt's own timer (``10 s + 40 ms`` per visible
+        character past 100), which a word count undersells for one long token.
+
+        Parameters:
+            text: Tooltip text, plain or rich (markup is not counted).
+            rich: Whether *text* is rich text; ``None`` decides as Qt will.
+
+        Returns:
+            (int) The display time.
+        """
+        if rich is None:
+            rich = cls._is_rich(text)
+        visible = cls._visible_text(text) if rich else text
+        qt_default = 10000 + 40 * max(0, len(visible) - 100)
+        by_words = cls.DISPLAY_BASE_MS + cls.DISPLAY_MS_PER_WORD * len(visible.split())
+        return max(qt_default, by_words)
+
+
+class TooltipPresenter:
+    """The one path a managed widget's tooltip is shown through.
+
+    Qt shows a tooltip from inside the widget's own ``event()`` (or an item
+    view's delegate), handing ``QToolTip`` the raw text: a plain tooltip is
+    never wrapped below the screen width, and the display timer is Qt's fixed
+    formula. Nothing in Qt lets that be overridden for every widget at once,
+    and the process-wide route -- an application event filter -- is ruled out:
+    it puts every event in the process through Python (measured ~3x slower
+    suite) and faults natively on half-built widgets (PySide 6.9).
+
+    So the override is per widget, at uitk's chokepoint: ``MainWindow.
+    register_widget`` hands every widget of every UI to :meth:`manage`, which
+    installs one small filter that takes the ``QEvent.ToolTip`` and shows the
+    text through :meth:`show_text` -- wrapped (:meth:`TooltipFormat.wrap`) and
+    up for a time that scales with it (:attr:`DYNAMIC_DURATION`). An item
+    view's viewport, and a combo box's popup list, are managed with it, so
+    their items' ``ToolTipRole`` text is shown the same way.
+
+    Anything uitk does not register -- a widget a composite builds for itself,
+    a direct ``QToolTip.showText`` call -- joins by calling :meth:`manage` or
+    :meth:`show_text`. Text that must be computed at hover time is a bound
+    provider (``widget.tooltip.bind``), which the same filter calls first; a
+    separate filter that rewrites the tooltip on ``QEvent.ToolTip`` would run
+    after this one (Qt runs filters newest-first) and never be seen.
+    """
+
+    #: Scale each tooltip's display time with its content
+    #: (:meth:`TooltipFormat.display_ms`). ``False`` hands the timing back to
+    #: Qt. A widget's own ``setToolTipDuration`` wins either way.
+    DYNAMIC_DURATION = True
+
+    #: Dynamic property holding a widget's filter. Kept on the WIDGET, so every
+    #: entry point finds the same one: a widget keeps one filter for life, and a
+    #: re-bind only swaps the provider on it (a second filter would stack, and
+    #: re-installing would move it to the front of Qt's newest-first queue).
+    _FILTER_PROP = "_uitk_tooltip_filter"
+
+    #: Views whose tooltips belong to what is drawn in them -- items, graphics
+    #: items -- and are shown over their viewport, which manage() covers too.
+    _VIEW_TYPES = (
+        (QtWidgets.QAbstractItemView, QtWidgets.QGraphicsView)
+        if QtWidgets is not None
+        else ()
+    )
+
+    @classmethod
+    def manage(cls, widget) -> "_TooltipFilter":
+        """Show *widget*'s tooltips through the presenter. Idempotent.
+
+        Covers what a view draws, too: an item view's items, a combo box's
+        popup list, a graphics view's items. A widget that is already managed
+        keeps its filter (and its provider).
+
+        Parameters:
+            widget: The widget (any ``QObject``); ``None`` is ignored.
+
+        Returns:
+            The widget's filter, or ``None`` when there is nothing to manage.
+        """
+        if widget is None or QtCore is None:
+            return None
+        filt = cls._install(widget)
+        view = widget.view() if isinstance(widget, QtWidgets.QComboBox) else widget
+        if isinstance(view, cls._VIEW_TYPES):
+            cls._install(view.viewport())
+        return filt
+
+    @classmethod
+    def show_text(cls, pos, text: str, widget=None, rect=None, duration=None) -> None:
+        """Show *text* as a tooltip the way every managed tooltip is shown.
+
+        The drop-in for ``QToolTip.showText``: wrapped at a readable width and
+        up for its dynamic display time. Empty *text* hides the current tip.
+
+        Parameters:
+            pos: Global position (``QPoint``).
+            text: Tooltip text, plain or rich.
+            widget: The widget the tip belongs to (Qt hides it on leaving it).
+            rect: Area of *widget* (its coordinates) the tip stays up within.
+            duration: Display time in ms. ``None`` resolves it: *widget*'s own
+                ``toolTipDuration`` when set, else the dynamic time.
+        """
+        if not text:
+            QtWidgets.QToolTip.hideText()
+            return
+        rich = TooltipFormat._is_rich(text)
+        if duration is None:
+            duration = cls._duration_for(text, widget, rich)
+        QtWidgets.QToolTip.showText(
+            pos,
+            TooltipFormat.wrap(text, rich=rich),
+            widget,
+            rect if rect is not None else QtCore.QRect(),
+            duration,
+        )
+
+    @classmethod
+    def _duration_for(cls, text: str, widget, rich: bool) -> int:
+        explicit = widget.toolTipDuration() if widget is not None else -1
+        if explicit > 0:
+            return explicit
+        return TooltipFormat.display_ms(text, rich=rich) if cls.DYNAMIC_DURATION else -1
+
+    @classmethod
+    def _install(cls, obj) -> "_TooltipFilter":
+        filt = obj.property(cls._FILTER_PROP)
+        if filt is None:
+            filt = _TooltipFilter(obj)
+            obj.installEventFilter(filt)
+            obj.setProperty(cls._FILTER_PROP, filt)
+        return filt
+
+    @classmethod
+    def _bind(cls, widget, provider) -> None:
+        """Manage *widget* and make *provider* its hover-time text source."""
+        filt = cls.manage(widget)
+        if filt is not None:
+            filt.provider = cls._safe_provider(provider)
+
+    @staticmethod
+    def _safe_provider(fn):
+        """Wrap bound-method providers in a weakref to avoid retaining slot instances."""
+        if hasattr(fn, "__self__") and hasattr(fn, "__func__"):
+            obj_ref = weakref.ref(fn.__self__)
+            func = fn.__func__
+
+            def _wrapped():
+                obj = obj_ref()
+                return func(obj) if obj is not None else ""
+
+            return _wrapped
+        return fn
+
+    @classmethod
+    def _on_tooltip(cls, obj, event, provider) -> bool:
+        """Show *obj*'s tooltip for *event*; ``False`` leaves it to Qt."""
+        if not isinstance(obj, QtWidgets.QWidget):
+            return False
+        view, rect = obj.parentWidget(), None
+        if isinstance(view, QtWidgets.QAbstractItemView) and view.viewport() is obj:
+            index = view.indexAt(event.pos())
+            text = index.data(QtCore.Qt.ToolTipRole) if index.isValid() else None
+            rect = view.visualRect(index)
+        elif isinstance(view, QtWidgets.QGraphicsView) and view.viewport() is obj:
+            # The topmost item under the pointer that has one, as the scene picks.
+            tips = (item.toolTip() for item in view.items(event.pos()))
+            text = next((tip for tip in tips if tip), None)
+        else:
+            if provider is not None:
+                text = provider()
+                if text is not None:
+                    obj.setToolTip(text)
+            text = obj.toolTip()
+        if not isinstance(text, str) or not text:
+            # Nothing here: Qt's own path hides a stale tip and hands the event
+            # on -- to the view, or up to the parent.
+            return False
+        cls.show_text(event.globalPos(), text, obj, rect)
+        event.accept()
+        return True
+
+
+class TooltipProxy(TooltipFormat):
     """Per-widget tooltip namespace stamped on each registered MainWindow widget.
 
     Accessed as ``widget.tooltip`` after registration. Inherits the whole
@@ -569,16 +1035,17 @@ class TooltipProxy(TooltipFormat, _TooltipBindInternal):
         Parameters:
             provider: A zero-argument callable returning the tooltip string.
         """
-        self._install_provider(self._ref(), provider)
+        TooltipPresenter._bind(self._ref(), provider)
 
 
-class TooltipNamespace(TooltipFormat, _TooltipBindInternal):
+class TooltipNamespace(TooltipFormat):
     """The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
 
     Carries the whole :class:`TooltipFormat` DSL (``fmt`` / ``kbd`` / ``hl`` /
-    ``placeholder_preview``) plus :meth:`bind`, whose *batch* form only the
-    Switchboard can serve: resolving a shorthand widget range like ``"chk000-2"``
-    against a UI needs ``get_widgets_by_string_pattern``, which lives here.
+    ``placeholder_preview``) plus :meth:`bind` and :meth:`manage`, whose *batch*
+    forms only the Switchboard can serve: resolving a shorthand widget range like
+    ``"chk000-2"`` against a UI needs ``get_widgets_by_string_pattern``, which
+    lives here.
 
     This is the same ownership split the rest of the Switchboard uses — the
     implementation lives on ``sb``, and ``MainWindow.register_widget`` stamps a
@@ -609,6 +1076,33 @@ class TooltipNamespace(TooltipFormat, _TooltipBindInternal):
         Returns:
             (list) The widgets actually bound.
         """
+        bound = self._resolve(widgets, ui)
+        for widget in bound:
+            TooltipPresenter._bind(widget, provider)
+        return bound
+
+    def manage(self, widgets, ui=None) -> list:
+        """Show these widgets' tooltips through :class:`TooltipPresenter`.
+
+        Every registered widget already is; this is for the ones uitk never
+        registers -- unnamed widgets a slot builds itself, a host's widgets.
+
+        Parameters:
+            widgets: A widget, an iterable of widgets, or a shorthand name string
+                     (``"chk000-2"``) resolved against *ui*.
+            ui: The UI to resolve a name string against. Defaults to the
+                switchboard's current UI.
+
+        Returns:
+            (list) The widgets managed.
+        """
+        managed = self._resolve(widgets, ui)
+        for widget in managed:
+            TooltipPresenter.manage(widget)
+        return managed
+
+    def _resolve(self, widgets, ui) -> list:
+        """*widgets* as a list: a lone object, an iterable, or a name range."""
         if isinstance(widgets, str):
             sb = self._sb()
             if sb is None:
@@ -624,16 +1118,13 @@ class TooltipNamespace(TooltipFormat, _TooltipBindInternal):
             # A lone widget/action — every install target is a QObject, since
             # that is what carries installEventFilter + dynamic properties.
             widgets = [widgets]
-
-        bound = [w for w in (widgets or []) if w is not None]
-        for widget in bound:
-            self._install_provider(widget, provider)
-        return bound
+        return [w for w in (widgets or []) if w is not None]
 
 
 class TooltipMixin:
     """Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
 
-    Does not override ``__init__``; the stamp is applied inside
-    ``MainWindow.register_widget`` after the widget is otherwise fully set up.
+    Does not override ``__init__``; ``MainWindow.register_widget`` applies the
+    stamp, and hands the widget to :meth:`TooltipPresenter.manage`, after the
+    widget is otherwise fully set up.
     """

@@ -4,6 +4,7 @@ import time
 from qtpy import QtWidgets, QtCore, QtGui
 import logging
 from pythontk.core_utils.logging_mixin import LoggerExt
+from uitk.widgets.mixins.text import RichTextFormatter
 
 
 class _CrossThreadAppender(QtCore.QObject):
@@ -54,9 +55,17 @@ class TextEditLogHandler(logging.Handler):
         # otherwise falls back to a soft desaturated blue pastel.
         self._apply_link_palette(widget)
 
+        mono = self._get_monospace_font()
         if monospace:
-            font = self._get_monospace_font()
-            self.widget.setFont(font)
+            self.widget.setFont(mono)
+
+        # The ONE family records are marked up in and available_columns()
+        # counts in. Never CSS's generic ``monospace``: Windows has no family
+        # by that name, so Qt substitutes by the widget font's style hint --
+        # Courier New, ~9% wider than the Consolas the columns were counted
+        # in, or the proportional UI font when there is no hint -- and a box
+        # sized to the pane overflowed it.
+        self._font_family = self._resolved_family(mono)
 
     #: Dynamic-property flag stamped on a widget once :meth:`route_links` has
     #: wired it, so a handler rebuilt on the same live widget (a re-created
@@ -141,32 +150,48 @@ class TextEditLogHandler(logging.Handler):
         pal.setColor(QtGui.QPalette.LinkVisited, _parse_rgb(visited_str))
         widget.setPalette(pal)
 
+    #: Monospace families, first installed wins: read from the stack pythontk's
+    #: ``log_box`` pins its tinted rows to, so those rows render in the family
+    #: available_columns() counts in. The trailing generic resolves through
+    #: fontconfig on Linux.
+    _MONOSPACE_FAMILIES = tuple(
+        family.strip("'\" ") for family in LoggerExt.MONOSPACE_FAMILIES.split(",")
+    )
+
+    @classmethod
+    def _get_monospace_font(cls) -> QtGui.QFont:
+        """The monospace font, resolved the way Qt resolves a CSS
+        ``font-family`` list."""
+        font = QtGui.QFont()
+        font.setFamilies(list(cls._MONOSPACE_FAMILIES))
+        font.setStyleHint(QtGui.QFont.Monospace)
+        return font
+
     @staticmethod
-    def _get_monospace_font() -> QtGui.QFont:
-        """Try to get a safe monospace font across platforms."""
-        for family in ("Consolas", "Courier New", "Monospace"):
-            font = QtGui.QFont(family)
-            font.setStyleHint(QtGui.QFont.Monospace)
-            if font.exactMatch() or family == "Monospace":
-                return font
-        # fallback — still force Monospace style
-        fallback = QtGui.QFont()
-        fallback.setStyleHint(QtGui.QFont.Monospace)
-        return fallback
+    def _resolved_family(font: QtGui.QFont) -> str:
+        """The installed family Qt renders *font* in -- or the requested one
+        when no font database is loaded to say (a font-less offscreen QPA)."""
+        return QtGui.QFontInfo(font).family() or font.family()
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
+            family = self._font_family
             if getattr(record, "raw", False):
                 msg = record.getMessage()
-                # Use white-space:pre (not pre-wrap) so box-drawing lines
-                # are never broken by word-wrap — clipping is preferable
-                # to misaligned box characters.
-                msg = f'<span style="font-family:monospace; white-space:pre;">{msg}</span>'
+                # white-space:pre keeps the runs of spaces and the line breaks
+                # a box is built from. It does NOT stop Qt wrapping a row that
+                # is too long (only a block format can; this span is inline),
+                # so a box stays whole only because available_columns() sized
+                # it to the pane.
+                msg = f"<span style=\"font-family:'{family}'; white-space:pre;\">{msg}</span>"
             else:
                 msg = self.format(record)
                 color = self.get_color(record.levelname)
                 # Use span tag to preserve whitespace alignment without extra block spacing
-                msg = f'<span style="color:{color}; font-family:monospace; white-space:pre-wrap;">{msg}</span>'
+                msg = f"<span style=\"color:{color}; font-family:'{family}'; white-space:pre-wrap;\">{msg}</span>"
+            # An address a line gives opens when clicked (route_links); the
+            # record itself stays plain, so a console handler prints it as is.
+            msg = RichTextFormatter.linkify(msg)
 
             # Check if we're on the main GUI thread
             app = QtWidgets.QApplication.instance()
@@ -211,42 +236,67 @@ class TextEditLogHandler(logging.Handler):
         return LoggerExt.get_color(level)
 
     def available_columns(self) -> int:
-        """Return the number of monospace columns that fit in the viewport.
+        """Return how many monospace columns fit on one line of the pane.
 
-        Used by ``LoggerExt._log_box`` so boxes shrink to fit the redirect
-        target instead of being clipped or wrapped. Returns ``0`` when the
-        widget is not yet sized or too narrow to host a usable box, in
-        which case callers should fall back to ``DEFAULT_BOX_WIDTH``.
+        ``LoggerExt`` sizes boxes, dividers and tables to this, so it has to
+        be exact: Qt wraps a row one column too wide, and a wrapped row is a
+        broken box. Counts in the family records are marked up in, at the
+        document's font and with fractional advances, against the width a
+        line really gets: the viewport, less the document margins, less a
+        vertical scrollbar that is not showing yet (see
+        :meth:`_scrollbar_to_come`).
+
+        Returns:
+            The column count, however narrow the pane (a narrow box stays
+            whole where the default-width one would wrap); ``0`` -- width
+            unknown, so callers fall back to ``DEFAULT_BOX_WIDTH`` -- until
+            the widget has been shown, since before its first layout the
+            viewport is Qt's placeholder geometry, not the pane.
         """
         try:
-            mono = self._get_monospace_font()
-            # Box markup forces font-family:monospace inline but inherits
-            # the widget's point size — match that so measurement tracks
-            # any user-customized font size.
-            widget_font = self.widget.font()
-            pt = widget_font.pointSizeF()
-            if pt > 0:
-                mono.setPointSizeF(pt)
-            else:
-                px = widget_font.pixelSize()
-                if px > 0:
-                    mono.setPixelSize(px)
-            char_w = QtGui.QFontMetrics(mono).horizontalAdvance(" ")
-            if not char_w:
+            widget = self.widget
+            if widget.testAttribute(QtCore.Qt.WA_PendingResizeEvent):
                 return 0
-            viewport = self.widget.viewport() if hasattr(self.widget, "viewport") else None
-            avail_px = viewport.width() if viewport else self.widget.width()
-            # viewport() already excludes the scrollbar; reserve one char
-            # for cursor padding so the box never touches the right edge.
-            usable = avail_px - char_w
-            if usable <= 0:
+            document = widget.document() if hasattr(widget, "document") else None
+            font = QtGui.QFont(
+                document.defaultFont() if document is not None else widget.font()
+            )
+            font.setFamily(self._font_family)
+            metrics = QtGui.QFontMetricsF(font)
+            # Rows are box-drawing glyphs and (no-break) spaces: the widest
+            # advance counts, so a glyph borrowed from a fallback font cannot
+            # overrun.
+            char_w = max(metrics.horizontalAdvance(ch) for ch in " ═║")
+            if char_w <= 0:
                 return 0
-            cols = usable // char_w
-            # Anything below ~20 cols produces a degenerate box; defer to
-            # the caller's default instead.
-            return cols if cols >= 20 else 0
+            viewport = widget.viewport() if hasattr(widget, "viewport") else widget
+            width = viewport.width() - self._scrollbar_to_come()
+            if document is not None:
+                width -= 2 * document.documentMargin()
+            return max(int(width // char_w), 0)
         except Exception:
             return 0
+
+    def _scrollbar_to_come(self) -> int:
+        """Pixels a vertical scrollbar not showing yet will take from a line.
+
+        ``viewport()`` already excludes a scrollbar that is showing, but one
+        that is not can arrive with the very rows being sized: a box long
+        enough to overflow the pane narrows it under the box laid out for
+        it. Nothing to reserve when it can never show, or when the style
+        overlays it on the text (transient scrollbars take no width).
+        """
+        widget = self.widget
+        if not hasattr(widget, "verticalScrollBar"):
+            return 0
+        bar = widget.verticalScrollBar()
+        if bar.isVisibleTo(widget):
+            return 0
+        if widget.verticalScrollBarPolicy() == QtCore.Qt.ScrollBarAlwaysOff:
+            return 0
+        if bar.style().styleHint(QtWidgets.QStyle.SH_ScrollBar_Transient, None, bar):
+            return 0
+        return bar.sizeHint().width()
 
 
 # ----------------------------------------------------------------------------

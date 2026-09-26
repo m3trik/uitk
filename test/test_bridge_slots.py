@@ -267,6 +267,16 @@ class TestBridgeDocsLink(BaseTestCase):
         self.assertIn(url, slots.ui.txt000.toPlainText())
         self.assertIn(f'href="{url}"', slots.ui.txt000.toHtml())
 
+    def test_missing_engine_still_links_an_address_a_line_gives(self):
+        """The pane's own append links bare addresses the way the log
+        handler does -- an install page matters most with no engine."""
+        url = "https://example.test/install"
+        slots = self._slots(engine=False)
+        slots.panel_log(f"Install it from {url}.")
+        app.processEvents()
+        self.assertIn(f"from {url}.", slots.ui.txt000.toPlainText())
+        self.assertIn(f'href="{url}"', slots.ui.txt000.toHtml())
+
 
 class TestRequireOutputDir(BaseTestCase):
     """``require_output_dir`` resolution order, incl. the ``TEMP_OUTPUT_FALLBACK``
@@ -2122,6 +2132,113 @@ class TestOutputDirRowPersistence(BaseTestCase):
 
         opted_in = self._build(_Clearable).option_box.get_options()
         self.assertTrue([o for o in opted_in if isinstance(o, ClearOption)])
+
+
+class TestLiveParamsStayOutOfPresets(BaseTestCase):
+    """``AttributeSpec(preset=False)``: a live switch is never a preset value.
+
+    The WebXR Preview's Sharing row acts the moment it changes -- picking a
+    provider opens a public link. As a preset value it opened one whenever a
+    preset saved with it on was loaded (every preset saved since the row
+    defaulted to "auto" carried "auto"), and Reset to Defaults took a live
+    share down for every guest.
+    """
+
+    SPECS = {
+        "quality": AttributeSpec(
+            key="quality", kind="choice", default="low", choices=["low", "high"]
+        ),
+        "share": AttributeSpec(
+            key="share",
+            kind="choice",
+            default="off",
+            choices=["off", "auto"],
+            preset=False,
+        ),
+    }
+
+    def _slots(self, semantic=False):
+        tmp = self.tmp = Path(tempfile.mkdtemp(prefix="bridge_live_params_"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        specs = self.SPECS
+        store = (
+            ptk.PresetStore("live_params", "uitk_test", user_dir=str(tmp / "user"))
+            if semantic
+            else None
+        )
+
+        class Panel(BridgeSlotsBase):
+            PRESETS_ROOT = tmp / "widget_state"
+            params_module = type("Params", (), {"PARAMS": specs})
+
+            def make_preset_store(self):
+                return store
+
+        slots = object.__new__(Panel)
+        slots._param_widgets = {
+            key: KindFactory.make_widget(spec) for key, spec in specs.items()
+        }
+        group = QtWidgets.QGroupBox()
+        self.addCleanup(group.deleteLater)
+        QtWidgets.QVBoxLayout(group).addWidget(QtWidgets.QPushButton(group))
+        templates = QtWidgets.QComboBox()
+        self.addCleanup(templates.deleteLater)
+        templates.addItem("t", ("t", "m"))
+        slots.ui = type(
+            "Ui",
+            (),
+            {
+                "grp_process": group,
+                "b000": group.layout().itemAt(0).widget(),
+                "cmb000": templates,
+            },
+        )()
+        slots._preset_combo = None
+        slots._build_preset_controls()
+        self.changes = []
+        KindFactory.connect_changed(
+            slots._param_widgets["share"], lambda *a: self.changes.append(a)
+        )
+        return slots
+
+    def _read(self, slots, key):
+        return KindFactory.read_value(slots._param_widgets[key])
+
+    def _set(self, slots, key, value):
+        KindFactory.set_value(slots._param_widgets[key], value)
+
+    def test_a_preset_neither_saves_nor_sets_the_switch(self):
+        for semantic in (False, True):
+            with self.subTest(semantic=semantic):
+                slots = self._slots(semantic)
+                self._set(slots, "quality", "high")
+                self._set(slots, "share", "auto")
+                slots._preset_mgr.save("p")
+                path = next(self.tmp.rglob("p.json"))
+                data = json.loads(path.read_text(encoding="utf-8"))
+                self.assertNotIn("share", data)
+                # A preset saved before the switch was kept out still holds it.
+                data["share"] = "auto"
+                path.write_text(json.dumps(data), encoding="utf-8")
+                self._set(slots, "share", "off")
+                self._set(slots, "quality", "low")
+                self.changes.clear()
+                slots._preset_mgr.load("p")
+                self.assertEqual(self._read(slots, "quality"), "high")
+                self.assertEqual(self._read(slots, "share"), "off")
+                self.assertEqual(
+                    self.changes, [], "loading a preset flipped the switch"
+                )
+
+    def test_reset_leaves_the_switch_as_it_is(self):
+        slots = self._slots()
+        self._set(slots, "quality", "high")
+        self._set(slots, "share", "auto")
+        self.changes.clear()
+        slots._reset_to_defaults()
+        self.assertEqual(self._read(slots, "quality"), "low")
+        self.assertEqual(self._read(slots, "share"), "auto")
+        self.assertEqual(self.changes, [])
 
 
 if __name__ == "__main__":

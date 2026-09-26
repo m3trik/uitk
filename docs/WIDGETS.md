@@ -126,6 +126,20 @@ CursorManager.push(self, QtCore.Qt.ClosedHandCursor)  # press
 CursorManager.pop(self)                               # release / cancel
 ```
 
+### Tooltips
+Every registered widget shows its tooltip through `TooltipPresenter` ([`mixins/tooltip_mixin.py`](../uitk/widgets/mixins/tooltip_mixin.py)) instead of Qt's raw display. `MainWindow.register_widget` hands each widget to `TooltipPresenter.manage`, which also covers what a view draws: an item view's items and a combo box's popup list (`ToolTipRole`), and a graphics view's items. uitk's own composites (header, footer, menus, option boxes, panels, the sequencer) manage the parts they build in code, which are never registered. The presenter changes two things:
+
+- **Width.** Qt never wraps a *plain* tooltip until it is wider than the screen, so a three-sentence `.ui` tooltip shows as one line 1300+ px wide. It squeezes a short *rich* one to a narrow column. `TooltipFormat.wrap` breaks both at `WRAP_WIDTH` (60) characters. A line may run up to `WRAP_SLACK` (15) characters longer, but only to finish its sentence. Authored line breaks, paragraphs, list items and `<pre>` are kept. Plain text stays plain.
+- **Display time.** Qt shows a tooltip for 10 s plus 40 ms per character past 100. `TooltipFormat.display_ms` gives 10 s plus 400 ms per visible word, and never less than Qt's time. Set `TooltipPresenter.DYNAMIC_DURATION = False` to go back to Qt's timer. A widget's own `setToolTipDuration()` always wins.
+
+Text that has to be computed at hover time is a **bound provider**, which the presenter calls first. Don't use a separate filter that rewrites the tooltip on `QEvent.ToolTip`: Qt runs filters newest-first, so the presenter shows the text and consumes the event before an older filter ever sees it.
+
+```python
+widget.tooltip.bind(lambda: f"Current value: {self._state}")   # or sb.tooltip.bind(w, fn)
+self.sb.tooltip.manage(unregistered_widget)                     # a widget uitk never registers
+TooltipPresenter.show_text(pos, text, widget)                   # instead of QToolTip.showText
+```
+
 ### Overflow arrows on scroll views
 `OverflowIndicator` (`uitk/widgets/overflow_indicator.py`) marks the vertical edges of a scroll view that have content past them: an arrow at the bottom while more rows lie below, one at the top while the first rows are scrolled out of view, neither once everything fits. It reads the vertical scrollbar's value and range, so hidden rows and filtered models come out right and a popup that hides its bar is served the same. `ComboBox` / `WidgetComboBox` popups, `TreeWidget` and `TableWidget` carry one by default; any other `QAbstractScrollArea` (a text log, a `QScrollArea`) opts in with one call:
 
@@ -384,7 +398,9 @@ menu.add("QPushButton", row=0, col=1)  # grid placement via add(row=…, col=…
 Draggable header bar for frameless windows. Provides standard window controls. The open-hand cursor closes while the window is being dragged and reopens on release.
 
 ```python
-from uitk.widgets.mixins.tooltip_mixin import fmt, kbd
+from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
+
+fmt, kbd = TooltipFormat.fmt, TooltipFormat.kbd
 
 def header_init(self, widget):
     widget.config_buttons("menu", "minimize", "maximize", "pin", "hide")
@@ -402,9 +418,10 @@ Button keys: `refresh`, `menu`, `help`, `collapse`, `minimize`, `maximize`, `ful
 
 `help` is auto-added on first call to `set_help_text(...)` (no need to list it
 in `config_buttons`); clicking the `?` pops the help text as a tooltip via
-`QToolTip.showText`. The text persists across `config_buttons` rebuilds.
+`TooltipPresenter.show_text` (wrapped, like every uitk tooltip). The text persists
+across `config_buttons` rebuilds.
 
-Rich-text help is built via `fmt(...)` from
+Rich-text help is built via `TooltipFormat.fmt(...)` from
 [`uitk.widgets.mixins.tooltip_mixin`](../uitk/widgets/mixins/tooltip_mixin.py)
 — supports `title`, `body`, `bullets`, `steps`, `rows`, `sections`, and
 `notes` (italic muted callouts). Companion helpers: `kbd(*keys)` for

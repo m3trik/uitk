@@ -25,6 +25,7 @@ from uitk.widgets.editors.color_mapping_editor import (
     ColorMappingDialog,
 )
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.managers.settings_manager import SettingsManager
 from uitk.managers.shortcut_manager import ShortcutManager
 
@@ -391,6 +392,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._header_scroll.setMinimumWidth(0)
 
         self._timeline = TimelineView(self)
+        # Clip labels / marker notes are graphics-item tooltips over its viewport.
+        TooltipPresenter.manage(self._timeline)
 
         self.addWidget(self._header_scroll)
         self.addWidget(self._timeline)

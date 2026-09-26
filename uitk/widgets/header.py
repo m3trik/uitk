@@ -7,6 +7,7 @@ from qtpy import QtWidgets, QtCore, QtGui, QtSvg
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.managers.icon_manager import IconManager
 from uitk.managers.cursor_manager import CursorManager
 
@@ -363,6 +364,8 @@ class Header(
 
         button.setCursor(QtGui.QCursor(QtCore.Qt.ArrowCursor))
         button.clicked.connect(callback)
+        # Built here and never registered, so join the tooltip presenter directly.
+        TooltipPresenter.manage(button)
         return button
 
     def _set_button_icon(self, button, icon_name):
@@ -862,7 +865,7 @@ class Header(
             return
         # Anchor just below the button so the tooltip doesn't cover it.
         pos = button.mapToGlobal(QtCore.QPoint(0, button.height()))
-        QtWidgets.QToolTip.showText(pos, text, button)
+        TooltipPresenter.show_text(pos, text, button)
 
     def show_menu(self):
         """Show the menu."""

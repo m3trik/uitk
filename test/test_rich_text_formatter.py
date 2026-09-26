@@ -9,6 +9,7 @@ rendered output.
 
 Run standalone: python -m test.test_rich_text_formatter
 """
+
 import unittest
 
 from conftest import BaseTestCase, QtBaseTestCase
@@ -37,12 +38,8 @@ class TestResolveBackground(BaseTestCase):
         )
 
     def test_alpha_is_clamped(self):
-        self.assertEqual(
-            RichTextFormatter.resolve_background(2), "rgba(50,50,50,255)"
-        )
-        self.assertEqual(
-            RichTextFormatter.resolve_background(-1), "rgba(50,50,50,0)"
-        )
+        self.assertEqual(RichTextFormatter.resolve_background(2), "rgba(50,50,50,255)")
+        self.assertEqual(RichTextFormatter.resolve_background(-1), "rgba(50,50,50,0)")
 
     def test_string_passes_through_verbatim(self):
         self.assertEqual(RichTextFormatter.resolve_background("red"), "red")
@@ -84,9 +81,7 @@ class TestPrefixStyles(BaseTestCase):
             self.assertEqual(out, RichTextFormatter.prefix_styles()[token])
 
     def test_unknown_prefix_untouched(self):
-        self.assertEqual(
-            RichTextFormatter.apply_prefix_styles("Debug: x"), "Debug: x"
-        )
+        self.assertEqual(RichTextFormatter.apply_prefix_styles("Debug: x"), "Debug: x")
 
 
 class TestFormat(BaseTestCase):
@@ -97,9 +92,7 @@ class TestFormat(BaseTestCase):
         self.assertEqual(out, "<div align='center'>hello</div>")
 
     def test_existing_align_is_not_double_wrapped(self):
-        out = RichTextFormatter.format(
-            "<div align='right'>x</div>", font_color=""
-        )
+        out = RichTextFormatter.format("<div align='right'>x</div>", font_color="")
         self.assertEqual(out, "<div align='right'>x</div>")
 
     def test_font_color_wraps_outermost(self):
@@ -108,7 +101,9 @@ class TestFormat(BaseTestCase):
 
     def test_empty_font_color_skips_wrap(self):
         self.assertNotIn("<font color=", RichTextFormatter.format("hi", font_color=""))
-        self.assertNotIn("<font color=", RichTextFormatter.format("hi", font_color=None))
+        self.assertNotIn(
+            "<font color=", RichTextFormatter.format("hi", font_color=None)
+        )
 
     def test_font_size_applied_when_set(self):
         out = RichTextFormatter.format("hi", font_color="", font_size=3)
@@ -177,9 +172,7 @@ class TestLineBreaks(BaseTestCase):
         self.assertIn("a\nb", out)
 
     def test_text_outside_a_pre_block_still_converts(self):
-        out = RichTextFormatter.format(
-            "head\n<pre>a\nb</pre>\ntail", font_color=""
-        )
+        out = RichTextFormatter.format("head\n<pre>a\nb</pre>\ntail", font_color="")
         self.assertEqual(out.count("<br>"), 2)
         self.assertIn("a\nb", out)
 
@@ -212,6 +205,111 @@ class TestLineBreaksRender(QtBaseTestCase):
         after = self._document(RichTextFormatter.format("one\ntwo", font_color=""))
         self.assertEqual(after.toPlainText(), "one\ntwo")
         self.assertGreater(after.size().height(), before.size().height())
+
+
+class TestLinkify(BaseTestCase):
+    """linkify makes each bare web address in rich text a link.
+
+    Messages give addresses as plain text -- a share link, the page that
+    enables Tailscale Funnel, where to install a tool -- and a pane or dialog
+    showed them as text to select and copy by hand. Only running text is
+    touched: markup, an existing link's text and other schemes pass through.
+    """
+
+    PAGE = "https://login.example.test/f/funnel?node=abc123"
+
+    @staticmethod
+    def _link(url):
+        return f'<a href="{url}">{url}</a>'
+
+    def test_a_bare_address_becomes_a_link(self):
+        self.assertEqual(
+            RichTextFormatter.linkify(f"enable it at {self.PAGE} first"),
+            f"enable it at {self._link(self.PAGE)} first",
+        )
+
+    def test_the_sentence_around_an_address_stays_outside_it(self):
+        local = "http://127.0.0.1:8118/"
+        cases = {
+            f"live at {local}.": f"live at {self._link(local)}.",
+            f"at {self.PAGE}, then": f"at {self._link(self.PAGE)}, then",
+            f"(see {self.PAGE})": f"(see {self._link(self.PAGE)})",
+            f"is it {local}?": f"is it {self._link(local)}?",
+        }
+        for text, expected in cases.items():
+            self.assertEqual(RichTextFormatter.linkify(text), expected, text)
+
+    def test_a_bracket_the_address_opened_is_its_own(self):
+        url = "https://en.example.test/wiki/Foo_(bar)"
+        self.assertEqual(
+            RichTextFormatter.linkify(f"see {url}."), f"see {self._link(url)}."
+        )
+
+    def test_markup_and_existing_links_are_left_alone(self):
+        for html in (
+            f'<a href="{self.PAGE}">{self.PAGE}</a>',
+            f'<a href="{self.PAGE}">the page</a>',
+            '<a href="action://open?path=C:/x">https://not.a.link.test</a>',
+            f'<img src="{self.PAGE}">',
+            f"<span title='{self.PAGE}'>x</span>",
+        ):
+            self.assertEqual(RichTextFormatter.linkify(html), html)
+
+    def test_an_address_after_a_link_is_still_linked(self):
+        html = f'<a href="action://x">x</a> and {self.PAGE}'
+        self.assertEqual(
+            RichTextFormatter.linkify(html),
+            f'<a href="action://x">x</a> and {self._link(self.PAGE)}',
+        )
+
+    def test_an_address_inside_other_tags_is_linked(self):
+        self.assertEqual(
+            RichTextFormatter.linkify(f"<hl>{self.PAGE}</hl>"),
+            f"<hl>{self._link(self.PAGE)}</hl>",
+        )
+
+    def test_other_schemes_and_a_bare_scheme_are_not_links(self):
+        for text in (
+            "file:///C:/scene.ma",
+            "action://open?path=C:/x",
+            "install it from https://",
+            "install it from https://…",
+            "no address here",
+        ):
+            self.assertEqual(RichTextFormatter.linkify(text), text)
+
+    def test_an_escaped_bracket_ends_the_address(self):
+        self.assertEqual(
+            RichTextFormatter.linkify(f"&lt;{self.PAGE}&gt;"),
+            f"&lt;{self._link(self.PAGE)}&gt;",
+        )
+
+    def test_format_links_the_addresses_in_a_dialog(self):
+        out = RichTextFormatter.format(f"Install it from {self.PAGE}.", font_color="")
+        self.assertIn(f"{self._link(self.PAGE)}.", out)
+
+
+class TestLinkifyRender(QtBaseTestCase):
+    """Through Qt's own engine: the address is an anchor, the text unchanged."""
+
+    def test_qt_reads_the_address_as_a_link(self):
+        from qtpy import QtGui
+
+        url = "https://login.example.test/f/funnel?node=abc123"
+        doc = QtGui.QTextDocument()
+        doc.setHtml(RichTextFormatter.linkify(f"enable it at {url}, then share"))
+        self.assertEqual(doc.toPlainText(), f"enable it at {url}, then share")
+        anchors = set()
+        block = doc.begin()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fmt = it.fragment().charFormat()
+                if fmt.isAnchor():
+                    anchors.add(fmt.anchorHref())
+                it += 1
+            block = block.next()
+        self.assertEqual(anchors, {url})
 
 
 class TestPaletteOverride(BaseTestCase):

@@ -7,6 +7,7 @@ from typing import Optional, Callable, List, Union, Any, Dict
 from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.overflow_indicator import OverflowIndicator
 from uitk.managers.icon_manager import IconManager
 from uitk.switchboard import Signals
@@ -514,6 +515,7 @@ class _HeaderActionBar(QtWidgets.QWidget):
         btn.setAutoRaise(True)
         btn.setFocusPolicy(QtCore.Qt.NoFocus)
         btn.setToolTip(tooltip)
+        TooltipPresenter.manage(btn)
 
         h = max(self._tree.header().height() - 4, 16)
         btn.setFixedSize(h, h)

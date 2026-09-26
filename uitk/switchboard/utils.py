@@ -1967,6 +1967,7 @@ class SwitchboardUtilsMixin:
         word_wrap: bool = True,
         background=False,
         parent=None,
+        link_handler=None,
     ):
         """Spawn a scrollable text-viewer window with optional buttons.
 
@@ -2003,6 +2004,10 @@ class SwitchboardUtilsMixin:
             parent: Anchor widget. Defaults to ``self.parent()``. The
                 viewer reparents to ``parent.window()`` so it survives
                 a transient invoker hiding.
+            link_handler: ``handler(QUrl) -> bool`` offered each clicked
+                link first (see :class:`TextViewBox`) -- pass a DCC's
+                ``UiUtils.dispatch_log_link`` so a report's
+                ``action://select`` links select what they name.
 
         Returns:
             The :class:`TextViewBox` instance — the caller can stream
@@ -2023,6 +2028,7 @@ class SwitchboardUtilsMixin:
             title=title,
             monospace=monospace,
             word_wrap=word_wrap,
+            link_handler=link_handler,
         )
         if size:
             dlg.resize(*size)

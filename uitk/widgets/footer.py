@@ -8,6 +8,7 @@ from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichTextFormatter
 from uitk.widgets.mixins.size_grip import SizeGripMixin
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.progressBar import ProgressBar
 
 try:
@@ -399,6 +400,7 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
         if tooltip:
             btn.setToolTip(tooltip)
+        TooltipPresenter.manage(btn)
 
         if states:
             from uitk.widgets.mixins.icon_states import IconStates
