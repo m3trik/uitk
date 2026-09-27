@@ -268,6 +268,7 @@ class ContextMenu(Menu):
         *,
         parent: Optional[QtWidgets.QWidget] = None,
         callback=None,
+        keep_open: bool = False,
         **kwargs,
     ) -> QtWidgets.QWidget:
         """Add a row (or a sub-row of *parent*) and return it.
@@ -290,6 +291,10 @@ class ContextMenu(Menu):
                 (``lambda e=edge: ...``) keeps it.  ``clicked=`` connects the
                 raw signal instead, whose ``checked`` bool would land in that
                 default.
+            keep_open: Run the action with the menu left open -- for a toggle
+                the user flips several of in one visit (a multi-select
+                filter's rows). Never for an action that opens a dialog or
+                moves focus: those need the menu gone first.
             **kwargs: Setter / signal kwargs in the Menu idiom
                 (``setText=``, ``setEnabled=``, ``toggled=``...).
         """
@@ -313,6 +318,7 @@ class ContextMenu(Menu):
         is_action = any(key in kwargs for key in self._SIGNAL_KEYS)
         row = target.add(widget_cls, data=data, **kwargs)
         row.setProperty("contextAction", is_action)
+        row.setProperty("contextKeepOpen", bool(keep_open))
         if isinstance(row, QtWidgets.QAbstractButton) and not isinstance(row, MenuRow):
             row.setProperty("class", "MenuRow")
         if parent is not None:
@@ -398,11 +404,13 @@ class ContextMenu(Menu):
         A category row (no callback) is navigation -- its flyout opened on
         hover and the click means nothing more.  The menu hides BEFORE the
         action runs so a callback that opens a dialog or moves focus does
-        so over a clean screen, and the flyouts go with it.
+        so over a clean screen, and the flyouts go with it -- unless the row
+        was added ``keep_open``, which runs with the menu still up.
         """
         if not item.property("contextAction"):
             return
-        self.hide()
+        if not item.property("contextKeepOpen"):
+            self.hide()
         if isinstance(item, QtWidgets.QAbstractButton):
             item.click()
 

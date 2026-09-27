@@ -362,15 +362,22 @@ class TestBoxesFitThePane(QtBaseTestCase):
     def test_every_glyph_pythontk_draws_is_measured(self):
         """available_columns counts in the widest glyph it measures, so one it
         skips can be wider and wrap its row: the divider's was, under Linux
-        fontconfig (CI, 2026-09-26). Drift guard over pythontk's source."""
+        fontconfig (CI, 2026-09-26). Drift guard over pythontk's source: every
+        module of the ``logging_mixin`` package, wherever a glyph lives."""
+        import importlib
         import inspect
+        import pkgutil
 
         from pythontk.core_utils import logging_mixin
         from uitk.widgets.textEditLogHandler import TextEditLogHandler
 
-        drawn = {
-            ch for ch in inspect.getsource(logging_mixin) if 0x2500 <= ord(ch) <= 0x259F
-        }
+        source = "".join(
+            inspect.getsource(
+                importlib.import_module(f"{logging_mixin.__name__}.{m.name}")
+            )
+            for m in pkgutil.iter_modules(logging_mixin.__path__)
+        )
+        drawn = {ch for ch in source if 0x2500 <= ord(ch) <= 0x259F}
         self.assertTrue(drawn)
         self.assertEqual(drawn - set(TextEditLogHandler._BOX_GLYPHS), set())
 

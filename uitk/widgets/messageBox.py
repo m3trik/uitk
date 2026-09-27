@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from qtpy import QtCore, QtGui, QtWidgets
+from uitk._bootstrap import Bootstrap
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichTextFormatter
 
@@ -87,7 +88,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
 
         self.setWindowModality(QtCore.Qt.NonModal)
         self.setStandardButtons(QtWidgets.QMessageBox.NoButton)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        Bootstrap.set_translucent(self)
         self.setWindowFlags(self._TOAST_FLAGS)
 
         self.setTextFormat(QtCore.Qt.RichText)
@@ -245,9 +246,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
             return
         bg_css = RichTextFormatter.resolve_background(background)
         if bg_css:
-            label.setStyleSheet(
-                f"background-color: {bg_css}; padding: 8px;"
-            )
+            label.setStyleSheet(f"background-color: {bg_css}; padding: 8px;")
         else:
             label.setStyleSheet("background-color: transparent; padding: 8px;")
 

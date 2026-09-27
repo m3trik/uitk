@@ -10,15 +10,16 @@ Every "drive an external app from a panel" tool is the same tool wearing a diffe
 
 ## Anatomy of a bridge
 
-The subsystem is five modules under [`uitk/bridge/`](../uitk/bridge/), all re-exported from [`__init__.py`](../uitk/bridge/__init__.py) so consumers write `from uitk.bridge import AttributeSpec, KindFactory, Formatters, Parameters, Tooltip, BridgeSlotsBase`:
+The subsystem is six public modules under [`uitk/bridge/`](../uitk/bridge/), all re-exported (lazily) from [`__init__.py`](../uitk/bridge/__init__.py) so consumers write `from uitk.bridge import AttributeSpec, KindFactory, Formatters, Parameters, ParamRegistry, Tooltip, BridgeSlotsBase`:
 
 | Module | Owns |
 |:---|:---|
-| [`spec.py`](../uitk/bridge/spec.py) | `AttributeSpec` + `KindFactory` — the `KindHandler` registry (widget build/read/write/change-signal per kind) |
+| [`attribute_spec.py`](../uitk/bridge/attribute_spec.py) | `AttributeSpec` — the Qt-free parameter description (a registry is declared without a Qt binding) |
+| [`spec.py`](../uitk/bridge/spec.py) | `KindFactory` — the `KindHandler` registry (widget build/read/write/change-signal per kind) |
 | [`formatters.py`](../uitk/bridge/formatters.py) | `Formatters` — per-target-language value renderers (`python_literal`, `lua_literal`, `js_literal`, `cli_raw`) |
-| [`parameters.py`](../uitk/bridge/parameters.py) | `Parameters` — helpers over a per-bridge `PARAMS` dict (`referenced_keys`, `defaults`, `render_context`) plus the shared specs (`scope_spec`, `shader_type_spec`) |
+| [`parameters.py`](../uitk/bridge/parameters.py) | `Parameters` — helpers over a per-bridge `PARAMS` dict (`referenced_keys`, `defaults`, `render_context`) plus the shared specs (`scope_spec`, `carrier_spec`, `rig_mode_spec`); `ParamRegistry` — the base a bridge's registry subclasses so it declares only its `PARAMS` |
 | [`tooltip.py`](../uitk/bridge/tooltip.py) | `Tooltip` — rich-text parameter tooltips + per-template description extraction |
-| [`slots.py`](../uitk/bridge/slots.py) | `BridgeSlotsBase` — the slot base class that assembles it all into a panel |
+| [`slots.py`](../uitk/bridge/slots.py) | `BridgeSlotsBase` — the slot base class that assembles it all into a panel. The module is the facade (the contract, the init flow, bridge access, scope); the machinery lives in one private part per concept, composed through `_BridgeSlotsInternal`: [`_output_dir.py`](../uitk/bridge/_output_dir.py), [`_param_rows.py`](../uitk/bridge/_param_rows.py), [`_presets.py`](../uitk/bridge/_presets.py), [`_template_combo.py`](../uitk/bridge/_template_combo.py), [`_log_panel.py`](../uitk/bridge/_log_panel.py), [`_header_menu.py`](../uitk/bridge/_header_menu.py). Every hook below is overridable exactly as on one class |
 
 **The surface is class-only.** Each module exposes one class namespace; there are no flat function re-exports (`KindFactory.make_widget`, `Formatters.python_literal`, `Parameters.referenced_keys`, `Tooltip.format_param_tooltip`).
 
@@ -38,9 +39,9 @@ A subclass **must** set / implement (from the `BridgeSlotsBase` docstring and bo
 
 - `UI_NAME` — the loaded-ui attribute name (e.g. `"marmoset_bridge"`). Empty raises `ValueError` at init.
 - `PRESETS_ROOT` — per-bridge preset storage root (required unless `make_preset_store` returns a store; then presets are semantic and `PRESETS_ROOT` is unused).
-- `params_module` (class attr or property) — a module (or class namespace) exposing `PARAMS`, `referenced_keys`, `defaults` (see [Value formatters](#value-formatters-and-the-params-module)).
+- `params_module` (class attr or property) — the bridge's registry: a `ParamRegistry` subclass (or any namespace exposing `PARAMS` and `referenced_keys`, optionally `SUPERSESSIONS`; see [Value formatters](#value-formatters-and-the-params-module)).
 - `template_dir` (class attr or property) — the per-bridge template directory.
-- `make_bridge()` — factory returning the transport instance; called once, lazily, via the `bridge` property. The instance must expose `.logger` and `.send(...)`, optionally `.STARTUP_INFO`. In practice this is a `pythontk.ScriptLaunchBridge` subclass (from `pythontk.core_utils.app_handoff`), whose `send()` runs the shared resolve → preflight → produce → deliver skeleton and inherits `.logger` from `LoggingMixin`. It may return `None` when the engine lives in an optional package the user hasn't installed — the panel still opens (so its own controls can offer the install); the `bridge` property then raises `RuntimeError`, and `peek_bridge()` / `panel_log()` are the never-raising accessors.
+- `make_bridge()` — factory returning the transport instance; called once, lazily, via the `bridge` property. The instance must expose `.logger` and `.send(...)`, optionally `.STARTUP_INFO`. In practice this is a `pythontk.ScriptLaunchBridge` subclass (from `pythontk.core_utils.handoff.app_handoff`), whose `send()` runs the shared resolve → preflight → produce → deliver skeleton and inherits `.logger` from `LoggingMixin`. It may return `None` when the engine lives in an optional package the user hasn't installed — the panel still opens (so its own controls can offer the install); the `bridge` property then raises `RuntimeError`, and `peek_bridge()` / `panel_log()` are the never-raising accessors.
 - `list_template_modes()` — `[(stem, mode), ...]` pairs for the combo.
 - `b000()` — the DCC-specific send action.
 
@@ -50,7 +51,7 @@ Optional overrides:
 - `default_output_dir()` — DCC-side fallback for a blank Output Dir (default `""`; mayatk's `MayaBridgeSlotsBase` overrides it to return `EnvUtils.default_artifact_dir()`).
 - `REQUIRE_OUTPUT_DIR` — set `False` for bridges with no user-visible output; the row is never built and `require_output_dir()` returns `""`.
 - `TEMP_OUTPUT_FALLBACK` — set `True` for file-staging bridges whose output is transient export artifacts; `require_output_dir()` then falls back to a self-cleaning per-tag temp dir (`ensure_bridge_temp_dir`, removed at process exit) instead of erroring, so an unsaved scene can still hand off.
-- `resolve_scope_objects(scope)` — turn a `SCOPE` value into host objects; implemented once per DCC package on its bridge-slots base (default: empty list = no scope support). Slot code consumes it via `scoped_objects(params)`, which logs a scope-aware message when the set is empty.
+- `resolve_scope_objects(scope)` — turn a `SCOPE` value into host objects; implemented once per DCC package on its bridge-slots base, which hands its scene reads (selection, whole scene, visible) to `pythontk.HandoffScope.resolve` — the words and their fallbacks (unknown → selected; a widening read that cannot answer → the selection) are pythontk's (default: empty list = no scope support). Slot code consumes it via `scoped_objects(params)`, which logs a scope-aware message when the set is empty.
 - `TEMPLATE_EXTENSION` — `.py` (default) or `.lua` etc.; locates the placeholder source for row visibility and dispatches the description extractor.
 - `make_preset_store()` — return a `pythontk.PresetStore` to switch presets to semantic mode (see [Panel services](#panel-services)).
 - `_relevant_param_keys()` — which parameter rows are visible for the current selection (default: the `__KEY__` tokens referenced by the active template file). Run-mode panels override this to gate on a mode instead of a template file.
@@ -80,7 +81,7 @@ with self.sb.progress(text=f"Working: Send to Blender ({template})"):
 
 ## Parameter specs and kind handlers
 
-[`spec.py`](../uitk/bridge/spec.py) is the single registry powering both the DCC bridges and `AttributeWindow` — it originally lived inside `uitk.widgets.attributeWindow` before being promoted to the bridge package.
+[`spec.py`](../uitk/bridge/spec.py) is the single registry powering both the DCC bridges and `AttributeWindow` — it originally lived inside `uitk.widgets.attributeWindow` before being promoted to the bridge package; the `AttributeSpec` dataclass itself sits apart in the Qt-free [`attribute_spec.py`](../uitk/bridge/attribute_spec.py).
 
 ### `AttributeSpec`
 
@@ -143,41 +144,31 @@ Each formatter is a `Formatters` staticmethod in [`formatters.py`](../uitk/bridg
 
 - `Parameters.referenced_keys(script_text, params)` — the registry keys whose `__KEY__` token appears in the text (placeholder pattern: `__` + upper-case letter + upper-case letters/digits/underscores + `__`). Unregistered tokens are silently ignored — substitution leaves them intact for the target app to complain about. This drives per-template row visibility.
 - `Parameters.defaults(params)` — `{key: default}` for every spec.
-- `Parameters.render_context(values, params, formatter=Formatters.python_literal)` — formats registered keys through the formatter; unknown keys (bridge-injected tokens like `FBX_PATH`) fall through to `str(value)`. The result feeds `pythontk.StrUtils.replace_delimited` (via `pythontk.core_utils.script_template.ScriptTemplate.render_template` in the `ScriptLaunchBridge` transports).
+- `Parameters.render_context(values, params, formatter=Formatters.python_literal)` — formats registered keys through the formatter; unknown keys (bridge-injected tokens like `FBX_PATH`) fall through to `str(value)`. The result feeds `pythontk.StrUtils.replace_delimited` (via `pythontk.ScriptTemplate.render_template` in the `ScriptLaunchBridge` transports).
 
-It also owns the specs uitk holds **on behalf of** several bridges, so they cannot drift apart on the same knob: `Parameters.scope_spec()` (selected / visible / all) and `Parameters.shader_type_spec()`. Each call returns a fresh object. Only `SCOPE`'s *resolution* is DCC-specific — each package's bridge-slots base implements `resolve_scope_objects(scope)` once, consumed slot-side via `scoped_objects(params)`.
+It also owns the specs uitk holds **on behalf of** several bridges, so they cannot drift apart on the same knob: `Parameters.scope_spec()` (the words of `pythontk.HandoffScope`: selected / all / visible), `carrier_spec()` and `rig_mode_spec()` (pythontk's handoff vocabularies). Each call returns a fresh object. Only `SCOPE`'s scene *reads* are DCC-specific — each package's bridge-slots base implements `resolve_scope_objects(scope)` once over `HandoffScope.resolve`, consumed slot-side via `scoped_objects(params)`.
 
-Each bridge wraps these once with its own `PARAMS` and formatter, so the slot machinery calls `params_module.referenced_keys(text)` without passing the dict. Condensed from `mayatk.env_utils.blender_bridge.parameters`:
+Each bridge binds these to its own `PARAMS` once, by subclassing `ParamRegistry`: the subclass inherits `referenced_keys(text)` / `defaults()` / `render_context(values, formatter=None)` / `affix_parts(value)` as classmethods over `PARAMS`, renders through its `FORMATTER` (default `Formatters.python_literal`), and carries `SUPERSESSIONS` (default `None`). It is both the slot's `params_module` and the namespace a headless engine calls (`Parameters.defaults()`). Condensed from `mayatk.env_utils.unity_bridge.parameters`:
 
 ```python
-from uitk.bridge import AttributeSpec, Formatters, Parameters as _BridgeParams
+from uitk.bridge import AttributeSpec, ParamRegistry
 
 
-class Parameters:
-    """Parameters — module namespace."""
+PARAMS = {
+    "ASSETS_SUBDIR": AttributeSpec(
+        key="ASSETS_SUBDIR", label="Assets Subfolder", kind="str", default="Imported",
+    ),
+    # ... one entry per __KEY__ token the templates may reference
+}
 
-    PARAMS = {
-        "CLEAR_SCENE": AttributeSpec(
-            key="CLEAR_SCENE", label="Clear Scene First", kind="bool", default=False,
-            tooltip="Delete the existing scene objects before importing.",
-        ),
-        # ... one entry per __KEY__ token the templates may reference
-    }
 
-    @staticmethod
-    def referenced_keys(script_text):
-        return _BridgeParams.referenced_keys(script_text, Parameters.PARAMS)
-
-    @staticmethod
-    def defaults():
-        return _BridgeParams.defaults(Parameters.PARAMS)
-
-    @staticmethod
-    def render_context(values):
-        return _BridgeParams.render_context(
-            values, Parameters.PARAMS, formatter=Formatters.python_literal
-        )
+class Parameters(ParamRegistry):
+    PARAMS = PARAMS
+    # FORMATTER = Formatters.lua_literal   # a .lua target (rizom)
+    # SUPERSESSIONS = SUPERSESSIONS        # rows a toggle takes over (marmoset)
 ```
+
+A registry whose rule differs overrides the method and reaches the default through `super()`: rizom expands its include tokens before `referenced_keys` and folds derived gutter tokens into `render_context`; the photogrammetry panels answer `referenced_keys(mode)` from a run mode instead of a template.
 
 ## Templates: discovery, modes, description
 
@@ -202,7 +193,7 @@ What every subclass gets for free from [`slots.py`](../uitk/bridge/slots.py):
 - *Widget-state mode* (default, `make_preset_store()` → `None`): raw widget snapshots keyed by `objectName`, stored per-template under `PRESETS_ROOT`. Used by the DCC bridges.
 - *Semantic mode* (return a `pythontk.PresetStore`): presets are `{param_key: value}` run-templates keyed by spec name, shared with a headless CLI through the same store (built-in + user tiers), template-agnostic. Captured via `collect_param_values`; applied with overlay semantics — unknown keys ignored, absent keys keep current widget values.
 
-Every parameter widget's change signal (via `KindFactory.connect_changed`) re-evaluates the combo's "modified" marker. `_reset_to_defaults` restores each widget to its spec's `default` and abandons the active preset.
+Every parameter widget's change signal (via `KindFactory.connect_changed`) re-evaluates the combo's "modified" marker. The Reset button speaks uitk's shared reset grammar through [`ResetGesture`](../uitk/managers/reset_gesture.py) over `_BridgeDefaults`: Click writes each widget's spec `default` (or the value saved over it) and abandons the active preset, Shift+Click saves the current values as the panel's defaults, Ctrl+Shift+Click forgets them. A live switch (`preset=False`) is outside all three.
 
 **Log panel** — the bridge's logger is piped into `txt000` through the registered `TextEditLogHandler` widget (no-op when unavailable). `action://open?path=...` links in log output open the path in the OS file manager cross-platform — handled inside uitk so panels work as standalone apps. Node-based actions (select / reveal in the Outliner) go through dependency inversion: DCC packages register a handler via `BridgeSlotsBase.register_log_link_handler` (mayatk and blendertk each register their `UiUtils.dispatch_log_link` from their `UiHandler.__init__`), so uitk never imports a DCC package; handlers are tried in registration order, and with none registered (standalone app) non-`open` links no-op. `STARTUP_INFO` on the bridge class, if declared, is logged once at panel load; so is the slot's `DOCS_URL` (as `"<DOCS_LABEL>: <url>"`), via `panel_log` so it still shows when the optional engine is missing. Plain `http(s)` anchors — that docs link, or any URL a bridge logs — open in the default browser: `TextEditLogHandler.route_links` (applied by the handler's constructor and again explicitly in `__init__`) disables the browser widget's own navigation and routes web schemes to `QDesktopServices` off `anchorClicked`, leaving `action://` to the dispatch above. The header help is deliberately not where the docs link lives — it is a `QToolTip`, which renders rich text but cannot be clicked.
 
@@ -215,7 +206,7 @@ Every parameter widget's change signal (via `KindFactory.connect_changed`) re-ev
 ## Writing a new bridge
 
 1. **Transport** — subclass `pythontk.ScriptLaunchBridge` (declare a `ScriptLaunchSpec`: app discovery, template dir, launch argv), or any class exposing `.logger` and `.send(...)`.
-2. **Parameters module** — a `PARAMS` dict of `AttributeSpec`s plus the three thin wrappers over `uitk.bridge.parameters` (snippet above), picking the formatter that matches the template language.
+2. **Parameters module** — a `PARAMS` dict of `AttributeSpec`s and `class Parameters(ParamRegistry): PARAMS = PARAMS` (snippet above), setting `FORMATTER` when the template language is not Python.
 3. **Templates directory** — one script per template, `__KEY__` tokens for every exposed knob, an optional `BRIDGE_MODES` tuple, and a leading docstring / `--` comment block as its description.
 4. **`.ui` file** — provide `header`, `grp_process`, `cmb000`, `b000`, `txt000` (copy an existing bridge panel's layout).
 5. **Slots class** — subclass `BridgeSlotsBase` (or a DCC-flavored base like mayatk's `MayaBridgeSlotsBase`) and fill in the contract:
@@ -229,7 +220,7 @@ class MyBridgeSlots(BridgeSlotsBase):
 
     @property
     def params_module(self):
-        return parameters          # the module from step 2
+        return parameters.Parameters   # the registry from step 2
 
     @property
     def template_dir(self) -> Path:

@@ -23,7 +23,7 @@ from uitk.widgets.optionBox.options.filter import FilterOption
 
 to_patterns = FilterOption.to_patterns
 from uitk.widgets.optionBox.options._options import BaseOption
-from uitk.widgets.optionBox.utils import OptionBoxManager
+from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
 
 class _DictSettings:

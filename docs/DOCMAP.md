@@ -20,7 +20,7 @@ Legend — **Status**: `current` (verified against code on the Verified date, ze
 | [COOKBOOK.md](COOKBOOK.md) | guide | current | 2026-08-14 | consumer repos (mayatk, tentacle) · each recipe must run offscreen where possible |
 | [EXAMPLES.md](EXAMPLES.md) | guide | current | 2026-08-14 | the tutorial project it walks through · `uitk/examples/example.py` |
 | [API_REFERENCE.md](API_REFERENCE.md) | reference | current | 2026-08-14 | `API_INDEX.md` (grep `API_REGISTRY.md` for full signatures) |
-| [BRIDGE.md](BRIDGE.md) | reference | current | 2026-08-16 | `uitk/bridge/slots.py` · `spec.py` · `formatters.py` · `parameters.py` · `tooltip.py` |
+| [BRIDGE.md](BRIDGE.md) | reference | current | 2026-09-26 | `uitk/bridge/slots.py` (+ its `_output_dir` / `_param_rows` / `_presets` / `_template_combo` / `_log_panel` / `_header_menu` parts) · `spec.py` · `formatters.py` · `parameters.py` · `tooltip.py` |
 | [DOCMAP.md](DOCMAP.md) | meta | current | 2026-07-04 | this file — ledger, coverage map, backlog |
 | [MAINTAINING.md](MAINTAINING.md) | meta | current | 2026-07-04 | the maintenance contract and conventions |
 

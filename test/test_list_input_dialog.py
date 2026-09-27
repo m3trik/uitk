@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Unit tests for ``SwitchboardUtilsMixin.list_input_dialog``.
+"""Unit tests for ``SwitchboardDialogsMixin.list_input_dialog``.
 
 The list twin of ``input_dialog``: panels that need a "pick some of these"
 prompt were hand-rolling a ``QDialog``, which meant each copy re-lost the
@@ -19,7 +19,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets
 
-from uitk.switchboard.utils import SwitchboardUtilsMixin
+from uitk.switchboard.dialogs import SwitchboardDialogsMixin
 from uitk.managers.cursor_manager import CursorManager
 
 
@@ -47,7 +47,7 @@ class TestListInputDialog(QtBaseTestCase):
             return exec_result(self_dlg)
 
         with patch.object(QtWidgets.QDialog, "exec_", fake_exec):
-            result = SwitchboardUtilsMixin.list_input_dialog(items, **kwargs)
+            result = SwitchboardDialogsMixin.list_input_dialog(items, **kwargs)
         return result, captured.get("dialog")
 
     def test_returns_selected_entries(self):

@@ -19,7 +19,8 @@ app = setup_qt_application()
 
 from qtpy import QtCore, QtWidgets
 
-from uitk.widgets.menu import Menu, _DismissOnAncestorMove
+from uitk.widgets.menu import Menu
+from uitk.widgets.popup.dismissal import AncestorDismissal
 from uitk.widgets.optionBox.options.recent_values import RecentValuesPopup
 from uitk.widgets.optionBox.options.pin_values import PinnedValuesPopup
 
@@ -206,29 +207,33 @@ class TestPinnedValuesPopupDismissOnMove(QtBaseTestCase):
 
 
 class TestDismissOnAncestorMoveDirect(QtBaseTestCase):
-    """Direct unit tests for the filter class itself."""
+    """Direct unit tests for the watcher class itself (the popup kit's
+    ``AncestorDismissal``, which ``Menu``'s former private filter became)."""
 
     def test_walks_full_ancestor_chain(self):
         a = self.track_widget(QtWidgets.QWidget())
         b = self.track_widget(QtWidgets.QWidget(a))
         c = self.track_widget(QtWidgets.QWidget(b))
 
-        target = self.track_widget(QtWidgets.QWidget())
-        flt = _DismissOnAncestorMove(target_menu=target, anchor_widget=c)
+        dismissed = []
+        flt = AncestorDismissal(c, dismiss=lambda: dismissed.append(True))
 
         self.assertIn(a, flt._watched)
         self.assertIn(b, flt._watched)
         self.assertIn(c, flt._watched)
+        _send_move(a)  # the top-level window of the chain
+        self.assertEqual(dismissed, [True])
         flt.detach()
         self.assertEqual(flt._watched, [])
 
     def test_detach_idempotent(self):
         a = self.track_widget(QtWidgets.QWidget())
-        target = self.track_widget(QtWidgets.QWidget())
-        flt = _DismissOnAncestorMove(target_menu=target, anchor_widget=a)
+        dismissed = []
+        flt = AncestorDismissal(a, dismiss=lambda: dismissed.append(True))
         flt.detach()
         flt.detach()  # must not raise
-        self.assertIsNone(flt._target)
+        _send_move(a)
+        self.assertEqual(dismissed, [], "a detached watcher must never dismiss")
 
 
 if __name__ == "__main__":

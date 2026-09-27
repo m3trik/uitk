@@ -28,10 +28,12 @@ import logging
 from typing import TYPE_CHECKING, Dict, Optional, Union
 
 from qtpy import QtWidgets, QtCore
+from uitk._bootstrap import Bootstrap
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.tooltip_mixin import TooltipFormat, TooltipPresenter
+from pythontk import TooltipFormat
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 
 if TYPE_CHECKING:  # pragma: no cover
     from uitk.themes.style_sheet import StyleSheet
@@ -114,7 +116,7 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         # and re-deriving it there would be a second place to keep in step.
         self._panel_flags = _panel_flags
         self.setWindowFlags(_panel_flags)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        Bootstrap.set_translucent(self)
 
         # Anchor to a stable top-level so the panel survives a transient
         # invoker hiding (e.g. a MarkingMenu, popup, or temporary host
@@ -128,7 +130,7 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         if parent is not None:
             anchor = parent.window() or parent
             self.setParent(anchor, _panel_flags)
-            self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+            Bootstrap.set_translucent(self)
 
         # Inner frame paints the semi-transparent background.
         self._frame = QtWidgets.QFrame(self)

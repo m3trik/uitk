@@ -10,7 +10,7 @@ Signatures below are verified against the generated registry ([API_INDEX.md](../
 
 ## `uitk.Switchboard`
 
-Source: [switchboard/_core.py](../uitk/switchboard/_core.py) (composes partials from sibling modules — `slots.py`, `widgets.py`, `utils.py`, `names.py`, `editors.py`, `style.py`, `shortcuts.py`)
+Source: [switchboard/_core.py](../uitk/switchboard/_core.py) (composes partials from sibling modules — `slots.py`, `widgets.py`, `widget_values.py`, `rules.py`, `control_groups.py`, `dialogs.py`, `placement.py`, `event_loop.py`, `names.py`, `editors.py`, `style.py`, `shortcuts.py`)
 
 ```python
 Switchboard(
@@ -290,6 +290,11 @@ DEFAULTS = {
 }
 
 UI_REGISTRY: dict = {}   # subclass override for manual ui-name → path maps
+
+LAUNCH_DEFAULTS = {      # launch() options; launch_code spells out only overrides
+    "frameless": True, "translucent": True, "restore_geometry": True,
+    "on_top": True, "theme": None, "persistence": None, "parent_to_sb": True,
+}
 ```
 
 ### Methods
@@ -301,6 +306,21 @@ UI_REGISTRY: dict = {}   # subclass override for manual ui-name → path maps
 | `show(ui, pos=None, force=False, **kw) -> QWidget` | Show and position a UI |
 | `apply_styles(ui, style=None, theme=None)` | Apply `DEFAULT_STYLE` (or override) with tag-based adjustments; `theme` overrides for this call |
 | `setup_lifecycle(ui, hide_signal=None)` | Connect a signal to `ui.request_hide()` |
+| `launch(name, **options) -> QWidget` | Open `name` as a standalone window with the launcher's style options (`LAUNCH_DEFAULTS`) |
+| `focus(name)` | Raise an already-loaded UI |
+| `launch_code(name, **options) -> str \| None` | Python that launches `name` in a fresh session — a plain interpreter or a DCC shelf button (see below) |
+| `bootstrap_code(sources=False) -> (imports, statements, expr) \| None` | How a fresh session gets an equivalent of this handler — shared by every `launch_code` |
+
+`launch_code` re-establishes the UI's dependencies itself: a handler class
+whose `switchboard` parameter is optional (`MayaUiHandler`,
+`BlenderUiHandler`) is reached through `instance()` — which returns the LIVE
+handler when there is one (tentacle's), so a re-run shelf button reuses its
+windows — and any other is hosted by a new `Switchboard` carrying this one's
+`context_tags`. The UI's `.ui` and slot class are registered when that
+bootstrap would not find them, spelled from their importable package
+(`os.path.join(os.path.dirname(pkg.__file__), ...)`), so the snippet follows a
+reinstall. The snippet runs Qt's event loop only when it created the
+QApplication (plain Python); inside Maya the loop is the host's.
 
 ### Window persistence
 
@@ -325,11 +345,11 @@ Subclass for DCC integration — override `show`, `default_persistence`, or prov
 
 ---
 
-## `uitk.BaseHandler`, `uitk.HandlerEntry`, `uitk.ExternalAppHandler`
+## `uitk.BaseHandler`, `uitk.HandlerEntry`, `uitk.ExternalAppHandler`, `uitk.EditorHandler`
 
-Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handlers/handler_entry.py](../uitk/handlers/handler_entry.py) · [handlers/external_app_handler.py](../uitk/handlers/external_app_handler.py). Handler-ecosystem prose (registration, `DEFAULTS`, `sb.handlers.*`): [Architecture](ARCHITECTURE.md).
+Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handlers/handler_entry.py](../uitk/handlers/handler_entry.py) · [handlers/external_app_handler.py](../uitk/handlers/external_app_handler.py) · [handlers/editor_handler.py](../uitk/handlers/editor_handler.py). Handler-ecosystem prose (registration, `DEFAULTS`, `sb.handlers.*`): [Architecture](ARCHITECTURE.md).
 
-**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`.
+**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`. Optional, probed by the browser: `save_tags(name, tags)`, `focus(name)` (the row's Focus button) and `launch_code(name, **options) -> str | None` (the row menu's *Copy launch code*).
 
 **`HandlerEntry`** — the launchable-entry data class every handler yields from `entries()`; `all_tags` and `editable_tags` properties.
 
@@ -343,6 +363,9 @@ Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handler
 | `is_registered(name)` / `unregister(name)` | Query / remove |
 | `launch(name=None, *, module=None, entry=None, install_spec=None, python=None, show_kwargs=None, mode=None, show=True)` | Launch a registered app, or an ad-hoc app from kwargs |
 | `entries()` / `close(name)` / `is_visible(name)` / `save_tags(name, tags)` | Launchable contract + tag persistence |
+| `launch_code(name, **options) -> str \| None` | A fresh `Switchboard` + this handler, the app's registration spelled out, then `launch(name)` — install-on-demand and process isolation survive the copy |
+
+**`EditorHandler`** — the bundled editors (`sb.editors`: `browser`, `style`, `shortcut`, `global_shortcuts`, `presets`) as launcher rows of kind `editor`, named by their registry key; the UI Browser lists itself. Every `Switchboard` registers one as `sb.handlers.editor`; `Switchboard(handlers={"editor": None})` opts out. Its `launch_code` stands the `"ui"` handler up (`bootstrap_code`, with every registered source for an editor that lists the registry) and calls `sb.editors.show(name)`.
 
 ---
 
@@ -434,6 +457,15 @@ MouseTracking(
 ```
 
 Tracks the widget under the cursor and delivers synthetic enter/leave (and release) **Qt events** to the child widgets themselves — it defines no Qt signals; observe `enterEvent`/`leaveEvent` on the widgets. `update_child_widgets()` rebuilds the tracked set.
+
+### `TreeDragReparentFilter`
+
+```python
+TreeDragReparentFilter(parent: QObject = None, *, reparent_callback=None)
+drag_filter.install(tree)   # the tree's viewport AND the tree
+```
+
+Middle-button drag-to-reparent on a `QTreeWidget` (the tree itself must allow `InternalMove` with a `MoveAction` default): a middle drag is relayed as a left-button one so Qt's own drag-drop moves the items, and after every drop — middle or native left — `reparent_callback([(item, new_parent), ...])` runs **once**, on the next event-loop turn (Qt moves the items only after the filters have seen the drop). `new_parent` is `None` at the top level. The host mirrors the moves in its own model; rebuilding the tree in the callback is safe.
 
 ---
 
@@ -591,7 +623,9 @@ PresetManager.from_widgets(preset_dir, widgets, builtin_dir=None)
 | `wire_combo(combo, on_loaded=None, placeholder=None)` | Wire a `ComboBox` as a preset selector (option-box toolbar: Refresh/Save/⋯-menu, inline naming). Returns the option-box container. |
 | `make_preset_combo(parent=None, name=None, tooltip=None, on_loaded=None, placeholder=None)` | Build + wire a preset `ComboBox`; returns its option-box container (`container.preset_combo` reaches the combo). |
 
-`preset_dir` accepts absolute paths, `~` expansion, `$ENV` variables, or short names (`"mayatk/reference_manager"`) resolved under `PresetManager.get_presets_root()` — `<QStandardPaths.GenericConfigLocation>/uitk` by default, redirectable wholesale via `$UITK_PRESETS_ROOT`.
+`preset_dir` accepts absolute paths, `~` expansion, `$ENV` variables, or short names (`"mayatk/reference_manager"`) resolved under `PresetManager.get_presets_root()` — which *is* pythontk's `UserConfig.user_config_root()` (one resolver for the GUI store and the headless `PresetStore`): `%LOCALAPPDATA%/uitk` (`~/.config/uitk`, `~/Library/Preferences/uitk`) by default, redirectable wholesale via `$UITK_PRESETS_ROOT` (`ptk.UserConfig.CONFIG_ROOT_ENV_VAR`).
+
+The module is the facade; its parts are private modules beside it, inherited by `PresetManager`: [`_preset_widgets.py`](../uitk/managers/_preset_widgets.py) (capture scope, candidate widgets, the per-widget value authority), [`_preset_combo.py`](../uitk/managers/_preset_combo.py) (the selector `wire_combo` builds) and [`_preset_migration.py`](../uitk/managers/_preset_migration.py) (presets saved under older layouts, carried into the root on first use).
 
 ---
 

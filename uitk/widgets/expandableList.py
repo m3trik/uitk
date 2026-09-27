@@ -4,65 +4,11 @@ import inspect
 import logging
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets.popup.dismissal import OutsideClickDismissal
+from uitk.widgets.popup.placement import PopupPlacement
+from uitk.widgets.popup.window import PopupWindow
 
 logger = logging.getLogger(__name__)
-
-
-class _ClickDismissFilter(QtCore.QObject):
-    """App-level dismiss watcher for a click-mode flyout chain.
-
-    Installed on the QApplication only while a chain is open (see
-    ``_begin_click_chain``) and removed the moment it collapses, so its
-    per-event cost exists only during an open menu session.
-
-    A dedicated QObject rather than app-installing the owning list's own
-    ``eventFilter``: while installed app-wide, the filter receives events for
-    *every* widget in the application, and the list's Enter/Leave/Release
-    branches would misfire on foreign widgets (e.g. a stray Enter driving
-    ``_close_sibling_sublists``).
-
-    Only Qt events are visible here — clicks on a DCC's native (non-Qt)
-    surfaces never arrive. Those are covered by the WindowDeactivate watch in
-    ``ExpandableList.eventFilter`` instead.
-    """
-
-    def __init__(self, root_list):
-        # No QObject parent: lifetime is managed explicitly by
-        # _begin/_end_click_chain, and the root list must stay free to be
-        # deleted (clear()/deleteLater) without dragging this filter with it
-        # mid-dispatch.
-        super().__init__()
-        self._root = root_list
-
-    def eventFilter(self, obj, event):
-        event_type = event.type()
-        if event_type == QtCore.QEvent.MouseButtonPress:
-            # QCursor.pos() rather than the event's global position: dodges
-            # the PySide2 globalPos() / PySide6 globalPosition() API split.
-            try:
-                root = self._root
-                if not root._is_cursor_in_hierarchy(QtGui.QCursor.pos()):
-                    # Collapse, but do NOT consume — the outside click should
-                    # still land on whatever the user pressed (standard menu
-                    # dismissal semantics).
-                    root._force_hide_all()
-            except RuntimeError:
-                # Root's C++ object died (clear()/window teardown mid-session);
-                # nothing left to dismiss — detach quietly.
-                self._detach()
-            return False
-        if event_type == QtCore.QEvent.KeyPress and event.key() == QtCore.Qt.Key_Escape:
-            try:
-                self._root._force_hide_all()
-            except RuntimeError:
-                self._detach()
-            return True  # Escape is spent on dismissing the menu.
-        return False
-
-    def _detach(self):
-        app = QtWidgets.QApplication.instance()
-        if app is not None:
-            app.removeEventFilter(self)
 
 
 class ExpandableList(QtWidgets.QWidget, AttributesMixin):
@@ -1008,9 +954,11 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     def _ensure_popup_flags(self, sublist):
         """Idempotently promote an embedded-mode sublist to a frameless Tool window.
 
-        Mirrors ``Menu._setup_as_popup``: a single ``setParent(parent, flags)``
-        call (setWindowFlags alone would recreate the native handle, then
-        setParent again — two recreations), applied lazily on first open while
+        The same promotion as ``Menu._setup_as_popup``
+        (:meth:`~uitk.widgets.popup.window.PopupWindow.promote`): a single
+        ``setParent(parent, flags)`` call (setWindowFlags alone would recreate
+        the native handle, then setParent again — two recreations), applied
+        lazily on first open while
         the sublist is still hidden (a flag-change hide is then a no-op, and no
         OS-level window exists before it's needed — avoids a WM-visible flash
         on Windows at construction time).
@@ -1029,24 +977,18 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         if getattr(sublist, "_popup_configured", False):
             return
         sublist._popup_configured = True
-        flags = (
+        # Deliberately NOT translucent, which Menu._setup_as_popup is: a Menu's
+        # ground is the translucent WINDOW_BACKGROUND, while a menu_surface
+        # list paints the opaque MENU_BACKGROUND.  Translucency here cleared
+        # the backing store to transparent and let the desktop through
+        # wherever the fill did not reach, which is what made a fanned-out
+        # flyout read as having no background at all.
+        PopupWindow.promote(
+            sublist,
             QtCore.Qt.Tool
             | QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.WindowDoesNotAcceptFocus
+            | QtCore.Qt.WindowDoesNotAcceptFocus,
         )
-        parent = sublist.parentWidget()
-        if parent is not None:
-            sublist.setParent(parent, flags)
-        else:
-            sublist.setWindowFlags(flags)
-        # After reparenting so it survives the native-handle recreation.
-        sublist.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
-        # Deliberately NOT WA_TranslucentBackground, which Menu._setup_as_popup
-        # does set: a Menu's ground is the translucent WINDOW_BACKGROUND, while
-        # a menu_surface list paints the opaque MENU_BACKGROUND.  Setting it
-        # here cleared the backing store to transparent and let the desktop
-        # through wherever the fill did not reach, which is what made a
-        # fanned-out flyout read as having no background at all.
 
     def _is_layout_managed(self):
         """Whether a parent layout owns this widget's geometry.
@@ -1174,27 +1116,14 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
     def _ensure_sublist_on_screen(self, sublist):
         """Clamp a top-level flyout fully into its screen's available area.
 
-        Trimmed port of ``Menu._ensure_on_screen``. Hover-mode sublists never
-        need this (the fullscreen overlay is the screen); embedded click-mode
-        roots can sit anywhere, so a flyout near a screen edge would otherwise
-        open partially off-screen. Clamps (slides) rather than flips direction;
-        near an edge the flyout may cover its parent row — accepted trade-off.
+        The clamp every uitk popup shares (``PopupPlacement.clamp_to_screen``,
+        also behind ``Menu._ensure_on_screen``). Hover-mode sublists never need
+        this (the fullscreen overlay is the screen); embedded roots can sit
+        anywhere, so a flyout near a screen edge would otherwise open partially
+        off-screen. Clamps (slides) rather than flips direction; near an edge
+        the flyout may cover its parent row — accepted trade-off.
         """
-        frame_geo = sublist.frameGeometry()
-        screen = None
-        if hasattr(QtWidgets.QApplication, "screenAt"):
-            screen = QtWidgets.QApplication.screenAt(frame_geo.center())
-        if screen is None:
-            screen = QtWidgets.QApplication.primaryScreen()
-        if screen is None:
-            return
-        available = screen.availableGeometry()
-        x = min(frame_geo.x(), available.right() - frame_geo.width())
-        x = max(x, available.left())
-        y = min(frame_geo.y(), available.bottom() - frame_geo.height())
-        y = max(y, available.top())
-        if x != frame_geo.x() or y != frame_geo.y():
-            sublist.move(x, y)
+        PopupPlacement.clamp_to_screen(sublist)
 
     def _begin_click_chain(self):
         """Root list only: mark a click-opened chain live and arm dismissal.
@@ -1208,8 +1137,15 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         root._click_chain_open = True
         app = QtWidgets.QApplication.instance()
         if app is not None:
-            root._dismiss_filter = _ClickDismissFilter(root)
-            app.installEventFilter(root._dismiss_filter)
+            # Resolved per event (lambdas, not bound methods) so an override or
+            # instance patch of the hit test applies to a session already open.
+            # The filter is app-wide, so Enter/Leave/Release on foreign widgets
+            # never reach this list's own eventFilter branches.
+            root._dismiss_filter = OutsideClickDismissal(
+                is_inside=lambda pos: root._is_cursor_in_hierarchy(pos),
+                dismiss=lambda: root._force_hide_all(),
+            )
+            root._dismiss_filter.attach()
 
     def _end_click_chain(self):
         """Root list only: retire the chain state and the app-level filter.
@@ -1225,7 +1161,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         root._dismiss_filter = None
         if filt is not None:
             try:
-                filt._detach()
+                filt.detach()
             except RuntimeError:
                 pass  # app or filter already torn down
 

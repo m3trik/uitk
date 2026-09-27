@@ -2,7 +2,7 @@
 # coding=utf-8
 import unittest
 from unittest.mock import MagicMock
-from qtpy import QtWidgets, QtGui, QtCore
+from qtpy import QtWidgets, QtGui
 from conftest import QtBaseTestCase, setup_qt_application
 from uitk.themes.style_sheet import StyleSheet
 
@@ -75,8 +75,10 @@ class TestStyleSheetOverrides(QtBaseTestCase):
         val = StyleSheet.get_variable("SELECTION_FG", theme="light", widget=widget)
         self.assertEqual(val, "#222222")
 
-        # Clean up
+        # Clean up -- and the theme's own value is back.
         StyleSheet.reset_overrides()
+        val = StyleSheet.get_variable("SELECTION_FG", theme="light", widget=widget)
+        self.assertEqual(val, default_val)
 
     def test_color_object_handling(self):
         """Should handle QColor objects passed to set_variable."""
@@ -267,6 +269,7 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
     def test_chrome_background_is_translucent_except_high_contrast(self):
         """The shipped chrome is semi-transparent in the standard themes;
         high-contrast stays opaque (translucency hurts legibility there)."""
+
         def alpha(color_str):
             # Parse with the engine's own color pattern so hex-format themes
             # read the same as rgb()/rgba() ones.
@@ -328,8 +331,12 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
             # Each channel sits between disabled and accent, and stays close to
             # the disabled base (a slight tint, not the full accent).
             for i in range(3):
-                self.assertTrue(min(base[i], accent[i]) <= got[i] <= max(base[i], accent[i]))
-                self.assertLessEqual(abs(got[i] - base[i]), abs(accent[i] - base[i]) * 0.5)
+                self.assertTrue(
+                    min(base[i], accent[i]) <= got[i] <= max(base[i], accent[i])
+                )
+                self.assertLessEqual(
+                    abs(got[i] - base[i]), abs(accent[i] - base[i]) * 0.5
+                )
 
         # Derived token detection + override rejection.
         self.assertTrue(StyleSheet._is_derived_token("DISABLED_CHECKED_BACKGROUND"))
@@ -434,6 +441,51 @@ class TestStyleSheetSignals(QtBaseTestCase):
         finally:
             subscriber.theme_changed.disconnect(slot)
             StyleSheet.reset_overrides()
+
+
+class TestStyleSheetPlates(QtBaseTestCase):
+    """What a translucent window's children actually paint -- rendered and
+    sampled, since a rule can lose to a more specific one it never names."""
+
+    def render(self, *pages):
+        """A translucent panel, dark-themed, each page in a stack of its own;
+        returns the rendered window and the panel."""
+        from uitk.widgets.windowPanel import WindowPanel
+
+        panel = self.track_widget(WindowPanel(title="plates"))
+        for page in pages:
+            stack = QtWidgets.QStackedWidget()
+            stack.addWidget(page)
+            panel.body_layout.addWidget(stack, 1)
+        panel.resize(300, 120 * len(pages))
+        panel.show()
+        QtWidgets.QApplication.processEvents()
+        return panel.grab().toImage(), panel
+
+    def alpha_in(self, image, panel, widget):
+        point = widget.mapTo(panel, widget.rect().center())
+        return image.pixelColor(point).alpha()
+
+    def test_an_item_view_on_a_stacked_page_keeps_its_opaque_plate(self):
+        """Rows read against the view's own ground, never the desktop behind
+        the window -- a page of a stack (an editor's table beside its import
+        review) included."""
+        table = QtWidgets.QTableWidget(0, 2)
+        tree = QtWidgets.QTreeWidget()
+        listing = QtWidgets.QListWidget()
+        image, panel = self.render(table, tree, listing)
+        for view in (table, tree, listing):
+            self.assertEqual(
+                self.alpha_in(image, panel, view.viewport()),
+                255,
+                f"{type(view).__name__} on a stacked page shows through",
+            )
+
+    def test_a_plain_stacked_page_stays_translucent(self):
+        """The panel ground a stack gives its bare pages is the window's glass."""
+        page = QtWidgets.QFrame()
+        image, panel = self.render(page)
+        self.assertLess(self.alpha_in(image, panel, page), 255)
 
 
 class TestStyleSheetPublicApi(QtBaseTestCase):

@@ -149,6 +149,19 @@ class TestContextMenuActivation(QtBaseTestCase):
         self.assertEqual(seen, [False], "hidden BEFORE the callback ran")
         self.assertFalse(self.menu.isVisible())
 
+    def test_a_keep_open_row_runs_with_the_menu_still_up(self):
+        seen = []
+        row = self.menu.add(
+            "Locked",
+            callback=lambda: seen.append(self.menu.isVisible()),
+            keep_open=True,
+        )
+        self._show()
+        self.menu.list.on_item_interacted.emit(row)
+        self.menu.list.on_item_interacted.emit(row)
+        self.assertEqual(seen, [True, True], "toggled twice in one visit")
+        self.assertTrue(self.menu.isVisible())
+
     def test_a_category_row_does_not_dismiss(self):
         cat = self.menu.add("Keys")
         self.menu.add("Snap Keys", parent=cat, callback=lambda: self.calls.append(1))

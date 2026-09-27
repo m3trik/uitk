@@ -109,14 +109,21 @@ class TestModelBasics(unittest.TestCase):
 
 
 class TestNormalize(unittest.TestCase):
-    def test_path_dedup_is_case_and_sep_insensitive(self):
+    def test_path_dedup_folds_separators_and_case_only_where_the_os_does(self):
         s = RecentValuesStore()
         s.record("C:/Dir/Proj")
-        s.record("c:\\dir\\proj")  # same path, different sep/case
+        s.record("C:\\Dir\\Proj")  # same path, other separator
         self.assertEqual(len(s.values), 1)
+        s.record("c:/dir/proj")  # other case: the same folder only on Windows
+        self.assertEqual(len(s.values), 1 if os.name == "nt" else 2)
 
-    def test_normalize_value_strips_and_lowers_paths(self):
-        self.assertEqual(normalize_value("  C:/Dir  "), normalize_value("c:\\dir"))
+    def test_normalize_value_strips_and_folds_paths(self):
+        self.assertEqual(normalize_value("  C:/Dir  "), normalize_value("C:\\Dir"))
+        # A case-sensitive filesystem keeps /proj/Shot and /proj/shot apart.
+        self.assertEqual(
+            normalize_value("/proj/Shot") == normalize_value("/proj/shot"),
+            os.name == "nt",
+        )
         # Non-path strings are only stripped, not lowercased.
         self.assertEqual(normalize_value("  Hello "), "Hello")
 

@@ -8,15 +8,102 @@ stay self-contained — importing ``uitk._bootstrap`` should not pull in
 or any widget module.
 """
 
-from qtpy import QtCore, QtWidgets
+import os
+import sys
+
+from qtpy import QtCore, QtGui, QtWidgets
 
 
 class Bootstrap:
-    """Standalone-process bootstrap helpers (pre-``QApplication`` setup).
+    """Standalone-process bootstrap helpers (pre-``QApplication`` setup), and
+    the window-system capabilities uitk's widgets branch on.
 
     Class-only surface so callers use ``Bootstrap.configure_high_dpi()``;
     the module stays Switchboard-free (see the module docstring).
     """
+
+    @staticmethod
+    def configure_platform() -> bool:
+        """Run a standalone process's Qt on X11 when a Wayland session offers it.
+
+        uitk's popups, marking menu and flyouts are placed at the cursor and
+        dragged by the client; native Wayland allows neither (the compositor
+        places top-levels and hides the global pointer). Maya is an X11 app
+        for the same reason. So on a Wayland session with XWayland running
+        (``DISPLAY`` set), ``QT_QPA_PLATFORM`` becomes ``xcb;wayland`` -- X11
+        first, native Wayland if the xcb plug-in cannot load (Qt 6 tries the
+        list in order). An explicit ``QT_QPA_PLATFORM`` always wins, and
+        nothing changes once a ``QApplication`` exists (a DCC host's own).
+
+        Returns:
+            ``True`` when it set the platform, else ``False``.
+        """
+        if QtWidgets.QApplication.instance() is not None:
+            return False
+        if not sys.platform.startswith("linux") or os.environ.get("QT_QPA_PLATFORM"):
+            return False
+        if not (os.environ.get("WAYLAND_DISPLAY") and os.environ.get("DISPLAY")):
+            return False
+        os.environ["QT_QPA_PLATFORM"] = "xcb;wayland"
+        return True
+
+    @staticmethod
+    def positions_windows() -> bool:
+        """Whether this process may place its own top-level windows and read
+        the global pointer -- False on native Wayland, where the compositor
+        places top-levels, ignores ``move()`` and reports no cursor position."""
+        return not QtGui.QGuiApplication.platformName().startswith("wayland")
+
+    @staticmethod
+    def composites() -> bool:
+        """Whether a translucent top-level actually shows what is behind it.
+
+        False on X11 without a compositing manager (bare window managers,
+        VNC/XRDP, Xvfb): alpha is dropped and a translucent window paints
+        black. Every other window system composites.
+        """
+        if QtGui.QGuiApplication.platformName() != "xcb":
+            return True
+        import pythontk as ptk
+
+        return ptk.X11.has_compositor() is not False
+
+    @staticmethod
+    def set_translucent(widget, on: bool = True) -> bool:
+        """``WA_TranslucentBackground`` on a TOP-LEVEL window, where it shows.
+
+        Without a compositor (see :meth:`composites`) a translucent window's
+        clear pixels paint black; the window is left opaque there instead --
+        square corners on its own background. (A child widget's translucency
+        is drawn within its parent and needs none of this.)
+
+        Returns:
+            Whether the window is now translucent.
+        """
+        on = bool(on) and Bootstrap.composites()
+        widget.setAttribute(QtCore.Qt.WA_TranslucentBackground, on)
+        return on
+
+    @staticmethod
+    def screen_backdrop(widget) -> "QtGui.QPixmap | None":
+        """What a full-screen overlay should paint behind itself, or None.
+
+        None where translucency composites. Without a compositor, a snapshot of
+        the screen *widget* is on: painted as the overlay's background it
+        stands in for the desktop the overlay covers (else black). Take it
+        before the overlay maps -- in its ``showEvent`` -- or it captures
+        itself.
+        """
+        if Bootstrap.composites():
+            return None
+        screen = widget.screen() or QtGui.QGuiApplication.primaryScreen()
+        return screen.grabWindow(0) if screen is not None else None
+
+    @staticmethod
+    def fades_windows() -> bool:
+        """Whether ``setWindowOpacity`` shows: not on native Wayland (no
+        protocol for it) nor on X11 without a compositor."""
+        return Bootstrap.positions_windows() and Bootstrap.composites()
 
     @staticmethod
     def configure_high_dpi() -> bool:

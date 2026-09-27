@@ -108,7 +108,7 @@ class _DynamicInitBase(QtBaseTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         OptionBoxManager.patch_common_widgets()
 
@@ -665,7 +665,7 @@ class TestOptionBoxAddOptionPluginPath(_DynamicInitBase):
         """If the widget has no parent at schedule time, fall back to the
         deferred QTimer retry loop (existing behavior)."""
         from uitk.widgets.optionBox.options.clear import ClearOption
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         # Parentless widget — synchronous wrap is impossible
         widget = self.track_widget(QtWidgets.QPushButton())

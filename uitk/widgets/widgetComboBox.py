@@ -1528,7 +1528,9 @@ class WidgetComboBox(ComboBox):
         if isinstance(widget, QtWidgets.QCheckBox):
             return ("checked", widget.isChecked())
         if isinstance(widget, QtWidgets.QComboBox):
-            return ("currentIndex", widget.currentIndex())
+            from uitk.managers.value_manager import ValueManager
+
+            return ("currentIndex", ValueManager.combo_value(widget, "index"))
         if isinstance(widget, QtWidgets.QLineEdit):
             return ("text", widget.text())
         if isinstance(widget, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):

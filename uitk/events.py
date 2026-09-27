@@ -10,6 +10,8 @@ Classes:
         and scoped widget control. Allows forwarding events to custom handlers.
     MouseTracking: QObject subclass providing mouse enter/leave events for
         QWidget child widgets, useful for hover detection.
+    TreeDragReparentFilter: Middle-button drag-to-reparent on a QTreeWidget,
+        every drop reported to the host as one batch of (item, new parent).
 
 Example:
     Using EventFactoryFilter to handle child widget events::
@@ -660,6 +662,139 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         self._mouse_over.clear()
 
         self.logger.debug("Tracking reinitialized after window activation")
+
+
+class TreeDragReparentFilter(QtCore.QObject):
+    """Drag-to-reparent on a ``QTreeWidget``, reported as one batch of moves.
+
+    Installed on the tree's viewport and on the tree (:meth:`install`):
+
+    - A middle-button drag on the viewport is relayed as a left-button one
+      (synthesised press / move / release), so Qt's own ``InternalMove``
+      drag-drop performs the visual move. The relayed press selects the way
+      a left press does, so a middle drag moves what a left drag from the
+      same row would.
+    - After each drop, *reparent_callback* is called ONCE with
+      ``[(item, new_parent), ...]`` (``new_parent`` is ``None`` at the top
+      level), so the host can mirror the move in its own model. The items
+      are the tree's selection as the drop arrives -- exactly what
+      ``QTreeWidget.dropEvent`` moves -- whichever button started the drag.
+
+    The report is deferred to the next turn of the event loop. Qt delivers an
+    item view's drop to the widget that accepted ``DragEnter`` -- the
+    viewport -- and ``QTreeWidget.dropEvent`` moves the items only after the
+    filters on it have run, so a parent read inside the filter is still the
+    OLD one. Deferring also means a host that rebuilds the tree on the
+    callback (deleting every ``QTreeWidgetItem``) does so after Qt is done
+    with them, and one call per drop keeps a per-item callback from walking
+    items the first rebuild already deleted.
+
+    The tree must allow the move itself: ``setDragDropMode(InternalMove)`` and
+    ``setDefaultDropAction(MoveAction)``.
+
+    Parameters:
+        parent (QObject): Optional owner.
+        reparent_callback (callable): ``callback(moves)`` run after each drop.
+    """
+
+    def __init__(self, parent=None, *, reparent_callback=None):
+        super().__init__(parent)
+        self._mid_dragging = False
+        self._reparent_callback = reparent_callback
+        self._report_pending = False
+
+    def install(self, tree: QtWidgets.QTreeWidget) -> None:
+        """Install on *tree*'s viewport (drags, drops) and on *tree* itself."""
+        tree.viewport().installEventFilter(self)
+        tree.installEventFilter(self)
+
+    @staticmethod
+    def _synth_mouse(etype, event, button=QtCore.Qt.LeftButton):
+        if hasattr(event, "position"):  # Qt 6
+            pos, global_pos = event.position(), event.globalPosition()
+        else:
+            pos, global_pos = event.localPos(), event.screenPos()
+        return QtGui.QMouseEvent(
+            etype, pos, global_pos, button, button, event.modifiers()
+        )
+
+    def _report_after_drop(self, tree) -> None:
+        """Queue the move report for once Qt has moved the dropped items.
+
+        The items are read as the drop arrives: the selection is what
+        ``QTreeWidget.dropEvent`` is about to move.
+        """
+        items = list(tree.selectedItems())
+        if not items or self._report_pending:
+            return
+        self._report_pending = True
+
+        def report():
+            self._report_pending = False
+            moves = []
+            for item in items:
+                try:
+                    moves.append((item, item.parent()))
+                except RuntimeError:  # deleted since the drop
+                    continue
+            if moves:
+                self._reparent_callback(moves)
+
+        QtCore.QTimer.singleShot(0, report)
+
+    def eventFilter(self, obj, event):  # noqa: N802
+        etype = event.type()
+        is_tree = obj.inherits("QTreeWidget")
+
+        if etype == QtCore.QEvent.Drop:
+            # The drop ends a middle drag: the drag loop consumes the release
+            # that would have (see the release branch below).
+            self._mid_dragging = False
+            if self._reparent_callback:
+                self._report_after_drop(obj if is_tree else obj.parent())
+            return super().eventFilter(obj, event)
+
+        if is_tree:
+            return super().eventFilter(obj, event)
+
+        # --- viewport: a middle-button drag relayed as a left-button one ---
+        if (
+            etype == QtCore.QEvent.MouseButtonPress
+            and event.button() == QtCore.Qt.MiddleButton
+        ):
+            self._mid_dragging = True
+            QtCore.QCoreApplication.sendEvent(
+                obj, self._synth_mouse(QtCore.QEvent.MouseButtonPress, event)
+            )
+            return True
+
+        # Only a REAL middle-button move is relayed. The relay goes to this
+        # same viewport, so it comes back through this filter -- carrying the
+        # left button, it passes through to the view instead of being relayed
+        # again (which nested until RecursionError).
+        if (
+            etype == QtCore.QEvent.MouseMove
+            and self._mid_dragging
+            and event.buttons() & QtCore.Qt.MiddleButton
+        ):
+            QtCore.QCoreApplication.sendEvent(
+                obj, self._synth_mouse(QtCore.QEvent.MouseMove, event)
+            )
+            return True
+
+        # ANY release ends a middle drag. The drag loop consumes the middle
+        # release that ends a drag, so one dropped outside this view (no Drop
+        # here) leaves only what follows it -- on Windows a LEFT release Qt
+        # synthesises, which passes through to complete the relayed press.
+        if etype == QtCore.QEvent.MouseButtonRelease and self._mid_dragging:
+            self._mid_dragging = False
+            if event.button() == QtCore.Qt.MiddleButton:
+                QtCore.QCoreApplication.sendEvent(
+                    obj, self._synth_mouse(QtCore.QEvent.MouseButtonRelease, event)
+                )
+                return True
+
+        return super().eventFilter(obj, event)
 
 
 # --------------------------------------------------------------------------------------------

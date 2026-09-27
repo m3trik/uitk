@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 from qtpy import QtWidgets, QtCore, QtGui
+from uitk._bootstrap import Bootstrap
 from uitk.widgets.mixins.attributes import AttributesMixin
 
 
@@ -48,6 +49,10 @@ class HoverSwitcher(QtCore.QObject):
         self._previous_index = index
 
     def _ensure_cursor_in_widget(self, widget):
+        # Native Wayland forbids warping the pointer (and reports no global
+        # position to clamp against): the page switch stands on its own there.
+        if not Bootstrap.positions_windows():
+            return
         if widget and widget.isVisible():
             # Get global rect
             top_left = widget.mapToGlobal(QtCore.QPoint(0, 0))
@@ -139,10 +144,10 @@ class ToolBox(QtWidgets.QToolBox, AttributesMixin):
                 # Add scroll area frame and margins
                 frame_width = current.frameWidth() * 2
                 c_margins = current.contentsMargins()
-                
+
                 height += frame_width
                 height += c_margins.top() + c_margins.bottom()
-                
+
                 content_width += frame_width
                 content_width += c_margins.left() + c_margins.right()
 
@@ -156,7 +161,7 @@ class ToolBox(QtWidgets.QToolBox, AttributesMixin):
                 h_bar = current.horizontalScrollBar()
                 if h_bar:
                     height += h_bar.sizeHint().height()
-                
+
                 # Add vertical scrollbar width if we might hit the height cap
                 if height > 800:
                     v_bar = current.verticalScrollBar()
@@ -165,7 +170,7 @@ class ToolBox(QtWidgets.QToolBox, AttributesMixin):
 
                 # Add a safety buffer for borders/focus rects
                 height += 10
-                
+
                 # Update width if content is wider
                 width = max(width, content_width)
 

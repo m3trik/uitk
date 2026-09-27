@@ -20,6 +20,49 @@ class ValueManager:
         info = ValueManager.get_widget_type_info(widget)
     """
 
+    #: The readings :meth:`combo_value` knows. A combo's value means different
+    #: things to different readers -- what persistence stores, what a rule
+    #: conditions on, what a form reports -- so the reading is a parameter of
+    #: the one reader rather than a third private copy of it.
+    COMBO_READINGS = ("text", "index", "data")
+
+    @staticmethod
+    def combo_value(combo, by: str = "text", fallback: str = None):
+        """A combo box's current value, read *by* one of :attr:`COMBO_READINGS`.
+
+        Parameters:
+            combo: A ``QComboBox`` (or subclass: uitk's rich-text ``ComboBox``
+                answers through its own ``currentText`` / ``currentData``).
+            by: ``"text"`` -- the visible label; ``"index"`` -- the row;
+                ``"data"`` -- the current item's data.
+            fallback: For ``by="data"`` only: the reading (``"text"`` or
+                ``"index"``) used when the current item carries no data.
+                ``None`` returns ``None`` for such an item.
+
+        Returns:
+            The value as read.
+
+        Raises:
+            ValueError: For an unknown reading, or a fallback that is not
+                ``"text"`` / ``"index"``.
+        """
+        if by not in ValueManager.COMBO_READINGS:
+            raise ValueError(
+                f"combo_value: by={by!r}; expected one of {ValueManager.COMBO_READINGS}"
+            )
+        if fallback not in (None, "text", "index"):
+            raise ValueError(
+                f"combo_value: fallback={fallback!r}; expected 'text', 'index' or None"
+            )
+        if by == "text":
+            return combo.currentText()
+        if by == "index":
+            return combo.currentIndex()
+        data = combo.currentData()
+        if data is None and fallback is not None:
+            return ValueManager.combo_value(combo, fallback)
+        return data
+
     @staticmethod
     def get_value(widget):
         """Get the current value from a widget.
@@ -41,6 +84,8 @@ class ValueManager:
             return widget.isChecked() if widget.isCheckable() else None
         elif hasattr(widget, "text") and callable(widget.text):
             return widget.text()
+        elif isinstance(widget, QtWidgets.QComboBox):
+            return ValueManager.combo_value(widget, "text")
         elif hasattr(widget, "currentText") and callable(widget.currentText):
             return widget.currentText()
         elif hasattr(widget, "currentIndex") and callable(widget.currentIndex):
@@ -55,13 +100,19 @@ class ValueManager:
             return None
 
     @staticmethod
-    def set_value(widget, value, block_signals=False):
+    def set_value(widget, value, block_signals=False) -> bool:
         """Set a value on a widget.
 
         Parameters:
             widget: Qt widget to set value on
             value: Value to set
             block_signals: Whether to block signals during value setting
+
+        Returns:
+            False when the widget refused *value* and kept its own (text a
+            number field can't read, an index past its items, a widget with
+            no setter for it); True otherwise -- including a plain push
+            button, which by design never takes a stored label.
         """
         if block_signals:
             widget.blockSignals(True)
@@ -72,7 +123,7 @@ class ValueManager:
                 # Numeric widgets (QSpinBox, QDoubleSpinBox, QSlider, etc.).
                 # _set_numeric_value leaves the widget unchanged on an
                 # unparseable value — never reset to minimum().
-                ValueManager._set_numeric_value(widget, value)
+                return ValueManager._set_numeric_value(widget, value)
 
             elif isinstance(widget, QtWidgets.QAbstractButton):
                 # A button is an action/toggle, not a text field (symmetric with
@@ -82,8 +133,8 @@ class ValueManager:
                 # rename (and it keeps icon-only option buttons icon-only). Must
                 # precede the setText branch (buttons inherit setText).
                 if widget.isCheckable():
-                    ValueManager._set_boolean_value(widget, value)
-                # else: no-op — preserve the .ui-defined label
+                    return ValueManager._set_boolean_value(widget, value)
+                return True  # no-op by design — preserve the .ui-defined label
 
             elif hasattr(widget, "setPlainText") and callable(widget.setPlainText):
                 # QTextEdit, QPlainTextEdit — must precede setText: QTextEdit
@@ -103,18 +154,19 @@ class ValueManager:
                 widget.setCurrentIndex
             ):
                 # QComboBox with index setting, QTabWidget, etc.
-                if (
+                if not (
                     isinstance(value, int)
                     and 0 <= value < getattr(widget, "count", lambda: float("inf"))()
                 ):
-                    widget.setCurrentIndex(value)
+                    return False
+                widget.setCurrentIndex(value)
 
             elif hasattr(widget, "setChecked") and callable(widget.setChecked):
                 # Checkable non-button widgets (e.g. checkable QGroupBox).
                 # Checkable QAbstractButtons are handled by the earlier branch
                 # (before setText); this catches setChecked holders that aren't
                 # QAbstractButtons and so have no setText to shadow them.
-                ValueManager._set_boolean_value(widget, value)
+                return ValueManager._set_boolean_value(widget, value)
 
             elif hasattr(widget, "setCheckState") and callable(widget.setCheckState):
                 # QCheckBox with tri-state
@@ -126,6 +178,10 @@ class ValueManager:
                         if bool(value)
                         else QtCore.Qt.CheckState.Unchecked
                     )
+
+            else:
+                return False
+            return True
 
         finally:
             if block_signals:
@@ -215,7 +271,9 @@ class ValueManager:
             ),
             "valueChanged": lambda w: w.value() if hasattr(w, "value") else None,
             "currentIndexChanged": lambda w: (
-                w.currentIndex() if hasattr(w, "currentIndex") else None
+                ValueManager.combo_value(w, "index")
+                if hasattr(w, "currentIndex")
+                else None
             ),
             "toggled": lambda w: w.isChecked() if hasattr(w, "isChecked") else None,
             "stateChanged": lambda w: (
@@ -227,7 +285,7 @@ class ValueManager:
         return getter(widget) if getter else ValueManager.get_value(widget)
 
     @staticmethod
-    def set_value_by_signal(widget, value, signal_name, block_signals=False):
+    def set_value_by_signal(widget, value, signal_name, block_signals=False) -> bool:
         """Set widget value based on its primary signal type.
 
         This method provides compatibility with signal-based systems like StateManager.
@@ -237,11 +295,17 @@ class ValueManager:
             value: Value to set
             signal_name: Signal name that indicates the value type
             block_signals: Whether to block signals during value setting
+
+        Returns:
+            False when the widget refused *value* and kept its own (see
+            :meth:`set_value`); True when it was written.
         """
         if block_signals:
             widget.blockSignals(True)
 
         try:
+            # Each answers False for a value it refused; Qt's own setters
+            # answer None, which is a write.
             signal_setters = {
                 # setPlainText is preferred where it exists (QTextEdit has
                 # BOTH, but its setText interprets rich text — "<b>x</b>"
@@ -251,27 +315,27 @@ class ValueManager:
                     if hasattr(w, "setPlainText")
                     else w.setText(str(v))
                     if hasattr(w, "setText")
-                    else None
+                    else False
                 ),
                 "valueChanged": lambda w, v: (
                     ValueManager._set_numeric_value(w, v)
                     if hasattr(w, "setValue")
-                    else None
+                    else False
                 ),
                 "currentIndexChanged": lambda w, v: (
                     ValueManager._set_index_value(w, v)
                     if hasattr(w, "setCurrentIndex")
-                    else None
+                    else False
                 ),
                 "toggled": lambda w, v: (
                     ValueManager._set_boolean_value(w, v)
                     if hasattr(w, "setChecked")
-                    else None
+                    else False
                 ),
                 "stateChanged": lambda w, v: (
                     ValueManager._set_check_state(w, v)
                     if hasattr(w, "setCheckState")
-                    else None
+                    else False
                 ),
             }
 
@@ -283,54 +347,60 @@ class ValueManager:
                     and signal_name == "currentIndexChanged"
                     and (not isinstance(value, int) or value >= widget.count())
                 ):
-                    return
-                setter(widget, value)
-            else:
-                # Fallback to direct value setting
-                ValueManager.set_value(
-                    widget, value, block_signals=False
-                )  # Already blocking
+                    return False
+                return setter(widget, value) is not False
+            # Fallback to direct value setting
+            return ValueManager.set_value(
+                widget, value, block_signals=False
+            )  # Already blocking
 
         finally:
             if block_signals:
                 widget.blockSignals(False)
 
     @staticmethod
-    def _set_numeric_value(widget, value):
-        """Helper method for setting numeric values with error handling."""
+    def _set_numeric_value(widget, value) -> bool:
+        """Set a numeric value (string numbers too); False when *value* isn't one.
+
+        The widget keeps its current value on a refusal.
+        """
         try:
             if isinstance(widget, QtWidgets.QDoubleSpinBox):
                 widget.setValue(float(value))
             else:
                 widget.setValue(int(float(value)))  # Handle string numbers
         except (ValueError, TypeError):
-            # Use widget's current value as fallback
-            pass
+            return False  # the widget keeps its current value
+        return True
 
     @staticmethod
-    def _set_index_value(widget, value):
-        """Helper method for setting index values with bounds checking."""
+    def _set_index_value(widget, value) -> bool:
+        """Select row *value*; False when it isn't an index of the widget's items."""
         try:
             index = int(value)
-            if hasattr(widget, "count") and 0 <= index < widget.count():
-                widget.setCurrentIndex(index)
+            if not (hasattr(widget, "count") and 0 <= index < widget.count()):
+                return False
+            widget.setCurrentIndex(index)
         except (ValueError, TypeError):
-            pass
+            return False
+        return True
 
     @staticmethod
-    def _set_boolean_value(widget, value):
-        """Helper method for setting boolean values with string conversion."""
+    def _set_boolean_value(widget, value) -> bool:
+        """Set a checked state (``"true"``/``"1"``/``"yes"``/``"on"`` read as
+        checked); False when the widget refused it."""
         try:
             if isinstance(value, str):
                 widget.setChecked(value.lower() in ["true", "1", "yes", "on"])
             else:
                 widget.setChecked(bool(value))
         except Exception:
-            pass
+            return False
+        return True
 
     @staticmethod
-    def _set_check_state(widget, value):
-        """Helper method for setting check state values."""
+    def _set_check_state(widget, value) -> bool:
+        """Set a check state (an int is a ``Qt.CheckState``); False when refused."""
         try:
             if isinstance(value, int):
                 widget.setCheckState(QtCore.Qt.CheckState(value))
@@ -342,7 +412,8 @@ class ValueManager:
                 )
                 widget.setCheckState(state)
         except (ValueError, TypeError):
-            pass
+            return False
+        return True
 
 
 # -----------------------------------------------------------------------------

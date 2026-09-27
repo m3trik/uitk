@@ -567,9 +567,9 @@ class DesignerPlugin(_DesignerPluginInternal):
         """Return an environment mapping that lets Designer import and find uitk.
 
         Designer runs its own process: it needs ``PYSIDE_DESIGNER_PLUGINS`` to
-        find the entry file and ``PYTHONPATH`` to import ``uitk`` at all — the
-        latter matters whenever uitk is used from a source checkout rather than
-        an installed wheel.
+        find the entry file and ``PYTHONPATH`` to import ``uitk`` (and
+        ``pythontk``, which uitk imports) at all — the latter matters whenever
+        they are used from a source checkout rather than an installed wheel.
 
         Existing values in both variables are preserved, so several packages can
         publish widgets to the same Designer session.
@@ -577,11 +577,15 @@ class DesignerPlugin(_DesignerPluginInternal):
         env = dict(os.environ if env is None else env)
         plugin_dirs = list(plugin_dirs or cls.plugin_dirs())
 
-        # uitk's own import root — the directory containing the `uitk` package.
+        # uitk's own import root — the directory containing the `uitk` package —
+        # and pythontk's, which uitk imports.
+        import pythontk
+
         uitk_root = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
-        python_paths = [uitk_root, *(python_paths or [])]
+        ptk_root = os.path.dirname(os.path.dirname(os.path.abspath(pythontk.__file__)))
+        python_paths = [uitk_root, ptk_root, *(python_paths or [])]
 
         def _prepend(var: str, paths: Sequence[str]) -> None:
             existing = [p for p in env.get(var, "").split(os.pathsep) if p]
@@ -609,13 +613,17 @@ class DesignerPlugin(_DesignerPluginInternal):
                 pass a downstream package's to publish its widgets alongside
                 uitk's.
             python_paths: Extra import roots Designer needs to resolve those.
-            wait: Block until Designer exits. False returns immediately with 0.
+            wait: Block until Designer exits. False starts it detached -- it
+                outlives this process and opens no console -- over
+                ``pythontk.AppLauncher.desktop_env``, which leaves a host app's
+                own loader and interpreter overrides behind, and returns 0.
 
         Returns:
             int: Designer's exit code (0 when ``wait`` is False).
 
         Raises:
             FileNotFoundError: If the ``pyside6-designer`` launcher is missing.
+            OSError: If a detached launch (``wait=False``) fails to start.
         """
         executable = cls._designer_executable()
         if not executable:
@@ -625,12 +633,25 @@ class DesignerPlugin(_DesignerPluginInternal):
                 "Python bindings."
             )
 
-        env = cls.environment(plugin_dirs=plugin_dirs, python_paths=python_paths)
         command = [executable, *ui_files]
         logger.info("Launching %s", " ".join(command))
+        if wait:
+            env = cls.environment(plugin_dirs=plugin_dirs, python_paths=python_paths)
+            return subprocess.Popen(command, env=env).wait()
 
-        process = subprocess.Popen(command, env=env)
-        return process.wait() if wait else 0
+        # In the background -- the UI Browser's *Open in Designer*, from inside
+        # a host app (Maya, Blender): detached, and over the desktop env, so
+        # Designer loads its own Qt and Python rather than the host's.
+        import pythontk as ptk
+
+        env = cls.environment(
+            plugin_dirs=plugin_dirs,
+            python_paths=python_paths,
+            env=ptk.AppLauncher.desktop_env(),
+        )
+        if ptk.AppLauncher.launch(executable, args=list(ui_files), env=env) is None:
+            raise OSError(f"Qt Designer failed to start: {executable}")
+        return 0
 
     @staticmethod
     def _designer_executable() -> Optional[str]:

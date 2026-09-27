@@ -32,7 +32,7 @@ from qtpy import QtCore, QtWidgets
 from uitk.switchboard import Switchboard
 from uitk.managers.settings_manager import SettingsManager
 from uitk.managers.state_manager import StateManager
-from uitk.widgets.optionBox.utils import OptionBoxManager
+from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
 OptionBoxManager.patch_common_widgets()
 
@@ -675,7 +675,7 @@ class TestResetAllRestoresOptionDefaults(QtBaseTestCase):
         return StateManager(qs)
 
     def _locked_spinbox(self, state):
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
         from uitk.widgets.optionBox.options.toggle import ToggleOption
 
         sb = self.track_widget(QtWidgets.QDoubleSpinBox())

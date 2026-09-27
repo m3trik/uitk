@@ -44,7 +44,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.5.2"
+__version__ = "1.6.0"
 
 
 DEFAULT_INCLUDE = {
@@ -57,7 +57,7 @@ DEFAULT_INCLUDE = {
     "switchboard._core": "Switchboard",
     "switchboard.slots": ["Signals", "SlotWrapper", "Cancelable"],
     "switchboard.shortcuts": "Shortcut",
-    "events": ["EventFactoryFilter", "MouseTracking"],
+    "events": ["EventFactoryFilter", "MouseTracking", "TreeDragReparentFilter"],
     # Launchable-entry handlers. ``UiHandler`` / ``ExternalAppHandler`` are what a
     # DCC host composes its handler set from (the DCC-specific ones subclass
     # ``UiHandler`` downstream), so they belong on the package namespace like every
@@ -66,19 +66,21 @@ DEFAULT_INCLUDE = {
     "handlers.handler_entry": "HandlerEntry",
     "handlers.ui_handler": "UiHandler",
     "handlers.external_app_handler": "ExternalAppHandler",
+    "handlers.editor_handler": "EditorHandler",
     # ``.ui`` compilation and the two loaders (compiled ``_ui.py`` / runtime).
     "compile": ["UiCompiler", "PrecompileJob"],
     "loaders": ["CompiledLoader", "RuntimeLoader"],
     # Qt Designer widget-box registrar (`python -m uitk.designer`).
     "designer._designer": ["DesignerPlugin", "DesignerWidget"],
     "widgets.marking_menu._marking_menu": "MarkingMenu",
+    "widgets.marking_menu._resolver": "MenuResolver",
     # Widgets
-    "widgets.attributeWindow._attributeWindow": "AttributeWindow",
-    # AttributeSpec + the kind-handler registry live in ``uitk.bridge.spec``
-    # so the AttributeWindow panels and the DCC bridges share one source of
-    # truth.
+    "widgets.attribute_window": "AttributeWindow",
+    # AttributeSpec (Qt-free, ``uitk.bridge.attribute_spec``) + the kind-handler
+    # registry (``uitk.bridge.spec``) so the AttributeWindow panels and the DCC
+    # bridges share one source of truth.
+    "bridge.attribute_spec": "AttributeSpec",
     "bridge.spec": [
-        "AttributeSpec",
         "KindHandler",
         "KindFactory",
     ],
@@ -89,7 +91,7 @@ DEFAULT_INCLUDE = {
     # tentacle slot module may not deep-import (``test_dcc_invariants``
     # .TestSlotImportDiscipline) -- it reaches uitk through ``self.sb``, which
     # resolves exactly this namespace.
-    "bridge.parameters": "Parameters",
+    "bridge.parameters": ["Parameters", "ParamRegistry"],
     "bridge.slots": "BridgeSlotsBase",
     "widgets.checkBox": "CheckBox",
     "widgets.collapsableGroup": "CollapsableGroup",
@@ -108,6 +110,11 @@ DEFAULT_INCLUDE = {
         "ColorMappingDialog",
     ],
     "widgets.editors.editor_panel": "EditorPanel",
+    # Affix-field rows in a Menu editing any ptk.NamingConvention-shaped store.
+    "widgets.editors.naming_convention_editor": "NamingConventionEditor",
+    "widgets.editors.preset_editor": "PresetEditor",
+    # Qt-free: what a host's hotkey-collision checker returns to ShortcutEditor.
+    "widgets.editors.shortcut_editor.collision_conflict": "CollisionConflict",
     "widgets.comboBox": "ComboBox",
     "widgets.doubleSpinBox": "DoubleSpinBox",
     "widgets.spinBox": "SpinBox",
@@ -128,9 +135,7 @@ DEFAULT_INCLUDE = {
         "OptionBox",
         "OptionBoxContainer",
     ],
-    "widgets.optionBox.utils": [
-        "OptionBoxManager",
-    ],
+    "widgets.optionBox.option_box_manager": "OptionBoxManager",
     "widgets.optionBox.options._options": ["BaseOption", "ButtonOption"],
     "widgets.optionBox.options.action": ["ActionOption", "MenuOption"],
     "widgets.optionBox.options.browse": "BrowseOption",
@@ -141,6 +146,7 @@ DEFAULT_INCLUDE = {
     "widgets.optionBox.options.disable": "DisableOption",
     "widgets.optionBox.options.value": "ValueOption",
     "widgets.optionBox.options.affix": "AffixOption",
+    "widgets.optionBox.options.choice": "ChoiceOption",
     "widgets.optionBox.options.option_menu": ["OptionMenuOption", "ContextMenuOption"],
     "widgets.progressBar": "ProgressBar",
     "widgets.pushButton": "PushButton",
@@ -175,7 +181,13 @@ DEFAULT_INCLUDE = {
     "widgets.toolBox": "ToolBox",
     "widgets.treeWidget": "TreeWidget",
     "widgets.widgetComboBox": "WidgetComboBox",
-    "widgets.sequencer._sequencer": ["SequencerWidget", "ClipData", "TrackData"],
+    "widgets.sequencer._sequencer": [
+        "SequencerWidget",
+        "ClipData",
+        "TrackData",
+        "AttributeColorDialog",
+    ],
+    "widgets.sequencer._keyframe": ["KeyframeItem"],
     # Widget mixins
     "widgets.mixins.attributes": "AttributesMixin",
     "widgets.mixins.convert": "ConvertMixin",
@@ -193,6 +205,7 @@ DEFAULT_INCLUDE = {
     "managers.color_model": "ColorModel",
     "managers.field_visibility": "FieldVisibility",
     "managers.window_height": "WindowHeight",
+    "managers.window_auto_hide": "WindowAutoHide",
     "managers.icon_manager": "IconManager",
     "managers.optional_package_manager": "OptionalPackageManager",
     "managers.preset_manager": "PresetManager",

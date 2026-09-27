@@ -303,6 +303,46 @@ class TestHeaderPinClickHides(QtBaseTestCase):
         self.assertTrue(header.pinned)
         self.assertTrue(window.isVisible())
 
+    def test_on_native_wayland_the_compositor_moves_the_window(self):
+        """Wayland ignores a client's ``move()`` of its top-level, so a
+        frameless uitk window could not be dragged at all: the drag goes to
+        the compositor (``startSystemMove``), which owns the pointer until the
+        release -- the drag state ends at once, and the drag still pins."""
+        from uitk._bootstrap import Bootstrap
+
+        window, header = self._window(pin_on_drag_only=True)
+        handed = []
+
+        def _mouse(kind, x, y, button):
+            return QtGui.QMouseEvent(
+                kind,
+                QtCore.QPointF(x, y),
+                QtCore.QPointF(x, y),
+                button,
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.NoModifier,
+            )
+
+        start = window.pos()
+        with (
+            patch.object(Bootstrap, "positions_windows", return_value=False),
+            patch.object(
+                QtGui.QWindow,
+                "startSystemMove",
+                new=lambda handle: handed.append(handle) or True,
+            ),
+        ):
+            header.mousePressEvent(
+                _mouse(QtCore.QEvent.MouseButtonPress, 0, 0, QtCore.Qt.LeftButton)
+            )
+            header.mouseMoveEvent(
+                _mouse(QtCore.QEvent.MouseMove, 20, 20, QtCore.Qt.NoButton)
+            )
+        self.assertEqual(handed, [window.windowHandle()])
+        self.assertEqual(window.pos(), start)  # no client-side move
+        self.assertFalse(header._dragging)
+        self.assertTrue(header.pinned)
+
     # ── Hover affordance ──────────────────────────────────────────────────
 
     def test_hover_shows_close_icon_while_unpinned(self):
@@ -777,7 +817,7 @@ class TestHeaderHelpButton(QtBaseTestCase):
     def test_long_help_pops_wrapped(self):
         """The ``?`` popup is a direct ``showText`` call, so it goes through the
         presenter explicitly -- a paragraph of help must not pop screen-wide."""
-        from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
+        from pythontk import TooltipFormat
 
         header = self.track_widget(Header(config_buttons=["menu"]))
         long_help = " ".join(["Select the objects to export, then press Run."] * 4)

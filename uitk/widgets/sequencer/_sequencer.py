@@ -16,7 +16,7 @@ Example
 """
 
 from contextlib import contextmanager
-from typing import Dict, List, Optional
+from typing import Dict, List, Mapping, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
 
@@ -38,9 +38,7 @@ from uitk.widgets.sequencer._data import (
     _SUB_ROW_HEIGHT,
     _TRACK_PADDING,
     _HEADER_HEIGHT,
-    _DEFAULT_ATTRIBUTE_COLORS,
-    _COMMON_ATTRIBUTES,
-    _DISPLAY_COLORS,
+    DISPLAY_COLORS,
 )
 from uitk.widgets.sequencer._clip import ClipItem
 from uitk.widgets.sequencer._overlays import (
@@ -77,49 +75,51 @@ class AttributeColorDialog(ColorMappingDialog):
     """Dialog for configuring attribute-type color mappings.
 
     Extends :class:`ColorMappingDialog` with sequencer-specific sections
-    (Common / Scene / Display) and dynamic *active_attrs* discovery.
+    (Common / Scene / Display) and dynamic *active_attrs* discovery.  The
+    attribute vocabulary is the host's: uitk supplies only its own display rows
+    (:data:`DISPLAY_COLORS`), so a DCC passes its channel names and colours in.
 
-    Parameters
-    ----------
-    defaults : dict
-        Factory-default ``{attr_name: hex_color}`` mapping.
-    common_attrs : list
-        Attribute names always displayed regardless of scene content.
-    active_attrs : list, optional
-        Additional attribute names currently keyed in the scene.
-    settings : SettingsManager, optional
-        Pre-configured settings manager for persistence.
-    parent : QWidget, optional
-        Parent widget.
+    Parameters:
+        defaults (Mapping[str, object]): Factory-default ``{attr_name: color}``
+            for the host's attributes; a value is anything whose ``str()`` is a
+            colour (``"#E06666"``, a ``pythontk.Color``), so
+            ``ptk.Palette.channels()`` passes as is.
+        common_attrs (list): Attribute names always displayed regardless of
+            scene content.
+        active_attrs (list, optional): Additional attribute names currently
+            keyed in the scene (:meth:`SequencerWidget.clip_attributes`).
+        settings (SettingsManager, optional): Persistence; defaults to the
+            sequencer's own namespace, the one :meth:`load_color_map` reads.
+        parent (QWidget, optional): Parent widget.
     """
 
     _SETTINGS_NS = "sequencer/attribute_colors"
 
     def __init__(
         self,
-        defaults: Optional[Dict[str, str]] = None,
+        defaults: Optional[Mapping[str, object]] = None,
         common_attrs: Optional[List[str]] = None,
         active_attrs: Optional[List[str]] = None,
         settings: Optional["SettingsManager"] = None,
         parent=None,
     ):
-        # Copy — fallback colors for scene-attr extras are written into
-        # this dict below, and mutating a caller-supplied mapping would
-        # pollute shared/persistent defaults.
-        defs = dict(defaults) if defaults else dict(_DEFAULT_ATTRIBUTE_COLORS)
-        common = common_attrs or list(_COMMON_ATTRIBUTES)
+        # A fresh dict — fallback colors for scene-attr extras are written into
+        # it below, and mutating a caller-supplied mapping would pollute
+        # shared/persistent defaults.
+        defs = self._with_display_colors(defaults)
+        common = list(common_attrs or [])
         active = active_attrs or []
 
         # Build sections
-        all_known = set(common) | set(_DISPLAY_COLORS)
+        all_known = set(common) | set(DISPLAY_COLORS)
         extra = sorted(set(active) - all_known)
-        sections = [("Common", common)]
+        sections = [("Common", common)] if common else []
         if extra:
             sections.append(("Scene Attributes", extra))
             for attr in extra:
                 if attr not in defs:
                     defs[attr] = ColorMappingEditor._FALLBACK_COLOR
-        sections.append(("Display", list(_DISPLAY_COLORS)))
+        sections.append(("Display", list(DISPLAY_COLORS)))
 
         kw = {"settings": settings} if settings else {"settings_ns": self._SETTINGS_NS}
         super().__init__(
@@ -143,10 +143,30 @@ class AttributeColorDialog(ColorMappingDialog):
         self._editor.restore_defaults()
 
     @staticmethod
-    def load_color_map() -> Dict[str, str]:
-        """Return the persisted attribute color map without opening a dialog."""
+    def _with_display_colors(
+        defaults: Optional[Mapping[str, object]],
+    ) -> Dict[str, str]:
+        """``DISPLAY_COLORS`` overlaid with the host's *defaults*, as hex strings."""
+        merged = dict(DISPLAY_COLORS)
+        merged.update({name: str(color) for name, color in (defaults or {}).items()})
+        return merged
+
+    @staticmethod
+    def load_color_map(
+        defaults: Optional[Mapping[str, object]] = None,
+    ) -> Dict[str, str]:
+        """The persisted attribute color map, without opening a dialog.
+
+        Parameters:
+            defaults (Mapping[str, object]): The host's factory colours, as
+                :class:`AttributeColorDialog` takes them; the user's saved
+                choices win over them.
+
+        Returns:
+            dict: ``{attr_name: hex}`` -- display rows, *defaults*, then saves.
+        """
         sm = SettingsManager(namespace=AttributeColorDialog._SETTINGS_NS)
-        result = dict(_DEFAULT_ATTRIBUTE_COLORS)
+        result = AttributeColorDialog._with_display_colors(defaults)
         for key in sm.keys():
             val = sm.value(key)
             if val:
@@ -322,7 +342,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._markers: Dict[int, MarkerData] = {}
         self._marker_items: Dict[int, MarkerItem] = {}
         self._next_marker_id = 0
-        self._attribute_colors: Dict[str, str] = dict(_DEFAULT_ATTRIBUTE_COLORS)
+        self._attribute_colors: Dict[str, str] = dict(DISPLAY_COLORS)
         self._expanded_tracks: Dict[int, List[str]] = {}  # track_id → sub-row names
         self._bulk_depth: int = 0  # >0 inside bulk_updates() — defer scene-rect
         self._sub_row_height: int = _SUB_ROW_HEIGHT
@@ -920,6 +940,18 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         if track_id is None:
             return list(self._clips.values())
         return [cd for cd in self._clips.values() if cd.track_id == track_id]
+
+    def clip_attributes(self) -> List[str]:
+        """The attribute names the clips key (their ``attributes`` data), sorted
+        -- the *active_attrs* an :class:`AttributeColorDialog` offers beyond the
+        host's common set."""
+        return sorted(
+            {
+                attr
+                for cd in self._clips.values()
+                for attr in cd.data.get("attributes", [])
+            }
+        )
 
     def swap_clips(self, clip_id_a: int, clip_id_b: int) -> None:
         """Swap the timeline positions of two clips and emit ``clips_reordered``.
@@ -2326,3 +2358,49 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             # QSettings flushes automatically on destruction.
             self._header_snap_width = pos
             self._layout_settings.setValue("header_width", pos)
+
+
+def __getattr__(name):
+    """The channel defaults uitk no longer carries, for one release.
+
+    Retired 2026-09-26: they are a host's animation vocabulary, and uitk carries
+    none (the host injects it).  Their data lives in pythontk, which already
+    owned both copies' twins.
+    """
+    if name not in ("_COMMON_ATTRIBUTES", "_DEFAULT_ATTRIBUTE_COLORS"):
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import sys
+
+    import pythontk as ptk
+    from pythontk.core_utils.module_resolver import lazy_exports
+
+    # The notice names the line that asked for the alias: 2 is this hook's
+    # caller, plus one per lazy re-export hop in between -- the published hosts
+    # import these through the package (``from uitk.widgets.sequencer import
+    # ...``), whose ``lazy_exports`` hook is a frame of its own.
+    stacklevel, frame = 2, sys._getframe(1)
+    while frame is not None and (
+        frame.f_globals.get("__name__") == lazy_exports.__module__
+    ):
+        stacklevel += 1
+        frame = frame.f_back
+    if name == "_COMMON_ATTRIBUTES":
+        ptk.Deprecation.warn(
+            f"{__name__}._COMMON_ATTRIBUTES",
+            "pythontk.TRANSFORM_CHANNELS",
+            remove_in="1.7.0",
+            since="2026-09-26",
+            kind="attribute",
+            stacklevel=stacklevel,
+        )
+        return list(ptk.TRANSFORM_CHANNELS)
+    ptk.Deprecation.warn(
+        f"{__name__}._DEFAULT_ATTRIBUTE_COLORS",
+        "pythontk.Palette.channels() (factory defaults; "
+        "AttributeColorDialog.load_color_map(...) for the saved map)",
+        remove_in="1.7.0",
+        since="2026-09-26",
+        kind="attribute",
+        stacklevel=stacklevel,
+    )
+    return AttributeColorDialog._with_display_colors(ptk.Palette.channels())

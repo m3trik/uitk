@@ -653,7 +653,10 @@ class TestMarkingMenuBrowserEntryFilter(QtBaseTestCase):
         _write_ui_file(os.path.join(d, "tool.ui"), "tool")
         _write_ui_file(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
         _write_ui_file(os.path.join(d, "uv#submenu.ui"), "uv_submenu")
-        self.sb = Switchboard(ui_source=d, log_level="WARNING")
+        # Editor rows opted out: these cases pin the filter over registered UIs.
+        self.sb = Switchboard(
+            ui_source=d, log_level="WARNING", handlers={"editor": None}
+        )
         self.sb.settings.branch("ui_browser").clear()
         # _register_browser_entry_filter only reaches self.sb and the
         # class-level patterns — exercised unbound, same as hosts_ui above.

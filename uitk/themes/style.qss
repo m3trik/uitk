@@ -42,6 +42,14 @@ QStackedWidget {
 QStackedWidget QFrame {
     background-color: {PANEL_BACKGROUND};
 }
+/* ...but not a view.  A table, tree, list or scroll pane is a QFrame too, and
+   the descendant rule above outranks its own type rule -- so on a stacked page
+   it took the panel ground, translucent by design, and its rows read against
+   whatever is behind the window.  A view keeps its own ground on a page as
+   everywhere else (a later rule of equal weight; :disabled still wins). */
+QStackedWidget QAbstractScrollArea {
+    background-color: {WIDGET_BACKGROUND};
+}
 QToolBox {
     background-color: {PANEL_BACKGROUND};
     border: {BORDER_W} solid {BORDER_COLOR};

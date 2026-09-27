@@ -4,17 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Callable, Mapping, Optional
 
+import pythontk as ptk
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.text import RichTextFormatter
 from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.progressBar import ProgressBar
-
-try:
-    from pythontk.str_utils import StrUtils
-except ImportError:  # Optional dependency; controller will fall back to simple slicing.
-    StrUtils = None
 
 
 class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
@@ -1030,47 +1026,10 @@ class FooterStatusController:
         self._footer.setStatusText(value)
 
     def _truncate_value(self, value: str) -> str:
-        """Apply optional truncation using StrUtils when available."""
-        if not value:
+        """Truncate ``value`` per the configured ``StrUtils.truncate`` kwargs."""
+        if not value or not self._truncate_kwargs:
             return value
-
-        kwargs = self._truncate_kwargs
-        if not kwargs:
-            return value
-
-        length = kwargs.get("length")
-        if not isinstance(length, int) or length <= 0 or len(value) <= length:
-            return value
-
-        if StrUtils:
-            try:
-                return StrUtils.truncate(
-                    value,
-                    **kwargs,
-                )
-            except Exception:
-                pass  # Fall back to a simplified truncation strategy.
-
-        return self._fallback_truncate(value, kwargs)
-
-    def _fallback_truncate(self, value: str, kwargs: Mapping[str, Any]) -> str:
-        insert = kwargs.get("insert", "..") or ""
-        mode = (kwargs.get("mode") or "start").lower()
-        length = kwargs.get("length")
-        if not isinstance(length, int) or length <= 0:
-            return value
-
-        if mode in ("end", "right"):
-            return value[:length] + insert
-
-        if mode == "middle" and length > len(insert):
-            visible = max(1, length - len(insert))
-            left = visible // 2
-            right = visible - left
-            return value[:left] + insert + value[-right:]
-
-        tail_length = max(1, length - len(insert)) if insert else length
-        return insert + value[-tail_length:]
+        return ptk.StrUtils.truncate(value, **self._truncate_kwargs)
 
     @staticmethod
     def _sanitize_truncate_kwargs(

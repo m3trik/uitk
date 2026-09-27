@@ -1,11 +1,12 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Attribute spec + kind-handler registry for parameterised forms.
+"""Kind-handler registry for parameterised forms (the Qt half of the contract).
 
-Originally lived at ``uitk.widgets.attributeWindow._factory``; moved
-here so DCC-bridge code and the AttributeWindow panels share one
-registry instead of maintaining parallel ones. The old import path
-remains as a back-compat shim that re-exports from this module.
+:class:`~uitk.bridge.attribute_spec.AttributeSpec`, the Qt-free description
+each handler builds from, lives in :mod:`uitk.bridge.attribute_spec`.
+
+DCC-bridge code and the AttributeWindow panel share this one registry
+instead of maintaining parallel ones.
 
 Per-kind contract: a :class:`KindHandler` bundles four callables --
 
@@ -28,17 +29,18 @@ bare widget reference.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from qtpy import QtCore, QtWidgets
 
+# AttributeSpec (and the choice aliases) live in the Qt-free
+# ``attribute_spec`` so a registry can be declared without a binding; the
+# widget half is built here.
+from uitk.bridge.attribute_spec import AttributeSpec, ChoiceItem, ChoicesSeq  # noqa: F401
 from uitk.widgets.checkBox import CheckBox
 from uitk.widgets.doubleSpinBox import DoubleSpinBox
 from uitk.widgets.spinBox import SpinBox
 
-
-ChoiceItem = Union[Any, Tuple[str, Any]]
-ChoicesSeq = Sequence[ChoiceItem]
 
 INT_MIN = -2147483648
 INT_MAX = 2147483647
@@ -49,114 +51,6 @@ _KIND_PROP = "_attr_kind"
 
 #: Marker for a bare ``choices`` entry (label == value, no explicit data).
 _NO_VALUE = object()
-
-
-@dataclass(frozen=True)
-class AttributeSpec:
-    """Description of one editable attribute / bridge parameter.
-
-    A single dataclass shape covers both AttributeWindow's auto-from-value
-    panels and the DCC bridges' explicit registries. The bridges always
-    set ``kind`` explicitly (``"int"``, ``"choice"``, ``"path"``,
-    ``"file_list"``, ...); AttributeWindow leaves it at ``"auto"`` and
-    resolves it from ``type(default)`` via :meth:`KindFactory.infer_kind`.
-
-    Attributes:
-        key: Identifier used as the widget's objectName. Required.
-        label: Display label. Defaults to *key* if empty.
-        kind: One of the registered kinds (``"bool" | "int" | "float" |
-            "str" | "choice" | "check_list" | "path" | "file_list" |
-            "action" | "affix"``) or ``"auto"`` to derive from
-            ``type(default)``.
-            Custom kinds added via :meth:`KindFactory.register_kind` are
-            also accepted.
-        default: Initial widget value.
-        minimum / maximum / step: Numeric range and step (int/float kinds).
-        decimals: Float precision (float kind only).
-        choices: For the choice-driven kinds (``"choice"``, ``"check_list"``)
-            -- a sequence of values (``["Low", "Medium"]``), of
-            ``(label, value)`` pairs, or of ``(label, value, tooltip)``
-            triples. The value is what :meth:`KindFactory.read_value` returns
-            (``check_list`` returns the list of checked ones). Leave empty and
-            call :meth:`KindFactory.set_choices` when the entries are only
-            known at runtime. The ``"action"`` kind reads the same shape as
-            ``(label, action_id, tooltip)`` and accepts a 4th element -- an
-            icon name -- that turns the entry into an option-box icon button
-            on the row's primary action rather than a second text button.
-        tooltip: Tooltip text. The DCC-bridge slots feed this through
-            :meth:`uitk.bridge.tooltip.Tooltip.format_param_tooltip` to build
-            a rich-text version with type/range/default rows.
-        section: Optional category label. A builder that groups specs (e.g.
-            :class:`uitk.bridge.BridgeSlotsBase`) inserts a titled
-            :class:`~uitk.widgets.separator.Separator` before the first spec of
-            each new section, so related params read as a labelled block.
-            Empty (default) = no divider. Sections are expected contiguous in
-            iteration order.
-        inline: Render this spec to the RIGHT of the preceding spec instead of
-            on its own row -- for a compact modifier of the value beside it (an
-            "Auto" toggle next to the number it overrides). The builder still
-            keeps it a separately addressable row, so visibility and
-            :meth:`~uitk.bridge.BridgeSlotsBase.set_param_enabled` work per key.
-            It rides the host row's visibility, so an inline spec must be
-            referenced by the same templates as the spec it follows. Ignored on
-            the first spec of a registry (nothing to attach to) and on the first
-            spec of a section (a section's opening row is its own).
-        placeholder: Grey text shown while a text field is EMPTY, on the
-            line-edit kinds (``"str"``, ``"path"``, ``"file"``). For what
-            happens if it is left that way -- an empty field that prompts on
-            use, or one that falls back to a computed default -- which is
-            unreadable from the row otherwise: the control looks unset and
-            unexplained, and a tooltip only says so once the user suspects
-            there is something to ask about. Never restate the label here.
-            On an ``"int"`` field, which has no empty state, it is the text
-            shown AT the minimum (Qt's special value text): for a minimum that
-            means "unset" -- a bridge's "0 uses the preset's value" -- which a
-            bare 0 would read as zero. The value read back is still the number.
-        preset: False for a live switch rather than a setting -- a control
-            that acts the moment it changes, such as a share toggle that opens
-            a public link. A preset neither saves nor applies it, and Reset to
-            Defaults leaves it as it is, so neither can act on the user's
-            behalf.
-    """
-
-    key: str
-    label: str = ""
-    kind: str = "auto"
-    default: Any = None
-    minimum: Optional[float] = None
-    maximum: Optional[float] = None
-    step: Optional[float] = None
-    decimals: int = 0
-    choices: Optional[ChoicesSeq] = None
-    tooltip: str = ""
-    section: str = ""
-    inline: bool = False
-    # Appended, not inserted beside `tooltip` where it reads best: this is a
-    # published dataclass, so every field's POSITION is part of the contract
-    # and a new one in the middle silently re-points a positional caller's
-    # `section` at it.
-    placeholder: str = ""
-    preset: bool = True
-
-    def __post_init__(self):
-        # An empty key produces a widget with empty objectName that can't be
-        # found via `getattr(ui, name)` -- silently breaks lookup downstream.
-        if not self.key:
-            raise ValueError("AttributeSpec.key must be a non-empty string.")
-
-    @classmethod
-    def from_value(cls, key: str, value: Any, *, label: str = "") -> "AttributeSpec":
-        """Build a minimal spec from a Python value (AttributeWindow style)."""
-        return cls(
-            key=key,
-            label=label or key,
-            kind=KindFactory.infer_kind(value),
-            default=value,
-        )
-
-    @property
-    def display_label(self) -> str:
-        return self.label or self.key
 
 
 @dataclass(frozen=True)
@@ -375,18 +269,24 @@ class _KindFactoryInternal(object):
 
     @staticmethod
     def _read_choice(widget):
-        data = widget.currentData()
-        return widget.currentText() if data is None else data
+        """Item data, else the label (a bare entry's value IS its label)."""
+        from uitk.managers.value_manager import ValueManager
+
+        return ValueManager.combo_value(widget, "data", fallback="text")
 
     @staticmethod
     def _write_choice(widget, value):
+        # False: no entry carries *value* (by data, then by label), so the
+        # selection stays -- a preset load counts that as a misfit.
         for i in range(widget.count()):
             if widget.itemData(i) == value:
                 widget.setCurrentIndex(i)
-                return
+                return True
         idx = widget.findText(str(value))
         if idx >= 0:
             widget.setCurrentIndex(idx)
+            return True
+        return False
 
     # ---- path: composite (QLineEdit + browse button) ----------------------
     #
@@ -643,7 +543,7 @@ class _KindFactoryInternal(object):
         if manager is not None:
             return manager
         try:
-            from uitk.widgets.optionBox.utils import OptionBoxManager
+            from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
             manager = OptionBoxManager(widget)
         except Exception:  # noqa: BLE001 -- degrade to a plain widget
@@ -1056,15 +956,7 @@ class KindFactory(_KindFactoryInternal):
         components, multi-int arrays, etc.). Set ``kind="file_list"``
         explicitly when you actually want a file picker.
         """
-        if isinstance(value, bool):
-            return "bool"
-        if isinstance(value, int):
-            return "int"
-        if isinstance(value, float):
-            return "float"
-        if isinstance(value, str):
-            return "str"
-        return "str"
+        return AttributeSpec.infer_kind(value)
 
     # -----------------------------------------------------------------------
     # Public factory surface.
@@ -1125,11 +1017,16 @@ class KindFactory(_KindFactoryInternal):
         )
 
     @staticmethod
-    def set_value(widget: QtWidgets.QWidget, value: Any) -> None:
-        """Set the value of a factory-built widget."""
-        KindFactory.get_handler(_KindFactoryInternal._widget_kind(widget)).write(
-            widget, value
-        )
+    def set_value(widget: QtWidgets.QWidget, value: Any) -> Optional[bool]:
+        """Set the value of a factory-built widget.
+
+        Returns:
+            False when the widget refused *value* (a ``choice`` no entry
+            carries), else the kind's writer's answer (None for most kinds).
+        """
+        return KindFactory.get_handler(
+            _KindFactoryInternal._widget_kind(widget)
+        ).write(widget, value)
 
     @staticmethod
     def set_choices(widget: QtWidgets.QWidget, choices: ChoicesSeq) -> None:
@@ -1179,7 +1076,7 @@ class KindFactory(_KindFactoryInternal):
         """``(prefix, suffix)`` for an ``affix``-kind value.
 
         The bridge-side counterpart to
-        :meth:`uitk.widgets.optionBox.utils.OptionBoxManager.resolve_affix`:
+        :meth:`uitk.widgets.optionBox.option_box_manager.OptionBoxManager.resolve_affix`:
         that one reads a live widget, this one reads a *collected* value (a
         send's params dict, a restored preset), so a consumer never has to
         reach back through the panel to find out which side the affix lands on.

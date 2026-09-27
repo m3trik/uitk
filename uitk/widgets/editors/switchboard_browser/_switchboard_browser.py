@@ -1,24 +1,19 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Searchable, tag-filtered launcher for any handler-exposed entry.
+"""The browser panel: search, tag chips, row actions, and the header menu.
 
-Listed entries come from :meth:`Switchboard.iter_handler_entries`, which
-unifies every launchable handler's items (e.g. .ui files from UiHandler,
-registered external apps from ExternalAppHandler). Nothing is loaded
-until the user clicks Launch — the browser only inspects entry metadata.
-
-The browser itself is unregistered — a plain ``EditorPanel`` instantiated
-directly by user code, consistent with ``StyleEditor`` and ``ColorMappingDialog``.
+:class:`SwitchboardBrowser` -- a plain ``EditorPanel`` (no ``.ui``). The table
+model, the row painting, the row filter and the launch path are their own
+modules in this package; see the package docstring.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set, Union
+from typing import Iterable, List, Optional, Set, TYPE_CHECKING, Union
 
-from qtpy import QtCore, QtGui, QtWidgets
 import pythontk as ptk
+from qtpy import QtCore, QtWidgets
 
 # ``EditorPanel`` is the base class — must be a real import. ``Switchboard``
 # is referenced at runtime only inside the no-arg ``__init__`` branch
@@ -26,606 +21,35 @@ import pythontk as ptk
 # ``StyleSheet`` is reachable via ``sb.style`` at use sites — no direct
 # import needed.
 from uitk.compile import UiCompiler
-from uitk.handlers.handler_entry import HandlerEntry
 from uitk.widgets.editors.editor_panel import EditorPanel
 from uitk.widgets.optionBox.options.filter import FilterOption, NEGATE_PREFIX
 from uitk.widgets.pushButton import PushButton
+from .filtering import (
+    SCOPES,
+    SCOPE_BOTH,
+    SCOPE_ICONS,
+    SCOPE_NAME,
+    SCOPE_TAGS,
+    SHOW_ALL,
+    SHOW_HIDDEN,
+    SHOW_VISIBLE,
+    _BrowserFilterProxy,
+)
+from .launch import (
+    PERSISTENCE_CHOICES,
+    PERSISTENCE_CONTEXT,
+    PERSISTENCE_STICKY,
+    PERSISTENCE_TRANSIENT,
+    _LaunchMixin,
+)
+from .model import SwitchboardBrowserModel
+from .row_delegate import _BrowserRowDelegate
 
 if TYPE_CHECKING:  # pragma: no cover
     from uitk.switchboard import Switchboard
 
 
-# ── Launch options (per-launch, not persisted per-UI) ─────────────────────────
-#
-# Defaults: frameless + dark theme so a browser-launched window matches
-# the rest of the toolset out of the box.
-
-# Window persistence modes — how a window behaves once open. "sticky" and
-# "transient" map to the UiHandler header button sets: "sticky" -> hide button
-# (stays open), "transient" -> pin button (auto-hides when you leave the marking
-# menu, user-pinnable). "context" is the default: no user choice, so each window
-# keeps its own default (``UiHandler.default_persistence``). The vocabulary is
-# the handler's — it owns resolution and persistence; the browser is its front
-# end. The resolved value handed to launch() is "sticky"/"transient", or None
-# for "context" (let the handler resolve).
-PERSISTENCE_STICKY = "sticky"
-PERSISTENCE_TRANSIENT = "transient"
-PERSISTENCE_CONTEXT = "context"
-PERSISTENCE_DEFAULT = PERSISTENCE_CONTEXT
-# Ordered (value, label) for the global combo and the per-entry submenu.
-PERSISTENCE_CHOICES = (
-    (PERSISTENCE_CONTEXT, "Default (context)"),
-    (PERSISTENCE_STICKY, "Stay open (sticky)"),
-    (PERSISTENCE_TRANSIENT, "Auto-hide (transient)"),
-)
-
-
-@dataclass
-class LaunchOptions:
-    frameless: bool = True
-    translucent: bool = True
-    restore_geometry: bool = True
-    on_top: bool = True
-    theme: str = "dark"
-    # Resolved value passed to the handler: "sticky"/"transient", or None to
-    # keep the launch context's default chrome.
-    persistence: Optional[str] = None
-
-
-# ── Data model ────────────────────────────────────────────────────────────────
-
-
-class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
-    """Table model over a Switchboard's UI registry.
-
-    Each row is a registered UI. Rows are not loaded — they exist as registry
-    entries only. ``is_loaded`` / ``is_visible`` are computed live.
-
-    Columns:
-        0 = Name
-        1 = Tags
-        2 = Launch / Focus action (icon button via setIndexWidget)
-        3 = Close action (icon button via setIndexWidget)
-
-    Custom roles return the same data regardless of column so filter
-    predicates can query any column.
-    """
-
-    COL_NAME = 0
-    COL_TAGS = 1
-    COL_ACTION = 2
-    COL_CLOSE = 3
-    COLUMN_COUNT = 4
-
-    NameRole = QtCore.Qt.UserRole + 1
-    PathRole = QtCore.Qt.UserRole + 2
-    TagsRole = QtCore.Qt.UserRole + 3
-    LoadedRole = QtCore.Qt.UserRole + 4
-    VisibleRole = QtCore.Qt.UserRole + 5
-    FileTagsRole = QtCore.Qt.UserRole + 6
-    InheritedTagsRole = QtCore.Qt.UserRole + 7
-    KindRole = QtCore.Qt.UserRole + 8
-    EntryRole = QtCore.Qt.UserRole + 9
-
-    def __init__(
-        self,
-        switchboard: Switchboard,
-        parent=None,
-        inc: Union[str, List[str], None] = None,
-        exc: Union[str, List[str], None] = None,
-    ):
-        super().__init__(parent)
-        self.sb: Switchboard = switchboard
-        # Structural entry filter (``pythontk.filter_list`` shell-style
-        # patterns). Unlike the user-curated hide lists, filtered entries
-        # are never materialised into the model at all — absent from
-        # counts, chips, presets, and the entry-changed signal path.
-        self._inc = inc
-        self._exc = exc
-        self._entries: List[HandlerEntry] = []
-        # Index for O(1) lookup by name. When two handlers register the
-        # same name the later one wins (logged); see _refresh.
-        self._by_name: Dict[str, HandlerEntry] = {}
-        self._refresh()
-        # Unified signals — fire on any handler. UiHandler-specific signals
-        # are forwarded into these by the Switchboard constructor.
-        self.sb.on_handler_entries_changed.connect(self._on_entries_changed)
-        self.sb.on_handler_entry_changed.connect(self._on_entry_changed)
-
-    # ---- registry → rows ----
-
-    def _refresh(self) -> None:
-        self.beginResetModel()
-        entries = list(self.sb.iter_handler_entries())
-        if self._inc or self._exc:
-            allowed = set(
-                ptk.filter_list(
-                    [e.name for e in entries],
-                    inc=self._inc,
-                    exc=self._exc,
-                    ignore_case=True,
-                )
-            )
-            entries = [e for e in entries if e.name in allowed]
-        entries.sort(key=lambda e: e.name.lower())
-        seen: Dict[str, HandlerEntry] = {}
-        for e in entries:
-            if e.name in seen:
-                # Name collision across handlers: last write wins, log once.
-                self.sb.logger.warning(
-                    f"[SwitchboardBrowserModel] duplicate entry name "
-                    f"{e.name!r}; later handler shadows earlier."
-                )
-            seen[e.name] = e
-        self._by_name = seen
-        # One row per name (last-write-wins) so rows stay consistent with the
-        # entry_for_name dispatch used by launch/close/focus — a shadowed
-        # duplicate no longer renders a ghost row that misroutes to the other
-        # handler. Dict preserves insertion order, so rows stay sorted by name.
-        self._entries = list(seen.values())
-        self.endResetModel()
-
-    def _on_entries_changed(self, _handler_name: str) -> None:
-        # Coarse: a handler's full entry set may have changed
-        # (registration / unregistration). Recompute everything; cheap
-        # vs. diffing two sorted lists for the row counts we deal with.
-        self._refresh()
-
-    def _on_entry_changed(self, _handler_name: str, entry_name: str) -> None:
-        # Structurally-excluded entries never reach the model — bail before
-        # the unknown-name fallback below coarse-refreshes on every signal.
-        # This is load-bearing for hosts that exclude marking-menu pages:
-        # those pages emit show/hide traffic on every gesture, and a full
-        # model reset per signal makes the menu sluggish while a browser
-        # instance exists.
-        if not self._passes_entry_filter(entry_name):
-            return
-        # Fine-grained: one entry's live state (visibility) changed.
-        # File-backed entries also re-emit on save_ui_tags, so refresh
-        # the entry payload (tags may have changed) before firing
-        # dataChanged.
-        if entry_name not in self._by_name:
-            # Could be a brand-new entry — fall back to coarse refresh.
-            self._refresh()
-            return
-        old = self._by_name[entry_name]
-        # Re-pull just this entry from its owning handler.
-        try:
-            new = next(
-                (e for e in old.handler.entries() if e.name == entry_name),
-                None,
-            )
-        except Exception:
-            new = None
-        if new is None:
-            # Entry vanished from its handler — full refresh handles removal.
-            self._refresh()
-            return
-        row = self._entries.index(old)
-        self._entries[row] = new
-        self._by_name[entry_name] = new
-        top = self.index(row, 0)
-        bot = self.index(row, self.COLUMN_COUNT - 1)
-        self.dataChanged.emit(top, bot)
-
-    def refresh_after_launch(self, name: str) -> None:
-        """Public hook: caller invokes this after launching to refresh the row."""
-        if name in self._by_name:
-            self._on_entry_changed("", name)
-
-    # ---- QAbstractTableModel ----
-
-    def rowCount(self, parent=QtCore.QModelIndex()) -> int:
-        return 0 if parent.isValid() else len(self._entries)
-
-    def columnCount(self, parent=QtCore.QModelIndex()) -> int:
-        return 0 if parent.isValid() else self.COLUMN_COUNT
-
-    def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
-        if orientation != QtCore.Qt.Horizontal:
-            return None
-        if role == QtCore.Qt.DisplayRole:
-            return {
-                self.COL_NAME: "Name",
-                self.COL_TAGS: "Tags",
-                self.COL_ACTION: "",
-                self.COL_CLOSE: "",
-            }.get(section, "")
-        if role == QtCore.Qt.TextAlignmentRole:
-            # Left-align the title row so titles sit flush with row content
-            # instead of Qt's default center alignment.
-            return int(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        return None
-
-    def data(self, index, role=QtCore.Qt.DisplayRole):
-        if not index.isValid() or index.row() >= len(self._entries):
-            return None
-        entry = self._entries[index.row()]
-
-        # Custom roles are column-independent — always describe the row.
-        if role == self.NameRole:
-            return entry.name
-        if role == self.EntryRole:
-            return entry
-        if role == self.PathRole:
-            return entry.filepath
-        if role == self.KindRole:
-            return entry.kind
-        if role == self.TagsRole:
-            return sorted(entry.all_tags)
-        if role == self.FileTagsRole:
-            return sorted(entry.file_tags) if entry.file_tags is not None else []
-        if role == self.InheritedTagsRole:
-            return sorted(entry.inherited_tags)
-        if role == self.LoadedRole:
-            return (
-                entry.handler.is_visible(entry.name)
-                if entry.kind == "ui_file"
-                else False
-            )
-        if role == self.VisibleRole:
-            return self._is_visible(entry)
-
-        # Display role: only Name and Tags columns produce text via the
-        # delegate's HTML renderer; the action columns hold widgets.
-        if role == QtCore.Qt.DisplayRole:
-            if index.column() == self.COL_NAME:
-                return entry.name
-            # Tags column has no plain-text representation; the delegate
-            # paints HTML. Returning empty string suppresses the default
-            # text painter from drawing over our paint.
-            return ""
-
-        return None
-
-    def flags(self, index):
-        base = super().flags(index)
-        # Tags column accepts inline editing — but only for entries whose
-        # backing store supports it. Non-editable rows still render fine,
-        # they just don't expose the editor delegate.
-        if index.isValid() and index.column() == self.COL_TAGS:
-            entry = self._entries[index.row()]
-            if entry.editable_tags:
-                return base | QtCore.Qt.ItemIsEditable
-        return base
-
-    def setData(self, index, value, role=QtCore.Qt.EditRole):
-        if not index.isValid() or role != QtCore.Qt.EditRole:
-            return False
-        if index.column() != self.COL_TAGS:
-            return False
-        entry = self._entries[index.row()]
-        if not entry.editable_tags:
-            return False
-        save_tags = getattr(entry.handler, "save_tags", None)
-        if not callable(save_tags):
-            return False
-        # value is a comma-separated string of file tags entered by the user.
-        # Strip any leading "#" — the prefix is display-only formatting
-        # (added by the delegate). Users who type "#photogrammetry"
-        # expect the same tag as "photogrammetry", not "##photogrammetry".
-        new_tags = set()
-        for t in str(value).split(","):
-            stripped = t.strip().lstrip("#").strip()
-            if stripped:
-                new_tags.add(stripped)
-        try:
-            save_tags(entry.name, new_tags)
-        except Exception:
-            return False
-        return True
-
-    # ---- helpers ----
-
-    def _passes_entry_filter(self, name: str) -> bool:
-        """True when *name* survives the structural inc/exc entry filter."""
-        if not (self._inc or self._exc):
-            return True
-        return bool(
-            ptk.filter_list([name], inc=self._inc, exc=self._exc, ignore_case=True)
-        )
-
-    def set_entry_filter(
-        self,
-        inc: Union[str, List[str], None] = None,
-        exc: Union[str, List[str], None] = None,
-    ) -> None:
-        """Replace the structural inc/exc entry filter and re-pull the registry."""
-        self._inc = inc
-        self._exc = exc
-        self._refresh()
-
-    def entry_for_name(self, name: str) -> Optional[HandlerEntry]:
-        return self._by_name.get(name)
-
-    # Compat shims for existing callers (mostly tests) that probed the
-    # pre-handler-refactor private fields. Cheap to keep and let the
-    # test bed continue to exercise behavior by name rather than entry
-    # object. New code should prefer ``entry_for_name`` / ``_entries``.
-    @property
-    def _names(self) -> List[str]:
-        return [e.name for e in self._entries]
-
-    def _all_tags_for(self, name: str) -> Set[str]:
-        entry = self._by_name.get(name)
-        return set(entry.all_tags) if entry is not None else set()
-
-    def _inherited_tags_for(self, name: str) -> Set[str]:
-        entry = self._by_name.get(name)
-        return set(entry.inherited_tags) if entry is not None else set()
-
-    def _path_for(self, name: str) -> Optional[str]:
-        entry = self._by_name.get(name)
-        return entry.filepath if entry is not None else None
-
-    def _is_visible(self, entry: HandlerEntry) -> bool:
-        try:
-            return bool(entry.handler.is_visible(entry.name))
-        except Exception:
-            return False
-
-    def all_unique_tags(self) -> List[str]:
-        seen: Set[str] = set()
-        for entry in self._entries:
-            seen |= entry.all_tags
-        return sorted(seen)
-
-
-# ── Row delegate ──────────────────────────────────────────────────────────────
-
-
-# Color palette for the row paint, sourced from pythontk so we get the same
-# desaturated pastel set used elsewhere in the ecosystem (status badges,
-# diff trees, etc.) and stay consistent if those palettes are tweaked later.
-_STATUS_PALETTE = ptk.Palette.status()
-_UI_PALETTE = ptk.Palette.ui()
-_NAME_COLOR = _UI_PALETTE["text"].hex  # neutral text
-_NAME_VISIBLE_COLOR = _STATUS_PALETTE["warn"].fg.hex  # warm gold (visible)
-_INHERITED_TAG_COLOR = _STATUS_PALETTE["locked"].fg.hex  # dimmed grey
-_FILE_TAG_COLOR = _STATUS_PALETTE["info"].fg.hex  # soft steel-blue
-_KIND_CHIP_COLOR = _STATUS_PALETTE["info"].fg.hex  # same family as file tags
-
-# Kind chips suppress the default "ui_file" chip — it's the dominant
-# population and rendering one for every row would be visual noise.
-# External / future kinds get an explicit chip so users can tell rows
-# apart at a glance and filter on the kind via the tag search.
-_KIND_CHIP_LABELS = {
-    "external_subprocess": "external",
-    "external_in_process": "external:in-proc",
-}
-
-
-class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
-    """Per-column renderer for the browser table.
-
-    Column 0 (Name): bold; gold + italic when the UI is currently visible.
-    Column 1 (Tags): mixed-source chips. Inherited tags (filename +
-        source-directory) are gray + italic to signal they're read-only.
-        File tags (XML ``uitk_tags``) are teal + regular weight; these are
-        what inline-editing modifies.
-
-    Inline editing on the Tags column edits only the file-tags portion as
-    a comma-separated string. Inherited tags are not shown in the editor —
-    they live elsewhere and editing them here would be misleading.
-
-    Selection / hover styling comes from the global QSS
-    (``QAbstractItemView::item:selected`` / ``:hover``) — the delegate
-    deliberately does *not* mute ``State_Selected`` so the standard blue
-    fill paints through behind the HTML chips, the same as a default
-    item view would render.
-    """
-
-    _MARGIN = 4
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._doc = QtGui.QTextDocument()
-        self._doc.setDocumentMargin(0)
-        # No line wrapping in cells — long tag strings should clip
-        # horizontally (and scroll on column resize), not wrap into a
-        # second line that gets cropped by the 22px row height. Default
-        # QTextDocument wraps at the set textWidth; turn that off here
-        # once. The textWidth set in paint() still controls the painted
-        # extent for clipping, just without forcing a line break.
-        _opt = QtGui.QTextOption()
-        _opt.setWrapMode(QtGui.QTextOption.NoWrap)
-        self._doc.setDefaultTextOption(_opt)
-
-    def _name_html(self, index) -> str:
-        from html import escape
-
-        name = index.data(SwitchboardBrowserModel.NameRole) or ""
-        visible = bool(index.data(SwitchboardBrowserModel.VisibleRole))
-        if visible:
-            return (
-                f'<span style="color:{_NAME_VISIBLE_COLOR};font-weight:bold;'
-                f'font-style:italic">{escape(name)}</span>'
-            )
-        return (
-            f'<span style="color:{_NAME_COLOR};font-weight:bold">{escape(name)}</span>'
-        )
-
-    def _tags_html(self, index) -> str:
-        from html import escape
-
-        inherited = index.data(SwitchboardBrowserModel.InheritedTagsRole) or []
-        file_tags = index.data(SwitchboardBrowserModel.FileTagsRole) or []
-        kind = index.data(SwitchboardBrowserModel.KindRole) or ""
-        # "Hide inherited tags" lives on the owning browser. The delegate
-        # is parented to it, so a quick parent walk reaches the toggle
-        # without coupling the delegate to a Switchboard import.
-        browser = self.parent()
-        hide_inherited = bool(getattr(browser, "hide_inherited_tags", False))
-        if hide_inherited:
-            inherited = []
-        chips = []
-        # Kind chip first when the kind has an explicit label — lets the
-        # eye anchor "what kind of thing am I looking at" before scanning
-        # tags. .ui-backed entries get no chip (they're the default and
-        # rendering one for every row is noise).
-        kind_label = _KIND_CHIP_LABELS.get(kind)
-        if kind_label:
-            chips.append(
-                f'<span style="color:{_KIND_CHIP_COLOR};font-weight:bold">'
-                f"⟨{escape(kind_label)}⟩</span>"
-            )
-        # Inherited tags — italic to signal "not editable here"
-        for t in sorted(inherited):
-            chips.append(
-                f'<span style="color:{_INHERITED_TAG_COLOR};font-style:italic">'
-                f"#{escape(t)}</span>"
-            )
-        for t in sorted(file_tags):
-            chips.append(f'<span style="color:{_FILE_TAG_COLOR}">#{escape(t)}</span>')
-        return " ".join(chips)
-
-    def _build_html(self, index) -> Optional[str]:
-        col = index.column()
-        if col == SwitchboardBrowserModel.COL_NAME:
-            return self._name_html(index)
-        if col == SwitchboardBrowserModel.COL_TAGS:
-            return self._tags_html(index)
-        return None
-
-    def paint(self, painter, option, index):
-        html = self._build_html(index)
-        opt = QtWidgets.QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-        if html is not None:
-            # Suppress the default text — we draw our own HTML on top of
-            # the cell background.  Leaving ``opt.text`` populated would
-            # render the plain string under the HTML chips.
-            opt.text = ""
-
-        style = opt.widget.style() if opt.widget else QtWidgets.QApplication.style()
-        style.drawControl(QtWidgets.QStyle.CE_ItemViewItem, opt, painter, opt.widget)
-
-        if html is not None:
-            self._doc.setHtml(html)
-            self._doc.setTextWidth(option.rect.width() - 2 * self._MARGIN)
-            painter.save()
-            painter.translate(
-                option.rect.left() + self._MARGIN, option.rect.top() + self._MARGIN
-            )
-            clip = QtCore.QRectF(
-                0, 0, option.rect.width() - 2 * self._MARGIN, option.rect.height()
-            )
-            self._doc.drawContents(painter, clip)
-            painter.restore()
-
-    def sizeHint(self, option, index):
-        html = self._build_html(index)
-        if html is None:
-            return super().sizeHint(option, index)
-        self._doc.setHtml(html)
-        self._doc.setTextWidth(option.rect.width() - 2 * self._MARGIN)
-        return QtCore.QSize(
-            int(self._doc.idealWidth()) + 2 * self._MARGIN,
-            int(self._doc.size().height()) + 2 * self._MARGIN,
-        )
-
-    # ── Inline editing on the Tags column ──────────────────────────
-
-    def createEditor(self, parent, option, index):
-        if index.column() != SwitchboardBrowserModel.COL_TAGS:
-            return super().createEditor(parent, option, index)
-        editor = QtWidgets.QLineEdit(parent)
-        editor.setPlaceholderText("comma-separated file tags")
-        return editor
-
-    def setEditorData(self, editor, index):
-        if index.column() != SwitchboardBrowserModel.COL_TAGS:
-            return super().setEditorData(editor, index)
-        # Edit only the file-tags portion. Inherited tags aren't shown here
-        # because editing them would be a lie — they come from filename or
-        # registration, not from this file's XML. Tooltip surfaces the
-        # inherited set so the user knows nothing was dropped.
-        file_tags = index.data(SwitchboardBrowserModel.FileTagsRole) or []
-        inherited = index.data(SwitchboardBrowserModel.InheritedTagsRole) or []
-        editor.setText(", ".join(file_tags))
-        if inherited:
-            inh_str = ", ".join(f"#{t}" for t in inherited)
-            editor.setToolTip(
-                f"Editing file tags only.\nInherited (not editable here): {inh_str}"
-            )
-        else:
-            editor.setToolTip("Comma-separated tags stored in this .ui file.")
-
-    def setModelData(self, editor, model, index):
-        if index.column() != SwitchboardBrowserModel.COL_TAGS:
-            return super().setModelData(editor, model, index)
-        model.setData(index, editor.text(), QtCore.Qt.EditRole)
-
-    def eventFilter(self, editor, event):
-        """Make Esc always dismiss the editor (cancel without commit).
-
-        QLineEdit in modern Qt swallows Esc to revert an undoable
-        change — so a user who types and then changes their mind
-        sees the text clear but the editor stays open, forcing them
-        to commit-or-keep-typing. That reads as "I can't exit edit
-        mode without making an entry."
-
-        Intercept Esc here and emit ``closeEditor`` with NoHint so
-        the view tears the editor down regardless of QLineEdit's
-        internal undo state. Other keys (Tab, Enter, Return,
-        Backtab) keep their default handling from
-        QStyledItemDelegate.
-        """
-        if (
-            isinstance(editor, QtWidgets.QLineEdit)
-            and event.type() == QtCore.QEvent.KeyPress
-            and event.key() == QtCore.Qt.Key_Escape
-        ):
-            # NoHint = cancel; commit path is via Enter/Return only.
-            self.closeEditor.emit(editor, QtWidgets.QAbstractItemDelegate.NoHint)
-            return True
-        return super().eventFilter(editor, event)
-
-
-# ── Filter proxy ──────────────────────────────────────────────────────────────
-
-
-class _BrowserFilterProxy(QtCore.QSortFilterProxyModel):
-    """Proxy that delegates row acceptance to the owning browser's predicate."""
-
-    def __init__(self, browser):
-        super().__init__(browser)
-        self._browser = browser
-
-    def filterAcceptsRow(self, source_row, source_parent):
-        src = self.sourceModel()
-        # Table model: column is required. Custom roles are
-        # column-independent so column 0 works for the predicate inputs.
-        idx = src.index(source_row, 0, source_parent)
-        name = idx.data(SwitchboardBrowserModel.NameRole)
-        tags = set(idx.data(SwitchboardBrowserModel.TagsRole) or [])
-        if not name:
-            return False
-        return self._browser._row_passes_filter(name, tags)
-
-
 # ── Main browser ──────────────────────────────────────────────────────────────
-
-
-SHOW_VISIBLE = "visible"
-SHOW_HIDDEN = "hidden"
-SHOW_ALL = "all"
-
-SCOPE_NAME = "name"
-SCOPE_TAGS = "tags"
-SCOPE_BOTH = "name + tags"
-
-# Tri-state scope cycle used by the search field's scope action button. The
-# index into ``SCOPES`` is what gets persisted; the icon mapping signals
-# the active scope at a glance — a clean uppercase "A" for text matching,
-# an asterisk (the universal wildcard / "match all") for the combined
-# scope, and a tag glyph for tag-only matching.
-SCOPES = (SCOPE_NAME, SCOPE_BOTH, SCOPE_TAGS)
-SCOPE_ICONS = {
-    SCOPE_NAME: "text",
-    SCOPE_BOTH: "asterisk",
-    SCOPE_TAGS: "tag",
-}
 
 
 class _BrowserState:
@@ -688,7 +112,7 @@ class _BrowserState:
             ValueManager.set_value(widget, value)
 
 
-class SwitchboardBrowser(EditorPanel):
+class SwitchboardBrowser(_LaunchMixin, EditorPanel):
     """Searchable launcher for every UI registered with a Switchboard.
 
     ``switchboard`` is optional. When omitted, a fresh ``Switchboard``
@@ -707,7 +131,9 @@ class SwitchboardBrowser(EditorPanel):
 
     Mirrors the ``mayatk.MayaUiHandler`` pattern of "use what's given,
     otherwise stand one up" so the browser can be opened from anywhere
-    without forcing the caller to wire a switchboard first.
+    without forcing the caller to wire a switchboard first. A browser built
+    either way is its switchboard's ``browser`` editor (``sb.editors``) when
+    that has none open, so the launcher's own "browser" row is this window.
 
     ``inc`` / ``exc`` (``pythontk.filter_list`` shell-style name patterns)
     apply a *structural* entry filter: excluded entries are never
@@ -928,6 +354,14 @@ class SwitchboardBrowser(EditorPanel):
         self._refresh_row_widgets()
         self._select_first_row()
         self._update_footer_status()
+
+        # Built directly, this is the switchboard's "browser" editor unless one
+        # is already open: the launcher's row for it -- and ``sb.editors`` --
+        # then reach THIS window instead of building a second. (A registry
+        # build adopts here too, and the registry skips re-running the hooks.)
+        editors = getattr(self.sb, "editors", None)
+        if editors is not None:
+            editors.adopt("browser", self)
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -1507,8 +941,9 @@ class SwitchboardBrowser(EditorPanel):
         if name:
             path = idx.data(SwitchboardBrowserModel.PathRole) or ""
             visible = bool(idx.data(SwitchboardBrowserModel.VisibleRole))
-            visibility_marker = "● visible — " if visible else ""
-            text = f"{name} — {visibility_marker}{path}"
+            # Editor rows have no backing file: no dangling separator.
+            details = [d for d in ("● visible" if visible else "", path) if d]
+            text = " — ".join([name, *details])
         else:
             registered = self._model.rowCount()
             visible_count = sum(
@@ -1520,170 +955,6 @@ class SwitchboardBrowser(EditorPanel):
             )
 
         footer.setStatusText(text)
-
-    def launch_options(self) -> LaunchOptions:
-        return LaunchOptions(
-            frameless=self._cb_frameless.isChecked(),
-            translucent=self._cb_translucent.isChecked(),
-            restore_geometry=self._cb_restore.isChecked(),
-            on_top=self._cb_on_top.isChecked(),
-            theme=self._cmb_theme.currentText(),
-            persistence=self._resolve_persistence(None),
-        )
-
-    # ── Pin-button click mode (handler-owned preference) ─────────────────────
-
-    def _ui_handler(self):
-        """The Switchboard's UI handler (the ``"ui"`` slot), or None.
-
-        Every app registers its UiHandler subclass under that name (tentacle
-        passes ``handlers={"ui": MayaUiHandler}``; a bare Switchboard
-        auto-registers the base class), so it's the stable way to reach the
-        owner of window chrome without a handler-typed import.
-        """
-        return getattr(getattr(self.sb, "handlers", None), "ui", None)
-
-    def _pin_click_hides(self) -> bool:
-        """Whether a pin-button click currently dismisses the window."""
-        return bool(getattr(self._ui_handler(), "pin_click_hides", True))
-
-    def _on_pin_click_hides_toggled(self, checked: bool) -> None:
-        """Persist + live-apply the pin-click mode via the UI handler."""
-        handler = self._ui_handler()
-        if handler is None:
-            return
-        try:
-            handler.pin_click_hides = bool(checked)
-        except AttributeError:  # handler predates the preference
-            pass
-
-    def _pin_on_tap(self) -> bool:
-        """Whether tapping the activation key currently pins a window open."""
-        return bool(getattr(self._ui_handler(), "pin_on_tap", False))
-
-    def _on_pin_on_tap_toggled(self, checked: bool) -> None:
-        """Persist + live-apply the tap-to-pin behavior via the UI handler."""
-        handler = self._ui_handler()
-        if handler is None:
-            return
-        try:
-            handler.pin_on_tap = bool(checked)
-        except AttributeError:  # handler predates the preference
-            pass
-
-    # ── Window persistence (context/sticky/transient) resolution ─────────────
-
-    @staticmethod
-    def _persistence_label(value: str) -> str:
-        """Combo label for a stored persistence value (falls back to Default)."""
-        return dict(PERSISTENCE_CHOICES).get(value, PERSISTENCE_CHOICES[0][1])
-
-    @staticmethod
-    def _persistence_value(label: str) -> str:
-        """Stored persistence value for a combo label (falls back to context)."""
-        for value, lbl in PERSISTENCE_CHOICES:
-            if lbl == label:
-                return value
-        return PERSISTENCE_CONTEXT
-
-    def _global_persistence(self) -> str:
-        """The global default persistence mode ("context"/"sticky"/"transient").
-
-        Handler-owned, like ``pin_click_hides`` — the handler styles every
-        window whatever opened it, so a browser-local copy would (and did)
-        reach browser-launched windows only.
-        """
-        value = getattr(self._ui_handler(), "window_persistence", PERSISTENCE_DEFAULT)
-        return (
-            value
-            if value in (PERSISTENCE_CONTEXT, PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT)
-            else PERSISTENCE_DEFAULT
-        )
-
-    def _set_global_persistence(self, mode: str) -> None:
-        """Persist + live-apply the global default via the UI handler."""
-        handler = self._ui_handler()
-        if handler is None:
-            return
-        try:
-            handler.window_persistence = mode
-        except AttributeError:  # handler predates the preference
-            pass
-
-    def _entry_persistence_override(self, name: str) -> Optional[str]:
-        """The stored per-entry override, or None if the entry follows the default."""
-        handler = self._ui_handler()
-        getter = getattr(handler, "persistence_override", None)
-        return getter(name) if callable(getter) else None
-
-    def _effective_default(self, name: str) -> str:
-        """What "Default" currently resolves to for *name* — so the row menu can
-        say ``Default (sticky)`` instead of the opaque ``Default (context)``.
-
-        The global default when one is set; otherwise the window's OWN default
-        (``UiHandler.default_persistence``), which needs the loaded widget to
-        read its tags — an unlisted/unloaded entry honestly reports "context".
-        """
-        global_mode = self._global_persistence()
-        if global_mode != PERSISTENCE_CONTEXT:
-            return global_mode
-        hook = getattr(self._ui_handler(), "default_persistence", None)
-        loaded = getattr(self.sb, "loaded_ui", None)
-        ui = loaded.peek(name) if loaded is not None else None
-        if ui is not None and callable(hook):
-            try:
-                return hook(ui)
-            except Exception:
-                pass
-        return global_mode
-
-    def _resolve_persistence(self, name: Optional[str]) -> Optional[str]:
-        """Effective persistence handed to the handler: per-entry override, else
-        the global default. Returns ``None`` for "Default (context)" so the launch
-        keeps its context chrome. ``name=None`` resolves the global only."""
-        if name is not None:
-            override = self._entry_persistence_override(name)
-            if override is not None:
-                return override
-        global_mode = self._global_persistence()
-        return global_mode if global_mode != PERSISTENCE_CONTEXT else None
-
-    def _set_entry_persistence(self, name: str, mode: Optional[str]) -> None:
-        """Set (``"sticky"``/``"transient"``) or clear (``None`` -> follow default)
-        a per-entry override. The handler re-chromes the window if it's open."""
-        handler = self._ui_handler()
-        setter = getattr(handler, "set_persistence_override", None)
-        if callable(setter):
-            setter(name, mode)
-
-    def _migrate_browser_persistence(self) -> None:
-        """One-shot: hand pre-existing browser-local persistence keys to the handler.
-
-        These keys used to live in the ``ui_browser`` settings branch, where
-        they only ever reached browser-launched windows. Copy them once (never
-        clobbering a value the handler already has) and drop the originals, so
-        a user's stored choices survive the move to handler ownership.
-        """
-        handler = self._ui_handler()
-        if handler is None or not hasattr(handler, "set_persistence_override"):
-            return
-        legacy_global = self._settings.value("opt_persistence", None)
-        if legacy_global in (PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT):
-            if handler.window_persistence == PERSISTENCE_CONTEXT:
-                handler.window_persistence = legacy_global
-        self._settings.remove("opt_persistence")
-
-        prefix = "persistence_override/"
-        for key in [k for k in self._settings.keys() if k.startswith(prefix)]:
-            mode = self._settings.value(key, None)
-            # The legacy keys were host-namespaced with the same SSoT the
-            # handler uses, so the stored leaf IS the handler's leaf: write the
-            # raw key through rather than re-namespacing an already-namespaced
-            # name (``mirror_maya`` -> ``mirror_maya_maya``).
-            if mode in (PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT):
-                if handler.config.value(key, None) is None:
-                    handler.config.setValue(key, mode)
-            self._settings.remove(key)
 
     # ── Slots ────────────────────────────────────────────────────────────────
 
@@ -1813,6 +1084,17 @@ class SwitchboardBrowser(EditorPanel):
             designer_act.triggered.connect(
                 lambda _=False, p=path: self._open_in_designer(p)
             )
+        # Standalone launch snippet (a Python prompt, a Maya shelf button),
+        # rendered by the entry's own handler from this browser's launch
+        # options. Rendered now: an entry whose handler can't spell one
+        # simply gets no action.
+        code = self._launch_code(name)
+        if code:
+            copy_act = menu.addAction("Copy launch code")
+            copy_act.triggered.connect(
+                lambda _=False, n=name, c=code: self._copy_launch_code(n, c)
+            )
+        if not menu.isEmpty():
             menu.addSeparator()
 
         # Tag editing happens inline — double-click the Tags cell, or
@@ -1828,22 +1110,26 @@ class SwitchboardBrowser(EditorPanel):
             menu.addSeparator()
 
         # ── Open as (per-entry window persistence override) ──
-        current = self._entry_persistence_override(name)
-        # The stored values ("context"/"sticky"/"transient") double as the short
-        # names shown after "Default", so no separate mapping is needed.
-        open_as = menu.addMenu("Open as")
-        for label, mode in (
-            (f"Default ({self._effective_default(name)})", None),
-            ("Sticky — stays open (hide button)", PERSISTENCE_STICKY),
-            ("Transient — hides on leave (pin button)", PERSISTENCE_TRANSIENT),
-        ):
-            act = open_as.addAction(label)
-            act.setCheckable(True)
-            act.setChecked(current == mode)
-            act.triggered.connect(
-                lambda _=False, n=name, m=mode: self._set_entry_persistence(n, m)
-            )
-        menu.addSeparator()
+        # Persistence is the UI handler's to resolve; other handlers' windows
+        # (editors, external apps) ignore it, so their rows don't offer it.
+        entry = self._model.entry_for_name(name)
+        if entry is not None and entry.handler is self._ui_handler():
+            current = self._entry_persistence_override(name)
+            # The stored values ("context"/"sticky"/"transient") double as the
+            # short names shown after "Default", so no separate mapping is needed.
+            open_as = menu.addMenu("Open as")
+            for label, mode in (
+                (f"Default ({self._effective_default(name)})", None),
+                ("Sticky — stays open (hide button)", PERSISTENCE_STICKY),
+                ("Transient — hides on leave (pin button)", PERSISTENCE_TRANSIENT),
+            ):
+                act = open_as.addAction(label)
+                act.setCheckable(True)
+                act.setChecked(current == mode)
+                act.triggered.connect(
+                    lambda _=False, n=name, m=mode: self._set_entry_persistence(n, m)
+                )
+            menu.addSeparator()
 
         if name in self.hidden_uis:
             unh = menu.addAction("Unhide this UI")
@@ -1871,10 +1157,20 @@ class SwitchboardBrowser(EditorPanel):
     def _open_in_designer(self, path: str) -> None:
         """Launch Qt Designer with *path* preloaded.
 
-        Tries the bundled designer of the currently-imported Qt binding
-        (PySide6 / PySide2) first, then falls back to common executable
-        names resolved via :class:`pythontk.AppLauncher`.
+        Through :meth:`uitk.DesignerPlugin.launch` first: the ``pyside6-designer``
+        wrapper with uitk's widgets published (``PYSIDE_DESIGNER_PLUGINS``; on
+        Linux the wrapper also preloads libpython, without which no Python
+        widget plug-in loads). Else the bundled designer of the imported Qt
+        binding (PySide2), then common executable names via
+        :class:`pythontk.AppLauncher` -- a plain Designer, uitk widgets absent.
         """
+        from uitk.designer._designer import DesignerPlugin
+
+        try:
+            DesignerPlugin.launch(path, wait=False)
+            return
+        except (FileNotFoundError, OSError):
+            pass
         candidates: List[str] = []
         # Bundled designer next to PySide6/PySide2. Layout varies by
         # platform: Windows wheels ship designer.exe at the package
@@ -1946,67 +1242,6 @@ class SwitchboardBrowser(EditorPanel):
             self._focus(name)
         else:
             self._launch(name)
-
-    def _close_ui(self, name: str) -> None:
-        """Dismiss the entry via its owning handler.
-
-        The handler decides what "close" means — hide a window, terminate
-        a subprocess, etc. Browser stays kind-agnostic.
-        """
-        entry = self._model.entry_for_name(name)
-        if entry is None:
-            return
-        try:
-            entry.handler.close(name)
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Close failed", f"{name}: {e}")
-            return
-        self._model.refresh_after_launch(name)
-
-    def _launch(self, name: str) -> None:
-        """Launch the entry through its owning handler.
-
-        Browser passes the current launch options (frameless/translucent/
-        restore_geometry/on_top/theme) as **kwargs; handlers that don't
-        care about UI styling discard the unknown keys.
-        """
-        entry = self._model.entry_for_name(name)
-        if entry is None:
-            return
-        opts = self.launch_options()
-        try:
-            entry.handler.launch(
-                name,
-                frameless=opts.frameless,
-                translucent=opts.translucent,
-                restore_geometry=opts.restore_geometry,
-                on_top=opts.on_top,
-                theme=opts.theme,
-                # Per-entry override wins over the global default in opts.
-                persistence=self._resolve_persistence(name),
-            )
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Launch failed", f"{name}: {e}")
-            return
-        self._model.refresh_after_launch(name)
-
-    def _focus(self, name: str) -> None:
-        """Raise a currently-visible entry. UI-file entries support this;
-        external tools generally don't (we'd need a window handle), so we
-        no-op gracefully when the handler can't raise.
-        """
-        entry = self._model.entry_for_name(name)
-        if entry is None:
-            return
-        # Only ui_file entries have a loaded_ui peek path with raise_().
-        if entry.kind != "ui_file":
-            return
-        try:
-            ui = self.sb.loaded_ui[name]
-        except Exception:
-            return
-        ui.raise_()
-        ui.activateWindow()
 
     def _on_model_data_changed(self, *_args) -> None:
         # A row's tags or visibility changed; chip set may need to add/drop

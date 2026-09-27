@@ -1,22 +1,31 @@
 # !/usr/bin/python
 # coding=utf-8
 import json
-import logging
-import os
-import shutil
+import weakref
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Union, TYPE_CHECKING
 
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets
 import pythontk as ptk
+
+# The concept parts PresetManager is built from: base classes, needed at class
+# definition, so imported eagerly (the selector wiring, used by one path, is not).
+from uitk.managers._preset_migration import (  # noqa: F401 -- re-exported names
+    _ECOSYSTEM_WRAPPER_NAME,
+    _INTERIM_STATE_ARTIFACTS,
+    _LEGACY_PRESET_PATHS,
+    _MIGRATION_SENTINEL_NAME,
+    _RENAMED_PRESET_DOMAINS,
+    _UITK_OWN_PRE_WRAP_DIRS,
+    _PresetRootMigration,
+)
+from uitk.managers._preset_widgets import _PresetWidgetScope
 
 if TYPE_CHECKING:
     from uitk.managers.state_manager import StateManager
 
-_log = logging.getLogger(__name__)
 
-
-class PresetManager(ptk.LoggingMixin):
+class PresetManager(_PresetWidgetScope, _PresetRootMigration, ptk.LoggingMixin):
     """Manages named presets for widget state, stored as external JSON files.
 
     Supports two modes:
@@ -55,7 +64,7 @@ class PresetManager(ptk.LoggingMixin):
     - **Tilde string**: ``"~/.myapp/presets"``
     - **Environment variables**: ``"$HOME/.myapp/presets"``
     - **Relative / short name**: ``"myapp/presets"`` — resolved
-      under ``QStandardPaths.writableLocation(AppConfigLocation)``
+      under :meth:`get_presets_root` (pythontk's user-config root)
 
     Preset files are flat key-value JSON::
 
@@ -73,6 +82,18 @@ class PresetManager(ptk.LoggingMixin):
     """
 
     PRESET_VERSION = 1
+
+    #: What writing a stored value that no longer fits its widget raises: a
+    #: wrong type (the setting changed kind), an index past a shrunk list, an
+    #: overflow. :meth:`load` skips such a key instead of aborting -- and counts
+    #: a writer that answers ``False`` instead of raising the same way
+    #: (``StateManager.apply``, which never raises).
+    _MISFIT_ERRORS = (TypeError, ValueError, OverflowError)
+
+    # Every manager with a wired combo, so a change made OUTSIDE its panel (the
+    # Preset Editor, a bundle import) can refresh the open selectors -- see
+    # :meth:`notify`. Weak: a closed panel's manager just drops out.
+    _live: "weakref.WeakSet[PresetManager]" = weakref.WeakSet()
 
     def __init__(
         self,
@@ -194,15 +215,15 @@ class PresetManager(ptk.LoggingMixin):
           via `Path.expanduser`.
         - **Environment variables**: ``"$HOME/.myapp/presets"`` or
           ``"%APPDATA%/myapp/presets"`` — expanded via
-          `os.path.expandvars`.
+          `pythontk.UserConfig.expand` (every spelling, on every OS).
         - **Relative / short name**: ``"mayatk/reference_manager"`` —
-          resolved under :func:`get_presets_root` (default:
-          ``<QStandardPaths.AppConfigLocation>``).
+          resolved under :meth:`get_presets_root` (pythontk's user-config
+          root, e.g. ``%LOCALAPPDATA%/uitk``).
 
         Returns:
             An absolute `Path`.
         """
-        p = Path(os.path.expandvars(str(raw))).expanduser()
+        p = Path(ptk.UserConfig.expand(str(raw)))
         if not p.is_absolute():
             p = PresetManager.get_presets_root() / p
         return p
@@ -216,7 +237,7 @@ class PresetManager(ptk.LoggingMixin):
         """
         if raw is None:
             return None
-        return Path(os.path.expandvars(str(raw))).expanduser()
+        return Path(ptk.UserConfig.expand(str(raw)))
 
     @property
     def _store(self) -> "ptk.PresetStore":
@@ -286,7 +307,7 @@ class PresetManager(ptk.LoggingMixin):
             preset_dir: Directory for storing preset JSON files
                 (str or Path).  When omitted, the directory is
                 auto-derived from the parent window's name under
-                ``QStandardPaths.writableLocation(AppConfigLocation)``.
+                :meth:`get_presets_root` (``<root>/uitk/<window_name>``).
             widgets: Optional explicit list of QWidgets to capture/restore.
                 If omitted, widgets are discovered from the parent.
             on_loaded: Optional callable (no args) invoked after a preset
@@ -406,105 +427,6 @@ class PresetManager(ptk.LoggingMixin):
                 self.logger.debug(f"Preset change callback error: {e}")
 
     # ------------------------------------------------------------------
-    # Capture scope + include / exclude
-    # ------------------------------------------------------------------
-
-    _VALID_SCOPES = ("auto", "menu", "window", "explicit")
-
-    @property
-    def scope(self) -> str:
-        """Which widget set a save/load operates on.
-
-        - ``"auto"`` (default): legacy implicit resolution — explicit list, else
-          the *parent* menu's items, else the parent window's registered set.
-          Preserves prior behavior for every existing caller.
-        - ``"menu"``: force the parent menu's ``get_items()`` (today's
-          ``add_presets`` behavior, made explicit).
-        - ``"window"``: capture the owning ``MainWindow``'s registered widgets
-          (``restore_state=True``), regardless of where the manager's *parent*
-          sits. This is what lets a header-menu preset capture panel widgets.
-        - ``"explicit"``: only the widgets passed via ``widgets=`` /
-          :meth:`from_widgets` / :meth:`setup`.
-
-        Refine any scope with :meth:`include` / :meth:`exclude`.
-        """
-        return self._scope
-
-    @scope.setter
-    def scope(self, value: str) -> None:
-        if value not in self._VALID_SCOPES:
-            raise ValueError(
-                f"scope must be one of {self._VALID_SCOPES}, got {value!r}"
-            )
-        self._scope = value
-
-    @staticmethod
-    def _as_object_names(items) -> Set[str]:
-        """Coerce a mix of ``objectName`` strings / widget instances to names."""
-        names: Set[str] = set()
-        for item in items:
-            if isinstance(item, str):
-                if item:
-                    names.add(item)
-            else:  # assume a QWidget
-                name = item.objectName() if hasattr(item, "objectName") else ""
-                if name:
-                    names.add(name)
-        return names
-
-    def exclude(self, *names_or_widgets) -> "PresetManager":
-        """Exclude widgets (by ``objectName`` or instance) from capture/restore.
-
-        Names are preferred — they resolve at save/load time, so widgets that
-        don't exist yet at config time still match. Additive across calls.
-        Returns *self* for chaining.
-        """
-        self._exclude_names |= self._as_object_names(names_or_widgets)
-        return self
-
-    def include(self, *names_or_widgets) -> "PresetManager":
-        """Restrict capture/restore to *only* these widgets (allowlist).
-
-        Once any ``include`` is set, everything not listed is excluded. Names or
-        instances both accepted; additive across calls. Returns *self*.
-        """
-        if self._include_names is None:
-            self._include_names = set()
-        self._include_names |= self._as_object_names(names_or_widgets)
-        return self
-
-    def _passes_filters(self, name: str) -> bool:
-        """True when *name* survives the include allowlist + exclude denylist."""
-        if self._include_names is not None and name not in self._include_names:
-            return False
-        return name not in self._exclude_names
-
-    def _resolve_window(self) -> Optional[QtWidgets.QWidget]:
-        """Resolve (and cache) the owning ``MainWindow`` for ``"window"`` scope.
-
-        Duck-typed: a window exposes both ``widgets`` and ``state``. The *parent*
-        is the window itself in MainWindow mode; in menu mode it's the menu,
-        which exposes :meth:`Menu.owner_window` — that resolver survives the
-        live-DCC popup-reparent race a plain ``parent().window()`` walk loses to.
-        """
-        win = self._window
-        if win is not None:
-            try:
-                win.objectName()  # dead C++ wrapper -> RuntimeError
-                return win
-            except RuntimeError:
-                self._window = None
-
-        parent = self.parent
-        if parent is None:
-            return None
-        if hasattr(parent, "widgets") and hasattr(parent, "state"):
-            self._window = parent
-        elif hasattr(parent, "owner_window"):
-            self._window = parent.owner_window()
-        return self._window
-
-    # ------------------------------------------------------------------
     # Active preset + modified ("dirty") tracking
     # ------------------------------------------------------------------
 
@@ -513,10 +435,12 @@ class PresetManager(ptk.LoggingMixin):
         """Name of the preset currently in use, or ``None``.
 
         Persisted (per :attr:`preset_dir`) via the backing store's ``.active``
-        sidecar, so it survives between sessions. Assigning a name updates the
-        modified-tracking baseline **without applying any values** — widgets
-        restore themselves from session state, so only the *selection* needs
-        restoring. Assign ``None`` to clear.
+        sidecar, so it survives between sessions. It reads back as the file
+        stem the combo lists, whatever spelling was assigned (``"a (b)"`` is
+        ``"a _b_"``; see ``pythontk.PresetStore.active``). Assigning a name
+        updates the modified-tracking baseline **without applying any
+        values** — widgets restore themselves from session state, so only the
+        *selection* needs restoring. Assign ``None`` to clear.
         """
         return self._store.active
 
@@ -606,35 +530,6 @@ class PresetManager(ptk.LoggingMixin):
             except (RuntimeError, TypeError):
                 pass
 
-    @staticmethod
-    def _value_change_signal(widget: QtWidgets.QWidget):
-        """Return *widget*'s value-change Signal, or ``None``."""
-        # Prefer the uitk wrapper's declared default signal.
-        getter = getattr(widget, "default_signals", None)
-        if callable(getter):
-            try:
-                name = getter()
-                if name:
-                    sig = getattr(widget, name, None)
-                    if sig is not None:
-                        return sig
-            except Exception:
-                pass
-        # Fall back to a type-based mapping for plain Qt widgets.
-        for cls, attr in (
-            (QtWidgets.QCheckBox, "stateChanged"),
-            (QtWidgets.QRadioButton, "toggled"),
-            (QtWidgets.QComboBox, "currentIndexChanged"),
-            (QtWidgets.QLineEdit, "textChanged"),
-            (QtWidgets.QTextEdit, "textChanged"),
-            (QtWidgets.QSpinBox, "valueChanged"),
-            (QtWidgets.QDoubleSpinBox, "valueChanged"),
-            (QtWidgets.QSlider, "valueChanged"),
-        ):
-            if isinstance(widget, cls):
-                return getattr(widget, attr, None)
-        return None
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -653,6 +548,9 @@ class PresetManager(ptk.LoggingMixin):
 
         Returns:
             The Path to the saved JSON file.
+
+        Raises:
+            pythontk.PresetReadOnlyError: *name* is a locked user preset.
         """
         data: Dict[str, Any] = {"_meta": {"version": self.PRESET_VERSION}}
 
@@ -673,8 +571,9 @@ class PresetManager(ptk.LoggingMixin):
         )
         self._notify_change()
         # Saving makes the just-written values the new baseline for *name*; if
-        # it's the active preset the modified marker should clear.
-        if self.active_preset == name:
+        # it's the active preset the modified marker should clear. The pointer
+        # holds the file stem, *name* is as typed ("a (b)" -> "a _b_").
+        if self.active_preset == ptk.PresetStore.sanitize_preset_name(name):
             self._active_snapshot = self._strip_meta(data)
             self.refresh_modified_state()
         return filepath
@@ -716,6 +615,19 @@ class PresetManager(ptk.LoggingMixin):
                 values[obj_name] = value
         return values
 
+    def _update_hint(self, name: str) -> str:
+        """How the user brings preset *name* back in step with the panel.
+
+        "Re-save" is only right for an editable user preset: saving over a
+        built-in makes a user copy that hides every later shipped update, and a
+        locked preset refuses the save.
+        """
+        if self._store.source(name) == "builtin":
+            return "It ships with the tool and is updated with it."
+        if self._store.is_read_only(name):
+            return "It's locked: save a copy to keep an updated version."
+        return "Re-save the preset to update it."
+
     @staticmethod
     def _strip_meta(data: Dict[str, Any]) -> Dict[str, Any]:
         """Return *data* without the reserved ``_meta`` block."""
@@ -743,7 +655,11 @@ class PresetManager(ptk.LoggingMixin):
         managed widgets the preset does not cover keep their current values.
         A short user-facing WARNING states how many settings were uncovered
         (schema drift is otherwise invisible — ``is_modified`` compares
-        overlapping keys only); the key names are logged at DEBUG.
+        overlapping keys only); the key names are logged at DEBUG. A stored
+        value that no longer fits its widget (its write raises one of
+        :attr:`_MISFIT_ERRORS`, or answers ``False`` as ``StateManager.apply``
+        does) is skipped -- that widget keeps its value -- with one WARNING for
+        the lot, in the MainWindow and standalone modes alike.
 
         Parameters:
             name: The preset name to load.
@@ -811,11 +727,30 @@ class PresetManager(ptk.LoggingMixin):
         if uncovered:
             self.logger.warning(
                 f"Preset '{name}' doesn't cover {len(uncovered)} new panel "
-                "settings. Re-save the preset to include them."
+                f"settings. {self._update_hint(name)}"
             )
             self.logger.debug(f"Preset '{name}' uncovered keys: {', '.join(uncovered)}")
 
         applied = 0
+        # Keys whose stored value no longer fits its widget (the setting changed
+        # kind or lost choices since the save): skipped, never fatal -- one
+        # misfit must not abort the load half-way.
+        rejected: List[str] = []
+
+        def fits(obj_name: str, write: Callable[[], Any]) -> bool:
+            # A writer says "doesn't fit" by raising or, if it never raises
+            # (StateManager.apply), by answering False; None is a write.
+            try:
+                written = write()
+            except self._MISFIT_ERRORS as e:
+                reason = str(e)
+            else:
+                if written is not False:
+                    return True
+                reason = "the widget refused it"
+            rejected.append(obj_name)
+            self.logger.debug(f"Preset '{name}' key '{obj_name}' skipped: {reason}")
+            return False
 
         if self.state is not None:
             # MainWindow path: apply under suppress_save (so a mid-apply slot
@@ -841,11 +776,14 @@ class PresetManager(ptk.LoggingMixin):
                         if block_signals:
                             widget.blockSignals(True)
                         try:
-                            factory.set_value(widget, value)
+                            ok = fits(
+                                obj_name,
+                                lambda w=widget, v=value: factory.set_value(w, v),
+                            )
                         finally:
                             if block_signals:
                                 widget.blockSignals(was_blocked)
-                        applied += 1
+                        applied += ok
                         # Deliberately NOT added to applied_widgets: those get a
                         # `state.save()` below, and StateManager never owned these
                         # widgets. Their persistence is the preset store itself.
@@ -860,9 +798,12 @@ class PresetManager(ptk.LoggingMixin):
                     original_block = getattr(widget, "block_signals_on_restore", False)
                     widget.block_signals_on_restore = block_signals
                     try:
-                        self.state.apply(widget, value)
-                        applied += 1
-                        applied_widgets.append(widget)
+                        if fits(
+                            obj_name,
+                            lambda w=widget, v=value: self.state.apply(w, v),
+                        ):
+                            applied += 1
+                            applied_widgets.append(widget)
                     finally:
                         if had_attr:
                             widget.block_signals_on_restore = original_block
@@ -891,11 +832,19 @@ class PresetManager(ptk.LoggingMixin):
                             f"Preset key '{obj_name}' has no matching widget, skipping."
                         )
                         continue
-                    self._write_widget(widget, value)
-                    applied += 1
+                    applied += fits(
+                        obj_name, lambda w=widget, v=value: self._write_widget(w, v)
+                    )
             finally:
                 for w in blocked:
                     w.blockSignals(False)
+
+        if rejected:
+            self.logger.warning(
+                f"Preset '{name}': the panel can't use {len(rejected)} of its "
+                "settings (they changed since it was saved), so those kept their "
+                f"current values. {self._update_hint(name)}"
+            )
 
         self.logger.debug(
             f"Loaded preset '{name}': {applied}/{len(data)} widgets applied."
@@ -917,6 +866,51 @@ class PresetManager(ptk.LoggingMixin):
         Lets a UI lock / relabel built-ins (they can't be renamed or deleted).
         """
         return self._store.source(name)
+
+    def is_read_only(self, name: str) -> bool:
+        """True for a built-in, or a user preset locked in the Preset Editor.
+
+        A locked preset can't be overwritten, renamed or deleted from the panel;
+        Save offers ``"<name> copy"`` instead.
+        """
+        return self._store.is_read_only(name)
+
+    def is_locked(self, name: str) -> bool:
+        """True when *name* is a user preset that has been locked (not a built-in)."""
+        store = self._store  # one build: the property rebuilds per access
+        return store.source(name) == "user" and store.is_read_only(name)
+
+    @property
+    def key(self) -> Optional[str]:
+        """This manager's store key under the presets root (see ``PresetStore.key``)."""
+        return self._store.key
+
+    @classmethod
+    def notify(cls, keys: Optional[List[str]] = None) -> int:
+        """Refresh the wired combos of live managers whose store changed.
+
+        Called after presets were changed outside their panel -- the Preset
+        Editor, a bundle import -- so an open selector shows the new list, lock
+        marks and names without a manual Refresh. Values are never re-applied
+        (see :meth:`refresh_combo`). *keys* limits it to those stores; ``None``
+        refreshes every live combo. Returns how many combos were refreshed.
+
+        Only this process: another running DCC catches up when its dropdown next
+        opens (the combo re-lists on popup when the folder changed).
+        """
+        wanted = set(keys) if keys is not None else None
+        count = 0
+        for mgr in list(cls._live):
+            try:
+                if wanted is not None and mgr.key not in wanted:
+                    continue
+                mgr.refresh_combo()
+                count += 1
+            except RuntimeError:  # the combo's C++ side is gone
+                cls._live.discard(mgr)
+            except Exception as e:  # one broken panel must not stop the rest
+                mgr.logger.debug(f"Preset notify failed: {e}")
+        return count
 
     def delete(self, name: str) -> bool:
         """Delete a *user* preset (built-ins are read-only).
@@ -994,226 +988,6 @@ class PresetManager(ptk.LoggingMixin):
         """
         return self._store.path(name, "user")
 
-    def _get_widgets(
-        self, scope: Optional[QtWidgets.QWidget] = None
-    ) -> Set[QtWidgets.QWidget]:
-        """Return the set of restorable widgets the current :attr:`scope` selects.
-
-        The source set is chosen by :attr:`scope`:
-
-        - ``"explicit"`` — the constructor / ``setup()`` widget list.
-        - ``"menu"`` — the parent menu's ``get_items()`` (only value-bearing).
-        - ``"window"`` — the owning ``MainWindow``'s registered, ``restore_state``
-          widgets (resolved even when the manager's *parent* is a menu).
-        - ``"auto"`` (default) — legacy order: explicit list, else menu items,
-          else the parent window's registered set.
-
-        The source is then filtered by the always-excluded instance set
-        (``_excluded_widgets`` — e.g. the preset combo), the name-based exclude
-        denylist, and the include allowlist (see :meth:`exclude` / :meth:`include`).
-
-        Parameters:
-            scope: An optional container widget to further limit a window-scoped
-                search to that subtree.
-
-        Returns:
-            A set of widgets.
-        """
-        candidates = self._scope_candidates(scope)
-        return {
-            w
-            for w in candidates
-            if w.objectName()
-            and w not in self._excluded_widgets
-            and self._passes_filters(w.objectName())
-        }
-
-    def _scope_candidates(
-        self, scope: Optional[QtWidgets.QWidget]
-    ) -> Set[QtWidgets.QWidget]:
-        """Resolve the raw candidate widget set for the current :attr:`scope`.
-
-        Per-source typing rules are applied here (menus: value-bearing items;
-        windows: ``restore_state``, value-bearing only under explicit ``"window"``
-        scope); the name/instance filters are layered on by :meth:`_get_widgets`.
-        """
-        mode = self._scope
-        if mode == "explicit":
-            return set(self._explicit_widgets or [])
-        if mode == "menu":
-            return self._menu_candidates()
-        if mode == "window":
-            # Explicit window scope is the opinionated "capture the panel's
-            # state" mode: keep only value-bearing widgets (drop buttons /
-            # group boxes / chrome).
-            return self._window_candidates(scope, value_only=True)
-
-        # "auto" — legacy implicit resolution order. The window branch here is
-        # the back-compat MainWindow mode (``PresetManager(parent=window, …)``,
-        # e.g. ``MainWindow.presets`` / curtain); it keeps the prior
-        # ``restore_state``-only set, NO value-type filter, so existing presets
-        # aren't silently re-scoped.
-        if self._explicit_widgets is not None:
-            return set(self._explicit_widgets)
-        if hasattr(self.parent, "get_items"):
-            return self._menu_candidates()
-        return self._window_candidates(scope, value_only=False)
-
-    def _menu_candidates(self) -> Set[QtWidgets.QWidget]:
-        """Value-bearing items of the parent menu (empty if parent isn't a menu)."""
-        parent = self.parent
-        if not hasattr(parent, "get_items"):
-            return set()
-        return {w for w in parent.get_items() if self._get_widget_value(w) is not None}
-
-    def _window_candidates(
-        self, scope: Optional[QtWidgets.QWidget], value_only: bool
-    ) -> Set[QtWidgets.QWidget]:
-        """Registered, ``restore_state`` widgets of the owning ``MainWindow``.
-
-        Resolving the window (vs. reading ``parent.widgets`` directly) is what
-        lets a *menu*-parented manager reach the whole window. Binds the window's
-        ``StateManager`` so capture/apply use the same get/set semantics as
-        session state (index guards, ``currentData``, …).
-
-        ``value_only`` keeps only *value-bearing* widgets — stateful inputs
-        (checkboxes, combos, line edits, …), not action buttons, group boxes,
-        header chrome, or size grips, all of which carry ``restore_state`` but no
-        meaningful value. It's on for explicit ``"window"`` scope (clean panel
-        capture) and off for the legacy auto/MainWindow path (back-compat).
-        """
-        window = self._resolve_window()
-        registered = getattr(window, "widgets", None)
-        if registered is None:  # fallback: parent itself is/has the set
-            registered = getattr(self.parent, "widgets", set())
-        registered = registered or set()
-
-        # Adopt the window's StateManager for value get/set when available and
-        # not already supplied — turns the standalone path into MainWindow mode.
-        if self.state is None and window is not None:
-            self.state = getattr(window, "state", None)
-
-        if scope is not None and scope is not window and scope is not self.parent:
-            scope_children = set(scope.findChildren(QtWidgets.QWidget))
-            registered = registered & scope_children
-
-        return {
-            w
-            for w in registered
-            if getattr(w, "restore_state", False)
-            and (not value_only or self._get_widget_value(w) is not None)
-        }
-
-    # ------------------------------------------------------------------
-    # Standalone widget value helpers
-    # ------------------------------------------------------------------
-
-    # ---- value authority ------------------------------------------------
-    # Three readers, most-specific first. A widget's own builder always knows best:
-    #
-    # 1. ``KindFactory`` — for widgets IT built (stamped ``_attr_kind``). It owns a
-    #    read/write pair per kind, so it reaches composites whose value lives on an
-    #    inner child (``path``, ``file_list``) and list-shaped kinds (``check_list``)
-    #    that neither of the readers below has any branch for. Without this those
-    #    params silently vanished from a saved preset: the manager read ``None`` from
-    #    the composite container and ``_capture_values`` dropped the key.
-    # 2. ``StateManager`` — for plain registered widgets in MainWindow mode, so
-    #    presets and session state agree on index guards / ``currentData``.
-    # 3. The ``isinstance`` ladder — standalone fallback.
-    #
-    # Kind-first, not state-first: the stamp is proof of who built the widget,
-    # whereas ``StateManager`` would answer for a composite by guessing from its Qt
-    # type and get it wrong.
-
-    @staticmethod
-    def _kind_factory():
-        """The ``KindFactory`` class.
-
-        Deferred, and resolved in ONE place: ``uitk.bridge`` imports this module, so
-        a module-level import would close the cycle -- and repeating the deferred
-        import at each use site repeats that reasoning where it can rot.
-        """
-        from uitk.bridge.spec import KindFactory
-
-        return KindFactory
-
-    @staticmethod
-    def _kind_of(widget: QtWidgets.QWidget) -> Any:
-        """The kind stamped on a widget built by ``KindFactory``, else ``None``."""
-        return PresetManager._kind_factory().kind_of(widget)
-
-    def _read_widget(self, widget: QtWidgets.QWidget) -> Any:
-        """Read *widget* through the most specific authority available."""
-        factory = PresetManager._kind_factory()
-        if factory.kind_of(widget) is not None:
-            return factory.read_value(widget)
-        if self.state is not None:
-            return self.state._get_current_value(widget)
-        return PresetManager._get_plain_widget_value(widget)
-
-    def _write_widget(self, widget: QtWidgets.QWidget, value: Any) -> None:
-        """Write *value* to *widget* through the most specific authority available."""
-        factory = PresetManager._kind_factory()
-        if factory.kind_of(widget) is not None:
-            factory.set_value(widget, value)
-            return
-        if self.state is not None:
-            self.state._set_widget_value(widget, value)
-            return
-        PresetManager._set_plain_widget_value(widget, value)
-
-    @staticmethod
-    def _get_widget_value(widget: QtWidgets.QWidget) -> Any:
-        """Read a widget's value without an instance (kind stamp, else the ladder).
-
-        The *candidate filter*'s reader, not capture's: ``_window_candidates`` and
-        ``_menu_candidates`` ask "does this widget bear a value at all?" of widgets
-        that may not be registered with any ``StateManager``, so this deliberately
-        skips the state tier :meth:`_read_widget` consults. Capture and apply go
-        through ``_read_widget`` / ``_write_widget``.
-
-        There is intentionally no static ``_set_widget_value`` counterpart -- the
-        filter never writes, and a setter with no caller is dead weight that reads
-        as a supported path.
-        """
-        factory = PresetManager._kind_factory()
-        if factory.kind_of(widget) is not None:
-            return factory.read_value(widget)
-        return PresetManager._get_plain_widget_value(widget)
-
-    @staticmethod
-    def _get_plain_widget_value(widget: QtWidgets.QWidget) -> Any:
-        """Read the current value from a standard Qt widget."""
-        if isinstance(widget, (QtWidgets.QCheckBox, QtWidgets.QRadioButton)):
-            return widget.isChecked()
-        elif isinstance(widget, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
-            return widget.value()
-        elif isinstance(widget, QtWidgets.QComboBox):
-            return widget.currentIndex()
-        elif isinstance(widget, QtWidgets.QLineEdit):
-            return widget.text()
-        elif isinstance(widget, QtWidgets.QTextEdit):
-            return widget.toPlainText()
-        elif isinstance(widget, QtWidgets.QSlider):
-            return widget.value()
-        return None
-
-    @staticmethod
-    def _set_plain_widget_value(widget: QtWidgets.QWidget, value: Any) -> None:
-        """Set a value on a standard Qt widget."""
-        if isinstance(widget, (QtWidgets.QCheckBox, QtWidgets.QRadioButton)):
-            widget.setChecked(value)
-        elif isinstance(widget, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
-            widget.setValue(value)
-        elif isinstance(widget, QtWidgets.QComboBox):
-            widget.setCurrentIndex(value)
-        elif isinstance(widget, QtWidgets.QLineEdit):
-            widget.setText(value)
-        elif isinstance(widget, QtWidgets.QTextEdit):
-            widget.setPlainText(value)
-        elif isinstance(widget, QtWidgets.QSlider):
-            widget.setValue(value)
-
     # ------------------------------------------------------------------
     # Combo-box wiring
     # ------------------------------------------------------------------
@@ -1287,7 +1061,14 @@ class PresetManager(ptk.LoggingMixin):
         **Rename / Delete are hidden from the menu** while one is selected (they
         can't act on a read-only preset). *Refresh / Open / Save* stay available
         -- Save writes a user preset that shadows the built-in (the "duplicate to
-        edit" flow).
+        edit" flow). A user preset *locked* in the Preset Editor is treated the
+        same way, except that Save seeds ``"<name> copy"``: a locked preset can't
+        be overwritten, so the save lands beside it.
+
+        The list re-reads the folder each time the dropdown opens (only
+        repopulating when names or locks changed), so presets added, locked or
+        imported elsewhere -- another DCC, the Preset Editor -- show up without
+        a manual Refresh.
 
         The combo shows the *active preset name* as its selected item, restored
         from the persisted :attr:`active_preset` on wire (selection only -- no
@@ -1317,279 +1098,11 @@ class PresetManager(ptk.LoggingMixin):
             container has already replaced it in-place and the return can be
             ignored.
         """
-        mgr = self
-        placeholder = placeholder or "Presets…"
+        from uitk.managers._preset_combo import _PresetComboWiring
 
-        def mark_builtins(names):
-            """Italicise read-only built-in presets (+ a read-only tooltip).
-
-            Sets the model item's font/tooltip rather than its text, so
-            ``itemText`` stays the raw preset name for load/rename/delete. The
-            italic is via ``Qt.FontRole`` (dropdown list only) -- the collapsed
-            display keeps the widget font, so the dropdown arrow is unaffected.
-            """
-            model = combo.model()
-            if not hasattr(model, "item"):
-                return
-            # Resolve the read-only built-in set ONCE (two directory globs)
-            # rather than probing ``source(nm)`` per name -- each call rebuilt
-            # the store and stat'd both tiers, so a preset-heavy panel paid
-            # O(N) store builds + stats here on every refresh. A name is a
-            # read-only built-in iff it ships as a built-in AND is not shadowed
-            # by a user preset of the same name (mirrors ``source`` semantics).
-            store = mgr._store
-            builtin_names = set(store.list(tier="builtin"))
-            user_names = set(store.list(tier="user"))
-            italic = QtGui.QFont(combo.font())
-            italic.setItalic(True)
-            for i, nm in enumerate(names):
-                if nm not in builtin_names or nm in user_names:
-                    continue
-                item = model.item(i)
-                if item is not None:
-                    item.setFont(italic)
-                    item.setToolTip(f"{nm} (built-in, read-only)")
-
-        def refresh(select_name: Optional[str] = None):
-            """Repopulate the combo with current preset names.
-
-            Parameters:
-                select_name: If given, select this preset after repopulating.
-                    If ``None``, the persisted **active preset** is re-selected
-                    (idea: restore only the *selection* -- widget values restore
-                    themselves from session state). Selection is set with
-                    signals blocked, so **no values are applied** (selection-load
-                    is keyed off the user-only ``activated`` signal).
-            """
-            if select_name is None:
-                select_name = mgr.active_preset
-            names = mgr.list()
-            combo.blockSignals(True)
-            try:
-                combo.clear()
-                if names:
-                    combo.addItems(names)
-                    mark_builtins(names)
-                    # findText -> -1 when the (stale) name is gone, which falls
-                    # through to the placeholder rather than a silent item-0.
-                    combo.setCurrentIndex(
-                        combo.findText(select_name) if select_name else -1
-                    )
-                    combo.setPlaceholderText(placeholder)
-                else:
-                    combo.setCurrentIndex(-1)
-                    combo.setPlaceholderText("No saved presets")
-            finally:
-                combo.blockSignals(False)
-            # Selection was set with signals blocked (no value apply); sync the
-            # dirty baseline from the active preset and refresh the marker.
-            mgr._resync_active()
-
-        def selected_name() -> str:
-            """The currently-selected preset name (``""`` when none)."""
-            idx = combo.currentIndex()
-            return combo.itemText(idx) if idx >= 0 else ""
-
-        def apply_preset(name):
-            """(Re)apply preset *name*'s values to the widgets (no-op if falsy).
-
-            When ``on_loaded`` is provided, block signals during load and fire
-            the single consolidated callback afterwards. Otherwise, let signals
-            propagate so normal slot handlers (e.g. checkbox -> refresh) fire.
-            """
-            if not name:
-                return
-            mgr.load(name, block_signals=on_loaded is not None)
-            if on_loaded:
-                on_loaded()
-
-        def on_selected(idx):
-            """User picked a preset from the dropdown -> load it.
-
-            Wired to ``activated`` (user-only), never ``currentIndexChanged``,
-            so programmatic selection during ``refresh`` / inline-edit commit
-            never triggers a (potentially clobbering) reload.
-            """
-            if idx >= 0:
-                apply_preset(combo.itemText(idx))
-
-        def on_refresh():
-            """Re-scan the preset dir, then reload the **active** preset's values.
-
-            Repopulates the combo from disk first (via :func:`refresh`) so
-            presets added to or removed from the preset directory *outside* the
-            UI -- a user dropping in or deleting ``*.json`` files by hand -- are
-            picked up. Then re-applies the active preset's values, discarding
-            any edits.
-
-            The value re-apply is keyed off ``mgr.active_preset`` rather than the
-            combo's ``currentIndex`` so Refresh still works after a session
-            restore (or any state that left the index at -1) -- the index-based
-            version silently no-oped, which read as "Refresh is broken". It is
-            skipped when the active preset no longer exists on disk (e.g. its
-            file was just deleted by hand), so there's no spurious warning.
-            """
-            refresh()
-            active = mgr.active_preset
-            if active and mgr.exists(active):
-                apply_preset(active)
-
-        def begin_inline_edit(mode: str, seed: str, subject: str = ""):
-            """Enter in-place edit mode pre-filled with *seed* for *mode*.
-
-            *mode* (``"save"`` / ``"rename"``) and *subject* (the preset being
-            renamed) are consumed by :func:`on_edit_committed` on the next
-            Enter. The subject must be captured now: the combo item text is
-            already the NEW name when the commit fires. Clicking away fires no
-            commit (``ComboBox.focusOutEvent`` exits edit mode silently).
-            """
-            mgr._pending_preset_action = (mode, subject)
-            combo.setEditable(True)
-            line_edit = combo.lineEdit()
-            if line_edit is not None:
-                line_edit.setText(seed or "")
-                line_edit.selectAll()
-                line_edit.setFocus()
-
-        def on_save():
-            """Start an inline Save: type a name + Enter (same name overwrites)."""
-            current = selected_name()
-            # A built-in blanks the seed so Save acts as duplicate-to-edit
-            # rather than re-typing the read-only default's name.
-            seed = "" if (current and mgr.source(current) == "builtin") else current
-            begin_inline_edit("save", seed)
-
-        def on_rename():
-            """Start an inline Rename of the selected user preset."""
-            current = selected_name()
-            if not current or mgr.source(current) != "user":
-                return
-            begin_inline_edit("rename", current, subject=current)
-
-        def on_edit_committed(text: str):
-            """Dispatch the committed inline-edit text per the pending action."""
-            pending = getattr(mgr, "_pending_preset_action", None)
-            mgr._pending_preset_action = None
-            if pending is None:
-                return
-            mode, subject = pending
-            name = (text or "").strip()
-            if mode == "save":
-                if not name:
-                    return
-                mgr.save(name)
-                # The saved preset becomes active; its values == what we just
-                # wrote, so the marker is clean.
-                mgr.active_preset = name
-                refresh(select_name=name)
-            elif mode == "rename":
-                old = subject or mgr.active_preset
-                if name and old and name != old and mgr.source(old) == "user":
-                    if mgr.rename(old, name):
-                        refresh(select_name=name)
-                        return
-                # Invalid / unchanged / cancelled -- restore the display.
-                refresh()
-
-        def on_delete():
-            current = selected_name()
-            if not current:
-                return
-            mgr.delete(current)
-            refresh()
-
-        def on_open_folder():
-            """Open the preset directory in the system file explorer."""
-            preset_dir = mgr.preset_dir
-            QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(preset_dir)))
-
-        def build_menu_items(_widget):
-            """Menu items, rebuilt per open so built-ins hide Rename/Delete.
-
-            A read-only built-in (or no selection) can't be renamed or deleted,
-            so those entries are omitted rather than shown disabled -- cleaner
-            for a short pop-up menu.
-            """
-            current = selected_name()
-            is_user = bool(current) and mgr.source(current) == "user"
-            items = []
-            if is_user:
-                items.append(("Rename", on_rename))
-            items.append(("Open Folder", on_open_folder))
-            if is_user:
-                items.append(("Delete", on_delete))
-            return items
-
-        def update_marker(modified: bool):
-            """Reflect the modified ('dirty') state as an asterisk on the combo's
-            displayed current text (item data is left untouched)."""
-            combo.current_text_suffix = " *" if modified else ""
-
-        self._excluded_widgets.add(combo)
-        self._refresh_combo = refresh
-
-        # Bound the combo's height so the option-box icon buttons (sized to the
-        # combo's height) stay compact. A combo dropped into a *stretchy*
-        # container — e.g. a menu's "Menu Actions" group (``add_presets``) — has
-        # no vertical limit and expands to fill it, which would balloon the
-        # square icon buttons and squeeze the dropdown to nothing. Pin it to the
-        # natural row height (its size hint) unless the caller already set an
-        # explicit maximum (the in-panel rows that pass a fixed height).
-        hint_h = combo.sizeHint().height()
-        if hint_h > 0 and combo.maximumHeight() >= 16777215:  # QWIDGETSIZE_MAX
-            combo.setFixedHeight(hint_h)
-
-        # The compact option-box toolbar: Refresh, Save, then a menu holding
-        # Rename / Open / Delete. ActionOptions sort before the menu option, and
-        # insertion order is preserved within the action group, so the rendered
-        # left-to-right order is exactly [refresh][save][menu]. The menu is a
-        # cursor-centred pop-up with no header / footer / apply chrome (a plain
-        # action list), matching a right-click context menu.
-        from uitk.widgets.optionBox.options.option_menu import ContextMenuOption
-
-        combo.option_box.add_action(
-            callback=on_refresh,
-            icon="refresh",
-            tooltip="Rescan presets folder and reload the active preset (discard edits).",
+        return _PresetComboWiring.wire(
+            self, combo, on_loaded=on_loaded, placeholder=placeholder
         )
-        combo.option_box.add_action(
-            callback=on_save,
-            icon="save",
-            tooltip="Save the current settings as a preset (type a name, Enter).",
-        )
-        combo.option_box.add_option(
-            ContextMenuOption(
-                wrapped_widget=combo,
-                menu_provider=build_menu_items,
-                icon="menu",
-                tooltip="Preset actions: rename, open folder, delete.",
-                position="cursorPos",
-                add_header=False,
-                add_footer=False,
-                add_apply_button=False,
-                add_defaults_button=False,
-                match_parent_width=False,
-            )
-        )
-
-        mgr.on_modified_changed(update_marker)
-        # Live marker updates for the menu / standalone (widget-state) paths;
-        # no-op in semantic mode (the caller wires its own param widgets).
-        mgr.connect_value_widgets()
-
-        # Inline Save / Rename commit on Enter (see ComboBox.on_editing_finished).
-        combo.on_editing_finished.connect(on_edit_committed)
-
-        refresh()
-        # ``activated`` is user-only -- programmatic selection (refresh, inline
-        # commit) never reloads, so an overwrite-Save can't clobber the live
-        # values with the pre-save snapshot.
-        try:
-            combo.activated[int].connect(on_selected)
-        except (TypeError, KeyError):
-            combo.activated.connect(on_selected)
-
-        return combo.option_box.container
 
     # ------------------------------------------------------------------
     # Encapsulated helpers (formerly module-level functions)
@@ -1613,521 +1126,25 @@ class PresetManager(ptk.LoggingMixin):
             return False
 
     @staticmethod
-    def QStandardPaths_writableLocation() -> str:
-        """Return Qt's per-application writable config directory.
-
-        On Windows this is ``<LOCALAPPDATA>/<exeName>`` (e.g.
-        ``C:/Users/<u>/AppData/Local/python``) when no organisation/application
-        name has been set on ``QCoreApplication`` — the ``<exeName>`` segment
-        is Qt auto-naming from the executable, *not* a pre-existing dir.
-
-        Used for *finding legacy* preset data written under previous layouts.
-        The current root uses :func:`QStandardPaths_genericConfigLocation`
-        instead, which is host-independent.
-        """
-        return QtCore.QStandardPaths.writableLocation(
-            QtCore.QStandardPaths.AppConfigLocation
-        )
-
-    @staticmethod
-    def QStandardPaths_genericConfigLocation() -> str:
-        """Return Qt's host-independent writable config directory.
-
-        On Windows this is ``<LOCALAPPDATA>`` directly (no executable-name
-        segment); on macOS ``~/Library/Preferences``; on Linux ``~/.config``.
-        Same path regardless of which host process (standalone Python, Maya,
-        Painter, ...) is running, so presets stay visible across hosts.
-        """
-        return QtCore.QStandardPaths.writableLocation(
-            QtCore.QStandardPaths.GenericConfigLocation
-        )
-
-    @staticmethod
     def get_presets_root() -> Path:
         """Root directory under which every relative ``preset_dir`` is resolved.
 
-        Defaults to ``<GenericConfigLocation>/uitk/`` — the host-independent
-        user config dir plus a ``uitk`` wrapper folder that keeps the
-        ecosystem's state grouped under one entry in AppData/Local rather
-        than scattered as siblings of Microsoft, Google, pip, etc. The
-        wrapper is named after the foundation library that owns the preset
-        system.
+        pythontk's ecosystem user-config root
+        (:meth:`pythontk.UserConfig.user_config_root`), so the GUI store and
+        the headless ``pythontk.PresetStore`` / ``UserConfig`` path can never
+        disagree: one resolver, one owner. By default the host-independent
+        per-user config dir plus a ``uitk`` wrapper folder that keeps the
+        ecosystem's state grouped under one entry (``%LOCALAPPDATA%/uitk``,
+        ``~/.config/uitk``, ``~/Library/Preferences/uitk``).
 
-        Set ``UITK_PRESETS_ROOT`` to redirect every relative preset path
-        wholesale (network share, alternate drive, Documents subfolder…).
-        The override is used as-given — no implicit ``uitk/`` wrapper is
-        appended — so a power-user override has full control. It accepts
-        ``~`` and ``%ENVVAR%`` syntax; relative overrides resolve against
-        the process working directory at access time so the return is
-        always absolute.
+        Set ``UITK_PRESETS_ROOT`` (:data:`PRESETS_ROOT_ENV_VAR`) to redirect
+        every relative preset path wholesale (network share, alternate drive,
+        Documents subfolder...). The override is used as-given -- no implicit
+        ``uitk/`` wrapper is appended -- and accepts ``~`` and ``%ENVVAR%``
+        syntax; a relative override resolves against the working directory
+        at access time, so the return is always absolute.
         """
-        override = os.environ.get(PRESETS_ROOT_ENV_VAR)
-        if override:
-            p = Path(os.path.expandvars(override)).expanduser()
-        else:
-            p = (
-                Path(PresetManager.QStandardPaths_genericConfigLocation())
-                / _ECOSYSTEM_WRAPPER_NAME
-            )
-        return p if p.is_absolute() else p.absolute()
-
-    @staticmethod
-    def _resolve_legacy_template(template: str) -> Path:
-        """Expand ``{APPCONFIG}``, environment variables, and ``~`` in *template*."""
-        if "{APPCONFIG}" in template:
-            template = template.replace(
-                "{APPCONFIG}", PresetManager.QStandardPaths_writableLocation()
-            )
-        return Path(os.path.expandvars(template)).expanduser()
-
-    @staticmethod
-    def _migration_sentinel_path(key: str) -> Path:
-        """Path to the per-package sentinel marking a completed migration.
-
-        The sentinel lives *inside* the migrated package dir itself (as a
-        dotfile that ``glob('*.json')`` ignores) so it travels with its
-        data — if the user wipes the package dir, the sentinel goes too
-        and the next access re-migrates from legacy, which is normally
-        what they want.
-        """
-        return (
-            PresetManager.get_presets_root().joinpath(*key.split("/"))
-            / _MIGRATION_SENTINEL_NAME
-        )
-
-    @staticmethod
-    def _has_migrated(key: str) -> bool:
-        return PresetManager._migration_sentinel_path(key).exists()
-
-    @staticmethod
-    def _mark_migrated(key: str) -> None:
-        p = PresetManager._migration_sentinel_path(key)
-        try:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.touch(exist_ok=True)
-        except OSError as e:
-            _log.warning("preset migration: could not mark %s migrated: %s", key, e)
-
-    @staticmethod
-    def _merge_move(src: Path, dst: Path) -> None:
-        """Move *src* tree into *dst*, never overwriting existing destination files.
-
-        Unlike ``shutil.move`` (which fails or overwrites on collisions), this
-        walks the source tree and moves each file into place only if the
-        corresponding destination doesn't exist. Empty source dirs are removed
-        as the walk unwinds so a fully-merged subtree leaves nothing behind.
-        Collisions silently keep the destination version — the assumption is
-        that whatever the live code wrote is the user's intent.
-        """
-        if not dst.exists():
-            try:
-                shutil.move(str(src), str(dst))
-            except (OSError, shutil.Error) as e:
-                _log.warning("preset merge: could not move %s -> %s: %s", src, dst, e)
-            return
-        if src.is_file():
-            # Collision at a leaf file. Keep the destination (whatever the
-            # live code wrote is the user's intent) and leave the source in
-            # place as evidence — a user investigating "missing preset"
-            # symptoms can find it via the debug log and the on-disk copy.
-            _log.debug("preset merge: collision at %s, kept destination", dst)
-            return
-        for item in list(src.iterdir()):
-            PresetManager._merge_move(item, dst / item.name)
-        try:
-            src.rmdir()
-        except OSError:
-            pass
-
-    @staticmethod
-    def _legacy_qt_root_candidates() -> List[Path]:
-        """Old preset root locations to drain into the current root.
-
-        Three prior layouts existed:
-
-        A. ``<AppConfigLocation>/m3trik/presets/<pkg>/...`` — an interim
-           revision wrapped every relative preset in an unsolicited
-           ``m3trik/presets`` segment.
-        B. ``<AppConfigLocation>/<pkg>/...`` — used Qt's
-           ``AppConfigLocation`` directly. That path embeds the host
-           application name (``python/`` standalone, ``maya/`` from Maya,
-           etc.), making presets invisible across hosts.
-        C. ``<GenericConfigLocation>/<pkg>/...`` — used the host-independent
-           config dir but as a bare root, so the ecosystem's packages were
-           siblings of unrelated apps (pip, npm, Microsoft, ...). The
-           current layout wraps everything in a single ``uitk/`` folder.
-
-        Order matters: deepest layouts first so their contents don't get
-        re-processed by outer passes. Pulled out as a function so tests can
-        monkey-patch it to point at tmp dirs (essential — without the patch
-        the cleanup would touch the real developer machine's data).
-
-        Returns ``[]`` when the root came from ``$UITK_PRESETS_ROOT``. These are
-        absolute *real* machine paths, and the drain
-        (:func:`_maybe_clear_legacy_qt_roots`) hoists them with :func:`_merge_move`
-        — a **move**, not a copy. ``<generic>/uitk`` IS the live store and ``uitk``
-        IS one of the ``known_pkgs``, so against an overridden root the drain
-        relocates the user's entire store into that root. For a power user pointing
-        the override at a network share that is merely surprising; for a *test* —
-        which redirects the root to a tmp dir and ``rmtree``s it in teardown — it is
-        fatal, and it has already destroyed a real preset store once (mayatk's
-        ``test_macro_editor_window`` sets the env var without patching this
-        function, unlike ``TestLegacyMigration``). An explicit override means "use
-        exactly this location", never "hoover the machine into it", so there is
-        nothing legitimate to drain. The guard lives *here*, inside the seam tests
-        already replace, so a test that patches this function keeps its behaviour
-        while every test that merely sets the env var is protected by default.
-        """
-        if os.environ.get(PRESETS_ROOT_ENV_VAR):
-            return []
-        appconfig = Path(PresetManager.QStandardPaths_writableLocation())
-        generic = Path(PresetManager.QStandardPaths_genericConfigLocation())
-        return [appconfig / "m3trik" / "presets", appconfig, generic]
-
-    @staticmethod
-    def _dir_has_preset_data(directory: Path) -> bool:
-        """True when *directory* holds at least one preset file (``*.json``).
-
-        Distinguishes a *husk* — an empty shell a prior wrap left behind,
-        holding only a ``.migrated`` sentinel (the merge keeps the destination
-        on a sentinel collision, so the source dir survives) — from genuine
-        pre-wrap state that still carries presets to relocate. A husk must not
-        count as pre-wrap evidence, or it re-triggers the wrap on every launch
-        and keeps reburying correctly-placed packages (the "saved preset gone
-        next session" bug).
-        """
-        try:
-            return any(directory.rglob("*.json"))
-        except OSError:
-            return False
-
-    @staticmethod
-    def _looks_like_ecosystem_wrapper(uitk_dir: Path) -> bool:
-        """True when *uitk_dir* is already in the wrapper layout.
-
-        Pre-wrap evidence is **only** one of uitk's OWN state dirs
-        (:data:`_UITK_OWN_PRE_WRAP_DIRS`) sitting at the root, carrying data.
-        Anything else — ``mayatk/``, ``blendertk/``, ``shots/``, a package added
-        next year — is a correctly-placed sibling, never pre-wrap state.
-
-        This is an **allowlist of uitk's own dirs**, not a denylist of
-        ``known_pkgs``. It used to be the latter, and *that was a data-corrupting
-        bug*: ``known_pkgs`` is derived from :data:`_LEGACY_PRESET_PATHS`, a table
-        frozen around the packages that existed when the legacy layouts died
-        (``uitk`` / ``mayatk`` / ``extapps``). Every package added afterwards —
-        ``blendertk``, ``shots`` — was therefore "non-known", so its live state read
-        as pre-wrap and got buried in ``<generic>/uitk/uitk/<pkg>/`` on the next
-        launch. Worse, the move is a :func:`_merge_move`, which keeps the
-        destination on a collision and leaves the source behind, so a store could be
-        *split across both levels* — the observed failure was blendertk's
-        ``macro_manager`` with ``.active`` relocated but ``m3trik.json`` stranded at
-        the source, leaving ``PresetStore.active`` reading ``None`` and every macro
-        hotkey silently unbound.
-
-        Empty dirs — and data-less *husks* (only a ``.migrated`` sentinel,
-        no ``*.json``) — count as "already wrapped": there is nothing to
-        move, and treating them as pre-wrap would re-fire the wrap forever,
-        burying any package freshly re-created at the root in between.
-        """
-        if not uitk_dir.is_dir():
-            return False
-        try:
-            child_dirs = [p for p in uitk_dir.iterdir() if p.is_dir()]
-        except OSError:
-            return False
-        if not child_dirs:
-            return True
-        for child in child_dirs:
-            if child.name not in _UITK_OWN_PRE_WRAP_DIRS:
-                continue  # another package's state — correctly placed, never move it
-            if not PresetManager._dir_has_preset_data(child):
-                continue  # husk left by a prior wrap — not real pre-wrap state
-            return False
-        return True
-
-    @staticmethod
-    def _wrap_pre_wrap_uitk_state(uitk_dir: Path) -> None:
-        """Restructure ``<generic>/uitk/`` from pre-wrap to wrapper layout.
-
-        Before this code: ``<generic>/uitk/`` held uitk-package state
-        directly (``style_presets/``, ``hotkey_presets/``, ...). The
-        current layout uses ``<generic>/uitk/`` as the *ecosystem wrapper*
-        with uitk's own state nested at ``<generic>/uitk/uitk/``. This
-        function detects the pre-wrap state and moves the existing contents
-        one level deeper, in place, without a sibling temp dir.
-
-        Robust to a previously-interrupted wrap: the detector treats any
-        *data-bearing* non-known-pkg / non-dotfile child as evidence of
-        pre-wrap state, so a partial wrap (inner ``uitk/`` already created,
-        some siblings not yet moved) gets finished on the next call.
-
-        Only uitk's own pre-wrap dirs move down. A known-package sibling
-        (``mayatk/``, ``extapps/``, and the inner ``uitk/`` itself) already
-        lives at the correct level, so it is left in place — relocating it
-        would bury presets saved under it where the live load path can't
-        find them (the "saved preset gone next session" bug).
-
-        Interim migration-state artifacts (``.migrated``, ``.migration/``)
-        that survive from older revisions of this module are dropped
-        rather than carried into the new layout.
-
-        No-op if *uitk_dir* doesn't exist or is already in the wrapper
-        layout.
-        """
-        if not uitk_dir.exists() or not uitk_dir.is_dir():
-            return
-        if PresetManager._looks_like_ecosystem_wrapper(uitk_dir):
-            return
-
-        # Snapshot children BEFORE creating the target so the target itself
-        # (created below) doesn't appear in our iteration.
-        try:
-            children = list(uitk_dir.iterdir())
-        except OSError as e:
-            _log.warning("preset wrap: could not iterate %s: %s", uitk_dir, e)
-            return
-
-        target = uitk_dir / _ECOSYSTEM_WRAPPER_NAME
-        try:
-            target.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            _log.warning("preset wrap: could not create %s: %s", target, e)
-            return
-
-        for child in children:
-            # Drop interim migration-state artifacts; they're dead state
-            # from older revisions and shouldn't be preserved.
-            if child.name in _INTERIM_STATE_ARTIFACTS:
-                try:
-                    if child.is_file():
-                        child.unlink()
-                    elif child.is_dir():
-                        shutil.rmtree(child)
-                except OSError as e:
-                    _log.warning("preset wrap: could not remove %s: %s", child, e)
-                continue
-            # Only uitk's OWN pre-wrap state moves down. Every other sibling —
-            # mayatk/, blendertk/, extapps/, shots/, the inner uitk/ itself, and any
-            # package added later — already lives at the right level; relocating it
-            # buries presets where the live load path will never find them (and
-            # _merge_move's keep-the-destination rule can strand half a store at each
-            # level). This was previously `child.name in known_pkgs`, a denylist that
-            # silently swallowed every package younger than _LEGACY_PRESET_PATHS.
-            if child.is_dir() and child.name not in _UITK_OWN_PRE_WRAP_DIRS:
-                continue
-            # The inner target itself shows up in the snapshot only if it
-            # pre-existed; skip it so we don't try to move it into itself.
-            if child.resolve() == target.resolve():
-                continue
-            dest = target / child.name
-            if dest.exists():
-                PresetManager._merge_move(child, dest)
-            else:
-                try:
-                    shutil.move(str(child), str(dest))
-                    _log.debug("preset wrap: moved %s -> %s", child, dest)
-                except (OSError, shutil.Error) as e:
-                    _log.warning(
-                        "preset wrap: could not move %s -> %s: %s", child, dest, e
-                    )
-
-    @staticmethod
-    def _maybe_clear_legacy_qt_roots() -> None:
-        """Hoist preset data from older root layouts to the current root.
-
-        Runs two passes:
-
-        1. **Pre-wrap detection.** If the new root (``<generic>/uitk/``)
-           already exists but holds *uitk-package* state directly (the
-           pre-wrap layout where ``<generic>/uitk/style_presets/`` lived
-           at the root level), restructure it in place into the wrapper
-           layout (``<generic>/uitk/uitk/style_presets/``). See
-           :func:`_wrap_pre_wrap_uitk_state`.
-
-        2. **Candidate drain.** Iterates :func:`_legacy_qt_root_candidates`
-           in nesting order and, for each candidate, hoists only the
-           *known package* subdirs (uitk / mayatk / extapps — derived from
-           ``_LEGACY_PRESET_PATHS`` keys) into the new root. Other contents
-           — pip's cache, other Python tools' configs, unrelated apps'
-           data — are left strictly alone.
-
-        Before each drain, interim migration-state artifacts
-        (``.migrated``, ``.migration/``) are deleted so they don't leak up.
-        Empty ``m3trik`` shells are removed afterward; bare
-        AppConfigLocation / GenericConfigLocation dirs are never removed
-        since they usually hold other apps' data.
-
-        Guarded by a process-global flag so subsequent ``preset_dir``
-        accesses are zero-cost.
-        """
-        global _LEGACY_QT_ROOTS_CLEARED
-        if _LEGACY_QT_ROOTS_CLEARED:
-            return
-        _LEGACY_QT_ROOTS_CLEARED = True
-
-        new_root = PresetManager.get_presets_root()
-        known_pkgs = {key.split("/")[0] for key in _LEGACY_PRESET_PATHS}
-
-        # Pass 1: handle the pre-wrap collision at the new root itself.
-        PresetManager._wrap_pre_wrap_uitk_state(new_root)
-
-        # Pass 2: drain candidates.
-        candidates = PresetManager._legacy_qt_root_candidates()
-        for old_root in candidates:
-            # Skip when old_root *is* the new root — pass 1 already handled it.
-            try:
-                if old_root.resolve() == new_root.resolve():
-                    continue
-            except OSError:
-                continue
-            if not old_root.exists() or not old_root.is_dir():
-                continue
-
-            # Drop interim migration-state artifacts so they don't litter
-            # the new root.
-            for artifact in _INTERIM_STATE_ARTIFACTS:
-                artifact_path = old_root / artifact
-                try:
-                    if artifact_path.is_file():
-                        artifact_path.unlink()
-                    elif artifact_path.is_dir():
-                        shutil.rmtree(artifact_path)
-                except OSError as e:
-                    _log.warning(
-                        "preset cleanup: could not remove %s: %s", artifact_path, e
-                    )
-
-            # Hoist only known package subdirs. If a candidate *contains*
-            # the new root (e.g. old_root == <generic>, new_root ==
-            # <generic>/uitk), the uitk subdir IS the new root — pass 1
-            # already handled it, so skip that single pkg here.
-            for pkg in known_pkgs:
-                src = old_root / pkg
-                if not src.exists() or not src.is_dir():
-                    continue
-                try:
-                    if src.resolve() == new_root.resolve():
-                        continue  # pass 1 territory
-                except OSError:
-                    continue
-                dst = new_root / pkg
-                _log.debug("preset cleanup: hoisting %s -> %s", src, dst)
-                PresetManager._merge_move(src, dst)
-
-        # Clean up the m3trik shell if it's now empty. Identified by the path
-        # shape ``.../m3trik/presets`` so the cleanup works whether candidates
-        # come from the real QStandardPaths or a test monkey-patch. The bare
-        # AppConfigLocation / GenericConfigLocation candidates are never
-        # removed — they hold unrelated apps' data.
-        for cand in candidates:
-            if cand.name == "presets" and cand.parent.name == "m3trik":
-                for p in (cand, cand.parent):
-                    try:
-                        p.rmdir()
-                    except OSError:
-                        pass
-
-    @staticmethod
-    def _maybe_migrate_legacy(new_dir: Path) -> None:
-        """Copy a legacy preset tree into the consolidated root once.
-
-        Finds the longest prefix of *new_dir*'s relative path that maps to a
-        known legacy location in :data:`_LEGACY_PRESET_PATHS`. When such a
-        package boundary is found and the migration sentinel does not yet
-        exist, copies the *entire* legacy tree (every subdir, every preset)
-        so sibling subdirs not yet requested are present too — this matters
-        for bridges that switch active template at runtime.
-
-        Existing files at the destination are never overwritten; if the user
-        already has presets in the new location, the legacy contents merge
-        in beside them. Marks the package migrated either way so subsequent
-        accesses are no-ops. Best-effort: I/O failures swallow rather than
-        propagate to keep preset loading robust at runtime.
-        """
-        PresetManager._maybe_clear_legacy_qt_roots()
-        presets_root = PresetManager.get_presets_root()
-        try:
-            rel = new_dir.relative_to(presets_root)
-        except ValueError:
-            return  # absolute path outside the consolidated root
-
-        matched_key: Optional[str] = None
-        for length in range(len(rel.parts), 0, -1):
-            candidate = "/".join(rel.parts[:length])
-            if candidate in _LEGACY_PRESET_PATHS:
-                matched_key = candidate
-                break
-        if matched_key is None or PresetManager._has_migrated(matched_key):
-            return
-
-        # Migrate the whole package, not the requested leaf — sibling subdirs
-        # (e.g. other bridge templates) would otherwise be silently orphaned
-        # once the package is marked migrated.
-        legacy_pkg_root = PresetManager._resolve_legacy_template(
-            _LEGACY_PRESET_PATHS[matched_key]
-        )
-        new_pkg_root = presets_root.joinpath(*matched_key.split("/"))
-
-        if legacy_pkg_root.exists() and legacy_pkg_root.is_dir():
-            try:
-                new_pkg_root.mkdir(parents=True, exist_ok=True)
-                for item in legacy_pkg_root.iterdir():
-                    PresetManager._merge_move(item, new_pkg_root / item.name)
-                # Drop the legacy package root if empty after the merge.
-                # Non-empty means collisions left files in place (forensic
-                # preservation — see _merge_move docs); leaving the dir
-                # gives the user something to inspect.
-                try:
-                    legacy_pkg_root.rmdir()
-                except OSError:
-                    pass
-            except OSError as e:
-                # see docstring: best-effort. Logged so users can opt into
-                # diagnostics; default is silent.
-                _log.warning(
-                    "preset migration: %s from %s failed: %s",
-                    matched_key,
-                    legacy_pkg_root,
-                    e,
-                )
-
-        PresetManager._mark_migrated(matched_key)
-
-    @staticmethod
-    def _maybe_migrate_renamed_domain(new_dir: Path) -> None:
-        """Move presets from a renamed sibling domain into *new_dir*, once.
-
-        Looks up *new_dir*'s leaf name in :data:`_RENAMED_PRESET_DOMAINS`; when it
-        was renamed from a prior leaf, a same-parent dir under that prior name is
-        merged in via :func:`_merge_move` (which never overwrites an existing
-        destination file, so a post-rename edit always wins). Interim migration
-        artifacts are dropped rather than carried. Best-effort: I/O failures are
-        swallowed so preset loading stays robust.
-        """
-        old_name = _RENAMED_PRESET_DOMAINS.get(new_dir.name)
-        if not old_name:
-            return
-        old_dir = new_dir.with_name(old_name)
-        if old_dir == new_dir or not old_dir.is_dir():
-            return
-        try:
-            new_dir.mkdir(parents=True, exist_ok=True)
-            for item in list(old_dir.iterdir()):
-                if item.name in _INTERIM_STATE_ARTIFACTS:
-                    try:
-                        item.unlink()
-                    except OSError:
-                        pass
-                    continue
-                PresetManager._merge_move(item, new_dir / item.name)
-            try:
-                old_dir.rmdir()  # removed only if fully carried (no collisions left)
-            except OSError:
-                pass
-        except OSError as e:
-            _log.warning(
-                "preset domain rename %s -> %s failed: %s", old_name, new_dir.name, e
-            )
+        return ptk.UserConfig.user_config_root()
 
 
 # ---------------------------------------------------------------------------
@@ -2135,9 +1152,9 @@ class PresetManager(ptk.LoggingMixin):
 # ---------------------------------------------------------------------------
 #
 # All relative ``preset_dir`` values across the ecosystem resolve under a
-# single root, so a user looking for their saved data finds it in one place
-# instead of scattered across ``~/.mayatk/presets``, ``~/.pythontk/presets``,
-# and ``%LOCALAPPDATA%/uitk/*-presets``.
+# single root -- pythontk's ``UserConfig.user_config_root`` -- so a user looking
+# for their saved data finds it in one place, and the GUI store and the headless
+# ``PresetStore`` read the same files.
 #
 # Layout (Windows example; ``~/.config/...`` on Linux, ``~/Library/
 # Preferences/...`` on Mac):
@@ -2147,131 +1164,16 @@ class PresetManager(ptk.LoggingMixin):
 #     ├── mayatk/                  <- mayatk pkg state
 #     └── extapps/                 <- extapps pkg state
 #
-# The base is Qt's :func:`QStandardPaths.GenericConfigLocation` (the
-# host-independent user-config dir — same path whether the host is
-# standalone Python, Maya, Painter, etc.) plus a ``uitk`` wrapper
-# folder named after the foundation library. The wrapper keeps the
-# ecosystem's state grouped under one entry in AppData/Local rather
-# than scattered as siblings of Microsoft, Google, pip, npm... — the
-# same shape Microsoft uses (``Microsoft/Edge/``, ``Microsoft/Windows/``).
+# The ``uitk/uitk/`` doubling for uitk's own state is intentional: outer
+# ``uitk/`` is the wrapper namespace; inner ``uitk/`` is the package itself,
+# consistent with how every other package's state lives under ``<wrapper>/<pkg>/``.
 #
-# The ``uitk/uitk/`` doubling for uitk's own state is intentional:
-# outer ``uitk/`` is the wrapper namespace; inner ``uitk/`` is the
-# package itself, consistent with how every other package's state
-# lives under ``<wrapper>/<pkg>/``.
-#
-# Set ``UITK_PRESETS_ROOT`` to redirect wholesale (network share,
-# alternate drive, ...). The override is used as-given — no implicit
-# ``uitk/`` wrapper is appended — so power users keep full control.
-#
-# Existing presets from legacy locations are copied in on first access
-# (see ``_maybe_migrate_legacy``). Completion is recorded by an empty
-# ``.migrated`` sentinel placed inside the migrated package dir itself —
-# per-key files avoid the read-modify-write race a shared state file would
-# have when multiple host processes (Maya + Painter + CLI) start at once,
-# and the sentinel travels with its data (wipe the dir → re-migrate next
-# access, which is the expected behavior).
+# Presets saved under older layouts are carried in on first access -- see
+# ``uitk/managers/_preset_migration.py``.
 
-PRESETS_ROOT_ENV_VAR = "UITK_PRESETS_ROOT"
-_ECOSYSTEM_WRAPPER_NAME = "uitk"
-
-
-# =============================================================================
-# DEPRECATED MIGRATION LOGIC — scheduled for removal
-# =============================================================================
-#
-# Everything from ``_MIGRATION_SENTINEL_NAME`` through the end of
-# ``_maybe_migrate_legacy`` exists solely to migrate users coming from
-# older preset-path layouts. It is *not* part of the current design and
-# should be deleted once no users remain on the old layouts.
-#
-# Removal candidates (delete together — they form one self-contained block):
-#
-#   - ``_MIGRATION_SENTINEL_NAME``
-#   - ``_LEGACY_PRESET_PATHS``
-#   - ``_resolve_legacy_template``
-#   - ``_migration_sentinel_path``
-#   - ``_has_migrated``
-#   - ``_mark_migrated``
-#   - ``_merge_move``
-#   - ``_LEGACY_QT_ROOTS_CLEARED``
-#   - ``_INTERIM_STATE_ARTIFACTS``
-#   - ``_legacy_qt_root_candidates``
-#   - ``_looks_like_ecosystem_wrapper``
-#   - ``_wrap_pre_wrap_uitk_state``
-#   - ``_maybe_clear_legacy_qt_roots``
-#   - ``_maybe_migrate_legacy``
-#   - The ``_maybe_migrate_legacy(self._preset_dir)`` call inside the
-#     ``PresetManager.preset_dir`` property
-#   - Test class ``TestLegacyMigration`` in ``test/test_preset_manager.py``
-#
-# Removal criteria (any one is sufficient):
-#
-#   1. No legacy preset data exists at the candidate roots on any
-#      machine that runs this code — confirmed by inspection.
-#   2. The deprecation review date below has passed AND the
-#      ``.migrated`` sentinel files have been present in user dirs
-#      long enough that any first-launch on legacy data has run.
-#
-# Suggested review date: **2027-05-21** (one year out from the
-# introduction of GenericConfigLocation as the root). Reviewing earlier
-# is fine if you're confident in (1). Reviewing later is fine too —
-# the migration code is small, idempotent, and gated by a per-process
-# flag so its runtime cost is negligible.
-#
-# =============================================================================
-
-_MIGRATION_SENTINEL_NAME = ".migrated"
-
-
-# Map: new relative path under the consolidated root → legacy absolute path
-# template. ``{APPCONFIG}`` is substituted with QStandardPaths.AppConfigLocation
-# at resolution time so the table itself stays declarative.
-#
-# Each entry represents a *package boundary*: when a request resolves to a
-# path under one of these keys (e.g. ``mayatk/substance_bridge/<template>``),
-# the *entire* legacy tree for that key is copied so sibling subdirs (other
-# bridge templates) come along for the ride — not just the requested leaf.
-_LEGACY_PRESET_PATHS: Dict[str, str] = {
-    "mayatk/substance_bridge": "~/.mayatk/presets/substance_bridge",
-    "mayatk/marmoset_bridge": "~/.mayatk/presets/marmoset_bridge",
-    "mayatk/rizom_bridge": "~/.mayatk/presets/rizom_bridge",
-    "mayatk/scene_exporter": "~/.mayatk/presets/scene_exporter",
-    "mayatk/reference_manager": "~/.mayatk/presets/reference_manager",
-    "mayatk/color_manager": "~/.mayatk/presets/color_manager",
-    "mayatk/shot_manifest_colors": "~/.mayatk/presets/shot_manifest_colors",
-    "extapps/texture_maps/packer": "~/.pythontk/presets/map_packer",
-    "uitk/style_presets": "{APPCONFIG}/uitk/style_presets",
-    "uitk/shortcut_presets": "{APPCONFIG}/uitk/hotkey_presets",
-    "uitk/switchboard_browser/presets": "{APPCONFIG}/uitk/switchboard_browser/presets",
-}
-
-
-_LEGACY_QT_ROOTS_CLEARED = False
-_INTERIM_STATE_ARTIFACTS = (".migrated", ".migration")
-
-# uitk's OWN state dirs, as they sat at ``<generic>/uitk/`` in the pre-wrap
-# layout. These are the ONLY children the wrap may relocate down into
-# ``<generic>/uitk/uitk/`` — see _looks_like_ecosystem_wrapper for why this is an
-# allowlist rather than "everything not in known_pkgs" (that denylist buried every
-# package younger than _LEGACY_PRESET_PATHS: blendertk, shots).
-# ``hotkey_presets`` is the pre-rename name of ``shortcut_presets`` and is listed
-# so a store that never launched post-rename still wraps correctly.
-_UITK_OWN_PRE_WRAP_DIRS = frozenset(
-    {"style_presets", "shortcut_presets", "hotkey_presets", "switchboard_browser"}
-)
-
-
-# Intra-root preset-domain renames: { new_leaf_dir: prior_leaf_dir } under the
-# same parent. When the new domain dir is first ensured, presets saved under the
-# prior name (same parent) are carried across so *renaming* a preset domain keeps
-# the user's snapshots. Distinct from _LEGACY_PRESET_PATHS (which pulls from
-# external pre-consolidation roots); this is a same-root rename.
-_RENAMED_PRESET_DOMAINS: Dict[str, str] = {
-    # 2026-06: the global key-binding editor's domain was renamed from
-    # "hotkey_presets" to "shortcut_presets" (hotkey -> shortcut terminology).
-    "shortcut_presets": "hotkey_presets",
-}
+#: Env var that redirects the whole root (pythontk owns the name; see
+#: :meth:`PresetManager.get_presets_root`).
+PRESETS_ROOT_ENV_VAR = ptk.UserConfig.CONFIG_ROOT_ENV_VAR
 
 
 # ---------------------------------------------------------------------------
@@ -2281,8 +1183,8 @@ _RENAMED_PRESET_DOMAINS: Dict[str, str] = {
 # PresetManager as @staticmethods. Re-exported at module scope for external
 # callers/tests that import or reference them by module attribute
 # (e.g. test/test_preset_manager.py). NOTE: reassigning one of these module
-# attributes (monkeypatch) will NOT affect PresetManager's internal calls,
-# which resolve via the class.
+# attributes (monkeypatch) will NOT affect the migration's internal calls,
+# which resolve via their owner, ``_preset_migration._PresetRootMigration``.
 QStandardPaths_writableLocation = PresetManager.QStandardPaths_writableLocation
 QStandardPaths_genericConfigLocation = (
     PresetManager.QStandardPaths_genericConfigLocation

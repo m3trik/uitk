@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod, ABCMeta
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
+from uitk.managers.value_manager import ValueManager
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 
@@ -374,7 +375,7 @@ class ButtonOption(BaseOption):
         if hasattr(widget, "value"):
             return widget.value()
         if hasattr(widget, "currentText"):
-            return widget.currentText()
+            return ValueManager.combo_value(widget, "text")
         if hasattr(widget, "toPlainText"):
             return widget.toPlainText()
         if hasattr(widget, "isChecked"):

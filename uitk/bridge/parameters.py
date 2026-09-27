@@ -14,17 +14,18 @@ scan a script body for which placeholders it references, return the
 registry defaults, format values for substitution via a target
 formatter from :class:`uitk.bridge.formatters.Formatters`.
 
-Each per-bridge ``parameters.py`` wraps these once with its own
-``PARAMS`` + chosen formatter, so the slot machinery calls
-``params_module.referenced_keys(text)`` without ever passing the dict
-explicitly.
+A per-bridge ``parameters.py`` declares its ``PARAMS`` and binds them once
+through :class:`ParamRegistry` (``class Parameters(ParamRegistry): PARAMS =
+PARAMS``), so the slot machinery calls ``params_module.referenced_keys(text)``
+and an engine ``Parameters.defaults()`` without ever passing the dict.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Dict, Set
+from typing import Any, Callable, Dict, Optional, Set, Tuple
 
+import pythontk as ptk
 from uitk.bridge.spec import AttributeSpec, KindFactory
 from uitk.bridge.formatters import Formatters
 
@@ -39,31 +40,35 @@ class Parameters(_ParametersInternal):
     """Registry helpers operating over a ``{key: AttributeSpec}`` PARAMS dict."""
 
     @staticmethod
-    def scope_spec(default: str = "selected", section: str = "Export") -> AttributeSpec:
+    def scope_spec(
+        default: str = ptk.HandoffScope.SELECTED, section: str = "Export"
+    ) -> AttributeSpec:
         """The shared **Scope** parameter every hand-off bridge exposes.
 
         Which objects a send acts on is a property of hand-off bridges in
         general, not of any one target app, so the spec lives here rather than
         being copy-pasted into each ``parameters.py``: one label set, one
         choice vocabulary, one tooltip across every bridge and both DCCs.
-        Only the *resolution* is DCC-specific -- each package's bridge-slots
-        base turns the chosen value into real objects (``cmds.ls`` vs ``bpy``).
+        The words and their precedence are :class:`pythontk.HandoffScope`'s;
+        only the scene *reads* are DCC-specific -- each package's bridge-slots
+        base hands its own (``cmds.ls`` vs ``bpy``) to that one resolver.
 
         Returns a FRESH spec per call: the dataclass is frozen, but its
         ``choices`` list is not — a single shared instance handed to a dozen
         registries would let one bridge's in-place choice refill leak into
         all the others.
         """
+        labels = {
+            ptk.HandoffScope.SELECTED: "Selected",
+            ptk.HandoffScope.ALL: "Entire Scene",
+            ptk.HandoffScope.VISIBLE: "Visible Only",
+        }
         return AttributeSpec(
-            key="SCOPE",
+            key=ptk.HandoffScope.PARAM,
             label="Scope",
             kind="choice",
             default=default,
-            choices=[
-                ("Selected", "selected"),
-                ("Entire Scene", "all"),
-                ("Visible Only", "visible"),
-            ],
+            choices=[(labels[word], word) for word in ptk.HandoffScope.WORDS],
             section=section,
             tooltip=(
                 "Which objects to export:\n"
@@ -74,6 +79,13 @@ class Parameters(_ParametersInternal):
         )
 
     @staticmethod
+    @ptk.Deprecation.symbol(
+        "an AttributeSpec in the host bridge's own parameters "
+        "(blendertk.env_utils.maya_bridge.parameters.PARAMS['SHADER_TYPE'])",
+        remove_in="1.7.0",
+        since="2026-09-26",
+        reason="Its values are Maya's shader vocabulary; uitk carries no host's.",
+    )
     def shader_type_spec(default: str = "stingray", section: str = "") -> AttributeSpec:
         """The shared **Rebuild Shader** parameter a material-rebuilding bridge exposes.
 
@@ -134,7 +146,7 @@ class Parameters(_ParametersInternal):
         What format a hand-off is written in is a property of hand-off bridges
         in general, not of any one target app, so the spec lives here -- one
         label, one vocabulary, one tooltip across every bridge and both DCCs.
-        The vocabulary is pythontk's :data:`~pythontk.core_utils.app_handoff.CARRIER_EXTENSIONS`
+        The vocabulary is pythontk's :data:`~pythontk.core_utils.handoff.app_handoff.CARRIER_EXTENSIONS`
         verbatim: the engine refuses any other spelling before it exports, so
         the panel offers exactly what the engine accepts. A bridge whose target
         reads only FBX simply does not register the spec (its engine declares
@@ -186,7 +198,7 @@ class Parameters(_ParametersInternal):
         A property of hand-off bridges in general, like the carrier, so the spec
         lives here: one label, one vocabulary, one tooltip across every bridge
         and both DCCs. The vocabulary is pythontk's
-        :data:`~pythontk.core_utils.app_handoff.RIG_MODES` verbatim, and the
+        :data:`~pythontk.core_utils.handoff.app_handoff.RIG_MODES` verbatim, and the
         engine is what enforces it. Order is append-only: combos persist by
         INDEX, and ``auto`` leads because it is what an undecided request gets.
 
@@ -272,3 +284,80 @@ class Parameters(_ParametersInternal):
             # returned unchanged by ``to_literal``.
             out[key] = formatter(spec, KindFactory.to_literal(spec, val))
         return out
+
+
+class ParamRegistry(object):
+    """A bridge's parameter registry, declared as data: subclass it, set :attr:`PARAMS`.
+
+    What every bridge's ``parameters.py`` used to hand-write -- the
+    ``referenced_keys`` / ``defaults`` / ``render_context`` wrappers binding the
+    :class:`Parameters` helpers to its own dict -- is inherited instead::
+
+        class Parameters(ParamRegistry):
+            PARAMS = PARAMS
+            FORMATTER = Formatters.lua_literal  # optional: python_literal by default
+            SUPERSESSIONS = SUPERSESSIONS  # optional
+
+    The subclass IS what :class:`~uitk.bridge.slots.BridgeSlotsBase` expects as
+    its ``params_module`` (``PARAMS`` / ``referenced_keys`` / ``SUPERSESSIONS``)
+    and the namespace a headless engine calls (``Parameters.defaults()``,
+    ``Parameters.render_context(values)``). A registry whose rule differs
+    overrides the method (an include-expanding ``referenced_keys``, a run-mode
+    relevance, a derived token) and reaches the default through ``super()``.
+    Called on the class: it holds no state.
+    """
+
+    #: ``{key: AttributeSpec}``; display order = iteration order.
+    PARAMS: Dict[str, AttributeSpec] = {}
+
+    #: Renders one registered value for substitution: a :class:`Formatters`
+    #: staticmethod, ``(spec, value) -> str``.
+    FORMATTER: Callable[[AttributeSpec, Any], str] = staticmethod(
+        Formatters.python_literal
+    )
+
+    #: ``(trigger, governed keys, reason)`` triples the panel greys rows by, or
+    #: ``None`` to leave them to the panel's own ``PARAM_SUPERSESSIONS``.
+    SUPERSESSIONS: Optional[Tuple[Tuple[str, Tuple[str, ...], str], ...]] = None
+
+    @classmethod
+    def referenced_keys(cls, script_text: str) -> Set[str]:
+        """Registered keys whose ``__KEY__`` token appears in *script_text*.
+
+        Parameters:
+            script_text: A template body (pre-substitution).
+
+        Returns:
+            (set) The keys of :attr:`PARAMS` it references.
+        """
+        return Parameters.referenced_keys(script_text, cls.PARAMS)
+
+    @classmethod
+    def defaults(cls) -> Dict[str, Any]:
+        """``{key: default}`` for every registered parameter."""
+        return Parameters.defaults(cls.PARAMS)
+
+    @classmethod
+    def render_context(
+        cls,
+        values: Dict[str, Any],
+        formatter: Optional[Callable[[AttributeSpec, Any], str]] = None,
+    ) -> Dict[str, str]:
+        """Format *values* for ``StrUtils.replace_delimited``.
+
+        Parameters:
+            values: ``{key: value}``; unregistered keys fall through to ``str()``.
+            formatter: A one-off renderer in place of :attr:`FORMATTER` (a
+                second target language for the same values).
+
+        Returns:
+            (dict) ``{key: literal text}``.
+        """
+        return Parameters.render_context(
+            values, cls.PARAMS, formatter=formatter or cls.FORMATTER
+        )
+
+    @staticmethod
+    def affix_parts(value: Any, *, default: str = "prefix") -> Tuple[str, str]:
+        """``(prefix, suffix)`` for an ``affix``-kind value (:meth:`Parameters.affix_parts`)."""
+        return Parameters.affix_parts(value, default=default)

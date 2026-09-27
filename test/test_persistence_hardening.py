@@ -41,7 +41,7 @@ from uitk.widgets.mainWindow import MainWindow
 from uitk.widgets.comboBox import ComboBox
 from uitk.managers.settings_manager import SettingsManager
 from uitk.managers.state_manager import StateManager
-from uitk.widgets.optionBox.utils import OptionBoxManager
+from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
 OptionBoxManager.patch_common_widgets()
 

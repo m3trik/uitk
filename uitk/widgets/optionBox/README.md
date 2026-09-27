@@ -12,13 +12,16 @@ OptionBox provides a modular architecture where options are drop-in components t
 optionBox/
 ├── __init__.py              # Main package exports
 ├── _optionBox.py            # Core OptionBox classes
-├── utils.py                 # Helper functions and manager
+├── option_box_manager.py    # OptionBoxManager (widget.option_box): fluent option API + widget patching
+├── _menu_binding.py         # its menu partial (menu / enable_menu / enable_option_menu)
+├── _deferred_wrap.py        # its deferred-wrap partial (queue options until parented, wrap once)
 └── options/                 # Option plugin modules
     ├── __init__.py          # Options package exports
     ├── _options.py          # Base option classes
     ├── clear.py             # Clear button option
     ├── action.py            # Action/menu options
     ├── pin_values.py        # Pin values option
+    ├── choice.py            # Filter facet: pick one value from a popup
     └── option_menu.py       # Dropdown menu options
 ```
 
@@ -154,6 +157,39 @@ Prefer this over a bare `widget.setEnabled(False)` paired with a separate toggle
 a toggle that disables its own row will trap itself unless it sets the keep-live
 property, which `DisableOption` does for you. Emits `toggled(bool)` (`True` =
 now enabled); retrieve via `find_option(DisableOption)`.
+
+### ChoiceOption
+A **filter facet**: an icon button whose popup picks one value. A list that
+narrows by several dimensions puts one glyph per dimension on its filter field
+(after the `FilterOption` toggle) instead of a combo box of its own beside the
+field. The popup (a `ContextMenu`, rebuilt from `choices` each time it opens, so
+a changing set is always current) marks the value in effect; the icon takes the
+informational tint while the value differs from `default`, and the tooltip reads
+`"<label>: <choice>"`.
+
+```python
+status = line_edit.option_box.add_choice(      # returns the option; never replaces
+    icon="lock",
+    label="Status",
+    choices=[("Any status", "any"), None, ("Locked", "locked")],  # None = separator
+    default="any",
+    on_changed=lambda _value: apply_filter(),
+    settings=settings, settings_key="filter.status",  # optional, shared store
+)
+status.value                 # "any" | "locked"
+status.refresh()             # a value no longer offered falls back to the default
+```
+
+Entries take the bridge `choice` shapes -- a bare value (its own label),
+`(label, value)` or `(label, value, tooltip)` -- and `choices` may be a callable
+(evaluated per open).
+
+`multi=True` makes the rows toggles in a popup that stays open (`ContextMenu`
+`keep_open` rows): `value` is the tuple picked, `()` when not narrowed, and the
+row holding `default` clears them (marked while nothing is picked). A host
+matches a row against ANY pick; the picks persist as a list. `set_value(v, notify=False)`
+syncs silently; a sibling reset calls `restore_default()`. The Preset Editor's
+Status and Tag buttons are the reference consumers.
 
 ### ResetOption
 A per-widget **reset-to-default** button with a modifier-gated **bypass**

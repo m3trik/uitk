@@ -9,11 +9,18 @@ import xml.etree.ElementTree as ET
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
+from uitk._bootstrap import Bootstrap
+
 # Composition pieces — private to this package:
 from uitk.switchboard.slots import SwitchboardSlotsMixin
 from uitk.switchboard.shortcuts import SwitchboardShortcutMixin
 from uitk.switchboard.widgets import SwitchboardWidgetMixin
-from uitk.switchboard.utils import SwitchboardUtilsMixin
+from uitk.switchboard.rules import SwitchboardRulesMixin
+from uitk.switchboard.widget_values import SwitchboardWidgetValuesMixin
+from uitk.switchboard.control_groups import SwitchboardControlGroupsMixin
+from uitk.switchboard.dialogs import SwitchboardDialogsMixin
+from uitk.switchboard.placement import SwitchboardPlacementMixin
+from uitk.switchboard.event_loop import SwitchboardEventLoopMixin
 from uitk.switchboard.names import SwitchboardNameMixin
 from uitk.switchboard.editors import SwitchboardEditorsMixin
 from uitk.switchboard.style import SwitchboardStyleMixin
@@ -35,7 +42,12 @@ class Switchboard(
     SwitchboardSlotsMixin,
     SwitchboardShortcutMixin,
     SwitchboardWidgetMixin,
-    SwitchboardUtilsMixin,
+    SwitchboardRulesMixin,
+    SwitchboardWidgetValuesMixin,
+    SwitchboardControlGroupsMixin,
+    SwitchboardDialogsMixin,
+    SwitchboardPlacementMixin,
+    SwitchboardEventLoopMixin,
     SwitchboardNameMixin,
     SwitchboardEditorsMixin,
     SwitchboardStyleMixin,
@@ -63,7 +75,7 @@ class Switchboard(
                 def __new__(cls, *args, **kwargs):
                     sb = Switchboard(*args, ui_source="my_project.ui", **kwargs)
                     ui = sb.loaded_ui.my_project
-                    ui.set_attributes(WA_TranslucentBackground=True)
+                    Bootstrap.set_translucent(ui)  # opaque where nothing composites
                     ui.set_flags(Tool=True, FramelessWindowHint=True, WindowStaysOnTopHint=True)
                     ui.style.set(theme="dark", style_class="translucentBgWithBorder")
                     return ui
@@ -82,10 +94,16 @@ class Switchboard(
     # or referencing Switchboard — violating the package's no-side-effects-
     # on-import rule. Resolved on first access instead; works on both the
     # class (Switchboard.app) and instances (sb.app).
+    @staticmethod
+    def _new_app():
+        """This process's own QApplication, with the standalone platform policy
+        applied first (:meth:`Bootstrap.configure_platform`: X11 on a Wayland
+        session, where the marking menu and popups can be placed)."""
+        Bootstrap.configure_platform()
+        return QtWidgets.QApplication(sys.argv)
+
     app = ptk.ClassProperty(
-        lambda cls: (
-            QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
-        )
+        lambda cls: QtWidgets.QApplication.instance() or cls._new_app()
     )
 
     # Emitted when a new UI enters ui_registry via register().
@@ -137,7 +155,10 @@ class Switchboard(
                 addition to this package's built-ins.
             icon_source: Source of icon files to register.
             handlers (dict): Optional ``{attr_name: handler}`` mapping to
-                register on ``self.handlers`` after initialization.
+                register on ``self.handlers`` after initialization. A ``None``
+                value registers nothing; ``{"editor": None}`` opts out of the
+                default :class:`EditorHandler` (the bundled editors' rows in
+                the UI Browser).
             tag_delimiter (str): Override for the name tag delimiter
                 (defaults to ``TAG_DELIMITER``, ``'#'``).
             ui_name_delimiters (str): Override for the UI-name delimiter
@@ -181,7 +202,7 @@ class Switchboard(
         # Ensure plain QtWidgets (e.g. unpromoted QLineEdit in .ui files) expose
         # `widget.option_box`. patch_widget_class is idempotent (no-op if the
         # class already has the property), so repeated Switchboard inits are safe.
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         OptionBoxManager.patch_common_widgets()
 
@@ -320,7 +341,7 @@ class Switchboard(
         # Register any handlers passed during construction (after configurable is ready)
         if self._pending_handlers:
             for name, obj in self._pending_handlers.items():
-                if getattr(self.handlers, name, None):
+                if obj is None or getattr(self.handlers, name, None):
                     continue
                 # Instantiate if class, use directly if instance
                 if isinstance(obj, type):
@@ -348,6 +369,19 @@ class Switchboard(
                 "ui",
                 UiHandler.instance(switchboard=self),
                 getattr(UiHandler, "DEFAULTS", {}),
+            )
+
+        # Likewise the bundled editors, so the launcher lists them -- the UI
+        # Browser included. ``handlers={"editor": None}`` opts out.
+        if "editor" not in (handlers or {}) and not getattr(
+            self.handlers, "editor", None
+        ):
+            from uitk.handlers.editor_handler import EditorHandler
+
+            self.register_handler(
+                "editor",
+                EditorHandler.instance(switchboard=self),
+                EditorHandler.DEFAULTS,
             )
 
         # Shortcut/command overrides are persisted host-namespaced (Maya and
@@ -734,7 +768,13 @@ class Switchboard(
                         else None
                     )
                 elif inspect.isclass(item):
-                    path_to_check = inspect.getfile(item)
+                    # A class in a module gone from sys.modules (pythontk's
+                    # loose-file loader) has no file: skipped, like a
+                    # file-less module above.
+                    try:
+                        path_to_check = inspect.getfile(item)
+                    except (TypeError, OSError):
+                        path_to_check = None
 
                 if path_to_check:
                     self.registry.resolve_path(

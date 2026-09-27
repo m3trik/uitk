@@ -352,12 +352,15 @@ class TestStoredActivationKey(unittest.TestCase):
 
     @staticmethod
     def _stored_key(values, context_tags=None):
-        from uitk.widgets.marking_menu import _marking_menu as module
+        # SettingsManager is patched where the binding part of the class
+        # (``_bindings``) resolves it.
+        from uitk.widgets.marking_menu import _bindings as module
+        from uitk.widgets.marking_menu._marking_menu import MarkingMenu
 
         with mock.patch.object(
             module, "SettingsManager", lambda **kw: _FakeSettings(values)
         ):
-            return module.MarkingMenu.stored_activation_key(context_tags)
+            return MarkingMenu.stored_activation_key(context_tags)
 
     def test_reads_the_user_chosen_key(self):
         values = {"marking_menu_user_activation_key_maya": "Key_F11"}
@@ -396,13 +399,14 @@ class TestStoredActivationKey(unittest.TestCase):
                 )
 
     def test_an_unreadable_store_returns_none(self):
-        from uitk.widgets.marking_menu import _marking_menu as module
+        from uitk.widgets.marking_menu import _bindings as module
+        from uitk.widgets.marking_menu._marking_menu import MarkingMenu
 
         def _boom(**_kwargs):
             raise RuntimeError("no QSettings backend")
 
         with mock.patch.object(module, "SettingsManager", _boom):
-            self.assertIsNone(module.MarkingMenu.stored_activation_key({"maya"}))
+            self.assertIsNone(MarkingMenu.stored_activation_key({"maya"}))
 
 
 if __name__ == "__main__":

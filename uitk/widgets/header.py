@@ -10,6 +10,7 @@ from uitk.widgets.mixins.text import RichText, TextOverlay
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.managers.icon_manager import IconManager
 from uitk.managers.cursor_manager import CursorManager
+from uitk._bootstrap import Bootstrap
 
 
 class Header(
@@ -1254,6 +1255,10 @@ class Header(
                 if not self._dragging:
                     self._dragging = True
                     CursorManager.push(self, QtCore.Qt.ClosedHandCursor)
+                    if self._start_system_move():
+                        if not self.pinned:
+                            self.toggle_pin(from_drag=True)
+                        return super().mouseMoveEvent(event)
                 self.window().move(self.window().pos() + moveAmount)
                 self.__mousePressPos = event.globalPos()
                 if not self.pinned:  # Only change state if not already pinned
@@ -1265,6 +1270,20 @@ class Header(
         self.__mousePressPos = None
         self._end_drag_cursor()
         super().mouseReleaseEvent(event)
+
+    def _start_system_move(self) -> bool:
+        """Hand the drag to the compositor where a client cannot move its own
+        window (native Wayland ignores ``move()`` on a top-level): True when it
+        took over. The compositor then owns the pointer until the button comes
+        up, so no release reaches us -- the drag state ends here."""
+        if Bootstrap.positions_windows():
+            return False
+        handle = self.window().windowHandle()
+        if handle is None or not handle.startSystemMove():
+            return False
+        self.__mousePressPos = None
+        self._end_drag_cursor()
+        return True
 
     def _end_drag_cursor(self):
         """Put the open hand back after a drag — from the release, or from a

@@ -13,7 +13,7 @@ Two implementations of the same three-method contract — pick via
 
 Both expose: ``load(file)``, ``read_ui_tags(path)``, ``on_tags_written(path)``.
 """
-from uitk.loaders.compiled import CompiledLoader
-from uitk.loaders.runtime import RuntimeLoader
 
-__all__ = ["CompiledLoader", "RuntimeLoader"]
+from pythontk.core_utils.module_resolver import lazy_exports
+
+lazy_exports(globals(), {"compiled": "CompiledLoader", "runtime": "RuntimeLoader"})

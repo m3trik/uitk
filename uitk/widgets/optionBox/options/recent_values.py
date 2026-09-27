@@ -4,6 +4,8 @@
 
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
+from uitk.managers.value_manager import ValueManager
+from uitk.widgets.popup.dismissal import AncestorDismissal
 from ._options import ButtonOption
 from ._persistence import PersistedOption
 
@@ -44,7 +46,13 @@ class RecentValuesPopup(QtCore.QObject):
         if menu_layout:
             menu_layout.setContentsMargins(1, 1, 1, 1)
 
-        self._install_visibility_filters()
+        # Close when an ancestor hides or the anchor's window moves.
+        self._dismissal = AncestorDismissal(
+            self._parent_widget,
+            dismiss=lambda: self.close(),
+            on_hide=True,
+            parent=self,
+        )
 
         self._on_value_selected = None
         self._on_value_removed = None
@@ -53,37 +61,6 @@ class RecentValuesPopup(QtCore.QObject):
     def menu(self):
         """Get the underlying Menu widget."""
         return self._menu
-
-    def _install_visibility_filters(self):
-        """Install event filters on parent and ancestors to detect hide events."""
-        self._watched_widgets = []
-        widget = self._parent_widget
-        while widget is not None:
-            widget.installEventFilter(self)
-            self._watched_widgets.append(widget)
-            widget = widget.parent()
-
-    def _remove_visibility_filters(self):
-        """Remove event filters from watched widgets."""
-        for widget in self._watched_widgets:
-            try:
-                widget.removeEventFilter(self)
-            except RuntimeError:
-                pass
-        self._watched_widgets.clear()
-
-    def eventFilter(self, watched, event):
-        """Close popup when any parent widget is hidden or a window-ancestor moves."""
-        et = event.type()
-        if et == QtCore.QEvent.Hide:
-            self.close()
-        elif et == QtCore.QEvent.Move:
-            try:
-                if watched.isWindow():
-                    self.close()
-            except RuntimeError:
-                pass
-        return False
 
     def connect_signals(self, on_value_selected=None, on_value_removed=None):
         """Connect signal handlers."""
@@ -97,7 +74,7 @@ class RecentValuesPopup(QtCore.QObject):
         self._menu.show()
 
     def close(self):
-        self._remove_visibility_filters()
+        self._dismissal.detach()
         self._menu.hide()
 
     def move(self, pos):
@@ -569,7 +546,11 @@ class RecentValuesOption(ButtonOption):
         if widget is None:
             return
         # activated emits str in newer Qt, int in older; just use widget text
-        text = widget.currentText() if hasattr(widget, "currentText") else None
+        text = (
+            ValueManager.combo_value(widget, "text")
+            if hasattr(widget, "currentText")
+            else None
+        )
         if text:
             self.record(text)
 

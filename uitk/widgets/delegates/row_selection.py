@@ -37,7 +37,7 @@ class RowSelectionBorderDelegate(QtWidgets.QStyledItemDelegate):
     3. If the cell was originally selected, call
        :meth:`paint_row_selection_border` at the end.
 
-    See :class:`uitk.widgets.editors.switchboard_browser._BrowserRowDelegate`
+    See :class:`uitk.widgets.editors.switchboard_browser.row_delegate._BrowserRowDelegate`
     for an HTML-rendering subclass.
     """
 

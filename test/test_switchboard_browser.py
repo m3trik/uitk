@@ -18,7 +18,7 @@ import os
 import tempfile
 import unittest
 
-from conftest import QtBaseTestCase, setup_qt_application
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
 app = setup_qt_application()
 
@@ -61,6 +61,8 @@ def _write_ui(path, name, tags_csv=None):
 
 
 class BrowserBase(QtBaseTestCase):
+    EDITORS = False  # list the bundled editors' rows too
+
     def setUp(self):
         super().setUp()
         self.tmp = tempfile.TemporaryDirectory()
@@ -72,7 +74,15 @@ class BrowserBase(QtBaseTestCase):
         # ``clear()`` removes the keys so first-time defaults take effect on
         # the next read (setting them to None would store None and override
         # the default).
-        self.sb = Switchboard(ui_source=self.dir, log_level="WARNING")
+        #
+        # ``EDITORS`` off: these suites pin the rows of REGISTERED UIs, so the
+        # bundled editors' rows (``EditorHandler``) are opted out here and
+        # covered by the suites that turn it on.
+        self.sb = Switchboard(
+            ui_source=self.dir,
+            log_level="WARNING",
+            handlers=None if self.EDITORS else {"editor": None},
+        )
         self.sb.settings.branch("ui_browser").clear()
         self.browser = SwitchboardBrowser(self.sb)
         # Match production: the browser is meant to be shown. When hidden,
@@ -712,11 +722,15 @@ class SwitchboardConstruction(QtBaseTestCase):
                 browser.deleteLater()
 
     def test_creates_switchboard_when_none_provided(self):
-        # Bare construction yields an empty (but valid) Switchboard
+        # Bare construction yields a valid Switchboard with no UIs: its only
+        # rows are the bundled editors -- the browser among them.
         browser = SwitchboardBrowser()
         try:
             self.assertIsInstance(browser.sb, Switchboard)
-            self.assertEqual(browser._model.rowCount(), 0)
+            self.assertEqual(
+                sorted(browser._model._names), sorted(browser.sb.editors.names())
+            )
+            self.assertIn("browser", browser._model._names)
         finally:
             browser.deleteLater()
 
@@ -742,6 +756,69 @@ class SwitchboardConstruction(QtBaseTestCase):
         finally:
             # No browser was created, just clean up the switchboard
             pass
+
+
+class DirectBrowserIsTheRegistryBrowser(QtBaseTestCase):
+    """A browser built directly (``SwitchboardBrowser(switchboard=sb)``, the
+    documented form) is its switchboard's ``browser`` editor when it has none:
+    the launcher's own row and ``sb.editors`` reach THIS window.
+
+    Regression: the row resolved through ``sb.editors``, which knew only the
+    browsers it built. With a directly built browser on screen the row read
+    hidden, its Launch opened a SECOND browser, Focus did nothing, and
+    ``sb.editors.show("browser")`` returned another window.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(log_level="WARNING")
+        self.sb.settings.branch("ui_browser").clear()
+        self.browser = SwitchboardBrowser(switchboard=self.sb)
+        self.browser.show()
+        QtWidgets.QApplication.processEvents()
+
+    def tearDown(self):
+        for widget in self._browsers():
+            widget.hide()
+            widget.deleteLater()
+        self.sb.deleteLater()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        super().tearDown()
+
+    def _browsers(self, visible=False):
+        return [
+            w
+            for w in QtWidgets.QApplication.topLevelWidgets()
+            if isinstance(w, SwitchboardBrowser)
+            and w.sb is self.sb
+            and (w.isVisible() or not visible)
+        ]
+
+    def test_the_row_and_the_registry_reach_the_direct_browser(self):
+        handler = self.sb.handlers.editor
+        self.assertTrue(handler.is_visible("browser"), "the row reads it hidden")
+        self.assertIs(handler.launch("browser"), self.browser)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(self._browsers(visible=True), [self.browser])
+        self.assertIs(self.sb.editors.show("browser"), self.browser)
+
+    def test_the_rows_visibility_follows_the_direct_browser(self):
+        """The registry's post-build hooks ran on it: the editor handler's
+        visibility relay reports its hide."""
+        seen = []
+        self.sb.on_handler_entry_changed.connect(
+            lambda handler, name: seen.append((handler, name))
+        )
+        self.browser.hide()
+        QtWidgets.QApplication.processEvents()
+        self.assertIn(("editor", "browser"), seen)
+        self.assertFalse(self.sb.handlers.editor.is_visible("browser"))
+
+    def test_a_second_direct_browser_leaves_the_first_in_place(self):
+        second = SwitchboardBrowser(switchboard=self.sb)
+        self.assertIs(self.sb.editors.peek("browser"), self.browser)
+        self.assertIsNot(second, self.browser)
 
 
 class TableHeaderAlignment(BrowserBase):
@@ -1193,7 +1270,10 @@ class EntryFilterStructural(QtBaseTestCase):
         _write_ui(os.path.join(d, "delta.ui"), "delta", "")
         _write_ui(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
         _write_ui(os.path.join(d, "uv#submenu.ui"), "uv_submenu")
-        self.sb = Switchboard(ui_source=d, log_level="WARNING")
+        # Editor rows opted out: the filter cases count registered UIs.
+        self.sb = Switchboard(
+            ui_source=d, log_level="WARNING", handlers={"editor": None}
+        )
         self.sb.settings.branch("ui_browser").clear()
         self.browser = None
 
@@ -1417,38 +1497,117 @@ class ContextMenusFreedOnClose(BrowserBase):
         return _RecordingMenu
 
     def test_chip_context_menu_sets_delete_on_close(self):
-        import uitk.widgets.editors.switchboard_browser as mod
-
         created = []
-        orig = mod.QtWidgets.QMenu
-        mod.QtWidgets.QMenu = self._recording_menu_cls(created)
+        orig = QtWidgets.QMenu
+        QtWidgets.QMenu = self._recording_menu_cls(created)
         try:
             btn = QtWidgets.QPushButton()
             self.browser._on_chip_context_menu("rig", btn, QtCore.QPoint(0, 0))
         finally:
-            mod.QtWidgets.QMenu = orig
+            QtWidgets.QMenu = orig
         self.assertEqual(len(created), 1)
         self.assertTrue(created[0].testAttribute(QtCore.Qt.WA_DeleteOnClose))
 
     def test_row_context_menu_sets_delete_on_close(self):
-        import uitk.widgets.editors.switchboard_browser as mod
 
         view = self.browser._view
         idx = view.model().index(0, 0)
         self.assertTrue(idx.isValid(), "need at least one visible row")
 
         created = []
-        orig_menu = mod.QtWidgets.QMenu
+        orig_menu = QtWidgets.QMenu
         orig_index_at = view.indexAt
-        mod.QtWidgets.QMenu = self._recording_menu_cls(created)
+        QtWidgets.QMenu = self._recording_menu_cls(created)
         view.indexAt = lambda pos: idx
         try:
             self.browser._on_row_context_menu(QtCore.QPoint(1, 1))
         finally:
-            mod.QtWidgets.QMenu = orig_menu
+            QtWidgets.QMenu = orig_menu
             view.indexAt = orig_index_at
         self.assertEqual(len(created), 1)
         self.assertTrue(created[0].testAttribute(QtCore.Qt.WA_DeleteOnClose))
+
+
+class LaunchCodeAction(BrowserBase):
+    """The row menu's *Copy launch code*: the entry's handler renders a
+    standalone snippet from the browser's own launch options, and the browser
+    puts it on the clipboard. Editor rows are on, so the browser is a row."""
+
+    EDITORS = True
+
+    def _menu(self, name, trigger=None):
+        """Right-click *name*'s row; return the menu's action texts, having
+        triggered the action titled *trigger* (inside ``exec_``, while the
+        menu is alive)."""
+
+        view = self.browser._view
+        idx = view.model().index(self.proxy_names().index(name), 0)
+        texts = []
+
+        class _RecordingMenu(QtWidgets.QMenu):
+            def exec_(self_inner, *a, **k):  # noqa: N805
+                for act in self_inner.actions():
+                    texts.append(act.text())
+                    if act.text() == trigger:
+                        act.trigger()
+                return None
+
+        orig_menu, orig_index_at = QtWidgets.QMenu, view.indexAt
+        QtWidgets.QMenu = _RecordingMenu
+        view.indexAt = lambda pos: idx
+        try:
+            self.browser._on_row_context_menu(QtCore.QPoint(1, 1))
+        finally:
+            QtWidgets.QMenu = orig_menu
+            view.indexAt = orig_index_at
+        return texts
+
+    def test_copy_puts_the_rows_snippet_on_the_clipboard(self):
+        QtWait.require_clipboard(self)  # the shared OS-resource probe
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText("")
+        texts = self._menu("alpha", trigger="Copy launch code")
+        self.assertIn("Copy launch code", texts)
+        code = clipboard.text()
+        self.assertTrue(code.startswith("# Launch 'alpha' standalone"), code)
+        # The Launch button's options travel with it.
+        theme = self.browser._cmb_theme.currentText()
+        self.assertIn(f"handler.launch('alpha', theme={theme!r})", code)
+        self.assertEqual(
+            self.browser.footer.statusText(), "Copied launch code for alpha"
+        )
+
+    def test_the_browser_can_copy_its_own_launch_code(self):
+        QtWait.require_clipboard(self)  # the shared OS-resource probe
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText("")
+        self._menu("browser", trigger="Copy launch code")
+        self.assertIn("handler.sb.editors.show('browser')", clipboard.text())
+
+    def test_no_action_when_the_handler_offers_no_code(self):
+        from unittest import mock
+
+        with mock.patch.object(UiHandler, "launch_code", return_value=None):
+            texts = self._menu("alpha")
+        self.assertNotIn("Copy launch code", texts)
+
+    def test_open_as_is_offered_only_where_persistence_applies(self):
+        """Persistence is the UI handler's; an editor ignores it."""
+        self.assertIn("Open as", self._menu("alpha"))
+        editor_texts = self._menu("style")
+        self.assertIn("Copy launch code", editor_texts)
+        self.assertNotIn("Open as", editor_texts)
+
+    def test_focus_goes_through_the_rows_handler(self):
+        from unittest import mock
+
+        from uitk.handlers.editor_handler import EditorHandler
+
+        self.sb.handlers.editor.launch("style")
+        with mock.patch.object(EditorHandler, "focus", autospec=True) as focus:
+            self.browser._focus("style")
+        focus.assert_called_once_with(self.sb.handlers.editor, "style")
+        self.sb.handlers.editor.close("style")
 
 
 class PersistenceOverride(BrowserBase):
@@ -1620,7 +1779,6 @@ class PersistenceOverride(BrowserBase):
         self.assertIsNone(launch.call_args.kwargs.get("persistence"))
 
     def test_context_menu_open_as_builds_and_sets_override(self):
-        import uitk.widgets.editors.switchboard_browser as mod
 
         view = self.browser._view
         idx = view.model().index(0, 0)
@@ -1636,15 +1794,15 @@ class PersistenceOverride(BrowserBase):
                 result["texts"] = [x.text() for x in self_inner.actions()]
                 return None
 
-        orig_menu = mod.QtWidgets.QMenu
+        orig_menu = QtWidgets.QMenu
         orig_index_at = view.indexAt
-        mod.QtWidgets.QMenu = _RecordingMenu
+        QtWidgets.QMenu = _RecordingMenu
         view.indexAt = lambda pos: idx
         try:
             # Construction must not raise, and the "Open as" submenu must appear.
             self.browser._on_row_context_menu(QtCore.QPoint(1, 1))
         finally:
-            mod.QtWidgets.QMenu = orig_menu
+            QtWidgets.QMenu = orig_menu
             view.indexAt = orig_index_at
 
         self.assertIn("Open as", result.get("texts", []))

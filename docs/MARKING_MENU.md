@@ -12,7 +12,7 @@ Hold a key (e.g. `F12`). A radial menu appears centered at the cursor. Flick the
 
 The same system also launches standalone windows — any UI without the `#startmenu` / `#submenu` tag is treated as a regular `MainWindow` that the marking menu shows on demand.
 
-Implementation: [uitk/widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py) — one of the largest single classes in the package. Subclasses `QWidget + SingletonMixin + LoggingMixin + HelpMixin`. Pure chord→menu resolution lives in [\_resolver.py](../uitk/widgets/marking_menu/_resolver.py) (Qt-free, unit-testable).
+Implementation: [uitk/widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py) — one of the largest single classes in the package, so it is assembled from one part per concept, each a mixin module beside it: [\_bindings.py](../uitk/widgets/marking_menu/_bindings.py) (chord table, activation key, routes), [\_hosting.py](../uitk/widgets/marking_menu/_hosting.py) (stacked pages, hosted themes, preload), [\_navigation.py](../uitk/widgets/marking_menu/_navigation.py) (submenu transitions, child hooks), [\_input.py](../uitk/widgets/marking_menu/_input.py) (hit-testing, press/release dispatch, the grab, input diagnostics) and [\_presentation.py](../uitk/widgets/marking_menu/_presentation.py) (show/hide, the fade). The facade keeps construction, the process-wide instance registry and the activation press/release, and subclasses `<parts> + QWidget + SingletonMixin + LoggingMixin + HelpMixin` — the parts come before `QWidget` because they override its virtuals. The public and protected surface is the one class's, so a host subclass (`TclMaya`, `TclBlender`) overrides any member as before. Pure chord→menu resolution lives in [\_resolver.py](../uitk/widgets/marking_menu/_resolver.py) (Qt-free, unit-testable).
 
 A process hosts at most **one** input-owning marking menu: constructing a new instance calls `retire()` on every prior live instance (disposes its activation `GlobalShortcut`, cancels timers, ends any live gesture — irreversible; the dev-reload path).
 
@@ -91,7 +91,7 @@ cameras#startmenu.ui      # Alt radial reached via F12|LeftButton
 texture_editor.ui         # Standalone window launched from a menu button
 ```
 
-Tag detection: `ui.has_tags(_MARKING_MENU_TAGS)` where `_MARKING_MENU_TAGS = ("startmenu", "submenu")` — a module-level constant in [_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py).
+Tag detection: `ui.has_tags(_MARKING_MENU_TAGS)` where `_MARKING_MENU_TAGS = ("startmenu", "submenu")` — a module-level constant in [_resolver.py](../uitk/widgets/marking_menu/_resolver.py), which every part of the class reads.
 
 ---
 

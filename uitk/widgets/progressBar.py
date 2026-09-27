@@ -267,7 +267,7 @@ class ProgressBar(QtWidgets.QProgressBar, AttributesMixin):
     def set_total(self, total: int) -> None:
         """Adjust the task total mid-flight.
 
-        Used by :func:`uitk.switchboard.utils.SwitchboardUtilsMixin.progress_adapter`
+        Used by :meth:`uitk.switchboard.dialogs.SwitchboardDialogsMixin.progress_adapter`
         to auto-correct the bar's max when a downstream
         ``progress_callback(current, total, message)`` reports a
         ``total`` that differs from what the slot set at ``start_task``

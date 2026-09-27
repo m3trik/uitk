@@ -55,12 +55,12 @@ if __name__ == "__main__":
 ```
 tentacle/slots/maya/
 ├── _slots_maya.py        # class SlotsMaya
-├── cameras.py            # class Cameras(SlotsMaya)
-├── editors.py            # class Editors(SlotsMaya)
-├── selection.py          # class Selection(SlotsMaya)
-├── scene.py              # class Scene(SlotsMaya)
-├── main.py               # class Main(SlotsMaya)
-└── preferences.py        # class Preferences(SlotsMaya)
+├── cameras.py            # class CamerasSlots(SlotsMaya)
+├── editors.py            # class EditorsSlots(SlotsMaya)
+├── selection.py          # class SelectionSlots(SlotsMaya)
+├── scene.py              # class SceneSlots(SlotsMaya)
+├── main.py               # class MainSlots(SlotsMaya)
+└── preferences.py        # class PreferencesSlots(SlotsMaya)
 ```
 
 ```python
@@ -76,7 +76,7 @@ class SlotsMaya:
 from uitk import Signals, WidgetComboBox, ToolBox
 from tentacle.slots.maya._slots_maya import SlotsMaya
 
-class Selection(SlotsMaya):
+class SelectionSlots(SlotsMaya):
     def __init__(self, switchboard):
         super().__init__(switchboard)
         self.ui = self.sb.loaded_ui.selection
@@ -87,7 +87,7 @@ class Selection(SlotsMaya):
     def list000(self, item): ...
 ```
 
-UITK's class resolution finds `Selection` for `selection.ui` via the [class-name fallback](SLOTS.md#1-class-resolution) (without the `Slots` suffix).
+UITK's [class resolution](SLOTS.md#1-class-resolution) finds `SelectionSlots` for `selection.ui` by its standard `<Base>Slots` name. Prefer that spelling over a bare `Selection` (which binds too): the class name also keys the users' shortcut overrides, so it is persistent state.
 
 ---
 

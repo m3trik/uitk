@@ -64,17 +64,23 @@ class Switchboard(
     SwitchboardSlotsMixin,         # slot resolution, Signals, SlotWrapper
     SwitchboardShortcutMixin,      # keyboard shortcut registration
     SwitchboardWidgetMixin,        # widget resolution + registration
-    SwitchboardUtilsMixin,         # center_widget, unpack_names, dialogs
-    SwitchboardNameMixin,          # tag/base name parsing, legal-name conversion
+    SwitchboardRulesMixin,         # enable_when / show_when / text_from / value_from
+    SwitchboardWidgetValuesMixin,  # what a control's value means (read / write / change signal)
+    SwitchboardControlGroupsMixin, # button groups, toggle_multi, linked spin boxes, reset buttons
+    SwitchboardDialogsMixin,       # message/input/file/form dialogs, progress, busy cursor
+    SwitchboardPlacementMixin,     # center_widget, cursor offset
+    SwitchboardEventLoopMixin,     # defer_with_timer, simulate_key_press, gc_protect
+    SwitchboardNameMixin,          # tag/base name parsing, legal names, name patterns (unpack_names)
     SwitchboardEditorsMixin,       # sb.editors registry (style/hotkey/browser)
     SwitchboardStyleMixin,         # sb.style — lazy StyleSheet accessor
     SwitchboardNamespaceMixin,     # last: __getattr__ fallback to uitk symbols
 ): ...
 ```
 
-Each partial lives in `uitk/switchboard/<name>.py` (e.g. `slots.py`,
-`shortcuts.py`, `widgets.py`, `utils.py`, `names.py`, `editors.py`,
-`style.py`, `namespace.py`). These are implementation pieces, not standalone mixins —
+Each partial lives in `uitk/switchboard/<name>.py`, one concept each (e.g.
+`slots.py`, `shortcuts.py`, `widgets.py`, `widget_values.py`, `rules.py`,
+`control_groups.py`, `dialogs.py`, `placement.py`, `event_loop.py`,
+`names.py`, `editors.py`, `style.py`, `namespace.py`). These are implementation pieces, not standalone mixins —
 the `switchboard` subpackage is the encapsulation boundary, not the
 individual partials.
 
@@ -323,6 +329,10 @@ Handlers extend UITK without subclassing `Switchboard`. Three touchpoints:
 - `setup_lifecycle(ui, hide_signal)` — wires a hide signal (typically `marking_menu.key_show_release`) to `ui.request_hide()` for pin-aware auto-hide.
 - **Window persistence** — sole owner of pin-vs-hide chrome, for every init path (marking menu, launcher, already-open). `default_persistence(ui)` is the subclass hook for a per-window default (mayatk / blendertk declare their tool panels sticky there); `window_persistence` + `persistence_override(name)` are the persisted user choices the UI Browser edits. See [API_REFERENCE.md](API_REFERENCE.md#window-persistence).
 
+`EditorHandler` ([handlers/editor_handler.py](../uitk/handlers/editor_handler.py)) — registered on every Switchboard as `sb.handlers.editor` (opt out with `handlers={"editor": None}`): lists the `sb.editors` windows as launcher rows, so the UI Browser finds itself.
+
+Every launchable handler may render `launch_code(name, **options)` — Python that relaunches an entry in a fresh session (plain interpreter or DCC shelf) — the UI Browser's *Copy launch code*. See [API_REFERENCE.md](API_REFERENCE.md#uitkuihandler).
+
 `MarkingMenu` registers itself as `sb.handlers.marking_menu`. See [MARKING_MENU.md](MARKING_MENU.md).
 
 ### Custom handler example
@@ -513,7 +523,7 @@ Both delegates read `uitk_tags` from the .ui XML directly (`extract_metadata`), 
 uitk/
 ├── __init__.py                # DEFAULT_INCLUDE + bootstrap_package
 ├── compile.py                 # .ui → hash-stamped _ui.py compiler + precompile_async + CLI
-├── events.py                  # EventFactoryFilter, MouseTracking
+├── events.py                  # EventFactoryFilter, MouseTracking, TreeDragReparentFilter
 │
 ├── managers/                  # standalone services (Switchboard- and widget-consumed)
 │   ├── registry_manager.py    # RegistryManager + FileRegistry (typed registries)
@@ -521,7 +531,9 @@ uitk/
 │   ├── state_manager.py       # widget state persistence
 │   ├── value_manager.py       # get/set widget value by signal
 │   ├── icon_manager.py        # theme-aware icon coloring
-│   ├── preset_manager.py      # named preset save/load
+│   ├── preset_manager.py      # PresetManager: named preset save/load (facade); its parts:
+│   │                          #   _preset_widgets.py (scope + value authority),
+│   │                          #   _preset_combo.py (the selector), _preset_migration.py
 │   ├── shortcut_manager.py    # GlobalShortcut, ShortcutManager, ShortcutMixin
 │   ├── recent_values_store.py # per-widget recent-value history
 │   ├── cancel_manager.py      # CancelManager, CancelProvider (slot cancellation)
@@ -536,8 +548,13 @@ uitk/
 │   ├── _core.py               # Switchboard class (composes the partials below)
 │   ├── slots.py               # slot resolution, Signals, SlotWrapper, default_signals
 │   ├── widgets.py             # widget resolution + registration
-│   ├── utils.py               # center_widget, unpack_names, dialogs
-│   ├── names.py               # tag/base name parsing, legal-name conversion
+│   ├── widget_values.py       # what a control's value means (read / write / change signal)
+│   ├── rules.py               # enable_when / show_when / text_from / value_from
+│   ├── control_groups.py      # button groups, toggle_multi, linked spin boxes, reset buttons
+│   ├── dialogs.py             # message/input/file/form dialogs, progress, busy cursor
+│   ├── placement.py           # center_widget, cursor offset
+│   ├── event_loop.py          # defer_with_timer, simulate_key_press, gc_protect
+│   ├── names.py               # tag/base name parsing, legal names, name patterns
 │   ├── shortcuts.py           # keyboard shortcut registration
 │   ├── editors.py             # sb.editors registry
 │   ├── style.py               # sb.style — lazy StyleSheet accessor
@@ -550,31 +567,46 @@ uitk/
 │   ├── ui_handler.py          # UiHandler (sb.handlers.ui)
 │   ├── base_handler.py        # shared lifecycle for handler subclasses
 │   ├── external_app_handler.py
+│   ├── editor_handler.py      # EditorHandler (sb.handlers.editor)
 │   └── handler_entry.py
 │
 ├── widgets/
 │   ├── mainWindow.py          # MainWindow (UI wrapper)
-│   ├── menu.py                # Menu (the workhorse — largest single class)
+│   ├── menu.py                # Menu facade (frozen path): construction, show/hide lifecycle,
+│   │                          #   placement (MenuPositioner), MenuConfig
+│   ├── menu_parts/            # Menu's parts, one mixin per concept: _layout, _items,
+│   │                          #   _triggers, _leave, _popup_window, _actions, _persistent_mode,
+│   │                          #   _registration
+│   ├── popup/                 # popup kit Menu / ExpandableList / MainWindow share:
+│   │                          #   placement.py (screen clamp), window.py (popup-window
+│   │                          #   promotion), dismissal.py (ancestor-move / outside-click)
 │   ├── header.py, footer.py   # frameless window chrome
 │   ├── pushButton.py, checkBox.py, comboBox.py, lineEdit.py, ...
 │   ├── marking_menu/
-│   │   ├── _marking_menu.py   # MarkingMenu
-│   │   ├── _resolver.py
+│   │   ├── _marking_menu.py   # MarkingMenu facade: construction, instance registry, activation
+│   │   ├── _bindings.py, _hosting.py, _navigation.py, _input.py, _presentation.py
+│   │   │                      #   its parts, one mixin per concept (see MARKING_MENU.md)
+│   │   ├── _resolver.py       # Qt-free chord resolution + the gesture-page tag set
 │   │   └── overlay.py         # gesture trail + widget cloning
 │   ├── optionBox/
 │   │   ├── _optionBox.py      # OptionBox, OptionBoxContainer
-│   │   ├── utils.py           # OptionBoxManager + widget patching
+│   │   ├── option_box_manager.py  # OptionBoxManager (fluent option API + widget patching)
+│   │   ├── _menu_binding.py   # its menu partial
+│   │   ├── _deferred_wrap.py  # its deferred-wrap partial
 │   │   └── options/           # ClearOption, BrowseOption, PinValuesOption, ...
-│   ├── attributeWindow/       # generic attribute editor + kind handlers
+│   ├── attribute_window.py    # AttributeWindow: generic attribute editor (kinds: bridge/spec.py)
 │   ├── sequencer/             # full animation timeline
-│   ├── editors/               # ColorMappingEditor, HotkeyEditor, StyleEditor, EditorPanel, SwitchboardBrowser
+│   ├── editors/               # ColorMappingEditor, HotkeyEditor, StyleEditor, EditorPanel,
+│   │                          #   switchboard_browser/ (panel, model, filtering, row_delegate, launch),
+│   │                          #   shortcut_editor/ (registry_editor + _action_cells, _collision_checks)
 │   └── mixins/
 │       ├── attributes.py      # set_attributes / set_flags
 │       ├── menu_mixin.py      # .menu descriptor
 │       ├── option_box_mixin.py # .option_box descriptor
 │       ├── text.py            # RichText, TextOverlay, TextTruncation
-│       ├── tooltip_mixin.py   # TooltipFormat DSL + TooltipPresenter (wrap, display time, providers)
-│       ├── convert.py, docking.py, size_grip.py, feedback.py,
+│       ├── tooltip_mixin.py   # TooltipPresenter + widget.tooltip / sb.tooltip (the DSL is pythontk.TooltipFormat)
+│       ├── item_format.py     # ItemFormatMixin: the table/tree format mixins' shared core
+│       ├── convert.py, size_grip.py, feedback.py,
 │       ├── icon_states.py, spin_box_display.py, wheel_step.py
 │
 ├── icons/                     # monochrome SVGs (auto-colored)

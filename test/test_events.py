@@ -1032,6 +1032,284 @@ class TestMouseTrackingViewportFiltering(QtBaseTestCase):
         )
 
 
+class TestTreeDragReparentFilter(QtBaseTestCase):
+    """Middle-drag relay + one batched reparent report per drop.
+
+    Most events go straight to ``eventFilter`` (the filter is not installed),
+    so the synthesised left-button events reach the tree's own handlers
+    without re-entering the filter. The cases that must see re-entry (and the
+    press's selection) :meth:`_installed` it and :meth:`_send` through Qt's
+    own dispatch. Either way no real drag -- a modal ``QDrag.exec``, which the
+    offscreen platform cannot run -- ever starts: a move stays inside the drag
+    distance, and a drop is delivered the way Qt delivers one (see
+    :meth:`_drop`), BEFORE any release, as in a real drag (the drop lands
+    inside ``QDrag.exec``, which consumes the release that ends it).
+    """
+
+    def setUp(self):
+        super().setUp()
+        from uitk.events import TreeDragReparentFilter
+
+        self.tree = self.track_widget(QtWidgets.QTreeWidget())
+        self.tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        # What the filter requires (and the panels set): a left-button move
+        # over a pressed row then starts a drag, never a drag-SELECTION that
+        # would collapse the selection before the drop reads it.
+        self.tree.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+        self.tree.setDefaultDropAction(QtCore.Qt.MoveAction)
+        self.a = QtWidgets.QTreeWidgetItem(self.tree, ["a"])
+        self.b = QtWidgets.QTreeWidgetItem(self.tree, ["b"])
+        self.c = QtWidgets.QTreeWidgetItem(self.tree, ["c"])
+        self.calls = []
+        self.filter = TreeDragReparentFilter(
+            self.tree, reparent_callback=self.calls.append
+        )
+
+    def _mouse(self, etype, button):
+        pos = QtCore.QPointF(1, 1)
+        return QtGui.QMouseEvent(etype, pos, pos, button, button, QtCore.Qt.NoModifier)
+
+    def _press(self, button):
+        return self.filter.eventFilter(
+            self.tree.viewport(),
+            self._mouse(QtCore.QEvent.MouseButtonPress, button),
+        )
+
+    def _release(self, button):
+        return self.filter.eventFilter(
+            self.tree.viewport(),
+            self._mouse(QtCore.QEvent.MouseButtonRelease, button),
+        )
+
+    def _installed(self, filter_cls=None):
+        """Install the filter the way the Hierarchy Sync panels do, on the
+        tree, shown. *filter_cls* swaps in a subclass."""
+        if filter_cls is not None:
+            self.filter = filter_cls(self.tree, reparent_callback=self.calls.append)
+        self.tree.resize(200, 200)
+        self.tree.show()
+        QtWidgets.QApplication.processEvents()
+        self.filter.install(self.tree)
+        return self.filter
+
+    def _send(self, etype, button, item, buttons=None, offset=(0, 0)):
+        """A mouse event over *item*'s row, through Qt's own dispatch (every
+        filter installed on the viewport runs, the relays included)."""
+        center = self.tree.visualItemRect(item).center()
+        pos = QtCore.QPointF(center.x() + offset[0], center.y() + offset[1])
+        global_pos = QtCore.QPointF(self.tree.viewport().mapToGlobal(pos.toPoint()))
+        event = QtGui.QMouseEvent(
+            etype,
+            pos,
+            global_pos,
+            button,
+            button if buttons is None else buttons,
+            QtCore.Qt.NoModifier,
+        )
+        return QtWidgets.QApplication.sendEvent(self.tree.viewport(), event)
+
+    def _drop(self, *moves, receivers=None):
+        """A drop as Qt delivers it: every filter first, then the view's move.
+
+        Qt hands an item view's drag events to the widget that accepted
+        ``DragEnter`` -- the VIEWPORT -- and ``QTreeWidget.dropEvent`` moves
+        the items only after the filters on it have run. *moves*
+        (``(item, new_parent)``) stand in for that move; the report is read
+        once the event loop turns.
+        """
+        event = QtGui.QDropEvent(
+            QtCore.QPointF(1, 1),
+            QtCore.Qt.MoveAction,
+            QtCore.QMimeData(),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+        for receiver in receivers or (self.tree.viewport(),):
+            self.filter.eventFilter(receiver, event)
+        for item, parent in moves:
+            self.tree.takeTopLevelItem(self.tree.indexOfTopLevelItem(item))
+            parent.addChild(item)
+        QtWidgets.QApplication.processEvents()
+
+    def test_registered_on_the_root(self):
+        import uitk
+        from uitk.events import TreeDragReparentFilter
+
+        self.assertIs(uitk.TreeDragReparentFilter, TreeDragReparentFilter)
+
+    def test_install_covers_the_viewport_and_the_tree(self):
+        """Both halves are live after ``install``: a real middle press lands,
+        relayed to the view as a left press (which selects its row), and its
+        release ends the drag."""
+        self._installed()
+        self._send(QtCore.QEvent.MouseButtonPress, QtCore.Qt.MiddleButton, self.b)
+        self.assertTrue(self.filter._mid_dragging)
+        self.assertEqual(self.tree.selectedItems(), [self.b])
+        self._send(QtCore.QEvent.MouseButtonRelease, QtCore.Qt.MiddleButton, self.b)
+        self.assertFalse(self.filter._mid_dragging)
+
+    def test_a_relayed_move_does_not_re_enter_the_relay(self):
+        """One real middle-drag move is relayed ONCE; the relay passes through.
+
+        Regression: the relay is sent to the viewport the filter is installed
+        on, so it came straight back into the filter -- which relayed it
+        again, ~330 nested sends per mouse move until ``RecursionError``. The
+        direct ``eventFilter`` cases never saw it; this one goes through Qt.
+        """
+        from uitk.events import TreeDragReparentFilter
+
+        seen = {"moves": 0, "depth": 0, "max_depth": 0}
+
+        class _Counting(TreeDragReparentFilter):
+            def eventFilter(self, obj, event):  # noqa: N802
+                if event.type() == QtCore.QEvent.MouseMove:
+                    seen["moves"] += 1
+                seen["depth"] += 1
+                seen["max_depth"] = max(seen["max_depth"], seen["depth"])
+                try:
+                    return super().eventFilter(obj, event)
+                finally:
+                    seen["depth"] -= 1
+
+        self._installed(_Counting)
+        self._send(QtCore.QEvent.MouseButtonPress, QtCore.Qt.MiddleButton, self.a)
+        seen.update(moves=0, max_depth=0)
+        # Two pixels: inside the drag distance, so no modal QDrag starts.
+        self._send(
+            QtCore.QEvent.MouseMove,
+            QtCore.Qt.NoButton,
+            self.a,
+            buttons=QtCore.Qt.MiddleButton,
+            offset=(2, 1),
+        )
+        self.assertEqual(seen["moves"], 2, "the real move + its one relayed copy")
+        self.assertEqual(seen["max_depth"], 2, "the relay nested once, no deeper")
+        self._send(QtCore.QEvent.MouseButtonRelease, QtCore.Qt.MiddleButton, self.a)
+        self.assertFalse(self.filter._mid_dragging)
+
+    def test_a_middle_press_on_an_unselected_row_reports_that_row(self):
+        """The relayed press selects the row it lands on, as a left press
+        would, and Qt's move takes the selection -- so that row is reported.
+
+        Regression: the filter captured the selection from BEFORE the press, so
+        middle-dragging row c while row a was selected reported a -- which Qt
+        never moved -- and not c: Hierarchy Sync mirrored nothing (a stayed
+        put) while the tree showed c moved.
+        """
+        self._installed()
+        self.a.setSelected(True)
+        self._send(QtCore.QEvent.MouseButtonPress, QtCore.Qt.MiddleButton, self.c)
+        self.assertEqual(self.tree.selectedItems(), [self.c], "the press selected c")
+        self._drop((self.c, self.b))
+        self.assertEqual(self.calls, [[(self.c, self.b)]])
+
+    def test_any_release_ends_a_middle_drag(self):
+        """After a drop Windows hands the view a LEFT release (the drag loop
+        ate the middle one): it ends the middle drag and reaches the view,
+        and the moves that follow are the view's own, not relayed."""
+        self.assertTrue(self._press(QtCore.Qt.MiddleButton))
+        self.assertFalse(
+            self._release(QtCore.Qt.LeftButton), "the left release reaches the view"
+        )
+        self.assertFalse(self.filter._mid_dragging)
+        self.assertFalse(
+            self.filter.eventFilter(
+                self.tree.viewport(),
+                self._mouse(QtCore.QEvent.MouseMove, QtCore.Qt.NoButton),
+            ),
+            "a button-less move after the drag was relayed as a drag",
+        )
+
+    def test_a_drop_ends_a_middle_drag(self):
+        """The drop is the end of the drag, whichever release follows it."""
+        self.a.setSelected(True)
+        self._press(QtCore.Qt.MiddleButton)
+        self._drop((self.a, self.b))
+        self.assertFalse(self.filter._mid_dragging)
+        self.assertEqual(self.calls, [[(self.a, self.b)]])
+
+    def test_the_report_waits_for_qts_move(self):
+        """A drop reaching the viewport is reported, with the NEW parents.
+
+        The copies this replaced reported only from a filter on the tree
+        itself, which a drop on an item view never reaches, and read
+        ``item.parent()`` inside the filter -- before ``dropEvent`` had moved
+        anything -- so a reparent was either never reported or reported as a
+        same-parent no-op.
+        """
+        self.a.setSelected(True)
+        event = QtGui.QDropEvent(
+            QtCore.QPointF(1, 1),
+            QtCore.Qt.MoveAction,
+            QtCore.QMimeData(),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+        self.filter.eventFilter(self.tree.viewport(), event)
+        self.assertEqual(self.calls, [], "reported before Qt moved the item")
+        self.tree.takeTopLevelItem(self.tree.indexOfTopLevelItem(self.a))
+        self.b.addChild(self.a)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(self.calls, [[(self.a, self.b)]])
+
+    def test_middle_drag_reports_the_items_it_picked_up(self):
+        """A press on a row of a multi-selection drags the whole selection.
+
+        The drop precedes the release, as in a real drag: a release before
+        any drop is a plain click, which collapses the selection to the row.
+        """
+        self.a.setSelected(True)
+        self.c.setSelected(True)
+        self.assertTrue(self._press(QtCore.Qt.MiddleButton))  # lands on row a
+        self.assertTrue(
+            self.filter.eventFilter(
+                self.tree.viewport(),
+                self._mouse(QtCore.QEvent.MouseMove, QtCore.Qt.MiddleButton),
+            )
+        )
+        self._drop((self.a, self.b), (self.c, self.b))
+        self.assertEqual(self.calls, [[(self.a, self.b), (self.c, self.b)]])
+        self.assertFalse(
+            self._release(QtCore.Qt.MiddleButton), "the drop already ended the drag"
+        )
+
+    def test_native_left_drop_reports_the_selection(self):
+        """A plain left-button InternalMove drop is mirrored too.
+
+        No middle drag captured anything, so the dragged items are the
+        selection at the drop.
+        """
+        self.a.setSelected(True)
+        self._press(QtCore.Qt.LeftButton)
+        self._drop((self.a, self.b))
+        self.assertEqual(self.calls, [[(self.a, self.b)]])
+
+    def test_a_left_press_drops_a_stale_middle_pick(self):
+        """A middle click that produced no drop must not leak into the next one."""
+        self.a.setSelected(True)
+        self._press(QtCore.Qt.MiddleButton)
+        self._release(QtCore.Qt.MiddleButton)
+        self.tree.clearSelection()
+        self.b.setSelected(True)
+        self._press(QtCore.Qt.LeftButton)
+        self._drop((self.b, self.c))
+        self.assertEqual(self.calls, [[(self.b, self.c)]])
+
+    def test_one_report_per_drop(self):
+        """Seen by the viewport AND the tree, a drop is still reported once."""
+        self.a.setSelected(True)
+        self._drop((self.a, self.b), receivers=(self.tree.viewport(), self.tree))
+        self.assertEqual(self.calls, [[(self.a, self.b)]])
+        self.b.setSelected(False)
+        self.c.setSelected(True)
+        self._drop()
+        self.assertEqual(self.calls[1], [(self.c, None)])
+
+    def test_no_report_without_items(self):
+        self._drop()  # nothing selected, nothing dragged
+        self.assertEqual(self.calls, [])
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

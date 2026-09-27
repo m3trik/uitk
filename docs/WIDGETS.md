@@ -191,7 +191,7 @@ Complex packages:
 | Package | What it provides |
 |:---|:---|
 | [`sequencer/`](#sequencer-package) | Full video/animation timeline — `SequencerWidget`, `ClipData`, `TrackData`, `ScrubPlayer`, keyframes, markers, transport controls |
-| [`editors/`](#editors-package) | `EditorPanel`, `StyleEditor`, `ColorMappingEditor`, `ShortcutEditor`, `SwitchboardBrowser` — exposed via `sb.editors` |
+| [`editors/`](#editors-package) | `EditorPanel`, `StyleEditor`, `ColorMappingEditor`, `ShortcutEditor`, `SwitchboardBrowser`, `PresetEditor` — exposed via `sb.editors` |
 | [`delegates/`](#delegates) | Item delegates — icon centering, in-cell choice/shortcut capture, row-selection border |
 | [`marking_menu/`](MARKING_MENU.md) | Radial gesture menu — see dedicated doc |
 | [`optionBox/`](#option-box-system) | Pluggable option system — `ClearOption`, `BrowseOption`, `PinValuesOption`, `RecentValuesOption`, `OptionMenuOption`, `ContextMenuOption`, `ActionOption`, `MenuOption` |
@@ -354,7 +354,7 @@ See `uitk/widgets/table_actions.py` for bulk action helpers.
 
 ## Menu
 
-The workhorse — a full standalone widget, not just a `QMenu`. See [uitk/widgets/menu.py](../uitk/widgets/menu.py) for the full surface.
+The workhorse — a full standalone widget, not just a `QMenu`. See [uitk/widgets/menu.py](../uitk/widgets/menu.py) for the facade (construction, the show / hide lifecycle, placement); the rest of the surface is one mixin per concept in [`widgets/menu_parts/`](../uitk/widgets/menu_parts/__init__.py) — layout and chrome, items, the trigger hook and `hide_on_trigger`, `hide_on_leave` and the transient family, the popup window and input grab, the Menu Actions section, persistent mode, item registration — all inherited, so `Menu.<member>` is the one surface and a subclass overrides any of it as before. Its popup mechanics — the screen clamp, the promotion to a frameless popup window, and the dismiss-on-host-move watcher — come from the popup kit [`widgets/popup/`](../uitk/widgets/popup/__init__.py), shared with `ExpandableList` flyouts, `MainWindow` and the option-box value popups.
 
 ### `.add()` is the universal entry
 
@@ -398,7 +398,7 @@ menu.add("QPushButton", row=0, col=1)  # grid placement via add(row=…, col=…
 Draggable header bar for frameless windows. Provides standard window controls. The open-hand cursor closes while the window is being dragged and reopens on release.
 
 ```python
-from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
+from pythontk import TooltipFormat
 
 fmt, kbd = TooltipFormat.fmt, TooltipFormat.kbd
 
@@ -421,9 +421,9 @@ in `config_buttons`); clicking the `?` pops the help text as a tooltip via
 `TooltipPresenter.show_text` (wrapped, like every uitk tooltip). The text persists
 across `config_buttons` rebuilds.
 
-Rich-text help is built via `TooltipFormat.fmt(...)` from
-[`uitk.widgets.mixins.tooltip_mixin`](../uitk/widgets/mixins/tooltip_mixin.py)
-— supports `title`, `body`, `bullets`, `steps`, `rows`, `sections`, and
+Rich-text help is built via `TooltipFormat.fmt(...)` -- pythontk's
+Qt-free tooltip DSL (`from pythontk import TooltipFormat`; slots reach the same
+methods as `self.sb.tooltip.fmt(...)`) — supports `title`, `body`, `bullets`, `steps`, `rows`, `sections`, and
 `notes` (italic muted callouts). Companion helpers: `kbd(*keys)` for
 keyboard chips, `hl(text, color)` for inline color highlights.
 
@@ -573,7 +573,7 @@ A `QWidget` that becomes visible on mouse-over. Used by `MarkingMenu` to define 
 
 ## AttributeWindow
 
-`uitk/widgets/attributeWindow/` — a `Menu`-based popup editor for inspecting and modifying an object's attributes. Pass the target `obj` plus optional `get_attribute_func` / `set_attribute_func` callables to adapt any backend; populate with `add_attributes(attributes)`. Editor widgets are chosen per value kind by the registry in [`bridge/spec.py`](../uitk/bridge/spec.py) (bool / int / float / str / choice / path / file_list). Labels can be checkable (`checkable=True`, `single_check=True`).
+`uitk/widgets/attribute_window.py` — a `Menu`-based popup editor for inspecting and modifying an object's attributes. Pass the target `obj` plus optional `get_attribute_func` / `set_attribute_func` callables to adapt any backend; populate with `add_attributes(attributes)`. Editor widgets are chosen per value kind by the registry in [`bridge/spec.py`](../uitk/bridge/spec.py) (bool / int / float / str / choice / path / file_list). Labels can be checkable (`checkable=True`, `single_check=True`).
 
 Signals: `labelToggled(str, bool)`, `valueChanged(str, object)`, `refreshRequested()`.
 
@@ -674,7 +674,7 @@ Each option is a class extending `BaseOption` or `ButtonOption`. Multiple option
 | `ActionOption` | Generic icon button triggering any callback |
 | `MenuOption` | Button that opens a pre-built `Menu` instance |
 
-Further options ship in [`optionBox/options/`](../uitk/widgets/optionBox/options/): `ValueOption` (inline editable value field), `AffixOption` (Auto/Suffix/Prefix picker), `ResetOption` (reset-to-default with bypass toggle), `DisableOption`, `FilterOption`, `ToggleOption`.
+Further options ship in [`optionBox/options/`](../uitk/widgets/optionBox/options/): `ValueOption` (inline editable value field), `AffixOption` (Auto/Suffix/Prefix picker), `ResetOption` (reset-to-default with bypass toggle), `DisableOption`, `FilterOption`, `ToggleOption`, `ChoiceOption` (a filter facet: an icon button picking one value from a popup, tinted while it narrows).
 
 Basic usage via the manager (auto-patched):
 
@@ -752,14 +752,34 @@ Real-world integration: [mayatk's shot_sequencer_slots.py](https://github.com/m3
 | `StyleEditor` | Edits global stylesheet variables (color and length tokens) live, with presets ([style_editor.py](../uitk/widgets/editors/style_editor.py)) |
 | `ColorMappingEditor` / `ColorMappingDialog` | Named color-mapping editor — `color_map()` / `apply_color_map()`, `colors_changed(dict)` signal; the dialog wrapper adds header/footer and presets ([color_mapping_editor.py](../uitk/widgets/editors/color_mapping_editor.py)) |
 | `ShortcutEditor` | Edits shortcut and command bindings — see [Shortcut & command registry](#shortcut--command-registry) below ([shortcut_editor/registry_editor.py](../uitk/widgets/editors/shortcut_editor/registry_editor.py)) |
-| `SwitchboardBrowser` | Searchable launcher over every UI registered with a Switchboard — filter by name/tags, launch, hide, open in Designer ([switchboard_browser.py](../uitk/widgets/editors/switchboard_browser.py)) |
+| `SwitchboardBrowser` | Searchable launcher over every UI registered with a Switchboard — filter by name/tags, launch, hide, open in Designer ([switchboard_browser/](../uitk/widgets/editors/switchboard_browser/__init__.py)) |
+| `PresetEditor` | Every tool's presets in one window — lock, rename, tag, group into collections, back up, import — see [Preset Editor](#preset-editor) below ([preset_editor.py](../uitk/widgets/editors/preset_editor.py)) |
 
-They're exposed on the Switchboard via `sb.editors` ([uitk/switchboard/editors.py](../uitk/switchboard/editors.py)) — a lazy, auto-recovering singleton registry with names `style`, `shortcut`, `global_shortcuts` (the ShortcutEditor pinned to its Commands view), and `browser`:
+They're exposed on the Switchboard via `sb.editors` ([uitk/switchboard/editors.py](../uitk/switchboard/editors.py)) — a lazy, auto-recovering singleton registry with names `style`, `shortcut`, `global_shortcuts` (the ShortcutEditor pinned to its Commands view), `browser`, and `presets`:
 
 ```python
 sb.editors.show("style")          # open / focus by name
-sb.editors.browser                # property access (style / shortcut / browser)
+sb.editors.browser                # property access (style / shortcut / browser / presets)
 sb.editors.add_post_build_hook("shortcut", wire_dcc_collision_checker)
+```
+
+### Preset Editor
+
+`PresetEditor` is the window over `pythontk.PresetLibrary`: every preset store under the presets root (`UITK_PRESETS_ROOT`, default `%LOCALAPPDATA%/uitk`), shown as a tree of App › Tool › Mode beside a filterable table. It never imports or builds a tool: a store announces itself with a `.domain` marker in its folder, and a preset's metadata sits in a sidecar `.<name>.preset` beside it (id, label as typed, lock, collection, tags). The preset file itself is never modified, so tools and older installs read exactly what they always did.
+
+- **Lock** a preset (row menu) and its panel selector shows it italic with a lock tooltip, hides Rename/Delete, and seeds Save with `"<name> copy"`; `PresetManager.save` raises `pythontk.PresetReadOnlyError` for it. A lock guards against accidents; it is not security.
+- **Filter row** — the text field (`FilterOption` grammar: comma terms, exact unless `*`, `!` excludes; the filter icon silences it) carries two `ChoiceOption` facets: Status -- tick any of locked / editable / built-in / edited since export or install in one visit (the popup stays open; a row shows when it matches any ticked status) -- and Tag. Beside it, the **collections box** is both the collection filter and where collections are managed.
+- **Collections** — a named set of presets (at most one per preset). In the collections box: **＋** opens a New collection form (name, description, and "add the selected presets"); **☰** acts on the collection the box shows — *Edit…*, *Export…* (writes a bundle and bumps its version), *Delete* (presets kept, untagged) with *Delete with its presets* in its flyout (unedited members deleted, backup first); a double-click renames it in place. Rows show version and preset count, so an empty collection is as manageable as a full one. A preset's **Collection cell** (click it, or right-click) moves presets in, between and out of collections — it acts on the whole selection when the clicked row is part of it. Importing a later version of a collection updates unedited members in place, even locked ones.
+- **Focus** — `PresetEditor(inc=..., exc=...)` or `set_entry_filter(inc, exc)` limits the window to some stores: shell-style patterns naming folders under the root, each taking its stores with it (`"mayatk"`, `"mayatk/scene_*"`; `pythontk.PresetLibrary.in_scope`). Collections stay root-wide (counts show the presets in view), and a backup still covers everything.
+- **Backup / import** share one bundle format (a `.zip`). An import opens a review page (per-preset status: new / identical / update / conflict / removed, with an editable action) and writes nothing until *Apply*, which takes a backup first. Deleting from the editor also backs up first.
+- Open panels learn about changes through `PresetManager.notify(keys)`; another process's selector re-lists its folder when its dropdown opens.
+
+```python
+sb.editors.show("presets")
+sb.editors.add_post_build_hook("presets", lambda e: e.set_entry_filter(inc="mayatk"))
+lib = ptk.PresetLibrary()
+plan = lib.plan_import("Acme Standard.presets.zip")   # review, then:
+lib.apply(plan)
 ```
 
 ### Shortcut & command registry

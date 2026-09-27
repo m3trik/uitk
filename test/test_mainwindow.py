@@ -297,7 +297,7 @@ class TestMainWindowWidgetRegistration(QtBaseTestCase):
         from qtpy import QtGui
 
         from uitk.widgets.mainWindow import MainWindow
-        from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
+        from pythontk import TooltipFormat
 
         window = self.track_widget(MainWindow("TestWindow", self.sb))
         central = QtWidgets.QWidget()

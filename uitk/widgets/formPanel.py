@@ -37,9 +37,11 @@ question which one to read.
 
 from typing import Callable, Dict, List, Optional, Union
 
+import pythontk as ptk
 from qtpy import QtCore, QtWidgets
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.managers.cursor_manager import CursorManager
+from uitk.managers.value_manager import ValueManager
 
 from uitk.widgets.windowPanel import WindowPanel
 
@@ -116,7 +118,8 @@ class FormPanel(WindowPanel):
     #: kind is one row and one branch each. Deliberately NOT the switchboard's
     #: ``_WIDGET_VALUE_READERS``: that table's combo contract is
     #: ``currentData``-else-index (a slot conditions on the payload), while a
-    #: form's published contract is the visible ``currentText``.
+    #: form's published contract is the visible ``currentText`` -- both read
+    #: through ``ValueManager.combo_value``, each with its own reading.
     _FIELD_TYPES = (
         (QtWidgets.QCheckBox, "toggled"),
         (QtWidgets.QComboBox, "currentIndexChanged"),
@@ -605,7 +608,7 @@ class FormPanel(WindowPanel):
             if isinstance(editor, QtWidgets.QCheckBox):
                 out[name] = editor.isChecked()
             elif isinstance(editor, QtWidgets.QComboBox):
-                out[name] = editor.currentText()
+                out[name] = ValueManager.combo_value(editor, "text")
             else:
                 out[name] = editor.text().strip()
         return out
@@ -762,7 +765,10 @@ class FormPanel(WindowPanel):
         QtWidgets.QApplication.processEvents()
         try:
             outcome = call()
-        except self._cancelled_exceptions():
+        except ptk.OperationCancelled:
+            # A BaseException on purpose (an ``except Exception`` down the
+            # stack must not swallow an Esc-cancel), so it would escape the Qt
+            # signal this runs under: named here rather than catching all.
             self.logger.warning("Cancelled.")
             self.set_status("Cancelled.", level="warning")
         except Exception as error:  # noqa: BLE001 — reported, not swallowed
@@ -823,24 +829,6 @@ class FormPanel(WindowPanel):
         if self._apply_btn is not None and was_armed:
             self._apply_btn.setVisible(False)
             self.set_status("")
-
-    @staticmethod
-    def _cancelled_exceptions():
-        """The ecosystem's cooperative-cancel signal, as an ``except`` tuple.
-
-        ``pythontk.OperationCancelled`` derives from **BaseException** on
-        purpose, so a bulk slot's Esc-cancel is not swallowed by an ordinary
-        ``except Exception`` somewhere down the stack. The same choice makes
-        it escape a Qt signal, though — the one place a raised object has
-        nowhere to go — so the panel names it explicitly rather than widening
-        its catch to everything. An empty tuple (matching nothing) when
-        pythontk is not importable.
-        """
-        try:
-            from pythontk.core_utils.cancel_scope import OperationCancelled
-        except ImportError:  # pragma: no cover — pythontk is a hard dep here
-            return ()
-        return (OperationCancelled,)
 
     def _on_reject(self) -> None:
         self._accepted = False

@@ -1,6 +1,6 @@
 # uitk
 
-**Role**: Qt UI library — reusable widgets, themes, DCC-agnostic.
+**Role**: generic Qt UI library — reusable widgets, themes; DCC- *and* app-agnostic.
 
 **Nav**: [← root](../CLAUDE.md) · [docs](docs/README.md) · **Deps**: [pythontk](../pythontk/CLAUDE.md) · **Used by**: [mayatk](../mayatk/CLAUDE.md) · [blendertk](../blendertk/CLAUDE.md) · [tentacle](../tentacle/CLAUDE.md) · [extapps](../extapps/CLAUDE.md)
 
@@ -8,7 +8,8 @@
 
 - **PySide6 through `qtpy` only.** `from qtpy import QtWidgets, QtCore, QtGui` — never import `PySide6` (or `PySide2`) directly in widget code; binding names appear only in the `.ui` compile / Designer helpers that must spell them.
 - **snake_case** for Python wrappers. Only use camelCase when overriding Qt methods (e.g. `showEvent`).
-- **No side-effects on import.** Widget classes registered via root `DEFAULT_INCLUDE`.
+- **No application logic.** uitk names no DCC, product or domain: no Maya attribute names, no shot-system models (stores, manifests) or exporters. (The sequencer's shot lane is generic NLE vocabulary; `bridge/` is the generic UI half of pythontk's handoff kit and speaks only its scope/carrier vocabulary, never a product's.) A widget takes the host's vocabulary as data (the sequencer's channel colours arrive from `ptk.Palette.channels()`); DCC-free Qt that carries domain logic splits — model to a pythontk engine, generic widgetry here, thin glue mirrored in the DCC packages ([CODE_STANDARD §14](../m3trik/docs/CODE_STANDARD.md)).
+- **No side-effects on import; lazy by default.** Widget classes registered via root `DEFAULT_INCLUDE`; a subpackage `__init__` publishes through `lazy_exports`, never an eager import.
 
 ## API surface
 
@@ -30,7 +31,7 @@ $env:QT_QPA_PLATFORM = "offscreen"; & python o:\Cloud\Code\_scripts\uitk\test\ru
 
 ## Architecture
 
-- `uitk/widgets/` — reusable widgets. **Module filenames are frozen public API**: `.ui` files across the ecosystem reference them as custom-widget headers (`uitk.widgets.pushButton`) — never rename or move a widget module (the grandfathered exception to root's `my_class.py` naming rule; new modules elsewhere follow it).
+- `uitk/widgets/` — reusable widgets. **Placeable widgets' module filenames are frozen public API**: `.ui` files across the ecosystem reference them as custom-widget headers (`uitk.widgets.pushButton`) — never rename or move one (the grandfathered exception to root's `my_class.py` naming rule; windows/popups Designer never places (`designer_spec`) and new modules elsewhere follow it).
 - `uitk/widgets/mixins/` — inheritance mixins only. Standalone services live in `uitk/managers/`.
 - `uitk/managers/` — service objects (settings, state, values, presets, icons, shortcuts, cursors) consumed compositionally by widgets, handlers, bridge, and Switchboard.
 - `uitk/themes/` — QSS theming: `StyleSheet` engine + `style.qss`.

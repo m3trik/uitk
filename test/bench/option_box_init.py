@@ -130,7 +130,7 @@ class OptionBoxInitBench:
         _ck("01 begin imports")
         with timer.measure("01_imports"):
             from uitk import Switchboard  # noqa: F401
-            from uitk.widgets.optionBox.utils import OptionBoxManager
+            from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
             OptionBoxManager.patch_common_widgets()
 

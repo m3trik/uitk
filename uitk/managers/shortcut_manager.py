@@ -34,11 +34,6 @@ SCOPE_CONTEXT_TO_NAME: Dict[QtCore.Qt.ShortcutContext, str] = {
 }
 
 
-# Known DCC host top-level window object names, searched when resolving an
-# always-visible owner for application-scoped shortcuts.
-_HOST_WINDOW_NAMES = ("MayaWindow", "3dsMaxWindow")
-
-
 class GlobalShortcut(QtCore.QObject):
     """A robust global shortcut handler that detects both press and release events.
 
@@ -128,12 +123,10 @@ class GlobalShortcut(QtCore.QObject):
             if isinstance(active, QtWidgets.QWidget):
                 return active
 
-            # Search top levels for common host windows
+            # Search top levels for the host's registered main window
+            names = ShortcutManager.host_window_names()
             for widget in app.topLevelWidgets():
-                if (
-                    isinstance(widget, QtWidgets.QWidget)
-                    and widget.objectName() in _HOST_WINDOW_NAMES
-                ):
+                if isinstance(widget, QtWidgets.QWidget) and widget.objectName() in names:
                     return widget
 
         return explicit_parent
@@ -333,6 +326,37 @@ class GlobalShortcut(QtCore.QObject):
 class ShortcutManager:
     """Centralized shortcut management with clear separation of concerns"""
 
+    #: objectNames of the host application's main window(s). A host (a DCC's UI
+    #: handler, at its runtime init point) registers its own through
+    #: :meth:`register_host_window`; uitk names no host. Empty in a standalone
+    #: app, where the nearest visible top-level owns application shortcuts.
+    _host_window_names: set = set()
+
+    @classmethod
+    def register_host_window(cls, object_name: str) -> None:
+        """Declare *object_name* as the host application's main window.
+
+        An application-scoped shortcut is owned by an always-visible window
+        (see :meth:`resolve_application_host`); the host's main window is the
+        one that is always up, so it is preferred over any other top-level.
+        Idempotent; an empty name is ignored.
+
+        Parameters:
+            object_name: The main window's ``objectName()`` (e.g. a DCC's).
+        """
+        if object_name:
+            cls._host_window_names.add(object_name)
+
+    @classmethod
+    def unregister_host_window(cls, object_name: str) -> None:
+        """Forget a name :meth:`register_host_window` declared."""
+        cls._host_window_names.discard(object_name)
+
+    @classmethod
+    def host_window_names(cls) -> frozenset:
+        """The registered host main-window objectNames."""
+        return frozenset(cls._host_window_names)
+
     #: Global preference — hide menu items whose action already has a key.
     HIDE_BOUND_MENU_ITEMS_KEY = "hide_shortcut_bound_menu_items"
 
@@ -411,7 +435,8 @@ class ShortcutManager:
         makes the shortcut genuinely application-wide.
 
         Resolution order:
-            1. A known DCC host top-level (``MayaWindow`` / ``3dsMaxWindow``).
+            1. The host's main window, as the host registered it
+               (:meth:`register_host_window`).
             2. The nearest visible top-level ancestor of *widget*.
             3. Any visible top-level window.
             4. *widget* itself (last resort — preserves prior behaviour).
@@ -420,9 +445,10 @@ class ShortcutManager:
         if app is None:
             return widget
 
-        # 1. Known DCC host windows are the canonical application owner.
+        # 1. The host's registered main window is the canonical owner.
+        names = ShortcutManager.host_window_names()
         for w in app.topLevelWidgets():
-            if w.objectName() in _HOST_WINDOW_NAMES and w.isVisible():
+            if w.objectName() in names and w.isVisible():
                 return w
 
         # 2. Nearest visible top-level ancestor of the widget (DCC-agnostic).

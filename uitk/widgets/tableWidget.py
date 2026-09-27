@@ -9,7 +9,7 @@ from qtpy import QtWidgets, QtGui, QtCore
 import pythontk as ptk
 
 # From this package:
-from uitk.widgets.mixins.convert import ConvertMixin
+from uitk.widgets.mixins.item_format import ItemFormatMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.table_actions import TableActions
@@ -44,18 +44,13 @@ class HeaderMixin:
         self.header_click_behavior(col)
 
 
-class CellFormatMixin(ConvertMixin):
-    """Generic cell/column/header formatting for QTableWidget."""
+class CellFormatMixin(ItemFormatMixin):
+    """Generic cell/column/header formatting for QTableWidget.
 
-    ACTION_COLOR_MAP = {
-        "valid": ("#3C8D3C", "#E6F4EA"),
-        "invalid": ("#B97A7A", "#FBEAEA"),
-        "warning": ("#B49B5C", "#FFF6DC"),
-        "info": ("#6D9BAA", "#E2F3F9"),
-        "inactive": ("#AAAAAA", None),
-        "current": ("#C4A44A", None),
-        "reset": (None, None),
-    }
+    The colour map, formatter store and colour resolution are
+    :class:`~uitk.widgets.mixins.item_format.ItemFormatMixin`'s, shared with
+    the tree's ``TreeFormatMixin``.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -72,10 +67,7 @@ class CellFormatMixin(ConvertMixin):
         idx = self._resolve_col(col)
         if idx is None:
             return
-        if append:
-            self._col_formatters.setdefault(idx, []).append(formatter)
-        else:
-            self._col_formatters[idx] = [formatter]
+        self._set_formatter(self._col_formatters, idx, formatter, append)
 
     def set_header_formatter(self, header, formatter, append=False):
         """Set a formatter for a specific header."""
@@ -86,18 +78,11 @@ class CellFormatMixin(ConvertMixin):
         # lookup in _get_formatters (which keys by self._header(col)). Storing
         # under the raw `header` arg would miss when it is an int column index.
         key = self._header(idx)
-        if append:
-            self._header_formatters.setdefault(key, []).append(formatter)
-        else:
-            self._header_formatters[key] = [formatter]
+        self._set_formatter(self._header_formatters, key, formatter, append)
 
     def set_cell_formatter(self, row, col, formatter, append=False):
         """Set a formatter for a specific cell (row, column)."""
-        key = (row, col)
-        if append:
-            self._cell_formatters.setdefault(key, []).append(formatter)
-        else:
-            self._cell_formatters[key] = [formatter]
+        self._set_formatter(self._cell_formatters, (row, col), formatter, append)
 
     def clear_formatters(self):
         """Clear all column, header, and cell formatters."""
@@ -162,9 +147,7 @@ class CellFormatMixin(ConvertMixin):
         # (foreground/background), which fires cellChanged → _on_cell_edited
         # → formatters → format_item → cellChanged → ... (infinite recursion
         # → stack overflow on tables with many formatted cells).
-        was_blocked = self.signalsBlocked()
-        self.blockSignals(True)
-        try:
+        with self._formatting_signals_blocked():
             for row in range(self.rowCount()):
                 for col in range(self.columnCount()):
                     item = self.item(row, col)
@@ -178,26 +161,12 @@ class CellFormatMixin(ConvertMixin):
                             col,
                             self,
                         )
-        finally:
-            self.blockSignals(was_blocked)
 
     def ensure_valid_color(self, color, color_type, item, row, col):
         """Ensure a valid QColor, using fallback if needed."""
-        try:
-            return self.to_qobject(color, "QColor")
-        except Exception:
-            pass
-
-        cached = self._get_default_colors(item, row, col)[
-            0 if color_type == "fg" else 1
-        ]
-        try:
-            return self.to_qobject(cached, "QColor")
-        except Exception:
-            print(
-                f"[WARNING] Invalid {color_type} color: {color!r}, and fallback {cached!r} failed. Using None."
-            )
-            return None
+        return self._valid_color(
+            color, color_type, lambda: self._get_default_colors(item, row, col)
+        )
 
     def format_item(
         self,

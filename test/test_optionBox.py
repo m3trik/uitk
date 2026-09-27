@@ -46,7 +46,7 @@ class TestConvenienceHelpers(QtBaseTestCase):
         Regression: it forwarded menu= into OptionBox.__init__, which accepts
         no such kwarg -> TypeError on every call.
         """
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
         from uitk.widgets.menu import Menu
 
         button = self.track_widget(QtWidgets.QPushButton("x"))
@@ -1315,7 +1315,7 @@ class TestActionOptionMultiInstance(QtBaseTestCase):
 
     def _make_managed_widget(self):
         """Create a widget with OptionBoxManager wired up."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         parent = self.track_widget(QtWidgets.QWidget())
         layout = QtWidgets.QVBoxLayout(parent)
@@ -1414,7 +1414,7 @@ class TestBrowseOptionIntegration(QtBaseTestCase):
 
     def test_records_to_sibling_recent_option(self):
         """Browse should auto-record to a sibling RecentValuesOption."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         widget = self.track_widget(QtWidgets.QLineEdit())
         # Use OptionBoxManager (real-world path) so _option_box_manager is set
@@ -1463,7 +1463,7 @@ class TestOptionBoxManagerWrapRetryTeardown(QtBaseTestCase):
         Internal C++ object (QLineEdit) already deleted`` (observed live
         during a full-suite run: a widget wrapped with no parent yet, then
         torn down by test teardown before one attached)."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         widget = QtWidgets.QLineEdit()  # deliberately parentless
         mgr = OptionBoxManager(widget)
@@ -1490,6 +1490,28 @@ class TestOptionBoxManagerWrapRetryTeardown(QtBaseTestCase):
         )
 
 
+class TestOptionBoxManagerPartialsArePrivate(QtBaseTestCase):
+    """``OptionBoxManager`` composes its menu binding and its deferred wrap
+    from two partials. They are internals -- a ``_`` class in a ``_`` module
+    -- so the API registry never publishes them: ``widget.option_box`` /
+    ``from uitk import OptionBoxManager`` is the surface."""
+
+    def test_the_partials_are_private(self):
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
+
+        partials = [
+            base
+            for base in OptionBoxManager.__mro__[1:]
+            if base.__module__.startswith("uitk.widgets.optionBox.")
+        ]
+        self.assertEqual(len(partials), 2, partials)
+        for base in partials:
+            with self.subTest(partial=base.__qualname__):
+                self.assertTrue(base.__name__.startswith("_"), base.__name__)
+                module = base.__module__.rsplit(".", 1)[1]
+                self.assertTrue(module.startswith("_"), base.__module__)
+
+
 class TestOptionBoxManagerBrowse(QtBaseTestCase):
     """Tests for the OptionBoxManager.browse() fluent API.
 
@@ -1498,7 +1520,7 @@ class TestOptionBoxManagerBrowse(QtBaseTestCase):
 
     def test_browse_fluent_returns_self(self):
         """browse() should return the manager for chaining."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         widget = self.track_widget(QtWidgets.QLineEdit())
         mgr = OptionBoxManager(widget)
@@ -1507,7 +1529,7 @@ class TestOptionBoxManagerBrowse(QtBaseTestCase):
 
     def test_browse_adds_browse_option(self):
         """browse() should add a BrowseOption to pending options."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         widget = self.track_widget(QtWidgets.QLineEdit())
         mgr = OptionBoxManager(widget)
@@ -1519,7 +1541,7 @@ class TestOptionBoxManagerBrowse(QtBaseTestCase):
 
     def test_browse_chained_with_recent(self):
         """browse() and recent() should chain without conflict."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         widget = self.track_widget(QtWidgets.QLineEdit())
         mgr = OptionBoxManager(widget)
@@ -1541,7 +1563,7 @@ class TestOptionBoxManagerFindOption(QtBaseTestCase):
 
     def test_find_pending_option(self):
         """find_option should search pending options."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         widget = self.track_widget(QtWidgets.QLineEdit())
         mgr = OptionBoxManager(widget)
@@ -1553,7 +1575,7 @@ class TestOptionBoxManagerFindOption(QtBaseTestCase):
 
     def test_find_returns_none_when_absent(self):
         """find_option should return None when no match exists."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         widget = self.track_widget(QtWidgets.QLineEdit())
         mgr = OptionBoxManager(widget)
@@ -1568,7 +1590,7 @@ class TestOptionBoxManagerFindOption(QtBaseTestCase):
         ob = OptionBox(options=[browse])
         self.track_widget(ob.wrap(widget))
 
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         mgr = OptionBoxManager(widget)
         mgr._option_box = ob
@@ -1580,7 +1602,7 @@ class TestOptionBoxManagerFindOption(QtBaseTestCase):
 
     def test_find_with_tuple_of_types(self):
         """find_option should accept a tuple of types."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         widget = self.track_widget(QtWidgets.QLineEdit())
         mgr = OptionBoxManager(widget)
@@ -2094,7 +2116,7 @@ class TestCheckBoxOptionBox(QtBaseTestCase):
 
     def test_checkbox_row_in_a_widget_combo_gets_a_working_action(self):
         from uitk.widgets.optionBox.options.action import ActionOption
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
         from uitk.widgets.widgetComboBox import WidgetComboBox
 
         OptionBoxManager.patch_common_widgets()
@@ -2133,7 +2155,7 @@ class TestDisableOptionInMenu(QtBaseTestCase):
 
     def _menu_field(self, **kwargs):
         from uitk.widgets.menu import Menu
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         # Plain QtWidgets get `.option_box` only once Switchboard patches them.
         OptionBoxManager.patch_common_widgets()
@@ -2188,7 +2210,7 @@ class TestOptionBoxManagerToggle(QtBaseTestCase):
     """Tests for the OptionBoxManager.set_toggle() / add_toggle() fluent API."""
 
     def _make_manager(self):
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         widget = self.track_widget(QtWidgets.QLineEdit())
         mgr = OptionBoxManager(widget)
@@ -2672,7 +2694,7 @@ class TestOptionBoxManagerReset(QtBaseTestCase):
     """The OptionBoxManager.set_reset() fluent API + ordering."""
 
     def _make_manager(self):
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         sb = self.track_widget(QtWidgets.QDoubleSpinBox())
         mgr = OptionBoxManager(sb)
@@ -2812,7 +2834,7 @@ class TestOptionRestoreDefault(QtBaseTestCase):
 
     def test_manager_restore_option_defaults(self):
         """``restore_option_defaults`` clears every option, pending or live."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
         from uitk.widgets.optionBox.options.toggle import ToggleOption
 
         sb = self.track_widget(QtWidgets.QDoubleSpinBox())
@@ -2827,7 +2849,7 @@ class TestOptionRestoreDefault(QtBaseTestCase):
         self.assertFalse(lock.is_on)
 
     def test_manager_get_options_includes_pending(self):
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         sb = self.track_widget(QtWidgets.QDoubleSpinBox())
         mgr = OptionBoxManager(sb)
@@ -2849,7 +2871,7 @@ class TestOptionBoxInitPerfRegressions(QtBaseTestCase):
     def _make_menu_mixin_widget(self):
         """A widget exposing the lazy MenuMixin ``menu``/``has_menu`` API."""
         from uitk.widgets.checkBox import CheckBox
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         parent = self.track_widget(QtWidgets.QWidget())
         layout = QtWidgets.QVBoxLayout(parent)
@@ -3178,7 +3200,7 @@ class TestOptionMenuManagerWiring(QtBaseTestCase):
     """OptionBoxManager menu/option-menu/order lifecycle (findings 5 & 6)."""
 
     def _make_managed_widget(self):
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         parent = self.track_widget(QtWidgets.QWidget())
         layout = QtWidgets.QVBoxLayout(parent)
@@ -3301,7 +3323,7 @@ class TestClearButtonDisableSticks(QtBaseTestCase):
     """Disabling the clear button must survive later text changes (finding 7)."""
 
     def test_disabled_clear_stays_hidden_after_text_change(self):
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
         from uitk.widgets.optionBox.options.clear import ClearOption
 
         parent = self.track_widget(QtWidgets.QWidget())
@@ -3362,7 +3384,7 @@ class TestOptionBoxManagerMenuAdoption(QtBaseTestCase):
     def test_reuse_branch_migrates_pending_options(self):
         """add_option's reuse branch must carry already-queued options into the
         adopted box, not just the current one (finding L1130)."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
         from uitk.widgets.optionBox.options.action import ActionOption
         from uitk.widgets.optionBox.options.pin_values import PinValuesOption
 
@@ -3402,7 +3424,7 @@ class TestOptionBoxManagerMenuAdoption(QtBaseTestCase):
     def test_update_option_box_adoption_migrates_pending_options(self):
         """The _update_option_box adoption path (via enable_clear) must also
         migrate queued options (finding L1130, second site)."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
         from uitk.widgets.optionBox.options.action import ActionOption
 
         existing_box, fake_menu = self._make_menu_owned_box()
@@ -3429,7 +3451,7 @@ class TestOptionBoxManagerMenuAdoption(QtBaseTestCase):
         """Reading .container to adopt a menu-owned box must set _is_wrapped so a
         subsequent add_option routes to direct-add instead of building a second
         OptionBox and re-wrapping the widget (finding L1280)."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         existing_box, fake_menu = self._make_menu_owned_box()
 

@@ -195,6 +195,12 @@ class TestCommandBinding(_SwitchboardFixture):
     def setUp(self):
         super().setUp()
         self._shown = []
+        # The host declares its main window (tentacle's TclMaya does this);
+        # uitk itself names no host.
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        ShortcutManager.register_host_window("MayaWindow")
+        self.addCleanup(ShortcutManager.unregister_host_window, "MayaWindow")
 
     def tearDown(self):
         # Close any window we showed — a leaked visible top-level pollutes the
@@ -361,13 +367,17 @@ class TestCommandBinding(_SwitchboardFixture):
         """With no Switchboard UI visible, the host is an always-visible DCC main
         window — not app.activeWindow() (which is None at startup). This is what
         lets a persisted command bind at next-session startup before any tool is
-        opened."""
-        maya = self.track_widget(QtWidgets.QWidget())
-        maya.setObjectName("MayaWindow")
-        maya.show()
+        opened. The host names its main window (uitk names no host)."""
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        ShortcutManager.register_host_window("HostAppWindow")
+        self.addCleanup(ShortcutManager.unregister_host_window, "HostAppWindow")
+        main = self.track_widget(QtWidgets.QWidget())
+        main.setObjectName("HostAppWindow")
+        main.show()
         QtWidgets.QApplication.processEvents()
-        self._shown.append(maya)
-        self.assertIs(self.sb._command_host(), maya)
+        self._shown.append(main)
+        self.assertIs(self.sb._command_host(), main)
 
     def test_persisted_command_binds_at_startup_via_dcc_host(self):
         """Regression: the global commands didn't persist across sessions. The
@@ -436,6 +446,12 @@ class TestCommandNamespaceSelfHeal(_SwitchboardFixture):
     def setUp(self):
         super().setUp()
         self._shown = []
+        # The host declares its main window (tentacle's TclMaya does this);
+        # uitk itself names no host.
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        ShortcutManager.register_host_window("MayaWindow")
+        self.addCleanup(ShortcutManager.unregister_host_window, "MayaWindow")
 
     def tearDown(self):
         self.sb._command_settings().clear()  # don't leak seeded keys

@@ -3,6 +3,7 @@
 """Clear option for OptionBox - provides a clear button for text widgets."""
 
 from qtpy import QtWidgets, QtCore
+from uitk.managers.value_manager import ValueManager
 from ._options import ButtonOption
 
 
@@ -115,7 +116,7 @@ class ClearOption(ButtonOption):
             return widget.toPlainText()
         # QComboBox
         elif hasattr(widget, "currentText"):
-            return widget.currentText()
+            return ValueManager.combo_value(widget, "text")
         # QSpinBox, QDoubleSpinBox - always have a value, check if it's the minimum
         elif hasattr(widget, "value") and hasattr(widget, "minimum"):
             # Consider "empty" if at minimum value

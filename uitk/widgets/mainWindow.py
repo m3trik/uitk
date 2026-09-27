@@ -20,6 +20,7 @@ from uitk.widgets.mixins.tooltip_mixin import (
     TooltipProxy,
 )
 from uitk.widgets.mixins.shortcut_guard import ShortcutGuardFilter
+from uitk.widgets.popup.placement import PopupPlacement
 
 
 class MainWindow(
@@ -933,55 +934,13 @@ class MainWindow(
         )
 
     def _ensure_on_screen(self) -> None:
-        """Moves the window to be fully visible on the screen if it is partially off-screen."""
-        # Get the window's frame geometry (including title bar and borders)
-        frame_geo = self.frameGeometry()
+        """Moves the window to be fully visible on the screen if it is partially off-screen.
 
-        # Find the screen that contains the center of the window
-        screen = None
-        if hasattr(QtWidgets.QApplication, "screenAt"):
-            screen = QtWidgets.QApplication.screenAt(frame_geo.center())
-
-        # If center is off-screen, find the screen with the most overlap
-        if not screen:
-            max_area = 0
-            for s in QtWidgets.QApplication.screens():
-                intersect = frame_geo.intersected(s.geometry())
-                area = intersect.width() * intersect.height()
-                if area > max_area:
-                    max_area = area
-                    screen = s
-
-        if not screen:
-            screen = QtWidgets.QApplication.primaryScreen()
-
-        if not screen:
-            return
-
-        # Get the available geometry of the screen (excluding taskbars, etc.)
-        screen_geo = screen.availableGeometry()
-
-        # Calculate new position
-        x = frame_geo.x()
-        y = frame_geo.y()
-        width = frame_geo.width()
-        height = frame_geo.height()
-
-        # Adjust X
-        if x + width > screen_geo.right():
-            x = screen_geo.right() - width
-        if x < screen_geo.left():
-            x = screen_geo.left()
-
-        # Adjust Y
-        if y + height > screen_geo.bottom():
-            y = screen_geo.bottom() - height
-        if y < screen_geo.top():
-            y = screen_geo.top()
-
-        # Only move if necessary
-        if x != frame_geo.x() or y != frame_geo.y():
-            self.move(x, y)
+        The clamp every uitk top-level surface shares: see
+        :meth:`PopupPlacement.clamp_to_screen
+        <uitk.widgets.popup.placement.PopupPlacement.clamp_to_screen>`.
+        """
+        PopupPlacement.clamp_to_screen(self)
 
     def setVisible(self, visible: bool) -> None:
         """Override setVisible to respect pin state when hiding."""
