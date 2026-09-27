@@ -185,7 +185,7 @@ class TestAffixOptionManager(QtBaseTestCase):
         # surface must work regardless (regression guard: callers use set_affix,
         # not .options.affix, precisely for this).
         from qtpy import QtWidgets
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         OptionBoxManager.patch_common_widgets()
         le = self.track_widget(QtWidgets.QLineEdit())

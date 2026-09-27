@@ -716,6 +716,47 @@ class TestApplyStylesThemeResolution(unittest.TestCase):
         self.assertEqual(ui.applied["theme"], UiHandler.DEFAULT_STYLE["theme"])
 
 
+class TestApplyStylesTranslucency(unittest.TestCase):
+    """``apply_styles`` makes a window translucent the way ``launch`` does:
+    through ``Bootstrap.set_translucent``, which leaves it opaque where nothing
+    composites it -- on X11 without a compositing manager a translucent
+    window's clear pixels paint black. The marking menu styles its windows
+    through ``apply_styles``, so its path must not set the raw attribute."""
+
+    @classmethod
+    def setUpClass(cls):
+        from conftest import setup_qt_application
+
+        cls.app = setup_qt_application()
+
+    def _translucent_after_styling(self, composites: bool) -> bool:
+        from unittest import mock
+
+        from qtpy import QtCore, QtWidgets
+
+        from uitk._bootstrap import Bootstrap
+        from uitk.widgets.mixins.attributes import AttributesMixin
+
+        class _Window(QtWidgets.QWidget, AttributesMixin):
+            pass
+
+        ui = _Window()
+        self.addCleanup(ui.deleteLater)
+        handler = object.__new__(UiHandler)
+        handler.sb = types.SimpleNamespace(handlers=None)
+        with mock.patch.object(
+            Bootstrap, "composites", staticmethod(lambda: composites)
+        ):
+            handler.apply_styles(ui)
+        return ui.testAttribute(QtCore.Qt.WA_TranslucentBackground)
+
+    def test_no_compositor_keeps_the_window_opaque(self):
+        self.assertFalse(self._translucent_after_styling(composites=False))
+
+    def test_a_compositor_gets_the_translucent_window(self):
+        self.assertTrue(self._translucent_after_styling(composites=True))
+
+
 class TestShowRestoresCollapsedHeader(unittest.TestCase):
     """``show`` must present the FULL window when its header left it collapsed.
 
@@ -1285,6 +1326,243 @@ class TestLaunchPersistenceWiring(unittest.TestCase):
         self.sb.handlers.marking_menu = _CanonicalInitStub(self.sb)
         self.sb.handlers.ui.window_persistence = "sticky"
         self.assertEqual(self._launched_mode(), UiHandler.PERSISTENCE_STICKY)
+
+
+_BOOT_HANDLER_SRC = '''\
+import os
+
+from uitk import Switchboard, UiHandler
+
+HERE = os.path.dirname(__file__)
+
+
+class BootHandler(UiHandler):
+    """Stands itself up, like MayaUiHandler: optional switchboard, own roots."""
+
+    def __init__(self, switchboard=None, **kwargs):
+        if switchboard is None:
+            switchboard = Switchboard()
+        super().__init__(
+            switchboard=switchboard,
+            ui_root=os.path.join(HERE, "ui"),
+            slot_root=HERE,
+            discover_slots=True,
+            **kwargs,
+        )
+'''
+
+
+class TestLaunchCode(unittest.TestCase):
+    """``launch_code`` -- Python that relaunches a UI in a FRESH session (a
+    plain interpreter, a Maya shelf button) with its dependencies intact.
+
+    Fixture: an importable temp package ``uitk_launch_code_pkg`` holding
+    ``ui/alpha.ui`` + its ``AlphaSlots``, ``extra/beta.ui``, and a
+    self-bootstrapping ``BootHandler``; plus a loose, package-less
+    ``gamma.ui``. The rendering cases pin the snippet's shape; the
+    ``fresh_interpreter`` cases EXECUTE it in a new process, which is the
+    only proof it carries everything it needs.
+    """
+
+    PKG = "uitk_launch_code_pkg"
+
+    @classmethod
+    def setUpClass(cls):
+        from conftest import setup_qt_application
+
+        cls.app = setup_qt_application()
+
+    def setUp(self):
+        import sys
+
+        import pythontk as ptk
+
+        self.tmp = ptk.TempArtifacts("uitk_test_launch_code", policy="scoped")
+        self.root = self.tmp.dir_path()
+        self.pkg = os.path.join(self.root, self.PKG)
+        for sub in ("ui", "extra"):
+            os.makedirs(os.path.join(self.pkg, sub))
+        files = {
+            "__init__.py": "",
+            "alpha_slots.py": (
+                "class AlphaSlots:\n"
+                "    def __init__(self, switchboard):\n"
+                "        self.sb = switchboard\n"
+            ),
+            "boot.py": _BOOT_HANDLER_SRC,
+        }
+        for filename, text in files.items():
+            with open(os.path.join(self.pkg, filename), "w", encoding="utf-8") as f:
+                f.write(text)
+        _write_ui(os.path.join(self.pkg, "ui", "alpha.ui"), "alpha")
+        _write_ui(os.path.join(self.pkg, "extra", "beta.ui"), "beta")
+        self.loose = os.path.join(self.root, "loose")
+        os.makedirs(self.loose)
+        _write_ui(os.path.join(self.loose, "gamma.ui"), "gamma")
+        sys.path.insert(0, self.root)
+        self.sbs = []
+
+    def tearDown(self):
+        import sys
+
+        from qtpy import QtCore, QtWidgets
+
+        for sb in self.sbs:  # rendering only -- nothing here opened a window
+            sb.deleteLater()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        sys.path.remove(self.root)
+        for mod in [m for m in sys.modules if m.split(".")[0] == self.PKG]:
+            del sys.modules[mod]
+        self.tmp.cleanup()
+
+    def _sb(self, **kwargs):
+        from uitk.switchboard import Switchboard
+
+        sb = Switchboard(log_level="WARNING", **kwargs)
+        self.sbs.append(sb)
+        return sb
+
+    def _plain(self):
+        """A plain UiHandler host: the snippet has to rebuild its Switchboard."""
+        return self._sb(
+            ui_source=os.path.join(self.pkg, "ui"),
+            slot_source=self.pkg,
+            context_tags={"maya"},
+        )
+
+    def _booted(self):
+        """A self-bootstrapping handler host (the MayaUiHandler shape)."""
+        from uitk_launch_code_pkg.boot import BootHandler
+
+        return self._sb(handlers={"ui": BootHandler})
+
+    # ── rendering ────────────────────────────────────────────────────────
+
+    def test_plain_handler_rebuilds_its_switchboard_and_the_uis_sources(self):
+        code = self._plain().handlers.ui.launch_code("alpha")
+        compile(code, "<launch_code>", "exec")
+        self.assertIn("sb = Switchboard(context_tags=['maya'])", code)
+        self.assertIn("handler = sb.handlers.ui", code)
+        # Paths follow the package (a reinstall moves them); the slot class
+        # travels by import.
+        self.assertIn(
+            "ui_location=os.path.join(os.path.dirname("
+            f"{self.PKG}.__file__), 'ui', 'alpha.ui'),",
+            code,
+        )
+        self.assertIn(f"from {self.PKG}.alpha_slots import AlphaSlots", code)
+        self.assertIn("slot_location=AlphaSlots,", code)
+        self.assertIn("handler.launch('alpha')", code)
+        self.assertTrue(code.rstrip().endswith("handler.sb.app.exec_()"))
+
+    def test_only_overridden_launch_options_are_spelled_out(self):
+        code = self._plain().handlers.ui.launch_code(
+            "alpha", frameless=True, on_top=False, theme="dark", unknown=1
+        )
+        self.assertIn("handler.launch('alpha', on_top=False, theme='dark')", code)
+
+    def test_self_bootstrapping_handler_is_reached_through_instance(self):
+        """``instance()`` reuses a live handler (tentacle's) when one exists, so
+        a re-run shelf button never forks a second switchboard; and it already
+        registers its own sources, so none are repeated."""
+        code = self._booted().handlers.ui.launch_code("alpha")
+        compile(code, "<launch_code>", "exec")
+        self.assertIn(f"from {self.PKG}.boot import BootHandler", code)
+        self.assertIn("handler = BootHandler.instance()", code)
+        self.assertNotIn("Switchboard", code)
+        self.assertNotIn(".register(", code)
+
+    def test_self_bootstrapping_handler_registers_what_it_would_not_find(self):
+        sb = self._booted()
+        sb.register(ui_location=os.path.join(self.pkg, "extra"))
+        code = sb.handlers.ui.launch_code("beta")
+        self.assertIn("handler = BootHandler.instance()", code)
+        self.assertIn("handler.sb.register(", code)
+        self.assertIn("'extra', 'beta.ui'", code)
+
+    def test_a_path_outside_any_package_is_spelled_absolute(self):
+        code = self._sb(ui_source=self.loose).handlers.ui.launch_code("gamma")
+        expected = os.path.join(os.path.abspath(self.loose), "gamma.ui")
+        if os.sep == "\\":
+            expected = expected.replace("\\", "/")
+        self.assertIn(f"ui_location={expected!r},", code)
+
+    def _loose_slots(self):
+        """A switchboard over ``loose/``: ``gamma.ui`` + ``gamma_slots.py``, in
+        a directory that is no package."""
+        with open(
+            os.path.join(self.loose, "gamma_slots.py"), "w", encoding="utf-8"
+        ) as f:
+            f.write(
+                "class GammaSlots:\n"
+                "    def __init__(self, switchboard):\n"
+                "        self.sb = switchboard\n"
+            )
+        return self._sb(ui_source=self.loose, slot_source=self.loose)
+
+    def test_a_loose_slot_class_is_registered_by_its_file(self):
+        """A slot class loaded from a ``.py`` outside any package lives in a
+        synthetic module (pythontk's ``<stem>_ptk_loader_<id>``) that no fresh
+        session can import, so the snippet registers the file it came from.
+
+        Regression: ``inspect.getfile`` raises ``TypeError`` for that module,
+        the fallback dropped the class, and the snippet launched the UI with no
+        slots at all.
+        """
+        code = self._loose_slots().handlers.ui.launch_code("gamma")
+        compile(code, "<launch_code>", "exec")
+        expected = os.path.join(os.path.abspath(self.loose), "gamma_slots.py")
+        if os.sep == "\\":
+            expected = expected.replace("\\", "/")
+        self.assertIn(f"slot_location={expected!r},", code)
+
+    def test_unregistered_name_has_no_code(self):
+        self.assertIsNone(self._plain().handlers.ui.launch_code("nope"))
+
+    def test_a_class_a_fresh_session_cannot_import_has_no_code(self):
+        local = type("LocalHandler", (UiHandler,), {"__module__": "__main__"})
+        sb = self._sb(ui_source=os.path.join(self.pkg, "ui"), handlers={"ui": local})
+        self.assertIsNone(sb.handlers.ui.launch_code("alpha"))
+
+    # ── fresh interpreter ────────────────────────────────────────────────
+
+    _PROBE = (
+        "[ns['handler'].is_visible('alpha'), "
+        "type(ns['handler'].sb.slot_instances.raw('alpha')).__name__, "
+        "len(exec_calls)]"
+    )
+
+    def test_fresh_interpreter_plain_python_opens_the_ui_and_runs_the_loop(self):
+        from conftest import run_launch_snippet
+
+        code = self._plain().handlers.ui.launch_code("alpha")
+        result = run_launch_snippet(code, self._PROBE, extra_paths=[self.root])
+        self.assertEqual(result, [True, "AlphaSlots", 1])
+
+    def test_fresh_interpreter_inside_a_host_leaves_the_loop_to_it(self):
+        """Maya already runs Qt's loop: the window opens, nothing blocks."""
+        from conftest import run_launch_snippet
+
+        code = self._plain().handlers.ui.launch_code("alpha")
+        result = run_launch_snippet(
+            code, self._PROBE, extra_paths=[self.root], host_app=True
+        )
+        self.assertEqual(result, [True, "AlphaSlots", 0])
+
+    def test_fresh_interpreter_self_bootstrapping_handler(self):
+        from conftest import run_launch_snippet
+
+        code = self._booted().handlers.ui.launch_code("alpha")
+        result = run_launch_snippet(code, self._PROBE, extra_paths=[self.root])
+        self.assertEqual(result, [True, "AlphaSlots", 1])
+
+    def test_fresh_interpreter_binds_a_loose_slot_class(self):
+        from conftest import run_launch_snippet
+
+        code = self._loose_slots().handlers.ui.launch_code("gamma")
+        probe = self._PROBE.replace("'alpha'", "'gamma'")
+        self.assertEqual(run_launch_snippet(code, probe), [True, "GammaSlots", 1])
 
 
 if __name__ == "__main__":

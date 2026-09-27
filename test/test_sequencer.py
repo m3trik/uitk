@@ -28,8 +28,7 @@ from uitk.widgets.sequencer import (
     _SHOT_LANE_HEIGHT,
     _SUB_ROW_HEIGHT,
     _MIN_CLIP_DURATION,
-    _DEFAULT_ATTRIBUTE_COLORS,
-    _COMMON_ATTRIBUTES,
+    DISPLAY_COLORS,
     PatternRegistry,
 )
 from uitk.widgets.sequencer._clip import ClipItem
@@ -489,12 +488,19 @@ class TestAttributeColors(BaseTestCase):
         self.w.close()
         self.w.deleteLater()
 
-    def test_default_attribute_colors(self):
-        """Widget starts with default attribute color map."""
-        colors = self.w.attribute_colors
-        self.assertIn("translateX", colors)
-        self.assertIn("rotateZ", colors)
-        self.assertEqual(colors["translateX"], _DEFAULT_ATTRIBUTE_COLORS["translateX"])
+    def test_the_widget_starts_with_only_its_own_display_colors(self):
+        """No host vocabulary in uitk: channel colours are injected, so a bare
+        widget knows only its display rows."""
+        self.assertEqual(self.w.attribute_colors, DISPLAY_COLORS)
+
+    def test_clip_attributes_lists_what_the_clips_key(self):
+        tid = self.w.add_track("Obj")
+        self.w.add_clip(tid, 0, 10, attributes=["rotateY", "translateX"])
+        self.w.add_clip(tid, 20, 10, attributes=["translateX", "envelope"])
+        self.w.add_clip(tid, 40, 10)
+        self.assertEqual(
+            self.w.clip_attributes(), ["envelope", "rotateY", "translateX"]
+        )
 
     def test_set_attribute_colors(self):
         """Setting attribute_colors replaces the map."""
@@ -569,11 +575,102 @@ class TestAttributeColors(BaseTestCase):
 class TestAttributeColorDialog(BaseTestCase):
     """Tests for the AttributeColorDialog UI."""
 
+    #: A host's channel vocabulary, as a DCC injects it.
+    HOST = {"translateX": "#E06666", "rotateZ": "#3D85C6"}
+
     def test_dialog_creates_common_swatches(self):
-        dlg = AttributeColorDialog()
-        for attr in _COMMON_ATTRIBUTES:
+        dlg = AttributeColorDialog(defaults=self.HOST, common_attrs=list(self.HOST))
+        for attr in self.HOST:
             self.assertIn(attr, dlg._swatches)
         dlg.close()
+
+    def test_without_a_host_vocabulary_only_the_display_rows_show(self):
+        dlg = AttributeColorDialog()
+        self.assertEqual(set(dlg._swatches), set(DISPLAY_COLORS))
+        dlg.close()
+
+    def test_defaults_take_any_value_whose_str_is_a_color(self):
+        """``ptk.Palette.channels()`` hands in ``Color`` objects, not strings."""
+
+        class _Color:
+            def __str__(self):
+                return "#123456"
+
+        from uitk.managers.settings_manager import SettingsManager
+
+        settings = SettingsManager(namespace="test_attr_colors_str_values")
+        dlg = AttributeColorDialog(
+            defaults={"translateX": _Color()},
+            common_attrs=["translateX"],
+            settings=settings,
+        )
+        self.assertEqual(dlg.color_map()["translateX"], "#123456")
+        dlg.close()
+        settings.clear()
+
+    def test_load_color_map_lays_saved_choices_over_the_host_defaults(self):
+        from uitk.managers.settings_manager import SettingsManager
+
+        saved = SettingsManager(namespace=AttributeColorDialog._SETTINGS_NS)
+        prior = {key: saved.value(key) for key in saved.keys()}
+        saved.clear()
+        try:
+            saved.setValue("rotateZ", "#000000")
+            cmap = AttributeColorDialog.load_color_map(self.HOST)
+        finally:
+            saved.clear()
+            for key, value in prior.items():
+                saved.setValue(key, value)
+        self.assertEqual(cmap["translateX"], "#E06666")
+        self.assertEqual(cmap["rotateZ"], "#000000")
+        self.assertEqual(cmap["consolidated"], DISPLAY_COLORS["consolidated"])
+
+    def test_the_retired_channel_constants_warn_and_still_resolve(self):
+        """Published mayatk/blendertk import them at module load: one release
+        of aliases, pointing at pythontk, which owns the vocabulary now."""
+        import importlib
+
+        import pythontk as ptk
+
+        mod = importlib.import_module("uitk.widgets.sequencer._sequencer")
+        with self.assertWarns(DeprecationWarning):
+            common = mod._COMMON_ATTRIBUTES
+        with self.assertWarns(DeprecationWarning):
+            colors = mod._DEFAULT_ATTRIBUTE_COLORS
+        self.assertEqual(common, list(ptk.TRANSFORM_CHANNELS))
+        self.assertEqual(
+            colors["translateX"], str(ptk.Palette.channels()["translateX"])
+        )
+
+    def test_the_retired_channel_constants_warn_at_the_callers_line(self):
+        """The notice points at the line that used the alias -- reached through
+        the defining module, or through the package re-export the published
+        mayatk/blendertk import from -- never at uitk's own ``__getattr__``.
+
+        Regression: ``Deprecation.warn`` ran at its default ``stacklevel``, so
+        every notice named ``_sequencer.py``, and told a host nothing about
+        which of its lines to change.
+        """
+        import importlib
+        import os
+
+        package = importlib.import_module("uitk.widgets.sequencer")
+        module = importlib.import_module("uitk.widgets.sequencer._sequencer")
+        here = os.path.normcase(os.path.abspath(__file__))
+        for name in ("_COMMON_ATTRIBUTES", "_DEFAULT_ATTRIBUTE_COLORS"):
+            for via, owner in (("module", module), ("package", package)):
+                with self.subTest(name=name, via=via):
+                    # The package caches a resolved name: drop it, so the
+                    # re-export resolves (and warns) again, and leave no copy.
+                    package.__dict__.pop(name, None)
+                    try:
+                        with self.assertWarns(DeprecationWarning) as caught:
+                            getattr(owner, name)
+                    finally:
+                        package.__dict__.pop(name, None)
+                    self.assertEqual(
+                        os.path.normcase(os.path.abspath(caught.filename)), here
+                    )
 
     def test_dialog_shows_active_extras(self):
         dlg = AttributeColorDialog(active_attrs=["blendWeight", "envelope"])
@@ -585,9 +682,9 @@ class TestAttributeColorDialog(BaseTestCase):
         from uitk.managers.settings_manager import SettingsManager
 
         settings = SettingsManager(namespace="test_attr_colors_defaults")
-        dlg = AttributeColorDialog(settings=settings)
+        dlg = AttributeColorDialog(defaults=self.HOST, settings=settings)
         cmap = dlg.color_map()
-        self.assertEqual(cmap["translateX"], _DEFAULT_ATTRIBUTE_COLORS["translateX"])
+        self.assertEqual(cmap["translateX"], self.HOST["translateX"])
         dlg.close()
         settings.clear()
 
@@ -596,13 +693,10 @@ class TestAttributeColorDialog(BaseTestCase):
 
         settings = SettingsManager(namespace="test_attr_colors_restore")
         settings.setValue("translateX", "#000000")
-        dlg = AttributeColorDialog(settings=settings)
+        dlg = AttributeColorDialog(defaults=self.HOST, settings=settings)
         dlg._restore_defaults()
         # After restore, color reverts to default
-        self.assertEqual(
-            dlg._current_color("translateX"),
-            _DEFAULT_ATTRIBUTE_COLORS["translateX"],
-        )
+        self.assertEqual(dlg._current_color("translateX"), self.HOST["translateX"])
         dlg.close()
         settings.clear()
 
@@ -2534,6 +2628,31 @@ class TestContentTop(BaseTestCase):
 
     def test_content_top_equals_header_height(self):
         self.assertEqual(self.w._content_top, _RULER_HEIGHT + _SHOT_LANE_HEIGHT)
+
+
+class TestTimelineHitZones(BaseTestCase):
+    """``TimelineView._hit_zone``: the ruler, then the shot lane (its own strip),
+    then the tracks.  Moved here from mayatk's controller tests, which reached
+    into these layout constants across the package boundary."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.tl = self.w._timeline
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_the_ruler_ends_at_its_last_pixel(self):
+        self.assertEqual(self.tl._hit_zone(0), "ruler")
+        self.assertEqual(self.tl._hit_zone(_RULER_HEIGHT - 1), "ruler")
+        self.assertEqual(self.tl._hit_zone(_RULER_HEIGHT), "shot_lane")
+
+    def test_the_tracks_start_where_the_content_does(self):
+        top = self.w._content_top
+        self.assertEqual(self.tl._hit_zone(top - 1), "shot_lane")
+        self.assertEqual(self.tl._hit_zone(top), "tracks")
+        self.assertEqual(self.tl._hit_zone(top + 1), "tracks")
 
 
 # =========================================================================

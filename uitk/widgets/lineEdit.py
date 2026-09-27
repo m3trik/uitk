@@ -184,7 +184,7 @@ class LineEdit(
 if __name__ == "__main__":
     import sys
     from uitk.widgets.menu import Menu
-    from uitk.widgets.optionBox.utils import OptionBoxManager
+    from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 

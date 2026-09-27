@@ -122,19 +122,18 @@ class TestSandbox(_TestSandboxInternal, ptk.TestSandbox):
     def presets(cls):
         """Redirect the consolidated preset root; returns the temp dir.
 
-        Presets live outside QSettings — JSON files under ``<GenericConfigLocation>/uitk/<pkg>/`` —
-        so :meth:`qsettings` does not cover them. Merely constructing a preset-enabled editor
-        touches that store (legacy migration, dir creation, first-run ``.active`` sidecar).
+        Presets live outside QSettings — JSON files under ``<user_config_root>/<pkg>/``
+        (``%LOCALAPPDATA%/uitk`` by default) — so :meth:`qsettings` does not cover them.
+        Merely constructing a preset-enabled editor touches that store (legacy migration, dir
+        creation, first-run ``.active`` sidecar).
         """
         if cls._presets_dir is not None:
             return cls._presets_dir
-        # The env var name comes from pythontk rather than a literal: ``user_config`` and uitk's
-        # ``preset_manager`` already agree on it by NAME only, so a third hardcoded copy is a third
-        # thing to miss if it ever moves.
-        from pythontk.core_utils.user_config import CONFIG_ROOT_ENV_VAR
-
+        # The env var name comes from pythontk, which owns the presets root: uitk's
+        # ``PresetManager.get_presets_root`` IS ``ptk.UserConfig.user_config_root``, so this one
+        # redirect moves the GUI and the headless preset stores together.
         cls._presets_dir = cls._throwaway_dir("presets")
-        os.environ[CONFIG_ROOT_ENV_VAR] = cls._presets_dir
+        os.environ[ptk.UserConfig.CONFIG_ROOT_ENV_VAR] = cls._presets_dir
         return cls._presets_dir
 
     @classmethod

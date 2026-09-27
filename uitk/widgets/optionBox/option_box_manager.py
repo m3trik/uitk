@@ -1,15 +1,23 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Utilities and helper functions for OptionBox."""
+"""The :class:`OptionBoxManager` facade -- ``widget.option_box``.
+
+The fluent option API (``set_action`` / ``set_toggle`` / ``set_filter`` /
+``set_reset`` / ``browse`` ...) and the class-level factories live here; the
+menu binding (:mod:`._menu_binding`) and the deferred wrap
+(:mod:`._deferred_wrap`) are partials this class composes.
+"""
 
 from qtpy import QtWidgets, QtCore
 from typing import Optional, Union
 import pythontk as ptk
-
 from ._optionBox import DEFAULT_OPTION_ORDER
 
+from ._menu_binding import _OptionBoxMenuMixin
+from ._deferred_wrap import _OptionBoxWrapMixin
 
-class OptionBoxManager(ptk.LoggingMixin):
+
+class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixin):
     """Elegant manager for option box functionality accessible as widget.option_box"""
 
     def __init__(self, widget, log_level: Optional[Union[int, str]] = "WARNING"):
@@ -401,6 +409,26 @@ class OptionBoxManager(ptk.LoggingMixin):
         if option.scope_action is not None and FilterOption.is_compatible(self._widget):
             self.add_option(option.scope_action)
         return self
+
+    def add_choice(self, **kwargs):
+        """Add a filter facet: an icon button picking one value from a popup.
+
+        Never replaces: a filter row carries one :class:`ChoiceOption` per
+        dimension it narrows by (a collection, a status, a tag), in the order
+        they are added, after the filter's on/off toggle. See
+        :class:`~uitk.widgets.optionBox.options.choice.ChoiceOption` for the
+        keyword arguments (``icon``, ``label``, ``choices``, ``default``,
+        ``on_changed``, ``settings`` / ``settings_key``).
+
+        Returns:
+            The created :class:`ChoiceOption` -- keep it to read ``value`` and
+            to ``refresh()`` it after the data its choices come from changes.
+        """
+        from uitk.widgets.optionBox.options.choice import ChoiceOption
+
+        option = ChoiceOption(wrapped_widget=self._widget, **kwargs)
+        self.add_option(option)
+        return option
 
     def set_disable(
         self,
@@ -867,265 +895,6 @@ class OptionBoxManager(ptk.LoggingMixin):
         self._update_option_box()  # Ensure option box is created if needed
         return self._option_box
 
-    @property
-    def menu(self):
-        """Get or create a Menu instance for this option box.
-
-        For backward compatibility, this property auto-creates the menu if needed.
-        This maintains existing API behavior where `widget.option_box.menu.add()`
-        always works.
-
-        The performance impact is minimal because:
-        1. Menu creation is lazy (doesn't build UI until items added)
-        2. MenuMixin descriptor caches the result
-        3. This is only called when explicitly accessing option_box.menu
-
-        Returns:
-            Menu: The menu instance (created if necessary)
-        """
-        if self._menu is None:
-            self.enable_menu()
-        return self._menu
-
-    def get_menu(self, create=False):
-        """Get menu, optionally creating if it doesn't exist.
-
-        This method provides explicit control over menu creation.
-        The .menu property auto-creates for backward compatibility.
-
-        Args:
-            create: If True and menu doesn't exist, creates one via enable_menu()
-
-        Returns:
-            Menu: The menu instance, or None if it doesn't exist and create=False
-        """
-        if self._menu is None and create:
-            self.enable_menu()
-        return self._menu
-
-    @menu.setter
-    def menu(self, value):
-        """Set (or clear) the option-box menu.
-
-        Assigning a :class:`Menu` produces exactly one menu button via
-        :meth:`enable_menu`; reassigning first tears down any prior button
-        (:meth:`disable_menu`) so buttons never duplicate. Assigning ``None``
-        disables the menu entirely.
-
-        Previously this only stored ``self._menu`` and never produced a button
-        — so ``widget.option_box.menu = my_menu`` was a dead-end, and a
-        subsequent ``enable_menu`` short-circuited on the already-set ``_menu``.
-
-        Args:
-            value: A Menu instance to use, or None to disable.
-        """
-        from uitk.widgets.menu import Menu
-
-        # Tear down any existing menu + its button first (idempotent).
-        self.disable_menu()
-        if value is None:
-            return
-        if isinstance(value, Menu):
-            self.enable_menu(menu=value)
-        else:
-            # Non-Menu value: legacy passthrough — stored without a button.
-            self._menu = value
-
-    def enable_menu(self, menu=None, **menu_kwargs):
-        """Enable menu option using the MenuOption plugin.
-
-        This follows the same pattern as enable_clear() - it creates
-        the appropriate option plugin and adds it to the option box.
-
-        Coordinates with MenuMixin to avoid duplicate menu creation:
-        - Checks for existing menu via MenuMixin's _menu_instance
-        - Reuses existing menu if found
-        - Creates new menu only if needed
-
-        Args:
-            menu: Optional existing Menu instance. If None, will check for
-                  existing menu or create a new one.
-            **menu_kwargs: Additional kwargs passed to Menu() constructor if
-                          creating a new menu (e.g., position, add_header, etc.)
-
-        Returns:
-            self: For fluent interface chaining
-        """
-        # PERFORMANCE: Only enable timing if logger level is DEBUG (10) or lower
-        # In production with INFO (20) or higher, this adds 50-100ms overhead
-        timing_enabled = self.logger.level <= 10
-
-        if timing_enabled:
-            import time
-
-            enable_menu_start = time.perf_counter()
-            _step_time = enable_menu_start
-
-            def _log_step(step_name):
-                nonlocal _step_time
-                now = time.perf_counter()
-                duration_ms = (now - _step_time) * 1000
-                total_ms = (now - enable_menu_start) * 1000
-                self.logger.debug(
-                    f"OptionBoxManager.enable_menu [{step_name}]: {duration_ms:.3f}ms (total: {total_ms:.3f}ms)"
-                )
-                _step_time = now
-
-        else:
-            # No-op function when timing disabled
-            def _log_step(step_name):
-                pass
-
-        self.logger.debug(
-            f"OptionBoxManager.enable_menu: Called with menu={menu}, "
-            f"menu_kwargs={list(menu_kwargs.keys())}"
-        )
-
-        if self._menu is None:
-            from uitk.widgets.menu import Menu
-
-            _log_step("import_Menu")
-
-            # Only use explicitly passed menu - do NOT reuse widget's context menu
-            # The option box menu should be completely separate from the widget's
-            # right-click context menu (which is managed by MenuMixin)
-            if menu is not None and isinstance(menu, Menu):
-                self.logger.debug(
-                    "OptionBoxManager.enable_menu: Using explicitly passed menu"
-                )
-                self._menu = menu
-                _log_step("use_passed_menu")
-            else:
-                # Create a new Menu with appropriate defaults
-                # Merge defaults with user-provided kwargs
-                default_kwargs = {
-                    "parent": self._widget,
-                    "trigger_button": "none",  # OptionBox button handles triggering
-                    "match_parent_width": False,  # Don't constrain width to prevent cropping
-                    "add_apply_button": True,  # Enable apply button for option box menus
-                    "add_defaults_button": True,  # Show restore defaults for option box menus
-                    "hide_on_leave": True,  # Auto-hide when mouse leaves
-                }
-                default_kwargs.update(menu_kwargs)
-
-                # Auto-name the menu based on the parent widget if not provided
-                if (
-                    "name" not in default_kwargs
-                    and self._widget
-                    and self._widget.objectName()
-                ):
-                    default_kwargs["name"] = f"{self._widget.objectName()}_option_menu"
-
-                self.logger.debug(
-                    f"OptionBoxManager.enable_menu: Creating NEW menu with kwargs={list(default_kwargs.keys())}"
-                )
-
-                self._menu = Menu(**default_kwargs)
-                _log_step("Menu_creation")
-
-                self.logger.debug(
-                    "OptionBoxManager.enable_menu: Menu created (separate from widget context menu)"
-                )
-                _log_step("menu_created")
-
-            # Create and add the MenuOption plugin
-            # MenuOption is a plugin that creates its own button, so we don't need
-            # to set _action_handler - that would create a duplicate button
-            from ..optionBox.options.action import MenuOption
-
-            _log_step("import_MenuOption")
-
-            menu_option = MenuOption(wrapped_widget=self._widget, menu=self._menu)
-            _log_step("MenuOption_creation")
-
-            self.add_option(menu_option)
-            _log_step("add_option")
-
-        if timing_enabled:
-            total_duration = (time.perf_counter() - enable_menu_start) * 1000
-            self.logger.debug(
-                f"OptionBoxManager.enable_menu: TOTAL completed in {total_duration:.3f}ms"
-            )
-        return self
-
-    def enable_option_menu(
-        self,
-        *,
-        title: Optional[str] = None,
-        items=None,
-        build_menu=None,
-        position: str = "cursorPos",
-        add_header: bool = True,
-        tooltip: str = "Options",
-        menu=None,
-    ):
-        """Add a dropdown *option menu* button (fluent interface).
-
-        Builds an :class:`OptionMenuOption` — a button that pops a ``Menu`` of
-        command rows — and adds it to the option box. Backs the
-        ``widget.options.option_menu(...)`` fluent wrapper (which previously
-        called this nonexistent method and raised ``AttributeError``).
-
-        Args:
-            title: Optional dropdown-menu title.
-            items: Iterable of ``(label, callback)`` rows; each becomes a real
-                clickable button wired to its callback.
-            build_menu: Optional ``callable(menu)`` for custom population, run
-                after ``items``.
-            position: Menu popup position (default ``"cursorPos"``).
-            add_header: Whether the dropdown ``Menu`` shows a draggable header.
-            tooltip: Button tooltip.
-            menu: Optional pre-built :class:`Menu` used verbatim.
-
-        Returns:
-            self: For fluent interface chaining.
-        """
-        from uitk.widgets.optionBox.options.option_menu import OptionMenuOption
-
-        item_list = list(items) if items else None
-        option = OptionMenuOption(
-            wrapped_widget=self._widget,
-            menu_items=item_list,
-            tooltip=tooltip,
-            position=position,
-            add_header=add_header,
-        )
-        # A caller-supplied Menu is used verbatim (bypasses lazy creation), so
-        # its rows must be added explicitly — _ensure_menu only populates
-        # menu_items when it builds the menu itself.
-        if menu is not None:
-            option._menu = menu
-            for item in item_list or []:
-                option._add_menu_item(item)
-        self.add_option(option)
-
-        # Force the (otherwise lazy) menu build only when there is something to
-        # apply beyond the static items the option already carries.
-        if title is not None or build_menu is not None:
-            built = option.menu
-            if title is not None:
-                built.setTitle(title)
-            if build_menu is not None:
-                build_menu(built)
-        return self
-
-    def disable_menu(self):
-        """Disable the menu option (fluent interface).
-
-        Removes the MenuOption button — from both the pending list and an
-        already-wrapped option box — and drops the menu reference, so a later
-        :meth:`enable_menu` (or the ``menu`` setter) rebuilds a *single* fresh
-        button instead of stacking a duplicate on top of an orphaned one.
-
-        Returns:
-            self: For fluent interface chaining
-        """
-        from ..optionBox.options.action import MenuOption
-
-        self._remove_options(lambda o: isinstance(o, MenuOption))
-        self._menu = None
-        return self
-
     def add_option(self, option):
         """Add an option plugin to this option box.
 
@@ -1234,287 +1003,6 @@ class OptionBoxManager(ptk.LoggingMixin):
                 f"OptionBoxManager.add_option: TOTAL (deferred wrapping) in {total_duration:.3f}ms"
             )
         return self
-
-    def _schedule_wrap_if_needed(self):
-        """Schedule a wrap attempt once the widget is laid out.
-
-        The option box needs to wrap the underlying widget to display buttons.
-        Strategy:
-
-        - **Fast path (parent already attached)**: perform the wrap
-          synchronously.  The vast majority of slot-init calls happen with
-          the widget already inserted into a layout, so this is the common
-          case.  Running the wrap synchronously means the
-          ``parent.layout().replaceWidget(...)`` reparent completes before
-          ``MainWindow.showEvent`` returns control to the event loop —
-          eliminating the visible flicker between ``super().showEvent()``
-          and the deferred-timer-driven wrap firing on the next tick.
-
-        - **Slow path (parent missing)**: fall back to the
-          ``_schedule_wrap_retry`` / ``_attempt_wrap_when_ready`` retry loop
-          so widgets parented late (e.g. via ``setParent`` after
-          construction) still get wrapped once their parent attaches.
-
-        Re-entrancy: ``_perform_wrap`` reparents *this* widget into a new
-        ``OptionBoxContainer``.  ``register_children`` walks via a
-        ``findChildren`` snapshot, so reparenting mid-walk is safe.
-        Menu-item registration (Contract 2) remains deferred via the
-        coalesced drain in :class:`Menu`.
-
-        **Observable consequence for slot authors**: when called from
-        inside a ``<name>_init(widget)`` body (which is the normal entry
-        point), ``widget.parent()`` changes *during* the slot body — from
-        the original layout parent (e.g. the central widget) to the new
-        ``OptionBoxContainer``.  Code in the slot body that reads
-        ``widget.parent()`` *after* wiring an option must account for
-        this; reading it *before* the option_box call sees the original
-        parent.  No tentacle / mayatk slot in the current monorepo
-        relies on the post-wiring parent (verified by grep).
-        """
-
-        if self._is_wrapped or not self._pending_options:
-            return  # Nothing to do or already wrapped
-
-        if self._wrap_retry_scheduled:
-            return  # A retry is already pending
-
-        widget = getattr(self, "_widget", None)
-        if widget is not None and widget.parent() is not None:
-            # Fast path: synchronous wrap — completes before showEvent paints.
-            self._perform_wrap()
-            return
-
-        self._wrap_retry_scheduled = True
-        self._schedule_wrap_retry(0)
-
-    def _schedule_wrap_retry(self, delay_ms: int) -> None:
-        """Arm the retry-until-parented timer, parented to the wrapped widget
-        (not a bare ``QTimer.singleShot``) so it is destroyed along with the
-        widget instead of firing ``_attempt_wrap_when_ready`` into a deleted
-        ``self._widget`` (observed live: ``RuntimeError: Internal C++ object
-        ... already deleted`` from ``widget.parent()`` when a widget is torn
-        down mid-retry, e.g. test teardown right after construction)."""
-        widget = getattr(self, "_widget", None)
-        if widget is None:
-            return
-        if self._wrap_retry_timer is None:
-            self._wrap_retry_timer = QtCore.QTimer(widget)
-            self._wrap_retry_timer.setSingleShot(True)
-            self._wrap_retry_timer.timeout.connect(self._attempt_wrap_when_ready)
-        self._wrap_retry_timer.start(delay_ms)
-
-    def _attempt_wrap_when_ready(self):
-        """Attempt to wrap the widget, retrying until a parent exists."""
-
-        self._wrap_retry_scheduled = False
-
-        if self._is_wrapped or not self._pending_options:
-            self._wrap_retry_count = 0
-            return
-
-        widget = getattr(self, "_widget", None)
-        if widget is None:
-            return
-
-        parent = widget.parent()
-        if parent is None:
-            # Parent not assigned yet; retry with a small delay (up to a limit)
-            if self._wrap_retry_count >= 50:
-                self.logger.warning(
-                    "OptionBoxManager: Unable to wrap option box - widget has no parent"
-                )
-                return
-
-            self._wrap_retry_count += 1
-            self._wrap_retry_scheduled = True
-            self._schedule_wrap_retry(15)
-            return
-
-        # Parent exists - perform the wrap now
-        try:
-            self._perform_wrap()
-        finally:
-            self._wrap_retry_count = 0
-
-    @property
-    def container(self):
-        """Get the container widget (for layout management).
-
-        LAZY LOADING TRIGGER: Accessing this property will trigger wrapping
-        if there are pending options that haven't been wrapped yet.
-        """
-        # If we have pending options and haven't wrapped yet, do it now
-        if self._pending_options and not self._is_wrapped:
-            self.logger.debug(
-                f"OptionBoxManager.container: Triggering lazy wrap for {len(self._pending_options)} pending options"
-            )
-            self._perform_wrap()
-
-        # If we don't have a container yet, but widget has a menu with items,
-        # try to get the container from the menu's option box. Use the
-        # non-creating ``has_menu`` check — ``hasattr(widget, "menu")`` would
-        # materialize a context menu via the lazy MenuMixin descriptor.
-        if not self._container and getattr(self._widget, "has_menu", False):
-            menu = self._widget.menu
-            if (
-                hasattr(menu, "option_box")
-                and menu.option_box
-                and hasattr(menu.option_box, "container")
-            ):
-                self._container = menu.option_box.container
-                self._option_box = menu.option_box
-                # The adopted box already wraps the widget; mark wrapped so a
-                # later add_option routes through the direct-add branch instead
-                # of building a SECOND OptionBox and re-wrapping the widget
-                # (which corrupts the layout). Mirrors the two sibling adoption
-                # sites (add_option reuse branch and _update_option_box).
-                self._is_wrapped = True
-
-        return self._container
-
-    def _perform_wrap(self):
-        """Perform the actual wrapping of pending options.
-
-        This is called lazily when container is first accessed.
-        Wraps the widget with all pending options at once for efficiency.
-        """
-        # PERFORMANCE: Only enable timing if logger level is DEBUG (10) or lower
-        timing_enabled = self.logger.level <= 10
-
-        if timing_enabled:
-            import time
-
-            wrap_start = time.perf_counter()
-            _step_time = wrap_start
-
-            def _log_step(step_name):
-                nonlocal _step_time
-                now = time.perf_counter()
-                duration_ms = (now - _step_time) * 1000
-                total_ms = (now - wrap_start) * 1000
-                self.logger.debug(
-                    f"OptionBoxManager._perform_wrap [{step_name}]: {duration_ms:.3f}ms (total: {total_ms:.3f}ms)"
-                )
-                _step_time = now
-
-        else:
-
-            def _log_step(step_name):
-                pass
-
-        if not self._pending_options:
-            return  # Nothing to wrap
-
-        from ._optionBox import OptionBox
-
-        _log_step("import_OptionBox")
-
-        # Create option box with ALL pending options at once
-        self._option_box = OptionBox(
-            show_clear=self._clear_enabled,
-            option_order=self._option_order,
-            options=self._pending_options,
-        )
-        _log_step("OptionBox_created")
-
-        # Perform the wrap (expensive operation - but only done once)
-        self._container = self._option_box.wrap(self._widget)
-        _log_step("wrap_widget")
-
-        # Mark as wrapped and clear pending options
-        self._is_wrapped = True
-        self._pending_options = []
-        _log_step("cleanup")
-
-        if timing_enabled:
-            total_duration = (time.perf_counter() - wrap_start) * 1000
-            self.logger.debug(
-                f"OptionBoxManager._perform_wrap: TOTAL wrap completed in {total_duration:.3f}ms"
-            )
-
-    def _update_option_box(self):
-        """Update option box based on current settings."""
-        # If we already have an option box, just update it
-        if self._option_box:
-            self._option_box.set_clear_button_visible(self._clear_enabled)
-            return
-
-        # Check if widget already has a menu with an option box
-        existing_option_box = self._find_existing_option_box()
-
-        if existing_option_box:
-            # Use the existing option box from menu
-            self._option_box = existing_option_box
-            self._container = existing_option_box.container
-            self._is_wrapped = True
-            # Migrate already-queued options into the adopted box so they aren't
-            # dropped once _is_wrapped short-circuits the deferred wrap path.
-            for pending in self._pending_options:
-                self._option_box.add_option(pending)
-            self._pending_options = []
-            if self._clear_enabled:
-                self._option_box.set_clear_button_visible(True)
-        elif self._clear_enabled:
-            # Create and wrap immediately if clear is enabled
-            self._create_option_box()
-
-    def _find_existing_option_box(self):
-        """Find existing option box created by menu or other systems.
-
-        Uses the non-creating ``has_menu`` check instead of touching
-        ``widget.menu`` directly: the MenuMixin ``.menu`` descriptor lazily
-        *creates* a standalone context menu on first access, so probing it
-        here would materialize an otherwise-unused menu for every wrapped
-        widget at register time.
-        """
-        if not getattr(self._widget, "has_menu", False):
-            return None
-
-        menu = self._widget.menu
-        if hasattr(menu, "option_box"):
-            menu_option_box = menu.option_box
-            if menu_option_box and hasattr(menu_option_box, "container"):
-                return menu_option_box
-
-        return None
-
-    def _create_option_box(self):
-        """Create and wrap the option box."""
-        from ._optionBox import OptionBox
-
-        # Include any pending plugins
-        pending = self._pending_options or None
-
-        self._option_box = OptionBox(
-            show_clear=self._clear_enabled,
-            option_order=self._option_order,
-            options=pending,
-        )
-        self._container = self._option_box.wrap(self._widget)
-        self._is_wrapped = True
-
-        # Clear pending options
-        self._pending_options = []
-        self._wrap_retry_scheduled = False
-
-    def remove(self):
-        """Remove option box completely"""
-        if self._option_box and self._container:
-            # Restore widget to original state
-            parent = self._container.parent()
-            if parent and parent.layout():
-                parent.layout().replaceWidget(self._container, self._widget)
-            else:
-                self._widget.setParent(parent)
-                self._widget.move(self._container.pos())
-
-            self._container.deleteLater()
-            self._option_box = None
-            self._container = None
-            self._clear_enabled = False
-            self._menu = None
-            self._is_wrapped = False
-            self._pending_options = []
 
     # -------------------------------------------------------------------------
     # Convenience factories & widget patching (class-only public surface)

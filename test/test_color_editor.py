@@ -605,7 +605,9 @@ class TestRampPreview(QtBaseTestCase):
     def test_the_composite_matches_the_exporters_own_function(self):
         """The whole case for a flat 2D fill over a shaded 3D one: this is not
         an approximation of what ships, it is the arithmetic that ships."""
-        from pythontk.file_utils.mesh_convert.glb_fades import CHANNELS
+        from pythontk import GlbFades
+
+        CHANNELS = GlbFades.CHANNELS
 
         preview = self._preview()
         spec = CHANNELS["highlight"]
@@ -746,8 +748,10 @@ class TestInjectedChannelArithmetic(QtBaseTestCase):
     """The preview runs the channel's OWN function, so it cannot drift."""
 
     def _preview(self, channel, **kw):
-        from pythontk.file_utils.mesh_convert.glb_fades import CHANNELS
+        from pythontk import GlbFades
         from uitk.widgets.editors.color_editor import RampPreview
+
+        CHANNELS = GlbFades.CHANNELS
 
         spec = CHANNELS[channel]
         return spec, self.track_widget(RampPreview(values=spec.values, **kw))
@@ -823,8 +827,10 @@ class TestInjectedChannelArithmetic(QtBaseTestCase):
 
     def test_a_ramp_editor_hands_its_arithmetic_to_both_previews(self):
         """Or the before/after compares two different channels."""
-        from pythontk.file_utils.mesh_convert.glb_fades import CHANNELS
+        from pythontk import GlbFades
         from uitk.widgets.editors.color_editor import ColorRampEditor
+
+        CHANNELS = GlbFades.CHANNELS
 
         values = CHANNELS["highlight"].values
         ramp = self.track_widget(

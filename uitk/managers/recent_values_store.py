@@ -148,15 +148,19 @@ class RecentValuesStore:
         """Normalize a value for comparison.
 
         Unwraps a :class:`RecentValueEntry` to its data, strips whitespace and,
-        for path-like strings, normalizes separators and case so that ``C:/Dir``
-        and ``c:\\dir`` compare equal.
+        for path-like strings, normalizes separators -- and, on Windows, case --
+        so that ``C:/Dir`` and ``c:\\dir`` compare equal there. A Linux
+        filesystem is case-sensitive: ``/proj/Shot`` and ``/proj/shot`` are two
+        folders, and folding them would drop one from the list.
         """
         if isinstance(value, RecentValueEntry):
             value = value.data
         if isinstance(value, str):
             value = value.strip()
             if "/" in value or "\\" in value:
-                value = ptk.format_path(value).lower()
+                value = ptk.format_path(value)
+                if os.name == "nt":
+                    value = value.lower()
         return value
 
     def __init__(

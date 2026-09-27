@@ -20,11 +20,13 @@ Example
 ... )
 >>> editor.show()
 """
+
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 from qtpy import QtWidgets, QtCore, QtGui
 
+from uitk._bootstrap import Bootstrap
 from uitk.widgets.colorSwatch import ColorSwatch
 from uitk.managers.settings_manager import SettingsManager
 from uitk.themes.style_sheet import StyleSheet
@@ -418,11 +420,11 @@ class ColorMappingDialog(QtWidgets.QDialog):
         # window flags wholesale, so re-pass the full set.
         _dialog_flags = QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint
         self.setWindowFlags(_dialog_flags)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        Bootstrap.set_translucent(self)
         if parent is not None:
             anchor = parent.window() or parent
             self.setParent(anchor, _dialog_flags)
-            self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+            Bootstrap.set_translucent(self)
         self.setMinimumWidth(280)
 
         # Inner frame paints the semi-transparent background

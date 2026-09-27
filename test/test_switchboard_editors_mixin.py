@@ -3,13 +3,14 @@
 """Tests for ``SwitchboardEditorsMixin`` — the ``sb.editors`` registry.
 
 Covers:
-- Editor name registry (``style``, ``shortcut``, ``browser``)
+- Editor name registry (``style``, ``shortcut``, ``browser``, ``presets``)
 - Lazy instantiation + caching
 - Auto-recovery when the underlying Qt object is destroyed
 - ``show()`` shows + raises the cached editor
 - Property accessors (``sb.editors.style`` etc.)
 - Unknown editor names raise ``KeyError``
 - Parent resolution: handlers.marking_menu first, then sb.parent()
+- ``adopt``: an editor built outside the registry becomes the cached one
 """
 
 import os
@@ -57,15 +58,19 @@ class _Base(QtBaseTestCase):
 
 class EditorsProperty(_Base):
     def test_editors_property_lazy_and_cached(self):
-        # First access creates the registry; second returns the same one.
-        self.assertFalse(hasattr(self.sb, "_editors_registry"))
+        # The default EditorHandler reads the registry's names to list the
+        # editors as rows, so the registry exists -- but builds nothing until
+        # an editor is asked for. Repeat access returns the same registry.
+        self.assertFalse(self.sb.editors._cache)
         registry_a = self.sb.editors
         self.assertIs(registry_a, self.sb.editors)
         self.assertIsInstance(registry_a, _EditorRegistry)
 
     def test_known_editor_names(self):
         names = set(self.sb.editors.names())
-        self.assertEqual(names, {"style", "shortcut", "global_shortcuts", "browser"})
+        self.assertEqual(
+            names, {"style", "shortcut", "global_shortcuts", "browser", "presets"}
+        )
 
 
 class EditorsGet(_Base):
@@ -334,6 +339,48 @@ class PopupContextRecovery(_Base):
         with patch.object(type(editor), "present", return_value=editor) as present:
             self.assertIs(sb.editors.show("style"), editor)
         present.assert_called_once_with(raise_window=True)
+
+
+class EditorsAdopt(_Base):
+    """``adopt(name, widget)``: an editor constructed outside the registry (a
+    directly built ``SwitchboardBrowser``) becomes the cached one, with the
+    post-build hooks run on it as on a registry build."""
+
+    def _counting_hook(self, name):
+        calls = []
+        self.sb.editors.add_post_build_hook(name, calls.append)
+        return calls
+
+    def test_an_adopted_editor_is_the_cached_one_and_is_hooked(self):
+        calls = self._counting_hook("style")
+        widget = QtWidgets.QWidget()
+        self.assertTrue(self.sb.editors.adopt("style", widget))
+        self.assertIs(self.sb.editors.peek("style"), widget)
+        self.assertIs(self.sb.editors.get("style"), widget)
+        self.assertEqual(calls, [widget])
+        self.assertTrue(self.sb.editors.adopt("style", widget), "idempotent")
+        self.assertEqual(calls, [widget], "re-adopting re-ran the hooks")
+
+    def test_adopt_never_replaces_a_live_editor(self):
+        built = self.sb.editors.get("style")
+        other = QtWidgets.QWidget()
+        try:
+            self.assertFalse(self.sb.editors.adopt("style", other))
+            self.assertIs(self.sb.editors.peek("style"), built)
+        finally:
+            other.deleteLater()
+
+    def test_a_registry_build_that_adopts_itself_is_hooked_once(self):
+        """The browser adopts itself in ``__init__`` -- also when the registry
+        is the one building it -- and its hooks still run exactly once."""
+        calls = self._counting_hook("browser")
+        browser = self.sb.editors.get("browser")
+        self.assertEqual(calls, [browser])
+        self.assertIs(self.sb.editors.peek("browser"), browser)
+
+    def test_adopt_unknown_raises(self):
+        with self.assertRaises(KeyError):
+            self.sb.editors.adopt("nonexistent", QtWidgets.QWidget())
 
 
 class ParentResolution(_Base):

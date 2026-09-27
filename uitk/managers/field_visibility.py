@@ -6,6 +6,7 @@ from typing import Callable, Dict, Hashable, Iterable, List, Optional, Set
 
 from qtpy import QtCore
 
+from uitk.managers.value_manager import ValueManager
 from uitk.managers.window_height import WindowHeight
 
 
@@ -144,7 +145,7 @@ class FieldVisibility:
         return self
 
     def _from(self, combo) -> None:
-        data = combo.currentData()
+        data = ValueManager.combo_value(combo, "data")
         try:
             hash(data)
         except TypeError:
@@ -153,7 +154,9 @@ class FieldVisibility:
             # name a mode either. Fall back to the label rather than raise out
             # of a combo box's signal.
             data = None
-        self.mode = data if data is not None else combo.currentText()
+        self.mode = (
+            data if data is not None else ValueManager.combo_value(combo, "text")
+        )
 
     # ------------------------------------------------------------------
     # Application

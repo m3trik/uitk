@@ -4,7 +4,7 @@ from qtpy import QtWidgets, QtGui, QtCore
 from typing import Optional, Callable, List, Union, Any, Dict
 
 # From this package:
-from uitk.widgets.mixins.convert import ConvertMixin
+from uitk.widgets.mixins.item_format import ItemFormatMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
@@ -186,23 +186,14 @@ class HierarchyIconMixin:
         return self._icon_style
 
 
-class TreeFormatMixin(ConvertMixin):
-    """Generic item/column formatting for QTreeWidget."""
+class TreeFormatMixin(ItemFormatMixin):
+    """Generic item/column formatting for QTreeWidget.
 
-    ACTION_COLOR_MAP = {
-        "valid": ("#3C8D3C", "#E6F4EA"),
-        "invalid": ("#B97A7A", "#FBEAEA"),
-        "warning": ("#B49B5C", "#FFF6DC"),
-        "info": ("#6D9BAA", "#E2F3F9"),
-        "inactive": ("#AAAAAA", None),
-        # Kept in step with CellFormatMixin.ACTION_COLOR_MAP by
-        # test_table_formatting.TestActionColorMapParity. "current" existed only
-        # on the table copy until 2026-09-16, so `widget.ACTION_COLOR_MAP
-        # ["current"]` -- which mayatk's reference_manager does -- was a KeyError
-        # against a tree.
-        "current": ("#C4A44A", None),
-        "reset": (None, None),
-    }
+    The colour map, formatter store and colour resolution are
+    :class:`~uitk.widgets.mixins.item_format.ItemFormatMixin`'s, shared with
+    the table's ``CellFormatMixin`` (one ``ACTION_COLOR_MAP``: mayatk's
+    reference_manager reads ``widget.ACTION_COLOR_MAP["current"]`` off either).
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -214,17 +205,11 @@ class TreeFormatMixin(ConvertMixin):
     # Public API
     def set_item_formatter(self, item_id, formatter, append=False):
         """Set a formatter for a specific item by ID."""
-        if append:
-            self._item_formatters.setdefault(item_id, []).append(formatter)
-        else:
-            self._item_formatters[item_id] = [formatter]
+        self._set_formatter(self._item_formatters, item_id, formatter, append)
 
     def set_column_formatter(self, col, formatter, append=False):
         """Set a formatter for a specific column."""
-        if append:
-            self._column_formatters.setdefault(col, []).append(formatter)
-        else:
-            self._column_formatters[col] = [formatter]
+        self._set_formatter(self._column_formatters, col, formatter, append)
 
     def clear_formatters(self):
         """Clear all item and column formatters."""
@@ -239,9 +224,7 @@ class TreeFormatMixin(ConvertMixin):
         # -> formatters -> ... (unbounded recursion -> RecursionError when
         # multiple/appended formatters set differing roles). Mirrors the same
         # guard on CellFormatMixin.apply_formatting.
-        was_blocked = self.signalsBlocked()
-        self.blockSignals(True)
-        try:
+        with self._formatting_signals_blocked():
             iterator = QtWidgets.QTreeWidgetItemIterator(self)
             while iterator.value():
                 item = iterator.value()
@@ -254,24 +237,12 @@ class TreeFormatMixin(ConvertMixin):
                             self,
                         )
                 iterator += 1
-        finally:
-            self.blockSignals(was_blocked)
 
     def ensure_valid_color(self, color, color_type, item, col):
         """Ensure a valid QColor, using fallback if needed."""
-        try:
-            return self.to_qobject(color, "QColor")
-        except Exception:
-            pass
-
-        cached = self._get_default_colors(item, col)[0 if color_type == "fg" else 1]
-        try:
-            return self.to_qobject(cached, "QColor")
-        except Exception:
-            print(
-                f"[WARNING] Invalid {color_type} color: {color!r}, and fallback {cached!r} failed. Using None."
-            )
-            return None
+        return self._valid_color(
+            color, color_type, lambda: self._get_default_colors(item, col)
+        )
 
     def set_action_color(
         self,

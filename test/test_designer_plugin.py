@@ -69,13 +69,19 @@ class TestDesignerCatalog(unittest.TestCase):
                 self.assertIn(name, self.by_name)
 
     def test_excludes_windows_and_popups(self):
-        """Windows, dialogs, and popups can't be dropped onto a form."""
+        """Windows, dialogs, and popups can't be dropped onto a form.
+
+        ``AttributeWindow`` is a flat ``widgets/`` module now, which the scan
+        reaches -- only its own ``designer_spec`` keeps it out (a spec is not
+        inherited from ``Menu``).
+        """
         for name in (
             "MainWindow",
             "MessageBox",
             "Menu",
             "PersistentMenu",
             "TextViewBox",
+            "AttributeWindow",
         ):
             with self.subTest(widget=name):
                 self.assertNotIn(name, self.by_name)
@@ -640,6 +646,84 @@ class TestRegisterAndEnvironment(QtBaseTestCase):
         self.assertIn(
             "/other/plugins", env["PYSIDE_DESIGNER_PLUGINS"].split(os.pathsep)
         )
+
+    def test_a_background_launch_is_detached_over_the_desktop_env(self):
+        """``wait=False`` -- the UI Browser's *Open in Designer*, from inside a
+        host app -- goes through ``pythontk.AppLauncher.launch``: detached, so
+        Designer outlives the host and opens no console, over
+        ``AppLauncher.desktop_env`` (the host's own loader and interpreter
+        overrides left behind) plus what Designer needs. Nothing launches here.
+
+        Regression: a plain ``subprocess.Popen`` started the console
+        ``pyside6-designer`` wrapper undetached, with the host's whole
+        environment.
+        """
+        from unittest import mock
+
+        import pythontk as ptk
+
+        launched = []
+
+        def fake_launch(app_identifier, args=None, cwd=None, detached=True, env=None):
+            launched.append((app_identifier, list(args or ()), detached, env))
+            return object()  # a started process
+
+        def no_popen(*args, **kwargs):
+            raise AssertionError(f"started through subprocess.Popen: {args}")
+
+        exe = os.path.abspath(os.path.join("bin", "pyside6-designer"))
+        with (
+            mock.patch.object(
+                DesignerPlugin, "_designer_executable", staticmethod(lambda: exe)
+            ),
+            mock.patch.object(ptk.AppLauncher, "launch", staticmethod(fake_launch)),
+            mock.patch.object(
+                ptk.AppLauncher, "desktop_env", staticmethod(lambda: {"DESKTOP": "1"})
+            ),
+            mock.patch("subprocess.Popen", no_popen),
+            mock.patch.dict(os.environ, {"UITK_TEST_HOST_ONLY": "1"}),
+        ):
+            code = DesignerPlugin.launch("form.ui", wait=False)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(launched), 1)
+        app, args, detached, env = launched[0]
+        self.assertEqual((app, args, detached), (exe, ["form.ui"], True))
+        self.assertEqual(env.get("DESKTOP"), "1", "the desktop env is the base")
+        self.assertNotIn("UITK_TEST_HOST_ONLY", env, "the host's env leaked in")
+        self.assertIn(
+            DesignerPlugin.plugin_dirs()[0],
+            env["PYSIDE_DESIGNER_PLUGINS"].split(os.pathsep),
+        )
+        roots = env["PYTHONPATH"].split(os.pathsep)
+        for package in ("uitk", "pythontk"):  # uitk imports pythontk
+            with self.subTest(package=package):
+                module = importlib.import_module(package)
+                root = os.path.dirname(
+                    os.path.dirname(os.path.abspath(module.__file__))
+                )
+                self.assertIn(root, roots)
+        self.assertEqual(env[AttributesMixin.DESIGN_TIME_ENV], "1")
+
+    def test_a_background_launch_that_fails_raises(self):
+        """``_open_in_designer`` falls back to other Designers on ``OSError``."""
+        from unittest import mock
+
+        import pythontk as ptk
+
+        exe = os.path.abspath(os.path.join("bin", "pyside6-designer"))
+        with (
+            mock.patch.object(
+                DesignerPlugin, "_designer_executable", staticmethod(lambda: exe)
+            ),
+            mock.patch.object(
+                ptk.AppLauncher, "launch", staticmethod(lambda *a, **k: None)
+            ),
+            mock.patch.object(ptk.AppLauncher, "desktop_env", staticmethod(lambda: {})),
+            mock.patch("subprocess.Popen", side_effect=AssertionError("Popen")),
+        ):
+            with self.assertRaises(OSError):
+                DesignerPlugin.launch("form.ui", wait=False)
 
     def test_plugin_dir_holds_the_entry_file_designer_scans_for(self):
         """PySide6's Designer plugin only imports files matching register*.py."""

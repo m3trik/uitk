@@ -229,3 +229,122 @@ class SwitchboardNameMixin:
         known = set(ptk.make_iterable(known_tags))
         tags = tag_string.split(self.TAG_DELIMITER)[1:]
         return [tag for tag in tags if tag and tag not in known]
+
+    @classmethod
+    def unpack_names(cls, name_string):
+        """Unpacks a comma-separated string of names and returns a list of individual names.
+
+        Parameters:
+            name_string (str): A string consisting of widget names separated by commas.
+                    Names may include ranges with hyphens, e.g., 'chk021-23, 25, tb001'.
+        Returns:
+            list: A list of unpacked names, e.g., ['chk021', 'chk022', 'chk023', 'chk025', 'tb001'].
+        """
+
+        def extract_parts(name):
+            """Extract alphabetic and numeric parts from a given name using regular expressions."""
+            return re.findall(r"([a-zA-Z]+)|(\d+)", name)
+
+        names = re.split(r",\s*", name_string)
+        unpacked_names = []
+        last_prefix = None
+        last_width = 3  # zero-pad width for bare-number continuations
+
+        for name in names:
+            parts = extract_parts(name)
+            # Keep the raw numeric tokens so the zero-pad width can be derived
+            # from the source string rather than hard-coded.
+            digit_tokens = [p[1] for p in parts if p[1]]
+
+            if not digit_tokens:
+                # A name with no numeric token passes through verbatim (e.g.
+                # 'grp_basic'); a purely non-alphanumeric token is skipped.
+                if parts:
+                    unpacked_names.append(name)
+                    if parts[0][0]:
+                        last_prefix = parts[0][0]
+                continue
+
+            prefix = parts[0][0]
+            width = len(digit_tokens[0])
+
+            if len(digit_tokens) >= 2:
+                # Range notation, e.g. 'chk000-2' (reverse ranges yield nothing).
+                start, stop = int(digit_tokens[0]), int(digit_tokens[1])
+                unpacked_names.extend(
+                    prefix + str(num).zfill(width) for num in range(start, stop + 1)
+                )
+                last_prefix, last_width = prefix, width
+            elif not prefix:
+                # Bare number — continuation of the previous prefix, e.g. the
+                # '1' in 'chk000, 1'.
+                unpacked_names.append(
+                    (last_prefix or "") + digit_tokens[0].zfill(last_width)
+                )
+            else:
+                # Single prefixed name, e.g. 'chk000'.
+                unpacked_names.append(name)
+                last_prefix, last_width = prefix, width
+
+        return unpacked_names
+
+    def get_widgets_by_string_pattern(self, ui, name_string):
+        """Get a list of corresponding widgets from a single shorthand formatted string.
+        ie. 's000,b002,cmb011-15' would return object list: [<s000>, <b002>, <cmb011>, <cmb012>, <cmb013>, <cmb014>, <cmb015>]
+
+        Parameters:
+            ui (QWidget): A previously loaded dynamic UI object.
+            name_string (str): Widget object names separated by ','. ie. 's000,b004-7'. b004-7 specifies buttons b004 though b007.
+
+        Returns:
+            (list) QWidget(s)
+
+        Example:
+            get_widgets_by_string_pattern(<ui>, 's000,b002,cmb011-15')
+        """
+        if not isinstance(ui, QtWidgets.QWidget):
+            raise ValueError(f"Invalid datatype: Expected QWidget, got {type(ui)}")
+
+        widgets = []
+        for n in self.unpack_names(name_string):
+            w = getattr(ui, n, None)
+            if not isinstance(w, QtWidgets.QWidget):
+                # A registered widget whose objectName shadows a QWidget method
+                # ('size', 'font') is deliberately NOT bound as an attribute
+                # (see MainWindow.register_widget), so the attribute is the
+                # method: read the registry instead of handing a rule a bound
+                # method to setEnabled(). A container with no registry (an
+                # option-box Menu) has only its attributes to offer.
+                registered = getattr(ui, "widgets", None) or ()
+                w = next((x for x in registered if x.objectName() == n), None)
+            if w is None:
+                self.logger.info(f"[get_widgets_by_string_pattern] no widget {n!r}")
+                continue
+            widgets.append(w)
+
+        return widgets
+
+    def get_methods_by_string_pattern(self, clss, name_string):
+        """Get a list of corresponding methods from a single shorthand formatted string.
+        ie. 's000,b002,cmb011-15' would return methods: [<s000>, <b002>, <cmb011>, <cmb012>, <cmb013>, <cmb014>, <cmb015>]
+
+        Parameters:
+            clss (class): The class containing the methods.
+            name_string (str): Slot names separated by ','. ie. 's000,b004-7'. b004-7 specifies methods b004 through b007.
+
+        Returns:
+            (list) class methods.
+
+        Example:
+            get_methods_by_string_pattern(<ui>, 'slot1,slot2,slot3')
+        """
+        if not isinstance(clss, object):
+            raise ValueError(f"Invalid datatype: Expected class, got {type(clss)}")
+
+        result = []
+        for method_name in self.unpack_names(name_string):
+            method = getattr(clss, method_name, None)
+            if method is not None:
+                result.append(method)
+
+        return result

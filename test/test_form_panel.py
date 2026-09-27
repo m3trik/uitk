@@ -30,7 +30,7 @@ app = setup_qt_application()
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from uitk.switchboard.utils import SwitchboardUtilsMixin
+from uitk.switchboard.dialogs import SwitchboardDialogsMixin
 from uitk.managers.cursor_manager import CursorManager
 from uitk.widgets.formPanel import FormPanel
 
@@ -45,7 +45,7 @@ class FormPanelTestCase(QtBaseTestCase):
 
     def _panel(self, fields=None, **kwargs):
         kwargs.setdefault("output", False)
-        panel = SwitchboardUtilsMixin.form_panel(
+        panel = SwitchboardDialogsMixin.form_panel(
             self.FIELDS if fields is None else fields, **kwargs
         )
         self.addCleanup(panel.deleteLater)
@@ -1012,7 +1012,7 @@ class TestFormDialog(FormPanelTestCase):
             raise AssertionError("the modal panel never appeared")
 
         QtCore.QTimer.singleShot(0, act)
-        return SwitchboardUtilsMixin.form_dialog(
+        return SwitchboardDialogsMixin.form_dialog(
             self.FIELDS if fields is None else fields, **kwargs
         )
 

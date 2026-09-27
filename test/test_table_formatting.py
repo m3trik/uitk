@@ -127,6 +127,19 @@ class TestActionColorMapParity(unittest.TestCase):
                     "'%s' resolves to a different colour per widget type" % key,
                 )
 
+    def test_one_map_one_formatter_core(self):
+        """Not two maps kept in step: one, on the shared base -- with the
+        formatter store and colour resolution it drives."""
+        from uitk.widgets.mixins.item_format import ItemFormatMixin
+        from uitk.widgets.tableWidget import CellFormatMixin
+        from uitk.widgets.treeWidget import TreeFormatMixin
+
+        for mixin in (CellFormatMixin, TreeFormatMixin):
+            with self.subTest(mixin=mixin.__name__):
+                self.assertTrue(issubclass(mixin, ItemFormatMixin))
+                self.assertIs(mixin.ACTION_COLOR_MAP, ItemFormatMixin.ACTION_COLOR_MAP)
+                self.assertNotIn("ACTION_COLOR_MAP", vars(mixin))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1728,7 +1728,7 @@ class TestMenuInitializationVisibility(QtBaseTestCase):
         Fixed: 2026-03-18
         """
         from uitk.widgets.header import Header
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         header = self.track_widget(Header())
         header.setGeometry(100, 100, 300, 20)
@@ -2159,7 +2159,7 @@ class TestOptionBoxMenuPopupFlags(QtBaseTestCase):
         on the first ``show_as_popup`` (or ``showEvent``).  This eliminates
         the Tool-window flash visible during ``register_children`` when
         ``_setup_as_popup`` ran eagerly in ``Menu.__init__``."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         parent = self.track_widget(QtWidgets.QWidget())
         layout = QtWidgets.QVBoxLayout(parent)
@@ -2298,7 +2298,7 @@ class TestOptionBoxMenuPopupFlags(QtBaseTestCase):
         """Once popup setup has run, subsequent operations on the
         wrapped menu must not strip Tool flags (the original 2026-03-18
         bug)."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         parent = self.track_widget(QtWidgets.QWidget())
         layout = QtWidgets.QVBoxLayout(parent)
@@ -2326,7 +2326,7 @@ class TestOptionBoxMenuPopupFlags(QtBaseTestCase):
 
     def test_option_box_menu_shows_as_popup(self):
         """OptionBox menu must display as a floating popup, not clipped child."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         parent = self.track_widget(QtWidgets.QWidget())
         parent.setGeometry(100, 100, 300, 40)
@@ -2369,7 +2369,7 @@ class TestOptionBoxMenuPopupFlags(QtBaseTestCase):
         Fixed: 2026-03-18
         """
         from uitk.widgets.header import Header
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         # Setup: header with menu containing buttons (simulates header_init)
         header = self.track_widget(Header())
@@ -3026,7 +3026,7 @@ class TestMenuRestoreDefaults(QtBaseTestCase):
 
     @staticmethod
     def _options(sb):
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         mgr = getattr(sb, "_option_box_manager", None)
         if mgr is None:
@@ -3204,6 +3204,146 @@ class TestHideItemsThatHaveShortcuts(QtBaseTestCase):
         menu.show()
         QtWait.pump()
         self.assertTrue(self.items["tb001"].isHidden())
+
+
+class TestMenuActingPins(QtBaseTestCase):
+    """Real input on offscreen Qt: one end-to-end pin per concept part of ``Menu``.
+
+    The unit classes above call the parts directly (``_should_trigger``,
+    ``_setup_as_popup``...). These drive the same paths the way a user does --
+    a click on the anchor, a click on an item, typing a preset name -- so a
+    regrouping of the parts that still satisfies every unit test cannot quietly
+    break the wiring between them.
+    """
+
+    @staticmethod
+    def _click(widget, button=QtCore.Qt.LeftButton):
+        from qtpy.QtTest import QTest
+
+        QTest.mouseClick(widget, button, QtCore.Qt.NoModifier, widget.rect().center())
+        QtWait.pump()
+
+    def _anchor(self, cls=QtWidgets.QPushButton):
+        anchor = self.track_widget(cls("Anchor"))
+        anchor.resize(120, 24)
+        anchor.show()
+        QtWait.until(anchor.isVisible, "anchor never became visible")
+        return anchor
+
+    def test_a_click_on_the_anchor_button_opens_then_closes_the_menu(self):
+        anchor = self._anchor()
+        menu = Menu(parent=anchor, trigger_button="left", add_header=False)
+        menu.add("QLabel", setText="Item")
+
+        self._click(anchor)
+        self.assertTrue(menu.isVisible(), "a left click on the anchor must open it")
+        self._click(anchor)
+        self.assertFalse(menu.isVisible(), "a second click must close it again")
+
+    def test_a_right_trigger_menu_opens_on_a_right_press_only(self):
+        anchor = self._anchor(QtWidgets.QLabel)
+        menu = Menu(parent=anchor, trigger_button="right", add_header=False)
+        menu.add("QLabel", setText="Item")
+
+        self._click(anchor, QtCore.Qt.LeftButton)
+        self.assertFalse(menu.isVisible(), "a left press must not open it")
+        self._click(anchor, QtCore.Qt.RightButton)
+        self.assertTrue(menu.isVisible(), "a right press on the anchor must open it")
+
+    def test_clicking_an_item_fires_it_then_hides_the_menu(self):
+        menu = self.track_widget(
+            Menu(
+                trigger_button="none",
+                add_header=False,
+                add_footer=False,
+                hide_on_trigger=True,
+            )
+        )
+        fired = []
+        item = menu.add("QPushButton", setText="Go", setObjectName="btn_go")
+        item.clicked.connect(lambda *_: fired.append(True))
+        menu.show()
+        QtWait.until(menu.isVisible, "menu never became visible")
+
+        self._click(item)
+        QtWait.until(lambda: not menu.isVisible(), "hide_on_trigger never hid it")
+        self.assertEqual(fired, [True], "the item's own click must still fire")
+
+    def test_a_menu_opened_past_the_screen_corner_lands_on_screen(self):
+        menu = self.track_widget(
+            Menu(
+                trigger_button="none",
+                add_header=False,
+                add_footer=False,
+                match_parent_width=False,
+            )
+        )
+        for i in range(6):
+            menu.add("QPushButton", setText=f"Item {i}")
+        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        corner = QtCore.QPoint(screen.right() - 4, screen.bottom() - 4)
+
+        menu.show_as_popup(position=corner)
+        QtWait.until(menu.isVisible, "menu never became visible")
+        self.assertTrue(
+            screen.contains(menu.frameGeometry()),
+            f"{menu.frameGeometry()} spills off {screen}",
+        )
+
+    def test_the_persistent_hide_button_closes_a_pinned_menu(self):
+        menu = self.track_widget(Menu(trigger_button="none", add_footer=False))
+        menu.add("QLabel", setText="Item")
+        menu.enable_persistent_mode()
+        menu.show()
+        QtWait.until(menu.isVisible, "menu never became visible")
+
+        self.assertFalse(menu.hide(), "a persistent menu refuses a plain hide")
+        self.assertTrue(menu.isVisible())
+        self._click(menu._persistent_hide_button)
+        QtWait.until(lambda: not menu.isVisible(), "the hide button never hid it")
+        self.assertFalse(menu.is_persistent_mode)
+
+    def test_a_preset_menu_saves_the_name_the_user_types(self):
+        import os
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        import pythontk as ptk
+        from qtpy.QtTest import QTest
+
+        root = Path(tempfile.mkdtemp(prefix="menu_presets_"))
+        self.addCleanup(shutil.rmtree, root, True)
+        var = ptk.UserConfig.CONFIG_ROOT_ENV_VAR
+        env = patch.dict(os.environ, {var: str(root)})
+        env.start()
+        self.addCleanup(env.stop)
+
+        menu = self.track_widget(
+            Menu(trigger_button="none", add_header=False, add_footer=False)
+        )
+        chk = menu.add("QCheckBox", setObjectName="chk_opt", setText="Opt")
+        chk.setChecked(True)
+        menu.add_presets = True
+        menu.presets.preset_dir = "menu_acting/tool"
+        menu.show()
+        QtWait.until(menu.isVisible, "menu never became visible")
+
+        combo = menu.cmb_presets
+        layout = combo.option_box.container.layout()
+        save = layout.itemAt(2).widget()  # [combo][refresh][save][menu]
+        self.assertTrue(save.toolTip().startswith("Save"), save.toolTip())
+        self._click(save)
+        line = combo.lineEdit()
+        self.assertIsNotNone(line, "Save must open the inline name field")
+        QTest.keyClicks(line, "mine")
+        QTest.keyClick(line, QtCore.Qt.Key_Return)
+        QtWait.pump()
+
+        self.assertTrue((root / "menu_acting" / "tool" / "mine.json").is_file())
+        self.assertEqual(menu.presets.active_preset, "mine")
+        self.assertEqual(combo.currentText(), "mine")
+        self.assertTrue(menu.isVisible(), "saving must not close the menu")
 
 
 # -----------------------------------------------------------------------------

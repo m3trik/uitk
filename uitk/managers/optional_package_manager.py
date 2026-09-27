@@ -181,7 +181,11 @@ class OptionalPackageManager(_OptionalPackageManagerInternal):
                 f"({sys.executable!r}) is a DCC host with no sibling python to "
                 f"install through. Provision it into the host environment."
             )
-        ptk.PackageManager(python_path=python).pip(f"install --user {spec}")
+        # ``--user`` is refused inside a venv ("user site-packages are not
+        # visible"): a venv interpreter installs into the venv itself.
+        in_venv = python == sys.executable and sys.prefix != sys.base_prefix
+        user = "" if in_venv else "--user "
+        ptk.PackageManager(python_path=python).pip(f"install {user}{spec}")
 
     def install(self, spec: str) -> None:
         """Install *spec* via the injected installer, else :meth:`default_install`."""

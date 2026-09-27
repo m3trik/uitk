@@ -23,6 +23,17 @@ CTRL_MOD = 0x04000000
 ALT_MOD = 0x08000000
 META_MOD = 0x10000000
 
+# Tags marking the marking menu's own gesture surfaces — the radial
+# start/submenu UIs, hosted as stacked-widget pages. The fade pass, the
+# activation-release hide sweep, and the navigation paths all skip UIs carrying
+# these so the active surface stays bright / open. Module-scoped (not a class
+# attr) so the methods that read it stay callable when borrowed onto a
+# lightweight test double, and because the same convention is shared with the
+# switchboard (see ``_core`` / ``ui_handler``) rather than being
+# MarkingMenu-specific. Lives here, the package's Qt-free vocabulary module,
+# because every part of the MarkingMenu class reads it.
+_MARKING_MENU_TAGS = ("startmenu", "submenu")
+
 
 class MenuResolver:
     """Pure, stateless menu-resolution primitives for the MarkingMenu.

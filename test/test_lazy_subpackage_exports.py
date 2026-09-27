@@ -30,14 +30,16 @@ from conftest import BaseTestCase, PACKAGE_ROOT
 
 # Public surface per subpackage, as published before the lazy conversion.
 # Underscore-prefixed sequencer entries are shared layout constants and
-# internal item classes that the widget's consumers (and this repo's own
-# tests) import by name; they are part of the re-export surface even though
-# ``import *`` never exported them.
+# internal item classes this repo's own tests import by name; they are part of
+# the re-export surface even though ``import *`` never exported them.  The two
+# retired channel defaults (``_COMMON_ATTRIBUTES`` / ``_DEFAULT_ATTRIBUTE_COLORS``)
+# still resolve, with a warning, until 1.7.0 -- pinned in ``test_sequencer``.
 SEQUENCER_EXPORTS = (
     "AttributeColorDialog",
     "ClipData",
     "ClipItem",
     "CurveUtils",
+    "DISPLAY_COLORS",
     "DraggableItemMixin",
     "FrameTooltip",
     "HATCH_DENSE",
@@ -66,9 +68,6 @@ SEQUENCER_EXPORTS = (
     "TrackData",
     "TrackHeaderWidget",
     "TransportControls",
-    "_COMMON_ATTRIBUTES",
-    "_DEFAULT_ATTRIBUTE_COLORS",
-    "_DISPLAY_COLORS",
     "_ElidingLabel",
     "_GapOverlayItem",
     "_HANDLE_WIDTH",
@@ -90,6 +89,7 @@ BRIDGE_EXPORTS = (
     "Formatters",
     "KindFactory",
     "KindHandler",
+    "ParamRegistry",
     "Parameters",
     "Tooltip",
 )
@@ -101,7 +101,29 @@ SHORTCUT_EDITOR_EXPORTS = (
     "ShortcutEditor",
 )
 
+# Promoted from a module to a subpackage (2026-09-26); the names the module
+# published stay importable from the same path.
+SWITCHBOARD_BROWSER_EXPORTS = (
+    "LaunchOptions",
+    "PERSISTENCE_CHOICES",
+    "PERSISTENCE_CONTEXT",
+    "PERSISTENCE_DEFAULT",
+    "PERSISTENCE_STICKY",
+    "PERSISTENCE_TRANSIENT",
+    "SCOPES",
+    "SCOPE_BOTH",
+    "SCOPE_ICONS",
+    "SCOPE_NAME",
+    "SCOPE_TAGS",
+    "SHOW_ALL",
+    "SHOW_HIDDEN",
+    "SHOW_VISIBLE",
+    "SwitchboardBrowser",
+    "SwitchboardBrowserModel",
+)
+
 SURFACE = {
+    "uitk.widgets.editors.switchboard_browser": SWITCHBOARD_BROWSER_EXPORTS,
     "uitk.widgets.sequencer": SEQUENCER_EXPORTS,
     "uitk.bridge": BRIDGE_EXPORTS,
     "uitk.widgets.editors.shortcut_editor": SHORTCUT_EDITOR_EXPORTS,
@@ -111,6 +133,13 @@ SURFACE = {
 # reaches for a name they define. These are the heavy trees the eager
 # re-exports used to pull in.
 LAZY_SUBMODULES = {
+    "uitk.widgets.editors.switchboard_browser": (
+        "uitk.widgets.editors.switchboard_browser._switchboard_browser",
+        "uitk.widgets.editors.switchboard_browser.model",
+        "uitk.widgets.editors.switchboard_browser.filtering",
+        "uitk.widgets.editors.switchboard_browser.launch",
+        "uitk.widgets.editors.switchboard_browser.row_delegate",
+    ),
     "uitk.widgets.sequencer": (
         "uitk.widgets.sequencer._sequencer",
         "uitk.widgets.sequencer._timeline",
@@ -192,6 +221,9 @@ class TestLazySubpackageSurface(BaseTestCase):
     def test_star_import_surface_unchanged(self):
         """``import *`` exports exactly the non-underscore public names."""
         expected = {
+            "uitk.widgets.editors.switchboard_browser": set(
+                SWITCHBOARD_BROWSER_EXPORTS
+            ),
             "uitk.widgets.sequencer": {
                 n for n in SEQUENCER_EXPORTS if not n.startswith("_")
             },
@@ -307,6 +339,7 @@ class TestRootImportStaysLight(BaseTestCase):
     """
 
     HEAVY = (
+        "uitk.widgets.editors.switchboard_browser._switchboard_browser",
         "uitk.widgets.sequencer._sequencer",
         "uitk.widgets.sequencer._timeline",
         "uitk.bridge.slots",

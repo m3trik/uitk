@@ -461,39 +461,24 @@ class TestFooterStatusControllerTruncation(QtBaseTestCase):
         self.assertLessEqual(len(footer.statusText()), 10)
 
 
-class TestFooterStatusControllerFallbackTruncate(QtBaseTestCase):
-    """Tests for FooterStatusController fallback truncation."""
+class TestFooterStatusControllerDelegatesToStrUtils(QtBaseTestCase):
+    """Truncation is ``ptk.StrUtils.truncate`` -- no second, drifting copy."""
 
-    def test_fallback_truncate_end_mode(self):
-        """Should truncate at end in end mode."""
-        footer = self.track_widget(Footer())
-        controller = FooterStatusController(footer)
-        result = controller._fallback_truncate(
-            "Hello World",
-            {"length": 5, "mode": "end", "insert": ".."},
-        )
-        self.assertTrue(result.startswith("Hello"))
-        self.assertTrue(result.endswith(".."))
+    def test_path_mode_keeps_whole_components(self):
+        """``mode="path"`` is StrUtils-only: the footer once imported StrUtils
+        from a path that never resolved, so every footer silently fell back to
+        a local slicer that knew no ``path`` mode and trimmed from the start."""
+        import pythontk as ptk
 
-    def test_fallback_truncate_start_mode(self):
-        """Should truncate at start in start mode."""
+        path = "O:/Cloud/proj/asset01/sourceimages/tex/x_DIFF.png"
         footer = self.track_widget(Footer())
-        controller = FooterStatusController(footer)
-        result = controller._fallback_truncate(
-            "Hello World",
-            {"length": 5, "mode": "start", "insert": ".."},
+        FooterStatusController(
+            footer,
+            resolver=lambda: path,
+            truncate_kwargs={"length": 36, "mode": "path"},
         )
-        self.assertTrue(result.startswith(".."))
-
-    def test_fallback_truncate_middle_mode(self):
-        """Should truncate in middle in middle mode."""
-        footer = self.track_widget(Footer())
-        controller = FooterStatusController(footer)
-        result = controller._fallback_truncate(
-            "Hello World",
-            {"length": 8, "mode": "middle", "insert": ".."},
-        )
-        self.assertIn("..", result)
+        self.assertEqual(footer.statusText(), ptk.StrUtils.truncate(path, 36, "path"))
+        self.assertEqual(footer.statusText(), "O:/Cloud/proj/../tex/x_DIFF.png")
 
 
 class TestFooterStatusControllerSanitize(QtBaseTestCase):

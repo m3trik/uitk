@@ -1080,6 +1080,76 @@ class TestSpawnSnippet(unittest.TestCase):
         self.assertEqual(args, ["-m", "foo"])
 
 
+class TestLaunchCode(unittest.TestCase):
+    """``launch_code`` routes through a FRESH handler, so what ``launch``
+    provides -- installing a missing package, picking the interpreter, process
+    isolation -- survives the copy; the registration is spelled out so the app
+    launches whether or not its entry point is discoverable where it runs."""
+
+    def _code(self, **register):
+        sb = _make_sb()
+        sb.handlers.external_app.register("mytool", **register)
+        return sb.handlers.external_app.launch_code("mytool", theme="dark")
+
+    def test_subprocess_app_spells_its_registration_and_runs_no_loop(self):
+        code = self._code(
+            module="mytool.app", entry="MyToolUI", install_spec="mytool==1.0"
+        )
+        compile(code, "<launch_code>", "exec")
+        self.assertIn("from uitk import ExternalAppHandler", code)
+        self.assertIn(
+            "sb = Switchboard(handlers={'external_app': ExternalAppHandler})", code
+        )
+        for kwarg in (
+            "module='mytool.app'",
+            "entry='MyToolUI'",
+            "install_spec='mytool==1.0'",
+        ):
+            self.assertIn(f"    {kwarg},", code)
+        self.assertIn("sb.handlers.external_app.launch('mytool')", code)
+        # The window lives in the child process: no loop here, and the style
+        # options (theme=...) are not an external app's.
+        self.assertNotIn("exec_", code)
+        self.assertNotIn("theme", code)
+
+    def test_in_process_app_runs_the_loop_only_when_it_owns_it(self):
+        code = self._code(module="mytool.app", entry="MyToolUI", mode="in_process")
+        self.assertIn("    mode='in_process',", code)
+        self.assertIn("owns_loop = QtWidgets.QApplication.instance() is None", code)
+        self.assertTrue(code.rstrip().endswith("sb.app.exec_()"))
+
+    def test_unregistered_app_has_no_code(self):
+        self.assertIsNone(_make_sb().handlers.external_app.launch_code("nope"))
+
+    def test_fresh_interpreter_opens_an_in_process_app(self):
+        from conftest import run_launch_snippet
+
+        import pythontk as ptk
+
+        with ptk.TempArtifacts("uitk_test_ext_launch_code", policy="scoped") as tmp:
+            root = tmp.dir_path()
+            with open(os.path.join(root, "uitk_ext_demo_app.py"), "w") as f:
+                f.write(
+                    "from qtpy import QtWidgets\n\n\n"
+                    "class DemoUI(QtWidgets.QWidget):\n"
+                    "    pass\n"
+                )
+            sys.path.insert(0, root)
+            try:
+                code = self._code(
+                    module="uitk_ext_demo_app", entry="DemoUI", mode="in_process"
+                )
+            finally:
+                sys.path.remove(root)
+            result = run_launch_snippet(
+                code,
+                "[ns['sb'].handlers.external_app.is_visible('mytool'), "
+                "len(exec_calls)]",
+                extra_paths=[root],
+            )
+        self.assertEqual(result, [True, 1])
+
+
 class TestDefaultPython(unittest.TestCase):
     """Regression: inside Maya, sys.executable is maya.exe — running
     `maya.exe -c "<python>"` invokes MEL, not Python. Default interpreter
@@ -1088,25 +1158,109 @@ class TestDefaultPython(unittest.TestCase):
     def test_prefers_python_on_path(self):
         from uitk.handlers import external_app_handler as eth
 
-        with patch.object(eth.shutil, "which", return_value="/usr/bin/python"):
+        with (
+            patch.object(eth.shutil, "which", return_value="/usr/bin/python"),
+            patch.object(
+                eth.ExternalAppHandler, "_externally_managed", return_value=False
+            ),
+        ):
             self.assertEqual(
                 eth.ExternalAppHandler._default_python(), "/usr/bin/python"
             )
 
-    def test_falls_back_to_mayapy_sibling(self):
+    @unittest.skipIf(os.name == "nt", "PEP 668 markers are a POSIX distro thing")
+    def test_skips_a_path_python_that_forbids_pip(self):
+        """Debian/Ubuntu's /usr/bin/python3 refuses pip (PEP 668) and ships no
+        PySide6: an app installed into it could never launch. A venv's python
+        -- a symlink to that same binary -- is judged by its OWN prefix."""
+        import tempfile
+
         from uitk.handlers import external_app_handler as eth
 
-        # Construct with os.sep so basename splits correctly on both
-        # platforms — hardcoded backslashes look like a single filename
-        # to posixpath on the Linux CI runner.
-        fake_maya = os.path.join(os.sep + "fake", "bin", "maya.exe")
-        with (
-            patch.object(eth.shutil, "which", return_value=None),
-            patch.object(eth.sys, "executable", fake_maya),
-            patch.object(eth.os.path, "isfile", return_value=True),
-        ):
-            result = eth.ExternalAppHandler._default_python()
-        self.assertTrue(result.lower().endswith("mayapy.exe"))
+        with tempfile.TemporaryDirectory() as root:
+            distro = os.path.join(root, "usr", "bin", "python3")
+            marker = os.path.join(
+                root, "usr", "lib", "python3.12", "EXTERNALLY-MANAGED"
+            )
+            venv = os.path.join(root, "venv", "bin", "python3")
+            for path in (distro, marker, venv):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                open(path, "w").close()
+            self.assertTrue(eth.ExternalAppHandler._externally_managed(distro))
+            self.assertFalse(eth.ExternalAppHandler._externally_managed(venv))
+            with (
+                patch.object(eth.shutil, "which", return_value=distro),
+                patch.object(eth.sys, "executable", "/some/standalone/python"),
+            ):
+                self.assertEqual(
+                    eth.ExternalAppHandler._default_python(), "/some/standalone/python"
+                )
+
+    def test_inside_blender_the_bundled_python_is_found_not_the_host(self):
+        """Blender ships its interpreter under ``<ver>/python/bin``, not beside
+        ``blender.exe``: a lookup beside the binary missed it and handed back
+        the GUI binary, which runs ``-c`` as a second Blender, not Python."""
+        import tempfile
+
+        from uitk.handlers import external_app_handler as eth
+
+        ext = ".exe" if os.name == "nt" else ""
+        with tempfile.TemporaryDirectory() as root:
+            host = os.path.join(root, "blender" + ext)
+            prefix = os.path.join(root, "5.1", "python")
+            bundled = os.path.join(prefix, "bin", "python" + ext)
+            for path in (host, bundled):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                open(path, "w").close()
+            with (
+                patch.object(eth.shutil, "which", return_value=None),
+                patch.object(eth.sys, "executable", host),
+                patch.object(eth.sys, "prefix", prefix),
+                patch.object(eth.sys, "base_prefix", prefix),
+                patch.object(eth.sys, "exec_prefix", prefix),
+            ):
+                self.assertEqual(eth.ExternalAppHandler._default_python(), bundled)
+                self.assertTrue(eth.ExternalAppHandler._is_dcc_host_interpreter(host))
+                self.assertEqual(
+                    eth.ExternalAppHandler._pip_capable_python(host), bundled
+                )
+
+    def test_linux_maya_gui_binary_installs_through_mayapy(self):
+        """Linux Maya's ``sys.executable`` is ``bin/maya.bin`` (behind the
+        ``bin/maya`` script): unmapped, pip was driven through the GUI binary
+        itself -- launching a Maya instead of installing."""
+        import tempfile
+
+        from uitk.handlers import external_app_handler as eth
+
+        with tempfile.TemporaryDirectory() as root:
+            host = os.path.join(root, "bin", "maya.bin")
+            mayapy = os.path.join(
+                root, "bin", "mayapy" + (".exe" if os.name == "nt" else "")
+            )
+            os.makedirs(os.path.dirname(host))
+            for path in (host, mayapy):
+                open(path, "w").close()
+            self.assertTrue(eth.ExternalAppHandler._is_dcc_host_interpreter(host))
+            self.assertEqual(eth.ExternalAppHandler._pip_capable_python(host), mayapy)
+
+    def test_falls_back_to_mayapy_sibling(self):
+        import tempfile
+
+        from uitk.handlers import external_app_handler as eth
+
+        ext = ".exe" if os.name == "nt" else ""
+        with tempfile.TemporaryDirectory() as root:
+            maya = os.path.join(root, "bin", "maya" + ext)
+            mayapy = os.path.join(root, "bin", "mayapy" + ext)
+            os.makedirs(os.path.dirname(maya))
+            for path in (maya, mayapy):
+                open(path, "w").close()
+            with (
+                patch.object(eth.shutil, "which", return_value=None),
+                patch.object(eth.sys, "executable", maya),
+            ):
+                self.assertEqual(eth.ExternalAppHandler._default_python(), mayapy)
 
     def test_last_resort_returns_sys_executable(self):
         from uitk.handlers import external_app_handler as eth

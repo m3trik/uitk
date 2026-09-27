@@ -1595,7 +1595,7 @@ class TestWrappedItems(QtBaseTestCase):
         self.lst = ExpandableList(self.window, fixed_item_height=20)
 
     def _wrapped_button(self):
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         btn = self.lst.add(QtWidgets.QPushButton, setText="Row")
         manager = OptionBoxManager(btn)
@@ -1674,7 +1674,7 @@ class TestSublistAnchor(QtBaseTestCase):
         self.assertIs(ExpandableList._anchor_item(row), row)
 
     def test_a_wrapped_row_anchors_on_its_container(self):
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         row = self.lst.add(QtWidgets.QPushButton, setText="Extend")
         manager = OptionBoxManager(row)

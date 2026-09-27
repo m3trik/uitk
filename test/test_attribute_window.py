@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Unit tests for AttributeWindow (uitk.widgets.attributeWindow).
+"""Unit tests for AttributeWindow (uitk.widgets.attribute_window).
 
 Covers four regressions:
 - Composite (list/set/tuple) attributes are reachable with the DEFAULT
@@ -19,7 +19,7 @@ from conftest import QtBaseTestCase, setup_qt_application
 app = setup_qt_application()
 
 from qtpy import QtWidgets  # noqa: E402
-from uitk.widgets.attributeWindow._attributeWindow import AttributeWindow  # noqa: E402
+from uitk.widgets.attribute_window import AttributeWindow  # noqa: E402
 
 
 class TestCompositeReachable(QtBaseTestCase):

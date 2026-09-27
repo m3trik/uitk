@@ -33,6 +33,7 @@ records the current page at each presentation.
 
 import logging
 import unittest
+from unittest.mock import patch
 
 from qtpy import QtCore, QtWidgets
 
@@ -355,6 +356,55 @@ class TestReopenPresentOrder(QtBaseTestCase):
             "switching menus on a visible overlay must not re-present it",
         )
         self.assertIs(self.mm._current_widget, self.cam)
+
+
+class TestBackdropWithoutCompositor(QtBaseTestCase):
+    """Without a compositor (X11 on a bare window manager, VNC/XRDP, Xvfb) the
+    full-screen translucent overlay painted BLACK: holding the marking-menu key
+    blacked out the screen. The overlay now snapshots the screen it covers as
+    it shows and paints that behind the page; where translucency composites it
+    stays truly translucent (no snapshot)."""
+
+    def setUp(self):
+        super().setUp()
+        self._drain_qt_events()
+        self.parent = self.track_widget(QtWidgets.QWidget())
+        self.parent.resize(400, 400)
+        self.parent.show()
+        self.mm = self.track_widget(PresentProbeMarkingMenu(self.parent))
+        self.hud = self.track_widget(
+            _Page("hud#startmenu", ["startmenu"], parent=self.mm)
+        )
+        self.mm.sb.register_ui(self.hud)
+
+    def tearDown(self):
+        CursorManager.drain()
+        super().tearDown()
+
+    def test_the_covered_screen_is_painted_behind_the_page(self):
+        from qtpy import QtGui
+
+        from uitk._bootstrap import Bootstrap
+
+        desktop = QtGui.QPixmap(64, 64)
+        desktop.fill(QtGui.QColor(200, 30, 30))
+        with patch.object(Bootstrap, "screen_backdrop", return_value=desktop):
+            self.mm._show_marking_menu(self.hud)
+            self._drain_qt_events()
+        self.assertIs(self.mm._backdrop, desktop)
+        corner = self.mm.grab(QtCore.QRect(0, 0, 4, 4)).toImage().pixelColor(1, 1)
+        self.assertEqual(corner.getRgb()[:3], (200, 30, 30))
+        self.mm.hide()
+        self.assertIsNone(self.mm._backdrop)
+
+    def test_a_compositing_desktop_takes_no_snapshot(self):
+        from uitk._bootstrap import Bootstrap
+
+        with patch.object(Bootstrap, "screen_backdrop", return_value=None) as grab:
+            self.mm._show_marking_menu(self.hud)
+            self._drain_qt_events()
+        self.assertTrue(grab.called)
+        self.assertIsNone(self.mm._backdrop)
 
 
 class TestHideDefeatsPinnedPages(QtBaseTestCase):

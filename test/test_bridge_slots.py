@@ -1613,6 +1613,25 @@ class TestCheckListKind(BaseTestCase):
         )
         self.assertEqual(KindFactory.read_value(w), "6000.0.5f1")
 
+    def test_a_choice_no_entry_carries_is_refused_not_dropped_silently(self):
+        """A preset or overlay naming a choice the row no longer lists leaves the
+        selection alone -- and says so: ``set_value`` answers False, which
+        ``PresetManager.load`` counts as a misfit and reports once."""
+        w = KindFactory.make_widget(
+            AttributeSpec(
+                key="mode",
+                kind="choice",
+                choices=[("Fast", "fast"), ("Best", "best")],
+                default="fast",
+            )
+        )
+        self.assertIs(KindFactory.set_value(w, "best"), True)
+        self.assertEqual(KindFactory.read_value(w), "best")
+        self.assertIs(KindFactory.set_value(w, "gone"), False)
+        self.assertEqual(KindFactory.read_value(w), "best")
+        self.assertIs(KindFactory.set_value(w, "Fast"), True)  # by label too
+        self.assertEqual(KindFactory.read_value(w), "fast")
+
     def test_tall_kinds_escape_the_one_line_row_clamp(self):
         """A list-shaped row must not be squashed to the 19px input height the
         scalar params use."""
@@ -1959,8 +1978,14 @@ class TestEnsureOptionalPackage(unittest.TestCase):
 
         _, slots = self._make("Yes")
         # Call the BASE implementation unbound, so the harness override that
-        # stands in for pip elsewhere in this class is bypassed.
-        with patch.object(_sys, "executable", lone_host):
+        # stands in for pip elsewhere in this class is bypassed. The prefixes
+        # are the host's too (a real session's always are): nothing to find.
+        with (
+            patch.object(_sys, "executable", lone_host),
+            patch.object(_sys, "prefix", tmp),
+            patch.object(_sys, "base_prefix", tmp),
+            patch.object(_sys, "exec_prefix", tmp),
+        ):
             with self.assertRaises(RuntimeError) as ctx:
                 OptionalPackageManager.default_install("anything")
         self.assertIn("sibling", str(ctx.exception).lower())
@@ -1973,52 +1998,20 @@ class TestSharedSpecs(BaseTestCase):
     same knob — which only holds if each caller gets its OWN object.
     """
 
-    def test_shader_type_vocabulary_is_the_shader_engine_s_own(self):
+    def test_the_retired_shader_spec_warns_and_still_builds(self):
+        """``shader_type_spec`` is Maya's shader vocabulary, so it moved out of
+        uitk (blendertk's Maya bridge owns it); one release of the alias."""
         from uitk.bridge import Parameters
 
-        spec = Parameters.shader_type_spec()
+        with self.assertWarns(DeprecationWarning):
+            spec = Parameters.shader_type_spec(default="open_pbr")
         self.assertEqual(spec.key, "SHADER_TYPE")
-        # GameShader's vocabulary verbatim — a second spelling here would have
-        # to be translated somewhere, and that somewhere is where it rots.
-        self.assertEqual(
-            [value for _label, value in spec.choices],
-            ["stingray", "standard_surface", "open_pbr"],
-        )
-        # The game shader leads: these bridges feed a game engine, and it is the
-        # only family whose declared slots survive the trip back out.
-        self.assertEqual(spec.default, "stingray")
-
-    def test_each_caller_gets_a_distinct_spec(self):
-        """AttributeSpec is a mutable dataclass: a shared instance would let one
-        bridge's tweak leak into every other bridge's panel."""
-        from uitk.bridge import Parameters
-
-        first, second = Parameters.shader_type_spec(), Parameters.shader_type_spec()
-        self.assertIsNot(first, second)
-        self.assertIsNot(first.choices, second.choices)
-
-    def test_default_is_overridable_per_bridge(self):
-        from uitk.bridge import Parameters
-
-        self.assertEqual(
-            Parameters.shader_type_spec(default="open_pbr").default, "open_pbr"
-        )
-
-    def test_no_section_by_default(self):
-        """A titled separator claims every FOLLOWING spec until the next
-        section, so a lone sectioned param in an otherwise unsectioned registry
-        re-labels its neighbours instead of grouping itself."""
-        from uitk.bridge import Parameters
-
-        self.assertEqual(Parameters.shader_type_spec().section, "")
-        self.assertEqual(
-            Parameters.shader_type_spec(section="Import").section, "Import"
-        )
+        self.assertEqual(spec.default, "open_pbr")
 
     def test_carrier_vocabulary_is_pythontk_s_own(self):
         """The carrier choice renders pythontk's CARRIER_EXTENSIONS vocabulary --
         the engine refuses any other spelling, so the panel may offer no other."""
-        from pythontk.core_utils.app_handoff import CARRIER_EXTENSIONS, CARRIER_PARAM
+        from pythontk import CARRIER_EXTENSIONS, CARRIER_PARAM
         from uitk.bridge import Parameters
 
         spec = Parameters.carrier_spec()
@@ -2044,7 +2037,7 @@ class TestSharedSpecs(BaseTestCase):
     def test_rig_mode_vocabulary_is_pythontk_s_own(self):
         """The rig-mode choice renders pythontk's RIG_MODES vocabulary -- like the
         carrier, one spelling for every panel and every producer."""
-        from pythontk.core_utils.app_handoff import RIG_MODE_PARAM, RIG_MODES
+        from pythontk import RIG_MODE_PARAM, RIG_MODES
         from uitk.bridge import Parameters
 
         spec = Parameters.rig_mode_spec()
@@ -2063,6 +2056,128 @@ class TestSharedSpecs(BaseTestCase):
         self.assertIsNot(first.choices, second.choices)
         self.assertEqual(first.section, "")
         self.assertEqual(Parameters.rig_mode_spec(section="Export").section, "Export")
+
+    def test_scope_vocabulary_is_pythontk_s_own(self):
+        """The Scope choice renders ``ptk.HandoffScope``'s words, in its order --
+        the resolver every host shares reads exactly these."""
+        from uitk.bridge import Parameters
+
+        spec = Parameters.scope_spec()
+        self.assertEqual(spec.key, ptk.HandoffScope.PARAM)
+        self.assertEqual(
+            [value for _label, value in spec.choices], list(ptk.HandoffScope.WORDS)
+        )
+        self.assertEqual(
+            [label for label, _value in spec.choices],
+            ["Selected", "Entire Scene", "Visible Only"],
+        )
+        self.assertEqual(spec.default, "selected")
+        self.assertEqual(spec.section, "Export")
+
+
+class TestScopedObjects(unittest.TestCase):
+    """``scoped_objects``: the SCOPE param in, the host's resolver, a scope-aware warning."""
+
+    @staticmethod
+    def _slot(objects):
+        import logging
+        import types
+
+        asked = []
+        logger = logging.getLogger("test_scoped_objects")
+        slot = types.SimpleNamespace(
+            bridge=types.SimpleNamespace(logger=logger),
+            resolve_scope_objects=lambda scope: asked.append(scope) or list(objects),
+            empty_scope_message=BridgeSlotsBase.empty_scope_message,
+        )
+        return slot, asked, logger
+
+    def test_a_panel_without_scope_resolves_the_selection(self):
+        slot, asked, _logger = self._slot(["a"])
+        self.assertEqual(BridgeSlotsBase.scoped_objects(slot, {}), ["a"])
+        self.assertEqual(BridgeSlotsBase.scoped_objects(slot, None), ["a"])
+        self.assertEqual(asked, ["selected", "selected"])
+
+    def test_the_param_value_reaches_the_resolver(self):
+        slot, asked, _logger = self._slot(["a"])
+        BridgeSlotsBase.scoped_objects(slot, {"SCOPE": "visible"})
+        self.assertEqual(asked, ["visible"])
+
+    def test_an_empty_scope_warns_in_its_own_words(self):
+        slot, _asked, logger = self._slot([])
+        with self.assertLogs(logger, "WARNING") as logs:
+            BridgeSlotsBase.scoped_objects(slot, {"SCOPE": "all"})
+        self.assertIn("scene contains no mesh", logs.output[0])
+        from unittest import mock
+
+        with mock.patch.object(logger, "warning") as warning:
+            BridgeSlotsBase.scoped_objects(slot, {"SCOPE": "all"}, warn=False)
+        warning.assert_not_called()
+
+    def test_messages_follow_the_scope_words(self):
+        message = BridgeSlotsBase.empty_scope_message
+        self.assertIn("Nothing selected", message("selected"))
+        self.assertIn("Nothing selected", message("bogus"))
+        self.assertIn("scene contains no mesh", message("all"))
+        self.assertIn("scene contains no mesh", message("scene"))
+        self.assertIn("No visible mesh", message("visible"))
+
+
+class TestParamRegistry(unittest.TestCase):
+    """``ParamRegistry``: a bridge declares ``PARAMS``, the wrappers are inherited."""
+
+    @staticmethod
+    def _registry(**attrs):
+        from uitk.bridge import ParamRegistry
+
+        params = {
+            "SIZE": AttributeSpec(key="SIZE", kind="int", default=1024),
+            "FAST": AttributeSpec(key="FAST", kind="bool", default=True),
+            "NAME": AttributeSpec(key="NAME", kind="str", default="a b"),
+        }
+        return type("Parameters", (ParamRegistry,), dict(PARAMS=params, **attrs))
+
+    def test_the_wrappers_bind_the_declared_params(self):
+        reg = self._registry()
+        self.assertEqual(reg.defaults(), {"SIZE": 1024, "FAST": True, "NAME": "a b"})
+        self.assertEqual(
+            reg.referenced_keys("x = __SIZE__; y = __FAST__; z = __OTHER__"),
+            {"SIZE", "FAST"},
+        )
+        self.assertIsNone(reg.SUPERSESSIONS)
+
+    def test_render_context_defaults_to_python_literals(self):
+        ctx = self._registry().render_context({"FAST": False, "NAME": "x", "RAW": 3})
+        self.assertEqual(ctx, {"FAST": "False", "NAME": "'x'", "RAW": "3"})
+
+    def test_a_registry_picks_its_formatter(self):
+        reg = self._registry(FORMATTER=Formatters.lua_literal)
+        self.assertEqual(reg.render_context({"FAST": False})["FAST"], "false")
+        # ...and a one-off second language for the same values.
+        self.assertEqual(
+            reg.render_context({"NAME": 'a"b'}, formatter=Formatters.js_literal),
+            {"NAME": '"a\\"b"'},
+        )
+
+    def test_it_is_a_params_module(self):
+        """What BridgeSlotsBase reads: PARAMS, referenced_keys, SUPERSESSIONS."""
+        rule = (("FAST", ("SIZE",), "Inactive while Fast is on."),)
+        reg = self._registry(SUPERSESSIONS=rule)
+        slot = _bare_slot(params_module=reg)
+        self.assertEqual(slot.param_supersessions(), rule)
+        self.assertIs(slot.params_module.PARAMS, reg.PARAMS)
+
+    def test_an_override_reaches_the_default_through_super(self):
+        from uitk.bridge import ParamRegistry
+
+        class Parameters(ParamRegistry):
+            PARAMS = {"SIZE": AttributeSpec(key="SIZE", kind="int", default=8)}
+
+            @classmethod
+            def referenced_keys(cls, script_text):
+                return super().referenced_keys(script_text.upper())
+
+        self.assertEqual(Parameters.referenced_keys("__size__"), {"SIZE"})
 
 
 class TestOutputDirRowPersistence(BaseTestCase):
@@ -2083,7 +2198,7 @@ class TestOutputDirRowPersistence(BaseTestCase):
         super().setUpClass()
         # Switchboard does this at construction; these tests build the row
         # standalone, and the option-box calls need the QLineEdit property.
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         OptionBoxManager.patch_common_widgets()
 
@@ -2235,10 +2350,92 @@ class TestLiveParamsStayOutOfPresets(BaseTestCase):
         self._set(slots, "quality", "high")
         self._set(slots, "share", "auto")
         self.changes.clear()
-        slots._reset_to_defaults()
+        slots._reset_btn.click()
         self.assertEqual(self._read(slots, "quality"), "low")
         self.assertEqual(self._read(slots, "share"), "auto")
         self.assertEqual(self.changes, [])
+
+
+class TestBridgeResetGrammar(BaseTestCase):
+    """A bridge's Reset to Defaults speaks uitk's shared reset grammar.
+
+    It used to wire its own click and a one-line tooltip, so the rizom (and
+    every other bridge) panel never offered Shift+Click (save the current
+    values as the defaults) or Ctrl+Shift+Click (back to the factory ones)
+    that the menu footer and the Lightmap Baker teach.
+    """
+
+    SPECS = TestLiveParamsStayOutOfPresets.SPECS
+    _slots = TestLiveParamsStayOutOfPresets._slots
+    _read = TestLiveParamsStayOutOfPresets._read
+    _set = TestLiveParamsStayOutOfPresets._set
+
+    def _hosted(self):
+        """A bridge whose window keeps settings (the saved defaults' store)."""
+        from uitk.managers.state_manager import StateManager
+
+        slots = self._slots()
+        settings = QtCore.QSettings("uitk_test", "bridge_reset_grammar")
+        settings.clear()
+        self.addCleanup(settings.clear)
+        slots.ui.grp_process.state = StateManager(settings)
+        return slots
+
+    def _click(self, slots, modifiers=QtCore.Qt.NoModifier):
+        slots._reset_gesture._modifiers = lambda: modifiers
+        slots._reset_btn.click()
+
+    def test_the_tooltip_teaches_the_modifiers(self):
+        tip = self._hosted()._reset_btn.toolTip()
+        self.assertIn("Shift", tip)
+        self.assertIn("Ctrl", tip)
+
+    def test_shift_click_makes_the_current_values_the_defaults(self):
+        slots = self._hosted()
+        self._set(slots, "quality", "high")
+        self._set(slots, "share", "auto")
+        self._click(slots, QtCore.Qt.ShiftModifier)
+        self._set(slots, "quality", "low")
+        self._set(slots, "share", "off")
+        self._click(slots)
+        self.assertEqual(self._read(slots, "quality"), "high")
+        # A live switch is neither saved as a default nor reset.
+        self.assertEqual(self._read(slots, "share"), "off")
+        slots._reset_gesture.refresh_tooltip()
+        self.assertIn("saved defaults are in use", slots._reset_btn.toolTip())
+
+    def test_ctrl_shift_click_forgets_them(self):
+        slots = self._hosted()
+        self._set(slots, "quality", "high")
+        self._click(slots, QtCore.Qt.ShiftModifier)
+        self._click(slots, QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier)
+        self.assertEqual(self._read(slots, "quality"), "low")
+        self._set(slots, "quality", "high")
+        self._click(slots)
+        self.assertEqual(self._read(slots, "quality"), "low")
+
+    def test_a_saved_value_the_registry_dropped_resets_to_its_default(self):
+        """A saved default naming a retired choice is ignored by the widget --
+        the reset must land on the registry default, not leave the field
+        wherever it was."""
+        from uitk.bridge._presets import _BridgeDefaults
+
+        slots = self._hosted()
+        slots.ui.grp_process.state.save_custom(
+            _BridgeDefaults.KEY, {"quality": "retired"}
+        )
+        self._set(slots, "quality", "high")
+        self._click(slots)
+        self.assertEqual(self._read(slots, "quality"), "low")
+
+    def test_a_reset_lets_go_of_the_preset_a_save_keeps_it(self):
+        slots = self._hosted()
+        slots._preset_mgr.save("p")
+        slots._preset_mgr.load("p")
+        self._click(slots, QtCore.Qt.ShiftModifier)
+        self.assertEqual(slots._preset_mgr.active_preset, "p")
+        self._click(slots)
+        self.assertIsNone(slots._preset_mgr.active_preset)
 
 
 if __name__ == "__main__":

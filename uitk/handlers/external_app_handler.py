@@ -37,65 +37,6 @@ from uitk.handlers.base_handler import BaseHandler
 from uitk.handlers.handler_entry import HandlerEntry
 
 
-# Host executables whose `-c` flag does NOT mean "run Python code" —
-# routing a Python snippet through them invokes MEL / MaxScript / etc.
-# When detected as sys.executable, we substitute the sibling python binary.
-_DCC_HOST_SIBLINGS = {
-    "maya.exe": "mayapy.exe",
-    "maya": "mayapy",
-    "3dsmax.exe": "3dsmaxpy.exe",
-    "blender.exe": "python.exe",  # Blender ships python in <install>/<ver>/python/bin
-    "blender": "python",
-}
-
-
-class _VisibilityForwarder:
-    """Event filter that forwards a widget's Show/Hide events to a handler.
-
-    Lives as a child of the watched widget — Qt owns its lifetime; when
-    the widget is destroyed, this object goes with it. Holds only a
-    weak reference to the handler to avoid keeping the Switchboard
-    alive past its natural lifetime.
-
-    Qt's QEvent.Show / QEvent.Hide fire on every QWidget regardless of
-    inheritance, so this works for uitk MainWindows, plain QWidgets,
-    and anything in between — important because external apps can
-    return arbitrary widget classes.
-    """
-
-    def __new__(cls, handler, name, parent=None):
-        # Defer the QObject base class binding until first use to avoid
-        # importing qtpy at module-load time (this file is imported
-        # before qtpy is guaranteed to be on sys.path in some headless
-        # test setups).
-        from qtpy import QtCore
-        import weakref
-
-        # Build a one-off subclass that mixes our forwarder logic into
-        # QObject. Cached on the class so we don't rebuild per widget.
-        if not hasattr(cls, "_qt_class"):
-
-            class _Forwarder(QtCore.QObject):
-                def __init__(self, handler, entry_name, parent=None):
-                    super().__init__(parent)
-                    self._handler_ref = weakref.ref(handler)
-                    self._name = entry_name
-
-                def eventFilter(self, obj, event):
-                    t = event.type()
-                    if t in (QtCore.QEvent.Show, QtCore.QEvent.Hide):
-                        handler = self._handler_ref()
-                        if handler is not None:
-                            try:
-                                handler._notify_entries_changed(self._name)
-                            except Exception:
-                                pass
-                    return False  # never consume — let the widget handle normally
-
-            cls._qt_class = _Forwarder
-        return cls._qt_class(handler, name, parent)
-
-
 class ExternalAppHandler(BaseHandler):
     """Switchboard handler for launching external Python apps.
 
@@ -116,25 +57,22 @@ class ExternalAppHandler(BaseHandler):
         """Best-effort pick of a standalone Python interpreter.
 
         Order:
-          1. ``python`` / ``python3`` on PATH (a real CPython, ideal for pip).
+          1. ``python`` / ``python3`` on PATH (a real CPython, ideal for pip) --
+             unless it forbids pip (PEP 668: Debian/Ubuntu's ``/usr/bin/python3``,
+             which also ships no PySide6).
           2. Sibling pythonised binary if ``sys.executable`` is a DCC host
              (e.g. maya.exe -> mayapy.exe in the same bin/).
           3. ``sys.executable`` (last resort).
         """
         for name in ("python", "python3"):
             found = shutil.which(name)
-            if found:
+            if found and not ExternalAppHandler._externally_managed(found):
                 return found
 
         exe = sys.executable or ""
-        base = os.path.basename(exe).lower()
-        sibling = _DCC_HOST_SIBLINGS.get(base)
-        if sibling:
-            candidate = os.path.join(os.path.dirname(exe), sibling)
-            if os.path.isfile(candidate):
-                return candidate
-
-        return exe
+        # A host binary's own ``-c`` is not Python (MEL, MaxScript, a second
+        # Blender): its companion interpreter is (pythontk names no product).
+        return ptk.AppLauncher.companion_python(exe) or exe
 
     # Entry-point groups consulted by :meth:`discover` to find
     # self-describing apps installed in the current environment.
@@ -435,8 +373,26 @@ class ExternalAppHandler(BaseHandler):
     # ── Provider packages (install-on-demand) ────────────────────────────
 
     @staticmethod
+    def _externally_managed(python: str) -> bool:
+        """Whether *python* is a distro interpreter that refuses pip installs.
+
+        PEP 668's ``EXTERNALLY-MANAGED`` marker beside its stdlib -- read from
+        the path as found, never its realpath: a venv's ``python`` symlinks to
+        the system one, and a venv is exactly where pip belongs.
+        """
+        if os.name == "nt":
+            return False
+        import glob
+
+        prefix = os.path.dirname(os.path.dirname(os.path.abspath(python)))
+        return bool(
+            glob.glob(os.path.join(prefix, "lib", "python3*", "EXTERNALLY-MANAGED"))
+        )
+
+    @staticmethod
     def _is_dcc_host_interpreter(python: Optional[str]) -> bool:
-        """True when *python* is a live DCC host binary (maya.exe / blender.exe / …).
+        """True when *python* names a host application, not a Python interpreter
+        (``maya.exe`` / ``blender.exe``, by :meth:`AppLauncher.looks_like_python`).
 
         pip-installing into a running DCC interpreter routes the install
         through the host's ``-c`` handler (MEL / MaxScript / a blocked Qt loop)
@@ -444,7 +400,7 @@ class ExternalAppHandler(BaseHandler):
         per-app install in :meth:`launch` — gate on this single predicate so
         they can't diverge.
         """
-        return os.path.basename(python or "").lower() in _DCC_HOST_SIBLINGS
+        return bool(python) and not ptk.AppLauncher.looks_like_python(python)
 
     @staticmethod
     def _pip_capable_python(python: Optional[str]) -> Optional[str]:
@@ -461,25 +417,10 @@ class ExternalAppHandler(BaseHandler):
         """
         if not ExternalAppHandler._is_dcc_host_interpreter(python):
             return python
-        sibling = _DCC_HOST_SIBLINGS.get(os.path.basename(python or "").lower())
-        if not sibling:
-            return None
-
-        candidates = [os.path.join(os.path.dirname(python or ""), sibling)]
-        # Blender ships its python under <prefix>/bin rather than beside the
-        # binary. ``sys.prefix`` describes THIS process, so it may only be
-        # consulted when *python* is this process's host — otherwise a query
-        # about some other install would hand back the running one's python and
-        # the package would land in the wrong environment.
-        if python and os.path.normcase(python) == os.path.normcase(
-            sys.executable or ""
-        ):
-            candidates.append(os.path.join(sys.prefix, "bin", sibling))
-
-        for candidate in candidates:
-            if os.path.isfile(candidate):
-                return candidate
-        return None
+        # Beside the binary (mayapy), or -- only for this process's own host --
+        # under ``sys.prefix`` (Blender): a question about another install must
+        # not be answered with the running one's python.
+        return ptk.AppLauncher.companion_python(python)
 
     @staticmethod
     def _base_pkg_name(install_spec: str) -> str:
@@ -831,6 +772,49 @@ class ExternalAppHandler(BaseHandler):
             return still_running
         return False
 
+    def launch_code(self, name: str, **_options) -> Optional[str]:
+        """Python that launches app *name* standalone (optional contract method).
+
+        Routes through a fresh handler rather than importing the app, so the
+        snippet keeps what :meth:`launch` provides: installing a missing
+        package (``install_spec``), picking the interpreter, and running the
+        app in its own process. The registration is spelled out, so the app
+        launches whether or not its entry point is discoverable where the
+        snippet runs. Style *options* do not apply to external apps.
+
+        Returns:
+            None when *name* is not registered.
+        """
+        cfg = self._apps.get(name)
+        sb_import = self._import_code(Switchboard)
+        own_import = self._import_code(type(self))
+        if not (cfg and cfg.get("module") and sb_import and own_import):
+            return None
+        kwargs = [f"module={cfg['module']!r}"]
+        for key in ("entry", "install_spec", "python", "show_kwargs"):
+            if cfg.get(key):
+                kwargs.append(f"{key}={cfg[key]!r}")
+        in_process = cfg.get("mode") == "in_process"
+        if in_process:
+            kwargs.append("mode='in_process'")
+        attr = self._sb_handler_name() or "external_app"
+        body = [
+            f"sb = Switchboard(handlers={{{attr!r}: {own_import[1]}}})",
+            f"sb.handlers.{attr}.register(",
+            f"    {name!r},",
+            *(f"    {kwarg}," for kwarg in kwargs),
+            ")",
+            f"sb.handlers.{attr}.launch({name!r})",
+        ]
+        # A subprocess app owns its own event loop; only an in-process one
+        # needs this process's.
+        return self._launch_script(
+            name,
+            [sb_import[0], own_import[0]],
+            body,
+            app="sb.app" if in_process else None,
+        )
+
     def _unresolvable_message(self, name: Optional[str]) -> str:
         """Say why *name* could not be launched, and what to do about it.
 
@@ -1088,27 +1072,6 @@ class ExternalAppHandler(BaseHandler):
                 f"[_show_in_process] could not display widget {widget!r}",
                 exc_info=True,
             )
-
-    def _wire_widget_visibility(self, widget, name: str) -> None:
-        """Install a Show/Hide event filter so the row refreshes on any hide path.
-
-        Idempotent — guarded by a per-widget flag attribute. The filter
-        is kept alive by being a child of the widget itself, so it stays
-        in scope as long as the widget does.
-
-        Event filter is preferred over signal hookup because external
-        apps may or may not be uitk MainWindows; ``QEvent.Show``/
-        ``QEvent.Hide`` fire on every QWidget regardless of inheritance.
-        """
-        if getattr(widget, "_uitk_external_visibility_wired", False):
-            return
-        try:
-            import qtpy  # noqa: F401 -- availability probe (headless callers)
-        except ImportError:
-            return
-        filt = _VisibilityForwarder(self, name, parent=widget)
-        widget.installEventFilter(filt)
-        widget._uitk_external_visibility_wired = True
 
     @staticmethod
     def _is_importable(module: str, python: str) -> bool:

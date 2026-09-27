@@ -16,6 +16,7 @@ from .options.disable import DisableOption
 from .options.filter import FilterOption
 from .options.value import ValueOption
 from .options.affix import AffixOption
+from .options.choice import ChoiceOption
 
 # Concrete option type -> grouping key, consulted by OptionBox._sort_options.
 # Built once at import; was previously rebuilt (with 7 local imports) on every
@@ -43,6 +44,8 @@ _TYPE_TO_KEY = {
     # as "action", so the scope button follows the filter toggle (a reset, on a
     # field that also carries one, sorts between them).
     FilterOption: "toggle",
+    # A filter facet: sits after the filter toggle it narrows alongside.
+    ChoiceOption: "choice",
     BrowseOption: "browse",
 }
 
@@ -66,6 +69,9 @@ DEFAULT_OPTION_ORDER = (
     # so the reset stays the outermost of the field's own buttons -- matching
     # the channel-box convention, where the lock column leads.
     "toggle",
+    # Filter facets (ChoiceOption) follow the filter's on/off toggle, in the
+    # order they were added.
+    "choice",
     "reset",
     "action",
     "browse",

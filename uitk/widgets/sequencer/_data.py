@@ -115,23 +115,12 @@ _MIN_POINT_CLIP_WIDTH = 4  # minimum pixel width for zero-duration clips
 #: separate blues would read as three unrelated decorations.
 SELECTED_ACCENT = "#5A8CDC"
 
-# Attribute color configuration
-_COMMON_ATTRIBUTES = [
-    "translateX",
-    "translateY",
-    "translateZ",
-    "rotateX",
-    "rotateY",
-    "rotateZ",
-    "scaleX",
-    "scaleY",
-    "scaleZ",
-    "visibility",
-]
-
-_DISPLAY_COLORS = [
-    "consolidated",
-]
+#: The colours of the widget's own display rows -- the only attribute colours
+#: uitk knows.  A host's channel vocabulary (``translateX``...) and its colours
+#: are the host's to inject (:attr:`SequencerWidget.attribute_colors`,
+#: ``AttributeColorDialog(defaults=..., common_attrs=...)``): uitk carries no
+#: application vocabulary.
+DISPLAY_COLORS: Dict[str, str] = {"consolidated": "#FFFFFF"}
 
 _MENU_STYLESHEET = (
     "QMenu { background:#333; color:#CCC; }QMenu::item:selected { background:#555; }"
@@ -270,21 +259,6 @@ class CurveUtils:
                     y1,
                 )
         return path
-
-
-_DEFAULT_ATTRIBUTE_COLORS = {
-    "translateX": "#E06666",
-    "translateY": "#6AA84F",
-    "translateZ": "#6FA8DC",
-    "rotateX": "#CC4125",
-    "rotateY": "#38761D",
-    "rotateZ": "#3D85C6",
-    "scaleX": "#F6B26B",
-    "scaleY": "#93C47D",
-    "scaleZ": "#76A5AF",
-    "visibility": "#FFD966",
-    "consolidated": "#FFFFFF",
-}
 
 
 # ---------------------------------------------------------------------------

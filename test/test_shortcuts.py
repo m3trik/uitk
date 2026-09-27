@@ -678,18 +678,40 @@ class TestResolveApplicationHost(QtBaseTestCase):
     Qt disables a shortcut whose owner widget is hidden, regardless of scope.
     """
 
-    def test_prefers_named_dcc_host(self):
+    def _register_host(self, name):
+        """Register *name* as the host's main window for this test only."""
         from uitk.managers.shortcut_manager import ShortcutManager
 
-        maya = self.track_widget(QtWidgets.QWidget())
-        maya.setObjectName("MayaWindow")
-        maya.show()
+        ShortcutManager.register_host_window(name)
+        self.addCleanup(ShortcutManager.unregister_host_window, name)
+
+    def test_prefers_registered_host_window(self):
+        """The host names its main window at its init point (a DCC's UI
+        handler); uitk carries no host's window name itself."""
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        self._register_host("HostAppWindow")
+        other = self.track_widget(QtWidgets.QWidget())  # visible, NOT the host
+        other.setObjectName("SomeToolWindow")
+        other.show()
+        main = self.track_widget(QtWidgets.QWidget())
+        main.setObjectName("HostAppWindow")
+        main.show()
         QtWidgets.QApplication.processEvents()
 
         hidden = self.track_widget(QtWidgets.QWidget())  # parentless, never shown
         host = ShortcutManager.resolve_application_host(hidden)
-        self.assertIs(host, maya)
+        self.assertIs(host, main)
         self.assertTrue(host.isVisible())
+
+    def test_knows_no_host_window_until_one_is_registered(self):
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        self.assertEqual(ShortcutManager.host_window_names(), frozenset())
+        self._register_host("HostAppWindow")
+        self.assertEqual(ShortcutManager.host_window_names(), {"HostAppWindow"})
+        ShortcutManager.register_host_window("")  # a nameless window is no key
+        self.assertEqual(ShortcutManager.host_window_names(), {"HostAppWindow"})
 
     def test_falls_back_to_any_visible_top_level(self):
         from uitk.managers.shortcut_manager import ShortcutManager
@@ -729,6 +751,12 @@ class TestApplicationScopeOwner(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
+        # The host declares its main window (tentacle's TclMaya does this);
+        # uitk itself names no host.
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        ShortcutManager.register_host_window("MayaWindow")
+        self.addCleanup(ShortcutManager.unregister_host_window, "MayaWindow")
         self.sb = Switchboard(
             ui_source=self.example_module,
             slot_source=ExampleSlots,
@@ -1675,6 +1703,119 @@ class TestStaticShortcutRegistry(QtBaseTestCase):
 
     def test_unknown_ui_returns_empty(self):
         self.assertEqual(self.sb.get_static_shortcut_registry("no_such_ui_xyz"), [])
+
+
+class TestSlotsClassRenameKeepsOverride(QtBaseTestCase):
+    """A slots class renamed to the ``<Base>Slots`` convention keeps its users'
+    saved shortcuts.
+
+    Switchboard binds a UI to ``<Base>Slots`` or ``<Base>``, so renaming
+    ``Example`` -> ``ExampleSlots`` changes nothing about binding. But an
+    override is persisted under the class NAME (``{ns}{class}.{method}``), so
+    the rename would silently orphan every binding saved under the old name.
+    The key builder carries such a value forward: nothing under the new key
+    plus a legacy ``{ns}<Base>.{method}`` key -> the legacy value (and its
+    ``.scope`` twin) is copied to the new key and read from there. The legacy
+    key is left in place, as the host-namespace migration leaves its source.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
+        self.ui = self.sb.loaded_ui.example
+        self.ui.show()
+        QtWidgets.QApplication.processEvents()
+        # cmb_options is a real, undecorated ExampleSlots slot: before the
+        # rename the class was ``Example``, so the override sat under that name.
+        self.method = "cmb_options"
+        self.new_key = f"shortcuts.ExampleSlots.{self.method}"
+        self.old_key = f"shortcuts.Example.{self.method}"
+        self._clear()
+        self.addCleanup(self._clear)
+
+    def tearDown(self):
+        if getattr(self, "ui", None):
+            self.ui.close()
+        super().tearDown()
+
+    def _clear(self):
+        for key in (self.new_key, self.old_key):
+            for twin in ("", ".scope"):
+                self.ui.settings.clear(key + twin)
+
+    def _save_under_old_name(self, sequence="Ctrl+Alt+K", scope="application"):
+        self.ui.settings.setValue(self.old_key, sequence)
+        self.ui.settings.setValue(self.old_key + ".scope", scope)
+
+    def test_override_saved_before_the_rename_is_bound(self):
+        self._save_under_old_name()
+        slots = self.sb.get_slots_instance(self.ui)
+        self.sb.register_slots_shortcuts(self.ui, slots)
+
+        sc = slots._connected_shortcuts.get(self.method)
+        self.assertIsNotNone(sc, "the pre-rename override was orphaned")
+        self.assertEqual(sc.key().toString(), "Ctrl+Alt+K")
+        self.assertEqual(sc.context(), QtCore.Qt.ApplicationShortcut)
+        # Carried forward under the new name; the legacy key is left alone.
+        self.assertEqual(self.ui.settings.value(self.new_key), "Ctrl+Alt+K")
+        self.assertEqual(self.ui.settings.value(self.new_key + ".scope"), "application")
+        self.assertEqual(self.ui.settings.value(self.old_key), "Ctrl+Alt+K")
+
+    def test_live_and_static_registries_read_the_pre_rename_override(self):
+        self._save_under_old_name(scope="window")
+        live = {e["method"]: e for e in self.sb.get_shortcut_registry(self.ui)}
+        self.assertEqual(live[self.method]["current"], "Ctrl+Alt+K")
+        self.assertEqual(live[self.method]["current_scope"], "window")
+
+        # The cold-start path (no UI built) reads the same carried value.
+        self._clear()
+        self._save_under_old_name()
+        static = {
+            e["method"]: e for e in self.sb.get_static_shortcut_registry("example")
+        }
+        self.assertEqual(static[self.method]["current"], "Ctrl+Alt+K")
+        self.assertEqual(static[self.method]["current_scope"], "application")
+
+    def test_a_cleared_binding_carries_as_a_clear(self):
+        # Present-but-empty is an explicit "no shortcut", not a missing value.
+        self._save_under_old_name(sequence="")
+        live = {e["method"]: e for e in self.sb.get_shortcut_registry(self.ui)}
+        self.assertEqual(live[self.method]["current"], "")
+        self.assertEqual(self.ui.settings.value(self.new_key), "")
+
+    def test_a_value_under_the_new_name_wins(self):
+        self._save_under_old_name()
+        self.ui.settings.setValue(self.new_key, "Ctrl+Alt+L")
+        slots = self.sb.get_slots_instance(self.ui)
+        self.sb.register_slots_shortcuts(self.ui, slots)
+
+        self.assertEqual(
+            slots._connected_shortcuts[self.method].key().toString(), "Ctrl+Alt+L"
+        )
+        self.assertEqual(self.ui.settings.value(self.new_key), "Ctrl+Alt+L")
+
+    def test_rebinding_without_a_scope_keeps_the_pre_rename_scope(self):
+        self._save_under_old_name(scope="application")
+        self.sb.set_user_shortcut(self.ui, self.method, "Ctrl+Alt+M")
+        slots = self.sb.get_slots_instance(self.ui)
+        sc = slots._connected_shortcuts[self.method]
+        self.assertEqual(sc.key().toString(), "Ctrl+Alt+M")
+        self.assertEqual(sc.context(), QtCore.Qt.ApplicationShortcut)
+
+    def test_commands_are_not_treated_as_renamed_slots(self):
+        # The command pseudo-class never took the suffix: nothing to carry.
+        self.assertEqual(
+            self.sb._slot_shortcut_key("Commands", "repeat_last", self.ui.settings),
+            "shortcuts.Commands.repeat_last",
+        )
+        self.assertIsNone(self.ui.settings.value("shortcuts.Commands.repeat_last"))
 
 
 if __name__ == "__main__":

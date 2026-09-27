@@ -8,7 +8,7 @@ This module tests the Switchboard functionality including:
 - Button group creation and behavior
 - SwitchboardNameMixin: Tag management, name conversion
 - SwitchboardSlotsMixin: Signal discovery, slot history
-- SwitchboardUtilsMixin: Widget utilities, name unpacking
+- Switchboard partials: dialogs, placement, event loop, name unpacking
 - SwitchboardWidgetMixin: Widget resolution, discovery
 
 Run standalone: python -m test.test_switchboard
@@ -24,7 +24,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.switchboard import Switchboard
-from uitk.switchboard.utils import SwitchboardUtilsMixin
+from uitk.switchboard.dialogs import SwitchboardDialogsMixin
 from uitk.managers.cursor_manager import CursorManager
 from uitk.examples.example import ExampleSlots
 
@@ -677,12 +677,12 @@ class TestSwitchboardSlotHistory(QtBaseTestCase):
 
 
 # =============================================================================
-# SwitchboardUtilsMixin Tests
+# Switchboard partials (names / dialogs / placement / event loop / groups)
 # =============================================================================
 
 
 class TestSwitchboardUnpackNames(unittest.TestCase):
-    """Tests for SwitchboardUtilsMixin unpack_names method."""
+    """Tests for Switchboard.unpack_names (``switchboard/names.py``)."""
 
     def test_unpack_single_name(self):
         """Should return single name as list."""
@@ -726,12 +726,12 @@ class TestSwitchboardUnpackNames(unittest.TestCase):
 
 
 class TestSwitchboardFileDialog(unittest.TestCase):
-    """Tests for SwitchboardUtilsMixin.file_dialog selection mode."""
+    """Tests for Switchboard.file_dialog selection mode (``switchboard/dialogs.py``)."""
 
     def _patched(self):
-        from uitk.switchboard import utils
+        from uitk.switchboard import dialogs
 
-        patcher = mock.patch.object(utils.QtWidgets, "QFileDialog")
+        patcher = mock.patch.object(dialogs.QtWidgets, "QFileDialog")
         MockFD = patcher.start()
         self.addCleanup(patcher.stop)
         MockFD.getOpenFileName.return_value = ("/a.png", "")
@@ -775,7 +775,7 @@ class TestSwitchboardFileDialog(unittest.TestCase):
 
 
 class TestSwitchboardCenterWidget(QtBaseTestCase):
-    """Tests for SwitchboardUtilsMixin center_widget method."""
+    """Tests for Switchboard.center_widget (``switchboard/placement.py``)."""
 
     def test_center_widget_at_point(self):
         """Should center widget at specified point."""
@@ -864,7 +864,7 @@ class TestSwitchboardCenterWidget(QtBaseTestCase):
 
 
 class TestSwitchboardInvertOnModifier(unittest.TestCase):
-    """Tests for SwitchboardUtilsMixin invert_on_modifier method."""
+    """Tests for Switchboard.invert_on_modifier (``switchboard/event_loop.py``)."""
 
     def test_invert_returns_original_without_modifier(self):
         """Should return original value when no modifier pressed."""
@@ -903,7 +903,7 @@ class TestSwitchboardInvertOnModifier(unittest.TestCase):
 
 
 class TestSwitchboardAddResetButtons(QtBaseTestCase):
-    """Tests for SwitchboardUtilsMixin.add_reset_buttons batch helper.
+    """Tests for Switchboard.add_reset_buttons batch helper (``control_groups.py``).
 
     Uses uitk spin/combo widgets (which carry the OptionBoxMixin and wrap
     cleanly) so the tests mirror real panels — production slots wire uitk
@@ -1023,7 +1023,7 @@ class TestSwitchboardAddResetButtons(QtBaseTestCase):
 
 
 class TestSwitchboardLinkSpinboxes(QtBaseTestCase):
-    """Tests for SwitchboardUtilsMixin.link_spinboxes — per-field lock toggles
+    """Tests for Switchboard.link_spinboxes — per-field lock toggles
     that link locked spin boxes by an equal delta (backs duplicate_grid's
     per-axis Spacing lock)."""
 
@@ -1155,7 +1155,7 @@ class TestSwitchboardLinkSpinboxes(QtBaseTestCase):
     def test_lock_uses_the_channel_box_tints(self):
         """Locked = desat blue, unlocked = dim grey. NOT ToggleOption's error
         red — an unlocked field is a normal state, not a fault."""
-        from uitk.switchboard.utils import (
+        from uitk.switchboard.control_groups import (
             _LOCK_ACTIVE_COLOR,
             _LOCK_INACTIVE_COLOR,
         )
@@ -2703,13 +2703,13 @@ class TestDialogsYieldToBusyCursor(QtBaseTestCase):
 
         for name in ("pop_override_cursor_stack", "push_override_cursor_stack"):
             with self.subTest(name=name):
-                self.assertFalse(hasattr(SwitchboardUtilsMixin, name))
+                self.assertFalse(hasattr(Switchboard, name))
         self.assertNotIn("OverrideCursorGuard", switchboard_pkg.__all__)
         self.assertFalse(hasattr(switchboard_pkg, "OverrideCursorGuard"))
 
     def test_busy_cursor_reaches_the_scope_through_the_switchboard(self):
         app = QtWidgets.QApplication.instance()
-        with SwitchboardUtilsMixin.busy_cursor():
+        with SwitchboardDialogsMixin.busy_cursor():
             self.assertEqual(app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
         self.assertIsNone(app.overrideCursor())
 
@@ -2863,6 +2863,18 @@ class TestMissingSourceTolerance(QtBaseTestCase):
         sb = Switchboard()
         with self.assertRaises(FileNotFoundError):
             sb.register(slot_location=self.MISSING, validate=2)
+
+    def test_register_strict_takes_a_class_no_file_names(self):
+        """A slots class pythontk loaded from a loose ``.py`` lives in a synthetic
+        module dropped from ``sys.modules``, so ``inspect.getfile`` has nothing to
+        answer and raised ``TypeError: ... is a built-in class`` from the strict
+        pre-pass. It skips the class the way it skips a file-less module, so the
+        registration itself reports it -- strictly, naming the class."""
+        Loose = type("GammaSlots", (), {"__module__": "gamma_slots_ptk_loader_0"})
+        sb = Switchboard()
+        with self.assertRaises(FileNotFoundError) as caught:
+            sb.register(slot_location=Loose, validate=2)
+        self.assertIn("GammaSlots", str(caught.exception))
 
     def test_warning_names_both_the_given_source_and_the_resolved_path(self):
         """The old message named only an absolute path resolved against uitk's own internals —

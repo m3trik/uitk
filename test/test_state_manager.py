@@ -297,6 +297,59 @@ class TestDataMode(_ComboPersistBase):
         self.assertEqual(c2.currentText(), "presetB")
 
 
+class TestApplyReportsAValueThatDoesNotFit(_ComboPersistBase):
+    """``apply`` answers False when it left the widget as it was because the
+    value does not fit -- what ``PresetManager.load`` counts as a setting a
+    preset can no longer give the panel -- and True when it applied the value,
+    or had nothing to apply."""
+
+    def make_spin(self):
+        s = self.track_widget(QtWidgets.QSpinBox())
+        s.setObjectName("spn000")
+        s.restore_state = True
+        s.derived_type = QtWidgets.QSpinBox
+        s.default_signals = lambda: "valueChanged"
+        s.setValue(5)
+        return s
+
+    def test_text_a_number_field_cannot_read(self):
+        s = self.make_spin()
+        self.assertFalse(self.sm.apply(s, "lots"))
+        self.assertEqual(s.value(), 5)
+        self.assertTrue(self.sm.apply(s, 7))
+        self.assertEqual(s.value(), 7)
+
+    def test_an_index_past_the_items(self):
+        c = self.make_combo(LIST_ORIG)
+        c.setCurrentIndex(1)
+        self.assertFalse(self.sm.apply(c, 7))
+        self.assertEqual(c.currentIndex(), 1)
+        self.assertTrue(self.sm.apply(c, 2))
+        self.assertEqual(c.currentIndex(), 2)
+
+    def test_a_text_no_item_carries(self):
+        c = self.make_combo(LIST_ORIG, restore_by="text")
+        c.setCurrentIndex(1)
+        self.assertFalse(self.sm.apply(c, "gone"))
+        self.assertEqual(c.currentIndex(), 1)
+        self.assertTrue(self.sm.apply(c, "presetB"))
+        self.assertEqual(c.currentText(), "presetB")
+
+    def test_nothing_to_apply_is_not_a_misfit(self):
+        c = self.make_combo(LIST_ORIG)
+        c.setCurrentIndex(1)
+        self.assertTrue(self.sm.apply(c, -1))  # "no selection" is never applied
+        self.assertEqual(c.currentIndex(), 1)
+        self.assertTrue(self.sm.apply(self.make_combo(LIST_ORIG, "text"), None))
+        le = self.track_widget(QtWidgets.QLineEdit("kept"))
+        le.setObjectName("le000")
+        le.restore_state = True
+        le.derived_type = QtWidgets.QLineEdit
+        le.default_signals = lambda: "textChanged"
+        self.assertTrue(self.sm.apply(le, None))
+        self.assertEqual(le.text(), "kept")
+
+
 class TestDefaultSurvivesWrapperSwap(QtBaseTestCase):
     """A captured default must survive a Python-wrapper swap.
 
@@ -660,7 +713,7 @@ class TestSavedDefaultsCoverAFieldsOptions(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         # `widget.option_box` is patched on by the Switchboard, which no test
         # here builds.

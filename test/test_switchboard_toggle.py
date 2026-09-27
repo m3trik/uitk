@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""``SwitchboardUtilsMixin.toggle_multi`` (trigger mode) and the rule family.
+"""``Switchboard.toggle_multi`` (trigger mode) and the rule family (``rules.py``).
 
 Pins the 2026-08-17 refactor: everything shares one widget value / signal table,
 ``toggle_multi`` applies the trigger's CURRENT state at wire time, and

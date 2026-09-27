@@ -1,5 +1,9 @@
 # !/usr/bin/python
 # coding=utf-8
+"""Dynamic attribute editor -- :class:`AttributeWindow`, a ``Menu`` popup whose
+rows are built from :class:`~uitk.bridge.attribute_spec.AttributeSpec` by the
+kind-handler registry in :mod:`uitk.bridge.spec` (shared with the DCC bridges).
+"""
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.menu import Menu
 
@@ -32,6 +36,10 @@ class AttributeWindow(Menu):
 
     This class is designed to offer a user-friendly interface for attribute editing, prioritizing clarity, ease of use, and adaptability to various usage scenarios.
     """
+
+    # A popup editor, never dropped onto a form: kept out of Designer's widget
+    # box (the subpackage it lived in did that implicitly).
+    designer_spec = {"visible": False}
 
     labelToggled = QtCore.Signal(str, bool)
     valueChanged = QtCore.Signal(str, object)

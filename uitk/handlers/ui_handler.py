@@ -1,11 +1,13 @@
 import os
 import copy
+import inspect
 from typing import Optional, Dict, Any, Union, List, Tuple, Iterable
 import pythontk as ptk
 from uitk import Switchboard
 from uitk.handlers.base_handler import BaseHandler
 from uitk.handlers.handler_entry import HandlerEntry
 from qtpy import QtWidgets, QtCore, QtGui
+from uitk._bootstrap import Bootstrap
 
 
 class UiHandler(BaseHandler):
@@ -68,6 +70,18 @@ class UiHandler(BaseHandler):
     PIN_ON_TAP_KEY = "pin_on_tap"
     PIN_ON_TAP_DEFAULT = False
 
+    # :meth:`launch` option defaults. One table, so :meth:`launch_code` can
+    # spell out only the options a launch overrides.
+    LAUNCH_DEFAULTS: Dict[str, Any] = {
+        "frameless": True,
+        "translucent": True,
+        "restore_geometry": True,
+        "on_top": True,
+        "theme": None,
+        "persistence": None,
+        "parent_to_sb": True,
+    }
+
     # Default styling configuration
     DEFAULT_STYLE: Dict[str, Any] = {
         "attributes": {"WA_TranslucentBackground": True},
@@ -125,6 +139,14 @@ class UiHandler(BaseHandler):
 
         # 1. Register properties from the manual registry (Overrides)
         self._register_manual_overrides()
+
+        # The sources this handler registers itself -- what a fresh instance
+        # of it registers again. :meth:`launch_code` spells out only the
+        # sources an entry needs beyond these.
+        self._own_ui_roots = self._source_dirs(ui_root)
+        self._own_slot_roots = (
+            self._source_dirs(slot_root or ui_root) if discover_slots else ()
+        )
 
         # 2. Dynamic Discovery
         if ui_root:
@@ -700,12 +722,19 @@ class UiHandler(BaseHandler):
             if resolved:
                 style["theme"] = resolved
 
-        # Apply generic ptk/qt styles
+        # Apply generic ptk/qt styles. Translucency goes through Bootstrap, as
+        # in launch(): it keeps the window opaque where nothing composites it
+        # (X11 without a compositing manager paints clear pixels black).
         if "attributes" in style:
+            attributes = dict(style["attributes"])
+            translucent = attributes.pop("WA_TranslucentBackground", None)
             try:
-                ui.set_attributes(**style["attributes"])
+                ui.set_attributes(**attributes)
             except AttributeError:
                 pass
+            else:
+                if translucent is not None:
+                    Bootstrap.set_translucent(ui, translucent)
 
         if "flags" in style:
             try:
@@ -854,12 +883,13 @@ class UiHandler(BaseHandler):
             self._notify_entries_changed(name)
             return ui
 
-        frameless = options.get("frameless", True)
-        translucent = options.get("translucent", True)
-        on_top = options.get("on_top", True)
-        restore_geometry = options.get("restore_geometry", True)
-        theme = options.get("theme")
-        persistence = options.get("persistence")  # None | "transient" | "sticky"
+        opts = {**self.LAUNCH_DEFAULTS, **options}
+        frameless = opts["frameless"]
+        translucent = opts["translucent"]
+        on_top = opts["on_top"]
+        restore_geometry = opts["restore_geometry"]
+        theme = opts["theme"]
+        persistence = opts["persistence"]  # None | "transient" | "sticky"
 
         # Standalone windows on a marking-menu switchboard are the SAME
         # singleton the menu manages — route window init through the menu's
@@ -876,7 +906,7 @@ class UiHandler(BaseHandler):
             ui = mm.get(name) or self.sb.loaded_ui[name]
         else:
             ui = self.sb.loaded_ui[name]
-            if options.get("parent_to_sb", True):
+            if opts["parent_to_sb"]:
                 sb_parent = self.sb.parent() if hasattr(self.sb, "parent") else None
                 if sb_parent is not None:
                     ui.setParent(sb_parent, QtCore.Qt.Window)
@@ -886,7 +916,7 @@ class UiHandler(BaseHandler):
             Tool=frameless,
             WindowStaysOnTopHint=on_top,
         )
-        ui.setAttribute(QtCore.Qt.WA_TranslucentBackground, translucent)
+        Bootstrap.set_translucent(ui, translucent)
 
         if theme and hasattr(ui, "style"):
             try:
@@ -1038,6 +1068,205 @@ class UiHandler(BaseHandler):
             return bool(ui and ui.isVisible())
         except Exception:
             return False
+
+    def focus(self, name: str) -> None:
+        """Raise the named, already-loaded UI. Optional contract method."""
+        ui = self.sb.loaded_ui.peek(name)
+        if not isinstance(ui, QtWidgets.QWidget):
+            return
+        try:
+            ui.raise_()
+            ui.activateWindow()
+        except RuntimeError:  # the window's C++ side is already gone
+            pass
+
+    # ── Standalone launch code ───────────────────────────────────────────
+
+    def launch_code(self, name: str, **options) -> Optional[str]:
+        """Python that launches UI *name* standalone. Optional contract method.
+
+        Stands this handler up the way a fresh session would
+        (:meth:`bootstrap_code`), registers the UI's own ``.ui`` and slot class
+        when that bootstrap would not find them, then calls :meth:`launch`
+        with *options* -- spelling out only those that differ from
+        :attr:`LAUNCH_DEFAULTS`. Paths are spelled from their importable
+        package, so the snippet follows a reinstall.
+
+        Returns:
+            None when *name* is not a registered UI, or this handler's class
+            cannot be imported by name.
+        """
+        filepath = self.sb.registry.ui_registry.get(
+            filename=name, return_field="filepath"
+        )
+        boot = self.bootstrap_code()
+        if not filepath or boot is None:
+            return None
+        imports, body, handler = boot
+        slot_cls = self.sb._find_slots_class(
+            self.sb.get_base_name(name), allow_sole_fallback=True
+        )
+        try:
+            slot_file = inspect.getfile(slot_cls) if slot_cls else None
+        except (TypeError, OSError):
+            # No importable module file: a class loaded from a loose ``.py``
+            # lives in pythontk's synthetic ``<stem>_ptk_loader_<id>`` module.
+            # The registry recorded the file it was scanned from.
+            slot_file = self.sb.registry.slot_registry.get(
+                classobj=slot_cls, return_field="filepath"
+            )
+        found = (
+            self._self_bootstraps()
+            and self._covers(filepath, self._own_ui_roots)
+            and self._covers(slot_file, self._own_slot_roots)
+        )
+        if not found:
+            slot_locations = []
+            if slot_cls is not None:
+                slot_import = self._import_code(slot_cls)
+                if slot_import is not None:
+                    slot_locations.append(([slot_import[0]], slot_import[1]))
+                elif slot_file:
+                    slot_locations.append(self._path_code(slot_file))
+            reg_imports, reg_lines = self._register_code(
+                f"{handler}.sb", [self._path_code(filepath)], slot_locations
+            )
+            imports += reg_imports
+            body += reg_lines
+        args = [repr(name)] + [
+            f"{key}={options[key]!r}"
+            for key, default in self.LAUNCH_DEFAULTS.items()
+            if key in options and options[key] != default
+        ]
+        body.append(f"{handler}.launch({', '.join(args)})")
+        return self._launch_script(name, imports, body, app=f"{handler}.sb.app")
+
+    def bootstrap_code(
+        self, sources: bool = False
+    ) -> Optional[Tuple[List[str], List[str], str]]:
+        """How a fresh session gets an equivalent of this handler.
+
+        A class that stands itself up (see :meth:`_self_bootstraps`) is reached
+        through ``instance()``, which also returns the LIVE handler when there
+        is one (tentacle's) -- so a re-run shelf button reuses its windows
+        instead of forking a second switchboard. Any other class is hosted by
+        a new ``Switchboard`` carrying this one's ``context_tags``.
+
+        Parameters:
+            sources: Also re-register every UI and slot directory of this
+                switchboard -- what a launcher over the whole registry needs.
+                Ignored for a self-bootstrapping class, whose own sources
+                define its session.
+
+        Returns:
+            ``(imports, statements, expr)``, *expr* naming the handler once
+            *statements* ran; None when a class involved cannot be imported
+            by name.
+        """
+        own = self._import_code(type(self))
+        if own is None:
+            return None
+        if self._self_bootstraps():
+            return [own[0]], [f"handler = {own[1]}.instance()"], "handler"
+        sb_import = self._import_code(type(self.sb))
+        if sb_import is None:
+            return None
+        imports = [sb_import[0]]
+        attr = self._sb_handler_name() or "ui"
+        args = []
+        # A plain UiHandler under "ui" is what every Switchboard registers.
+        if type(self) is not UiHandler or attr != "ui":
+            imports.append(own[0])
+            args.append(f"handlers={{{attr!r}: {own[1]}}}")
+        if self.sb.context_tags:
+            args.append(f"context_tags={sorted(self.sb.context_tags)!r}")
+        body = [f"sb = {sb_import[1]}({', '.join(args)})"]
+        if sources:
+            reg_imports, reg_lines = self._register_code(
+                "sb",
+                [self._path_code(d) for d in self._registered_dirs("ui_registry")],
+                [self._path_code(d) for d in self._registered_dirs("slot_registry")],
+            )
+            imports += reg_imports
+            body += reg_lines
+        body.append(f"handler = sb.handlers.{attr}")
+        return imports, body, "handler"
+
+    @classmethod
+    def _self_bootstraps(cls) -> bool:
+        """True when ``cls.instance()`` can stand up with no switchboard.
+
+        The signature is the contract: a handler whose ``switchboard``
+        parameter is optional builds its own (``MayaUiHandler``,
+        ``BlenderUiHandler``), and those make a no-argument ``instance()``
+        return the live handler when one exists.
+        """
+        try:
+            param = inspect.signature(cls.__init__).parameters.get("switchboard")
+        except (TypeError, ValueError):
+            return False
+        return param is not None and param.default is None
+
+    @staticmethod
+    def _source_dirs(locations) -> Tuple[str, ...]:
+        """Normalized directories of *locations* (paths or modules)."""
+        dirs = []
+        for loc in ptk.make_iterable(locations) if locations else ():
+            if inspect.ismodule(loc):
+                loc = os.path.dirname(getattr(loc, "__file__", None) or "")
+            if isinstance(loc, str) and loc:
+                dirs.append(os.path.normcase(os.path.realpath(loc)))
+        return tuple(dirs)
+
+    def _covers(self, path: Optional[str], roots: Iterable[str]) -> bool:
+        """True when registering *roots* (as this handler does) finds *path*."""
+        if not path:
+            return True  # nothing to find
+        key = os.path.normcase(os.path.realpath(path))
+        for root in roots:
+            if key == root or os.path.dirname(key) == root:
+                return True
+            if self.recursive and ptk.FileUtils.is_under(key, root):
+                return True
+        return False
+
+    def _registered_dirs(self, registry_name: str) -> List[str]:
+        """Sorted distinct directories of a registry's ``filepath`` records."""
+        registry = getattr(self.sb.registry, registry_name, None)
+        paths = (registry.get("filepath") or []) if registry is not None else []
+        return sorted({os.path.dirname(p) for p in paths if p})
+
+    @staticmethod
+    def _register_code(
+        sb_expr: str,
+        ui_locations: List[Tuple[List[str], str]],
+        slot_locations: List[Tuple[List[str], str]],
+    ) -> Tuple[List[str], List[str]]:
+        """``(imports, lines)`` of a ``<sb_expr>.register(...)`` call.
+
+        Each location is a rendered ``(imports, expr)`` pair (see
+        :meth:`_path_code` / :meth:`_import_code`). Empty when both are.
+        """
+        imports: List[str] = []
+        lines: List[str] = []
+        for key, locations in (
+            ("ui_location", ui_locations),
+            ("slot_location", slot_locations),
+        ):
+            if not locations:
+                continue
+            exprs = []
+            for location_imports, expr in locations:
+                imports += location_imports
+                exprs.append(expr)
+            if len(exprs) == 1:
+                lines.append(f"    {key}={exprs[0]},")
+            else:
+                lines += [f"    {key}=["] + [f"        {e}," for e in exprs]
+                lines.append("    ],")
+        if not lines:
+            return [], []
+        return imports, [f"{sb_expr}.register("] + lines + [")"]
 
     def save_tags(self, name: str, tags: Iterable[str]) -> None:
         """Persist ``<uitk_tags>`` XML for the named UI. Optional contract method."""

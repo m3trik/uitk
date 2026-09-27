@@ -14,6 +14,7 @@ wrote the string ``"True"`` into the label and left the box unchecked.
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -153,6 +154,48 @@ class TestSetValueNumeric(QtBaseTestCase):
         self.assertEqual(sb.value(), 7)
 
 
+class TestSetValueReportsARefusal(QtBaseTestCase):
+    """``set_value`` / ``set_value_by_signal`` answer False when the widget
+    refused the value and kept its own, True when it was written.
+    ``StateManager.apply`` passes the answer on, so a preset load can count a
+    setting that no longer fits instead of reporting it applied."""
+
+    def test_by_signal(self):
+        sb = self.track_widget(QtWidgets.QSpinBox())
+        sb.setRange(0, 100)
+        sb.setValue(5)
+        self.assertFalse(ValueManager.set_value_by_signal(sb, "lots", "valueChanged"))
+        self.assertEqual(sb.value(), 5)
+        self.assertTrue(ValueManager.set_value_by_signal(sb, "7", "valueChanged"))
+        combo = self.track_widget(QtWidgets.QComboBox())
+        combo.addItems(["a", "b"])
+        for refused in (5, -1, "b"):
+            with self.subTest(index=refused):
+                self.assertFalse(
+                    ValueManager.set_value_by_signal(
+                        combo, refused, "currentIndexChanged"
+                    )
+                )
+        self.assertTrue(
+            ValueManager.set_value_by_signal(combo, 1, "currentIndexChanged")
+        )
+        le = self.track_widget(QtWidgets.QLineEdit())
+        self.assertTrue(ValueManager.set_value_by_signal(le, "x", "textChanged"))
+        chk = self.track_widget(QtWidgets.QCheckBox())
+        self.assertTrue(ValueManager.set_value_by_signal(chk, True, "toggled"))
+
+    def test_direct(self):
+        sb = self.track_widget(QtWidgets.QSpinBox())
+        sb.setRange(0, 100)
+        sb.setValue(5)
+        self.assertFalse(ValueManager.set_value(sb, "not-a-number"))
+        self.assertTrue(ValueManager.set_value(sb, 3))
+        tabs = self.track_widget(QtWidgets.QTabWidget())
+        tabs.addTab(QtWidgets.QWidget(), "one")
+        self.assertFalse(ValueManager.set_value(tabs, 4))
+        self.assertTrue(ValueManager.set_value(tabs, 0))
+
+
 class TestTextChangedOnTextEdit(QtBaseTestCase):
     """``textChanged`` value ops must work for ``QTextEdit``.
 
@@ -187,6 +230,202 @@ class TestTextChangedOnTextEdit(QtBaseTestCase):
         le = self.track_widget(QtWidgets.QLineEdit())
         ValueManager.set_value_by_signal(le, "abc", "textChanged")
         self.assertEqual(ValueManager.get_value_by_signal(le, "textChanged"), "abc")
+
+
+class TestComboReaders(QtBaseTestCase):
+    """What a combo box's value MEANS differs per reader, on purpose; each
+    reader's contract is pinned here, and every one of them reads through the
+    one owner, :meth:`ValueManager.combo_value`, with its own mode.
+
+    - ``ValueManager.get_value``: the visible TEXT.
+    - ``StateManager`` (session persistence): the row INDEX by default --
+      through ``ValueManager.get_value_by_signal`` -- and the TEXT or the item
+      DATA for a combo that opts in with ``restore_by``.
+    - the Switchboard's rule/toggle readers: item DATA, else the row INDEX (a
+      slot conditions on the payload, ``"fbx"``, not a position).
+    - the bridge ``choice`` kind: item DATA, else the TEXT (a bare entry's
+      value is its label).
+    - ``FieldVisibility.bind``: item DATA, else the TEXT (data that can't be a
+      key, such as a dict of settings, reads as the TEXT too).
+    - an option's value reader (pin / recent values): the visible TEXT.
+    - ``WidgetComboBox``'s reset snapshot: the row INDEX.
+    - ``FormPanel.values``: the visible TEXT (its published contract).
+    """
+
+    def _combo(self, cls=QtWidgets.QComboBox):
+        combo = self.track_widget(cls())
+        combo.addItem("FBX", "fbx")
+        combo.addItem("USD", "usd")
+        combo.addItem("Plain")  # no item data
+        return combo
+
+    # -- the owner ---------------------------------------------------------
+    def test_combo_value_modes(self):
+        combo = self._combo()
+        combo.setCurrentIndex(1)
+        self.assertEqual(ValueManager.combo_value(combo), "USD")
+        self.assertEqual(ValueManager.combo_value(combo, "text"), "USD")
+        self.assertEqual(ValueManager.combo_value(combo, "index"), 1)
+        self.assertEqual(ValueManager.combo_value(combo, "data"), "usd")
+        combo.setCurrentIndex(2)  # a data-less item
+        self.assertIsNone(ValueManager.combo_value(combo, "data"))
+        self.assertEqual(ValueManager.combo_value(combo, "data", fallback="index"), 2)
+        self.assertEqual(
+            ValueManager.combo_value(combo, "data", fallback="text"), "Plain"
+        )
+
+    def test_combo_value_refuses_an_unknown_mode(self):
+        combo = self._combo()
+        with self.assertRaises(ValueError):
+            ValueManager.combo_value(combo, "label")
+        with self.assertRaises(ValueError):
+            ValueManager.combo_value(combo, "data", fallback="data")
+
+    # -- the call sites ----------------------------------------------------
+    def test_get_value_reads_the_text(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        for cls in (QtWidgets.QComboBox, ComboBox):
+            with self.subTest(cls=cls.__name__):
+                combo = self._combo(cls)
+                combo.setCurrentIndex(1)
+                self.assertEqual(ValueManager.get_value(combo), "USD")
+
+    def test_switchboard_reader_reads_data_else_index(self):
+        from uitk.switchboard import Switchboard
+
+        sb = Switchboard()
+        combo = self._combo()
+        reader = sb._widget_value_reader(combo)
+        combo.setCurrentIndex(0)
+        self.assertEqual(reader(combo), "fbx")
+        combo.setCurrentIndex(2)
+        self.assertEqual(reader(combo), 2)
+
+    def test_bridge_choice_reads_data_else_text(self):
+        from uitk.bridge.attribute_spec import AttributeSpec
+        from uitk.bridge.spec import KindFactory
+
+        widget = self.track_widget(
+            KindFactory.make_widget(
+                AttributeSpec(
+                    key="CARRIER",
+                    kind="choice",
+                    choices=[("FBX", "fbx"), ("USD", "usd"), "Plain"],
+                )
+            )
+        )
+        widget.setCurrentIndex(1)
+        self.assertEqual(KindFactory.read_value(widget), "usd")
+        widget.setCurrentIndex(2)
+        self.assertEqual(KindFactory.read_value(widget), "Plain")
+
+    def test_widget_combobox_snapshot_reads_the_index(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self._combo()
+        combo.setCurrentIndex(1)
+        self.assertEqual(WidgetComboBox._snapshot_value(combo), ("currentIndex", 1))
+
+    def test_form_panel_reads_the_text(self):
+        from uitk.widgets.formPanel import FormPanel
+
+        panel = FormPanel(
+            [
+                {
+                    "name": "mode",
+                    "kind": "choice",
+                    "items": ["Copy", "Move"],
+                    "value": "Move",
+                }
+            ],
+            output=False,
+        )
+        self.addCleanup(panel.deleteLater)
+        self.assertEqual(panel.values()["mode"], "Move")
+
+    # -- through the owner: the reading AND the route ----------------------
+    def readings(self, read):
+        """``read()``, and the ``by`` of every ``combo_value`` call it made."""
+        real = ValueManager.combo_value
+        calls = []
+
+        def spy(combo, by="text", fallback=None):
+            calls.append(by)
+            return real(combo, by, fallback)
+
+        with mock.patch.object(ValueManager, "combo_value", new=staticmethod(spy)):
+            return read(), calls
+
+    def test_state_manager_reads_the_index_unless_told_text_or_data(self):
+        from uitk.managers.state_manager import StateManager
+
+        sm = StateManager(mock.Mock())
+        combo = self._combo()
+        combo.setCurrentIndex(1)
+        combo.derived_type = QtWidgets.QComboBox
+        combo.default_signals = lambda: "currentIndexChanged"
+        read = lambda: sm._get_current_value(combo)  # noqa: E731
+        self.assertEqual(self.readings(read), (1, ["index"]))
+        combo.restore_by = "text"
+        self.assertEqual(self.readings(read), ("USD", ["text"]))
+        combo.restore_by = "data"
+        self.assertEqual(self.readings(read), ("usd", ["data"]))
+
+    def test_get_value_by_signal_reads_the_index(self):
+        combo = self._combo()
+        combo.setCurrentIndex(1)
+        read = lambda: ValueManager.get_value_by_signal(  # noqa: E731
+            combo, "currentIndexChanged"
+        )
+        self.assertEqual(self.readings(read), (1, ["index"]))
+
+    def test_field_visibility_reads_data_else_text(self):
+        from uitk.managers.field_visibility import FieldVisibility
+
+        fields = FieldVisibility()
+        combo = self._combo()
+        combo.addItem("Settings", {"mode": "x"})  # data that can't name a mode
+
+        def read():
+            fields._from(combo)
+            return fields.mode
+
+        for index, mode, by in (
+            (1, "usd", ["data"]),
+            (2, "Plain", ["data", "text"]),
+            (3, "Settings", ["data", "text"]),
+        ):
+            combo.setCurrentIndex(index)
+            with self.subTest(mode=mode):
+                self.assertEqual(self.readings(read), (mode, by))
+
+    def test_an_options_value_reader_reads_the_text(self):
+        from uitk.widgets.optionBox.options.pin_values import PinValuesOption
+
+        combo = self._combo()
+        combo.setCurrentIndex(1)
+        option = PinValuesOption(wrapped_widget=combo)
+        self.assertEqual(self.readings(option._get_widget_value), ("USD", ["text"]))
+
+    def test_the_clear_option_reads_the_text(self):
+        from uitk.widgets.optionBox.options.clear import ClearOption
+
+        combo = self._combo()
+        combo.setCurrentIndex(1)
+        option = ClearOption(wrapped_widget=combo)
+        self.assertEqual(self.readings(option._get_text), ("USD", ["text"]))
+
+    def test_the_recent_values_recorder_records_the_text(self):
+        from uitk.widgets.optionBox.options.recent_values import RecentValuesOption
+
+        combo = self._combo()
+        combo.setCurrentIndex(1)
+        option = RecentValuesOption(wrapped_widget=combo)
+        recorded = []
+        with mock.patch.object(option, "record", new=recorded.append):
+            _, calls = self.readings(option._on_combo_activated_record)
+        self.assertEqual((recorded, calls), (["USD"], ["text"]))
 
 
 class TestStateManagerPersistence(QtBaseTestCase):

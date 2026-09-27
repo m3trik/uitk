@@ -147,6 +147,54 @@ class SwitchboardShortcutMixin:
         """
         return name + self._host_suffix()
 
+    #: Suffixes of the settings twins stored beside a slot override's sequence.
+    _SLOT_KEY_TWINS = ("", ".scope", ".hidden", ".editable")
+
+    def _slot_shortcut_key(
+        self, slots_cls_name: str, method: str, settings=None
+    ) -> str:
+        """The settings key for a slot's shortcut override, ``{ns}{class}.{method}``.
+
+        The one builder shared by the bind, registry and write paths. Given the
+        UI's *settings* store, it also carries an override across a rename of
+        the slots class to the ``<Base>Slots`` convention (``Edit`` ->
+        ``EditSlots``). Binding survives such a rename (``_find_slots_class``
+        tries both names), but the override is keyed by the class name, so the
+        rename would silently orphan every saved binding. When the new key holds
+        nothing and the legacy ``{ns}<Base>.{method}`` key is present, the
+        legacy value and its ``.scope`` / ``.hidden`` / ``.editable`` twins are
+        copied to the new key. The legacy keys are left in place, as
+        :meth:`_migrate_shortcuts_to_host_namespace` leaves its source keys, and
+        a value already under the new key is never overwritten.
+
+        Parameters:
+            slots_cls_name: The slots class name (the key namespace).
+            method: The slot method name.
+            settings: The per-UI store (``value`` / ``setValue``) to migrate
+                in, or ``None`` to only build the key.
+
+        Returns:
+            str: The settings key.
+        """
+        ns = self._shortcut_ns()
+        key = f"{ns}{slots_cls_name}.{method}"
+        base = slots_cls_name[: -len(self.SLOT_SUFFIX)]
+        if (
+            settings is None
+            or not base
+            or not slots_cls_name.endswith(self.SLOT_SUFFIX)
+            or settings.value(key) is not None
+        ):
+            return key
+        legacy = f"{ns}{base}.{method}"
+        if settings.value(legacy) is None:
+            return key
+        for twin in self._SLOT_KEY_TWINS:
+            value = settings.value(legacy + twin)
+            if value is not None and settings.value(key + twin) is None:
+                settings.setValue(key + twin, value)
+        return key
+
     def _migrate_shortcuts_to_host_namespace(self) -> None:
         """One-shot: copy legacy un-suffixed ``shortcuts.*`` overrides into this
         host's namespaced keys, so existing customizations survive the move to
@@ -255,7 +303,9 @@ class SwitchboardShortcutMixin:
             final_sequence = default_sequence
             default_context = meta.get("context", QtCore.Qt.WindowShortcut)
             final_context = default_context
-            settings_key = f"{self._shortcut_ns()}{slots_cls_name}.{name}"
+            settings_key = self._slot_shortcut_key(
+                slots_cls_name, name, getattr(ui, "settings", None)
+            )
             scope_settings_key = f"{settings_key}.scope"
 
             if hasattr(ui, "settings"):
@@ -434,16 +484,13 @@ class SwitchboardShortcutMixin:
             if getattr(method, "_shortcut_meta", {}).get("sequence"):
                 slot_method_names.add(name)
 
-        # Override reader: the live UI's per-UI QSettings, or a no-op when the
-        # UI carries no settings store.
-        settings_value = (
-            ui.settings.value if hasattr(ui, "settings") else (lambda _k: None)
-        )
+        # Override store: the live UI's per-UI QSettings, or None when the UI
+        # carries no settings store.
         return self._build_shortcut_entries(
             slots_cls_name,
             slot_method_names,
             lambda n: getattr(slots_instance, n, None),
-            settings_value,
+            getattr(ui, "settings", None),
         )
 
     def _build_shortcut_entries(
@@ -451,7 +498,7 @@ class SwitchboardShortcutMixin:
         slots_cls_name: str,
         slot_method_names,
         resolve_method,
-        settings_value,
+        settings,
     ) -> List[Dict[str, Any]]:
         """Build shortcut-registry entries from resolved inputs.
 
@@ -465,11 +512,14 @@ class SwitchboardShortcutMixin:
             slot_method_names: Candidate method names to emit entries for.
             resolve_method: ``name -> method/function`` (a bound method for the
                 live path, an unbound function for the static path) or ``None``.
-            settings_value: ``key -> value`` reader for user overrides (the same
+            settings: The store holding user overrides (the same
                 ``{_shortcut_ns}{cls}.{method}`` keys the live UI writes — the
-                prefix is host-namespaced, see :meth:`_shortcut_ns`), or a no-op
-                returning ``None`` when no store is available.
+                prefix is host-namespaced, see :meth:`_shortcut_ns`; a key saved
+                under the class's pre-``Slots`` name is carried forward, see
+                :meth:`_slot_shortcut_key`), or ``None`` when no store is
+                available.
         """
+        settings_value = settings.value if settings is not None else (lambda _k: None)
         registry: List[Dict[str, Any]] = []
         for name in sorted(slot_method_names):
             method = resolve_method(name)
@@ -490,7 +540,7 @@ class SwitchboardShortcutMixin:
             # reverts to the default. See the note in ``_register_shortcuts``.
             current = default
             current_scope = default_scope
-            settings_key = f"{self._shortcut_ns()}{slots_cls_name}.{name}"
+            settings_key = self._slot_shortcut_key(slots_cls_name, name, settings)
             override = settings_value(settings_key)
             if override is not None:
                 current = override
@@ -587,7 +637,7 @@ class SwitchboardShortcutMixin:
             slots_cls.__name__,
             slot_method_names,
             lambda n: getattr(slots_cls, n, None),
-            settings.value,
+            settings,
         )
 
     def _ui_widget_names(self, ui_name: str) -> set:
@@ -646,7 +696,9 @@ class SwitchboardShortcutMixin:
             return
 
         cls_name = slots_instance.__class__.__name__
-        key = f"{self._shortcut_ns()}{cls_name}.{slot_name}"
+        key = self._slot_shortcut_key(
+            cls_name, slot_name, getattr(ui, "settings", None)
+        )
         scope_key = f"{key}.scope"
 
         # 1. Update Persistent Settings. Treat empty scope the same as
@@ -928,7 +980,7 @@ class SwitchboardShortcutMixin:
             self._COMMAND_NS,
             set(commands),
             lambda n: commands.get(n, {}).get("_carrier"),
-            self._command_settings().value,
+            self._command_settings(),
         )
         for entry in entries:
             entry["command"] = True

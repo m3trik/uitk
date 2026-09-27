@@ -195,9 +195,9 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         prompt.assert_not_called()  # modeless — no modal on a scope flip
         setsc.assert_called_once()  # but the toggle was applied
 
-    def test_conflict_dialog_offers_maya_clear_when_editable(self):
-        """A Maya conflict carrying a clear_action gets an 'Assign & free Maya
-        binding' button; clicking it runs the Maya clear and proceeds.
+    def test_conflict_dialog_offers_host_clear_when_editable(self):
+        """A host conflict carrying a clear_action gets an 'Assign & free
+        <label> binding' button; clicking it runs the host's clear and proceeds.
         """
         from unittest import mock
         from uitk.widgets.editors.shortcut_editor.registry_editor import (
@@ -211,6 +211,7 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
             "Maya 'cut'",
             breaks_binding=False,
             clear_action=lambda: cleared.append("maya"),
+            label="Maya",
         )
         buttons = {}
         box = mock.MagicMock()
@@ -228,9 +229,10 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         self.assertEqual(cleared, ["maya"])
         self.assertIn("Assign && free Maya binding", buttons)
 
-    def test_conflict_dialog_disables_maya_clear_when_locked(self):
-        """A Maya conflict with no clear_action (locked set) shows the option
-        disabled rather than absent, and clears nothing on 'Assign anyway'.
+    def test_conflict_dialog_disables_host_clear_when_blocked(self):
+        """A host conflict with no clear_action but a ``clear_blocked`` reason (a
+        locked hotkey set) shows the option disabled, with that reason as its
+        tooltip, rather than absent -- and clears nothing on 'Assign anyway'.
         """
         from unittest import mock
         from uitk.widgets.editors.shortcut_editor.registry_editor import (
@@ -238,7 +240,14 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         )
         import uitk.widgets.editors.shortcut_editor.registry_editor as he
 
-        conf = CollisionConflict("maya", "Maya 'cut' (locked)", breaks_binding=False)
+        reason = "Switch to a custom hotkey set to clear its binding."
+        conf = CollisionConflict(
+            "maya",
+            "Maya 'cut' (locked)",
+            breaks_binding=False,
+            label="Maya",
+            clear_blocked=reason,
+        )
         buttons = {}
         box = mock.MagicMock()
         box.addButton.side_effect = lambda *a, **k: buttons.setdefault(
@@ -250,9 +259,72 @@ class TestShortcutEditorPresets(ShortcutEditorRequirements, QtBaseTestCase):
         with mock.patch.object(he.QtWidgets, "QMessageBox", MB):
             proceed = self.editor._prompt_conflicts("Ctrl+S", "window", [conf])
         self.assertTrue(proceed)
-        locked = buttons.get("Free Maya binding (set locked)")
-        self.assertIsNotNone(locked, "locked Maya button should be present")
+        locked = buttons.get("Free Maya binding (locked)")
+        self.assertIsNotNone(locked, "locked host button should be present")
         locked.setEnabled.assert_called_with(False)
+        locked.setToolTip.assert_called_with(reason)
+
+    def _run_prompt(self, conflicts, click):
+        """Drive ``_prompt_conflicts`` with a mocked box; return (proceed, buttons)."""
+        from unittest import mock
+        import uitk.widgets.editors.shortcut_editor.registry_editor as he
+
+        buttons = {}
+        box = mock.MagicMock()
+        box.addButton.side_effect = lambda *a, **k: buttons.setdefault(
+            a[0], mock.Mock()
+        )
+        box.clickedButton.side_effect = lambda: buttons.get(click)
+        MB = mock.MagicMock(return_value=box)
+        MB.Cancel, MB.Warning, MB.AcceptRole = "CANCEL", "WARN", "ACCEPT"
+        with mock.patch.object(he.QtWidgets, "QMessageBox", MB):
+            proceed = self.editor._prompt_conflicts("Ctrl+S", "window", conflicts)
+        return proceed, buttons
+
+    def test_conflict_dialog_names_no_host(self):
+        """The dialog is host-agnostic: any checker's conflict gets the free
+        option under its own label (no host is special-cased), and freeing it
+        also clears the uitk duplicates for a clean assign."""
+        from uitk import CollisionConflict
+
+        cleared = []
+        host = CollisionConflict(
+            "blender",
+            "Blender 'Select All'",
+            clear_action=lambda: cleared.append("host"),
+            label="Blender",
+        )
+        dup = CollisionConflict(
+            "uitk", "dup", breaks_binding=True, clear_action=lambda: cleared.append("dup")
+        )
+        proceed, buttons = self._run_prompt(
+            [dup, host], "Assign && free Blender binding"
+        )
+        self.assertTrue(proceed)
+        self.assertEqual(sorted(cleared), ["dup", "host"])
+        self.assertFalse(any("Maya" in text for text in buttons))
+
+    def test_conflict_without_clear_or_reason_only_coexists(self):
+        """A conflict that can neither be cleared nor explains why (a
+        non-clearable command) offers no free option at all -- it is listed
+        under 'May fire alongside' only."""
+        from uitk import CollisionConflict
+
+        conf = CollisionConflict("uitk", "command:activate (App)")
+        proceed, buttons = self._run_prompt([conf], "Assign anyway")
+        self.assertTrue(proceed)
+        self.assertEqual(
+            sorted(buttons), sorted(["Assign anyway", "CANCEL"])
+        )
+
+    def test_label_defaults_to_the_source(self):
+        from uitk import CollisionConflict
+
+        self.assertEqual(CollisionConflict("hostapp", "x").display_label, "hostapp")
+        self.assertEqual(
+            CollisionConflict("hostapp", "x", label="Host App").display_label,
+            "Host App",
+        )
 
     def test_conflict_dialog_releases_message_box(self):
         """The conflict QMessageBox is parented to the editor, so it must be

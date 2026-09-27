@@ -4,7 +4,7 @@
 
 Covers the regression scenarios that motivated the consolidation:
 
-* root resolution (default vs ``M3TRIK_PRESETS_ROOT`` env override),
+* root resolution (default vs ``UITK_PRESETS_ROOT`` env override),
 * relative-vs-absolute path handling in ``_resolve_preset_dir``,
 * legacy migration copying the **entire** legacy package on first
   access — important for bridges whose presets live in per-template
@@ -32,6 +32,10 @@ from uitk.managers.preset_manager import (  # noqa: E402
     PRESETS_ROOT_ENV_VAR,
 )
 
+# The migration machinery's owner. PresetManager inherits it, but the drain calls
+# its seams through THIS class -- patch them here, never on PresetManager.
+from uitk.managers._preset_migration import _PresetRootMigration  # noqa: E402
+
 
 class TestPresetsRootResolution(BaseTestCase):
     """``get_presets_root`` and ``_resolve_preset_dir`` semantics."""
@@ -42,7 +46,7 @@ class TestPresetsRootResolution(BaseTestCase):
         self._prior_env = os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
         # Reset the process-global guard so unrelated tests can't disable
         # legacy-cleanup behavior by running first.
-        pm._LEGACY_QT_ROOTS_CLEARED = False
+        _PresetRootMigration._qt_roots_cleared = False
 
     def tearDown(self):
         if self._prior_env is None:
@@ -122,6 +126,26 @@ class TestPresetsRootResolution(BaseTestCase):
             "uitk's own pre-wrap state must still be wrapped",
         )
 
+    def test_wrap_never_moves_the_files_beside_it(self):
+        # On Linux <generic>/uitk/ is ~/.config/uitk/ -- also QSettings' INI home
+        # for org "uitk" (shared.conf, GlobalStyle.conf, RecentValues.conf). The
+        # wrap moved every top-level FILE along with the pre-wrap dirs, so any
+        # pre-wrap evidence reset every uitk setting.
+        root = self._tmp / "uitk"
+        legacy = root / "style_presets"
+        legacy.mkdir(parents=True)
+        (legacy / "dark.json").write_text("{}")
+        (root / "shared.conf").write_text("[General]\nkey=1\n")
+
+        pm.PresetManager._wrap_pre_wrap_uitk_state(root)
+
+        self.assertTrue((root / "uitk" / "style_presets" / "dark.json").is_file())
+        self.assertTrue(
+            (root / "shared.conf").is_file(),
+            "a settings file beside the pre-wrap state was buried in uitk/uitk/",
+        )
+        self.assertFalse((root / "uitk" / "shared.conf").exists())
+
     def test_override_root_leaves_the_real_store_untouched(self):
         # End-to-end proof at the level that actually failed: run the real drain
         # with the root redirected, and assert a stand-in "real store" is neither
@@ -136,17 +160,17 @@ class TestPresetsRootResolution(BaseTestCase):
 
         with (
             mock.patch.object(
-                pm.PresetManager,
+                _PresetRootMigration,
                 "QStandardPaths_genericConfigLocation",
                 lambda: str(fake_generic),
             ),
             mock.patch.object(
-                pm.PresetManager,
+                _PresetRootMigration,
                 "QStandardPaths_writableLocation",
                 lambda: str(fake_generic / "python"),
             ),
         ):
-            pm._LEGACY_QT_ROOTS_CLEARED = False
+            _PresetRootMigration._qt_roots_cleared = False
             pm.PresetManager._maybe_clear_legacy_qt_roots()
 
         self.assertTrue(
@@ -174,12 +198,111 @@ class TestPresetsRootResolution(BaseTestCase):
         self.assertEqual(mgr._resolve_preset_dir(str(abs_path)), abs_path)
 
 
+class TestPresetsRootHasOneOwner(BaseTestCase):
+    """uitk's presets root IS pythontk's user-config root -- one resolver, not two.
+
+    ``PresetManager`` (the GUI store) and ``pythontk.PresetStore`` /
+    ``UserConfig`` (the headless side) must land on the same directory, or a
+    preset saved in a panel is invisible to the CLI that reads it. The two used
+    to be hand-matched (Qt's ``GenericConfigLocation`` vs ``%LOCALAPPDATA%`` /
+    ``$XDG_CONFIG_HOME``): equal on a plain machine, apart the moment an
+    environment redirected one of them. Every redirect a test or a user can make
+    must move both.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._tmp = Path(tempfile.mkdtemp(prefix="presets_owner_"))
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(shutil.rmtree, self._tmp, True)
+
+    def _assert_one_root(self, expected=None):
+        import pythontk as ptk
+
+        root = PresetManager.get_presets_root()
+        self.assertEqual(root, ptk.UserConfig.user_config_root())
+        if expected is not None:
+            self.assertEqual(root, Path(expected))
+        return root
+
+    def test_the_env_var_is_pythontks(self):
+        import pythontk as ptk
+
+        self.assertEqual(PRESETS_ROOT_ENV_VAR, ptk.UserConfig.CONFIG_ROOT_ENV_VAR)
+
+    def test_default_root_matches(self):
+        os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
+        self.assertEqual(self._assert_one_root().name, "uitk")
+
+    def test_absolute_override_moves_both(self):
+        os.environ[PRESETS_ROOT_ENV_VAR] = str(self._tmp / "custom")
+        self._assert_one_root(self._tmp / "custom")
+
+    def test_relative_and_user_overrides_move_both(self):
+        for value in ("relative/subdir", "~/presets_owner_probe", "%TEMP%/x"):
+            with self.subTest(value=value):
+                os.environ[PRESETS_ROOT_ENV_VAR] = value
+                self.assertTrue(self._assert_one_root().is_absolute())
+
+    def test_an_os_level_redirect_moves_both(self):
+        # The case the hand-matched pair got wrong: Qt reads the known folder,
+        # not the environment, so a process started with a redirected
+        # %LOCALAPPDATA% / $XDG_CONFIG_HOME split the GUI store from the
+        # headless one.
+        os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
+        os.environ["LOCALAPPDATA"] = str(self._tmp / "local")
+        os.environ["XDG_CONFIG_HOME"] = str(self._tmp / "local")
+        import platform
+
+        expected = (
+            None if platform.system() == "Darwin" else self._tmp / "local" / "uitk"
+        )
+        self._assert_one_root(expected)
+
+    def test_an_os_level_redirect_never_drains_the_real_machine(self):
+        # With the root no longer Qt's default location, the legacy drain's
+        # candidates (Qt's REAL AppConfig / GenericConfig dirs) must not be
+        # hoisted into it: `<qt generic>/uitk` is the live store, and moving it
+        # into a redirected root is the store-destroying bug the env-var guard
+        # exists for. A redirected environment means "use exactly this".
+        os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
+        os.environ["LOCALAPPDATA"] = str(self._tmp / "local")
+        os.environ["XDG_CONFIG_HOME"] = str(self._tmp / "local")
+        import platform
+
+        if platform.system() == "Darwin":
+            self.skipTest("macOS resolves from $HOME, which Qt reads too")
+        self.assertEqual(pm.PresetManager._legacy_qt_root_candidates(), [])
+
+    def test_pythontk_sandbox_moves_both(self):
+        import pythontk as ptk
+
+        with ptk.TestSandbox.user_config() as root:
+            self._assert_one_root(root)
+
+    def test_uitk_sandbox_moves_both(self):
+        from uitk.testing import TestSandbox
+
+        # conftest activated it at import; the setUp env patch restores after.
+        os.environ[PRESETS_ROOT_ENV_VAR] = TestSandbox.presets()
+        self._assert_one_root(TestSandbox.presets())
+
+    def test_a_relative_preset_dir_lands_under_the_shared_root(self):
+        import pythontk as ptk
+
+        os.environ[PRESETS_ROOT_ENV_VAR] = str(self._tmp / "shared")
+        mgr = PresetManager(preset_dir="somepkg/some_tool")
+        store = ptk.PresetStore("some_tool", package="somepkg")
+        self.assertEqual(mgr.preset_dir, store.user_dir)
+
+
 class TestLegacyMigration(BaseTestCase):
     """End-to-end migration scenarios using an injected test key."""
 
     TEST_KEY = "uitk_test_pkg/sample_dir"
     SAVED_LEGACY_PATHS = None
-    _saved_root_candidates = None
 
     def setUp(self):
         super().setUp()
@@ -205,23 +328,26 @@ class TestLegacyMigration(BaseTestCase):
         # Redirect the legacy Qt-root candidates to point at the fake
         # config dirs. Essential — without this, the cleanup would see
         # (and potentially modify) the developer's real config dirs.
-        self._saved_root_candidates = pm.PresetManager._legacy_qt_root_candidates
-        pm.PresetManager._legacy_qt_root_candidates = lambda: [
-            self._fake_appconfig / "m3trik" / "presets",
-            self._fake_appconfig,
-            self._fake_generic,
-        ]
+        candidates = mock.patch.object(
+            _PresetRootMigration,
+            "_legacy_qt_root_candidates",
+            lambda: [
+                self._fake_appconfig / "m3trik" / "presets",
+                self._fake_appconfig,
+                self._fake_generic,
+            ],
+        )
+        candidates.start()
+        self.addCleanup(candidates.stop)
 
         # Reset the process-global cleanup guard so each test exercises
         # the cleanup branch when applicable.
-        pm._LEGACY_QT_ROOTS_CLEARED = False
+        _PresetRootMigration._qt_roots_cleared = False
 
     def tearDown(self):
         # Restore the legacy table and env var.
         pm._LEGACY_PRESET_PATHS.clear()
         pm._LEGACY_PRESET_PATHS.update(self.SAVED_LEGACY_PATHS)
-        if self._saved_root_candidates is not None:
-            pm.PresetManager._legacy_qt_root_candidates = self._saved_root_candidates
         if self._prior_env is None:
             os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
         else:
@@ -906,6 +1032,53 @@ class TestUncoveredKeyWarning(BaseTestCase):
         self.assertIn("spn_b", uncovered[0])
         self.assertNotIn("chk_a", uncovered[0])
 
+    def _save_drifted(self, name, mgr=None, **stored):
+        """Save *name*, then overwrite some stored values (a settings change)."""
+        mgr = mgr or self.mgr
+        mgr.save(name)
+        path = self._tmp / f"{name}.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data.update(stored)
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_a_value_that_no_longer_fits_is_skipped_not_fatal(self):
+        # A setting that changed kind since the preset was saved (here a spinbox
+        # that used to take text) must not abort the load half-way: the other
+        # settings still apply, the misfit keeps its value, one warning says so.
+        self.spn.setValue(5)
+        self._save_drifted("drifted", spn_b="lots", chk_a=True)
+        self.chk.setChecked(False)
+        with self.assertLogs(self.mgr.logger, level="WARNING") as cm:
+            applied = self.mgr.load("drifted")
+        self.assertEqual(applied, 1)
+        self.assertTrue(self.chk.isChecked())
+        self.assertEqual(self.spn.value(), 5)
+        [msg] = [r.getMessage() for r in cm.records]
+        self.assertIn("can't use 1 of its settings", msg)
+        self.assertIn("Re-save the preset", msg)
+
+    def test_a_combo_index_past_its_items_is_skipped_not_blanked(self):
+        from qtpy import QtWidgets
+
+        combo = QtWidgets.QComboBox()
+        combo.setObjectName("cmb_c")
+        combo.addItems(["a", "b"])
+        combo.setCurrentIndex(1)
+        mgr = PresetManager.from_widgets(preset_dir=str(self._tmp), widgets=[combo])
+        self._save_drifted("shrunk", mgr, cmb_c=5)
+        with self.assertLogs(mgr.logger, level="WARNING"):
+            mgr.load("shrunk")
+        self.assertEqual(combo.currentIndex(), 1)
+
+    def test_a_locked_preset_suggests_a_copy_not_a_resave(self):
+        self._save_drifted("studio", spn_b="lots")
+        self.mgr._store.set_info("studio", read_only=True)
+        with self.assertLogs(self.mgr.logger, level="WARNING") as cm:
+            self.mgr.load("studio")
+        [msg] = [r.getMessage() for r in cm.records]
+        self.assertIn("save a copy", msg)
+        self.assertNotIn("Re-save", msg)
+
     def test_load_with_full_coverage_does_not_warn(self):
         import logging
 
@@ -1348,6 +1521,39 @@ class TestBuiltinTier(BaseTestCase):
         self.assertTrue(self.mgr.exists("renamed"))
         self.assertFalse(self.mgr.exists("custom"))
         self.assertEqual(combo.currentText(), "renamed")
+
+    # A file name loses punctuation, so the list shows "WebXR (preview)" as
+    # "WebXR _preview_"; a name typed with punctuation must still select the
+    # preset it saved or renamed, not drop the combo to its placeholder.
+    def test_inline_save_under_a_name_with_punctuation_selects_it(self):
+        combo = self._wire_combo()
+        self._save_button(combo).click()
+        self._inline_commit(combo, "WebXR (preview)")
+        self.assertEqual(combo.currentText(), "WebXR _preview_")
+        self.assertEqual(self.mgr.active_preset, "WebXR _preview_")
+        self.assertFalse(self.mgr.is_modified())
+
+    def test_inline_rename_to_a_name_with_punctuation_keeps_it_selected(self):
+        combo = self._wire_combo()  # has user "custom" + builtin "studio"
+        self._pick(combo, "custom")
+        self._menu_callback(combo, "Rename")()
+        self._inline_commit(combo, "custom (v2)")
+        self.assertEqual(combo.currentText(), "custom _v2_")
+        self.assertEqual(self.mgr.active_preset, "custom _v2_")
+
+    def test_saving_over_the_active_preset_by_its_typed_name_clears_the_marker(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        self.mgr.save("draft (v2)")
+        combo = ComboBox()
+        self.addCleanup(combo.deleteLater)
+        self.mgr.wire_combo(combo)
+        self._pick(combo, "draft _v2_")
+        self.spn.setValue(13)
+        self.assertTrue(self.mgr.is_modified())
+        self.mgr.save("draft (v2)")  # the name as typed, not the listed stem
+        self.assertFalse(self.mgr.is_modified())
+        self.assertEqual(combo.current_text_suffix, "")
 
     def test_inline_save_cancelled_by_focus_out_does_not_overwrite(self):
         """Backstop for the accidental-overwrite report: an inline Save edit that
@@ -2127,6 +2333,144 @@ class TestLoadPersistsSessionState(BaseTestCase):
 
         self.assertIs(mgr.state, self.sm)  # adopted via window scope
         self.assertEqual(int(self.store.value("spn_b/valueChanged")), 5)  # persisted
+
+    def test_a_value_that_no_longer_fits_is_skipped_not_fatal(self):
+        # The MainWindow twin of TestUncoveredKeyWarning's: here StateManager
+        # writes the widgets, and a value it can't use (text a spin box can't
+        # read, an index past a shrunk list) must count as skipped -- one
+        # warning -- not pass silently as applied.
+        from qtpy import QtWidgets
+
+        chk, spn = self._make_widgets()
+        cmb = QtWidgets.QComboBox()
+        cmb.setObjectName("cmb_c")
+        cmb.addItems(["a", "b"])
+        cmb.setCurrentIndex(1)
+        cmb.restore_state = True
+        cmb.derived_type = QtWidgets.QComboBox
+        cmb.default_signals = lambda: "currentIndexChanged"
+        self.addCleanup(cmb.deleteLater)
+        spn.setValue(5)
+        (self.user / "drifted.json").write_text(
+            json.dumps(
+                {"_meta": {"version": 1}, "chk_a": True, "spn_b": "lots", "cmb_c": 7}
+            ),
+            encoding="utf-8",
+        )
+        mgr = self._mgr([chk, spn, cmb])
+        with self.assertLogs(mgr.logger, level="WARNING") as cm:
+            applied = mgr.load("drifted")
+        self.assertEqual(applied, 1)
+        self.assertTrue(chk.isChecked())
+        self.assertEqual(spn.value(), 5)
+        self.assertEqual(cmb.currentIndex(), 1)
+        [msg] = [r.getMessage() for r in cm.records]
+        self.assertIn("can't use 2 of its settings", msg)
+        self.assertIn("Re-save the preset", msg)
+
+
+class TestLockedPresetsInCombo(BaseTestCase):
+    """A preset locked in the Preset Editor, seen from its panel's selector.
+
+    Drives the real combo (toolbar buttons, the ⋯-menu provider, inline commit,
+    popup) under a presets root redirected to ``test/temp_tests/``.
+    """
+
+    KEY = "uitk_test/locked_tool"
+
+    def setUp(self):
+        super().setUp()
+        import pythontk as ptk
+        from qtpy import QtWidgets
+        from uitk.widgets.comboBox import ComboBox
+
+        self.root = (
+            Path(__file__).parent / "temp_tests" / f"locked_{self._testMethodName}"
+        )
+        shutil.rmtree(self.root, ignore_errors=True)
+        self.root.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        patcher = mock.patch.dict(os.environ, {PRESETS_ROOT_ENV_VAR: str(self.root)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        self.chk = QtWidgets.QCheckBox()
+        self.chk.setObjectName("chk_a")
+        self.mgr = PresetManager.from_widgets(preset_dir=self.KEY, widgets=[self.chk])
+        self.mgr.save("a")
+        self.mgr.save("b")
+        self.combo = ComboBox()
+        self.addCleanup(self.combo.deleteLater)
+        self.mgr.wire_combo(self.combo)
+        self.lib = ptk.PresetLibrary()
+
+    def lock(self, name):
+        self.lib.set_read_only([self.lib.entry(self.KEY, name)])
+        return PresetManager.notify([self.KEY])
+
+    def select(self, name):
+        self.combo.setCurrentIndex(self.combo.findText(name))
+
+    def test_key_is_the_store_folder_under_the_root(self):
+        self.assertEqual(self.mgr.key, self.KEY)
+
+    def test_notify_refreshes_the_open_combo_with_a_lock_mark(self):
+        self.assertGreaterEqual(self.lock("a"), 1)
+        item = self.combo.model().item(self.combo.findText("a"))
+        self.assertTrue(item.font().italic())
+        self.assertIn("locked", item.toolTip())
+        self.assertFalse(
+            self.combo.model().item(self.combo.findText("b")).font().italic()
+        )
+
+    def test_notify_leaves_other_stores_alone(self):
+        self.assertEqual(PresetManager.notify(["uitk_test/some_other_tool"]), 0)
+
+    def test_a_locked_preset_offers_no_rename_or_delete(self):
+        self.lock("a")
+        self.select("a")
+        self.assertEqual(TestBuiltinTier._menu_labels(self.combo), ["Open Folder"])
+        self.select("b")
+        self.assertEqual(
+            TestBuiltinTier._menu_labels(self.combo),
+            ["Rename", "Open Folder", "Delete"],
+        )
+
+    def test_save_on_a_locked_preset_seeds_a_free_copy_name(self):
+        self.lock("a")
+        self.select("a")
+        TestBuiltinTier._toolbar_buttons(self.combo)[1].click()
+        self.assertEqual(self.combo.lineEdit().text(), "a copy")
+
+    def test_typing_a_locked_name_keeps_it_and_redirects_to_the_copy(self):
+        self.lock("a")
+        before = self.mgr._store.path("a").read_bytes()
+        self.select("b")
+        TestBuiltinTier._toolbar_buttons(self.combo)[1].click()
+        TestBuiltinTier._inline_commit(self.combo, "a")
+        self.assertEqual(self.mgr._store.path("a").read_bytes(), before)
+        self.assertEqual(self.combo.lineEdit().text(), "a copy")  # re-seeded
+        TestBuiltinTier._inline_commit(self.combo, "a copy")
+        self.assertTrue(self.mgr.exists("a copy"))
+
+    def test_programmatic_save_over_a_locked_preset_raises(self):
+        import pythontk as ptk
+
+        self.lock("a")
+        with self.assertRaises(ptk.PresetReadOnlyError):
+            self.mgr.save("a")
+
+    def test_opening_the_dropdown_lists_presets_saved_elsewhere(self):
+        import pythontk as ptk
+
+        # Another process (or the Preset Editor) writes into the same store.
+        ptk.PresetStore("locked_tool", user_dir=self.mgr.preset_dir).save(
+            "c", {"chk_a": True}
+        )
+        self.assertEqual(self.combo.findText("c"), -1)
+        self.combo.showPopup()
+        self.addCleanup(self.combo.hidePopup)
+        self.assertNotEqual(self.combo.findText("c"), -1)
 
 
 if __name__ == "__main__":

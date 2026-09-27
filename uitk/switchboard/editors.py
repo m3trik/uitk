@@ -2,9 +2,9 @@
 # coding=utf-8
 """Mixin that exposes the bundled editor windows on the Switchboard.
 
-The Switchboard ships three top-level editor windows that operate on its
-state — :class:`StyleEditor`, :class:`ShortcutEditor`, and
-:class:`SwitchboardBrowser`. Without a central exposure point each caller
+The Switchboard ships four top-level editor windows that operate on its
+state — :class:`StyleEditor`, :class:`ShortcutEditor`,
+:class:`SwitchboardBrowser` and :class:`PresetEditor`. Without a central exposure point each caller
 re-implements the same five-line pattern of "cache, probe for deletion,
 recreate if dead, show, raise". This mixin centralizes that:
 
@@ -22,7 +22,7 @@ otherwise stand one up" pattern; the mixin doesn't need a host instance
 because the Switchboard itself is the ambient host.
 """
 
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
     from qtpy import QtWidgets
@@ -64,6 +64,9 @@ class _EditorRegistry:
             "SwitchboardBrowser",
             True,
         ),
+        # Every preset of every tool (lock, collections, backup / import) --
+        # needs no switchboard: it reads the presets root, never a loaded UI.
+        "presets": ("uitk.widgets.editors.preset_editor", "PresetEditor", False),
     }
 
     def __init__(self, sb):
@@ -84,9 +87,10 @@ class _EditorRegistry:
         """Register a callable to run when *name* editor is first built.
 
         The hook receives the editor instance:
-        ``hook(editor) -> None``. Hooks fire once per build (which means
-        again after the editor is destroyed and recreated). Registration
-        is idempotent — adding the same hook twice has no effect.
+        ``hook(editor) -> None``. Hooks fire once per build or
+        :meth:`adopt` (which means again after the editor is destroyed and
+        recreated). Registration is idempotent — adding the same hook twice
+        has no effect.
 
         Args:
             name: Editor name (one of :meth:`names`).
@@ -111,12 +115,66 @@ class _EditorRegistry:
             raise KeyError(
                 f"Unknown editor {name!r}. Available: {', '.join(self.names())}"
             )
-        cached = self._cache.get(name)
-        if cached is not None and self._sb._widget_is_alive(cached):
+        cached = self.peek(name)
+        if cached is not None:
             return cached
         instance = self._build(name)
         self._cache[name] = instance
         return instance
+
+    def peek(self, name: str) -> Optional["QtWidgets.QWidget"]:
+        """Return the live instance of *name* if one is built, else None.
+
+        Never builds -- the probe for "is this editor open" questions that
+        must not construct a window to answer them.
+        """
+        cached = self._cache.get(name)
+        if cached is not None and self._sb._widget_is_alive(cached):
+            return cached
+        return None
+
+    def adopt(self, name: str, widget: "QtWidgets.QWidget") -> bool:
+        """Make *widget*, built outside the registry, the *name* editor.
+
+        For an editor constructed directly (``SwitchboardBrowser(switchboard=sb)``):
+        once adopted, :meth:`get` / :meth:`show` / :meth:`peek` return it -- so
+        the launcher's row for *name* reports and raises that window instead of
+        building a second -- and the post-build hooks run on it as on a build
+        here. A live editor already cached wins: adoption never replaces one.
+
+        Parameters:
+            name: Editor name (one of :meth:`names`).
+            widget: The editor instance.
+
+        Returns:
+            True when *widget* is (now) the cached editor.
+
+        Raises:
+            KeyError: *name* is not an editor this registry knows.
+        """
+        if name not in self._EDITORS:
+            raise KeyError(
+                f"Unknown editor {name!r}. Available: {', '.join(self.names())}"
+            )
+        cached = self.peek(name)
+        if cached is not None:
+            return cached is widget
+        self._cache[name] = widget
+        self._run_post_build_hooks(name, widget)
+        return True
+
+    def requires_switchboard(self, name: str) -> bool:
+        """Whether *name* operates on this switchboard's registry.
+
+        True for the UI Browser and the Shortcut Editor, which list the
+        registered UIs; False for editors reading their own stores (style,
+        presets).
+        """
+        if name not in self._EDITORS:
+            raise KeyError(
+                f"Unknown editor {name!r}. Available: {', '.join(self.names())}"
+            )
+        return bool(self._EDITORS[name][2])
 
     def show(self, name: str, *, raise_window: bool = True) -> "QtWidgets.QWidget":
         """Show, optionally raise / activate, and return the named editor.
@@ -152,6 +210,10 @@ class _EditorRegistry:
     def browser(self) -> "QtWidgets.QWidget":
         return self.get("browser")
 
+    @property
+    def presets(self) -> "QtWidgets.QWidget":
+        return self.get("presets")
+
     # ── Internal ────────────────────────────────────────────────────────────
 
     def _resolve_parent(self):
@@ -185,6 +247,14 @@ class _EditorRegistry:
         else:
             instance = cls(parent=parent, **extra_kwargs)
 
+        # An editor that adopted itself while constructing (the browser does)
+        # has had its hooks run already.
+        if self._cache.get(name) is not instance:
+            self._run_post_build_hooks(name, instance)
+        return instance
+
+    def _run_post_build_hooks(self, name: str, instance) -> None:
+        """Run *name*'s post-build hooks on *instance*; a failing hook is logged."""
         for hook in self._post_build_hooks.get(name, ()):
             try:
                 hook(instance)
@@ -194,14 +264,14 @@ class _EditorRegistry:
                     logger.warning(
                         f"[editors] Post-build hook {hook} raised for {name!r}: {exc}"
                     )
-        return instance
 
 
 class SwitchboardEditorsMixin:
     """Adds an ``editors`` property to Switchboard exposing the bundled editors.
 
-    Lazy: the registry isn't created until the first ``sb.editors`` access,
-    so applications that never open an editor pay nothing for the import.
+    Lazy where it costs: the registry is a small name table (the default
+    ``EditorHandler`` reads it to list the editors as launcher rows), and an
+    editor's module is imported only when that editor is first built.
     """
 
     @property

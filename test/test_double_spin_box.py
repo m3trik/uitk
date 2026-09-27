@@ -426,7 +426,7 @@ class TestPrefixColumn(QtBaseTestCase):
 
     def test_option_box_button_does_not_hide_the_value(self):
         """End-to-end: the field the option box leaves behind still shows it."""
-        from uitk.widgets.optionBox.utils import OptionBoxManager
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
 
         sb = self._make()
         compact = sb.fontMetrics().horizontalAdvance("Bias: 0.5")

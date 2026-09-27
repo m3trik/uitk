@@ -44,7 +44,7 @@ from qtpy.QtCore import Qt
 import pythontk as ptk
 from pythontk.core_utils.logging_mixin import LoggerExt
 
-from uitk import Switchboard
+from uitk import Bootstrap, Switchboard
 from uitk.widgets.textEditLogHandler import TextEditLogHandler
 
 
@@ -859,7 +859,7 @@ if __name__ == "__main__":
     # Demonstrate the per-UI timeout fallback.
     ui.default_slot_timeout = 30
 
-    ui.set_attributes(WA_TranslucentBackground=True)
+    Bootstrap.set_translucent(ui)  # opaque where nothing composites (X11)
     ui.set_flags(FramelessWindowHint=True, WindowStaysOnTopHint=True)
     ui.style.set(theme="dark", style_class="translucentBgWithBorder")
 

@@ -714,3 +714,66 @@ def get_uitk_path(relative_path: str) -> Path:
         Absolute path to the resource.
     """
     return UITK_DIR / relative_path
+
+
+def run_launch_snippet(code, probe, extra_paths=(), host_app=False, timeout=180):
+    """Run a ``launch_code`` snippet in a fresh interpreter; return *probe*'s value.
+
+    The fresh process is the point -- the snippet must re-establish every
+    dependency itself. It runs sandboxed (``TestSandbox``) under the offscreen
+    platform, with ``QApplication.exec_`` swapped for a recorder so the "plain
+    Python owns the loop" branch returns instead of blocking. ``host_app=True``
+    creates the QApplication first, standing in for a DCC already running Qt.
+
+    Parameters:
+        code: The snippet.
+        probe: Expression over ``ns`` (the snippet's globals) and
+            ``exec_calls`` (the recorded loop runs); must be JSON-able.
+        extra_paths: Prepended to the child's ``sys.path`` (a temp package).
+        host_app: Pre-create the QApplication.
+        timeout: Seconds before the child is killed.
+
+    Returns:
+        The decoded probe value.
+
+    Raises:
+        AssertionError: The child failed or printed no result (its output is
+            in the message).
+    """
+    import json
+    import subprocess
+
+    marker = "@@LAUNCH_SNIPPET_RESULT@@"
+    harness = "\n".join(
+        [
+            "import json",
+            "from uitk.testing import TestSandbox",
+            "TestSandbox.activate()",
+            "from qtpy import QtWidgets",
+            "exec_calls = []",
+            "QtWidgets.QApplication.exec_ = lambda self: exec_calls.append(1) or 0",
+            f"host = QtWidgets.QApplication([]) if {bool(host_app)!r} else None",
+            "ns = {}",
+            f"exec({code!r}, ns)",
+            "scope = {'ns': ns, 'exec_calls': exec_calls}",
+            f"print({marker!r} + json.dumps(eval({probe!r}, scope)))",
+        ]
+    )
+    # The parent's own path, so the child imports the same (editable) packages.
+    path = [str(p) for p in extra_paths] + [p for p in sys.path if p]
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(path))
+    env["QT_QPA_PLATFORM"] = "offscreen"
+    out = subprocess.run(
+        [sys.executable, "-c", harness],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
+    )
+    for line in out.stdout.splitlines():
+        if line.startswith(marker):
+            return json.loads(line[len(marker) :])
+    raise AssertionError(
+        f"launch snippet failed (rc={out.returncode}):\n{code}\n"
+        f"--- stdout ---\n{out.stdout[-3000:]}\n--- stderr ---\n{out.stderr[-3000:]}"
+    )

@@ -21,7 +21,8 @@ rizom (and any future) DCC bridges:
 
 Per-bridge slot subclasses contribute only DCC-specific bits:
 
-* Their ``params_module`` (exposes ``PARAMS``, ``referenced_keys``, ``defaults``).
+* Their ``params_module``: a :class:`uitk.bridge.ParamRegistry` subclass
+  declaring ``PARAMS`` (it supplies ``referenced_keys`` / ``defaults``).
 * Their bridge class (must expose ``.logger``, ``.send(...)``, optionally
   ``.STARTUP_INFO``).
 * Their template directory + ``list_template_modes``.
@@ -30,82 +31,56 @@ Per-bridge slot subclasses contribute only DCC-specific bits:
 Custom widget kinds (e.g. an HSV picker) plug in via the shared
 :meth:`uitk.bridge.spec.KindFactory.register_kind`; new bridges inherit
 every kind the registry knows about.
+
+Layout: this module is the facade. The machinery lives in one private base per
+concept, composed through :class:`_BridgeSlotsInternal` -- ``_output_dir`` (the
+Output Dir row), ``_param_rows`` (the parameter rows), ``_presets`` (the preset
+combo + Reset to Defaults), ``_template_combo`` (``cmb000``), ``_log_panel``
+(``txt000`` and its links) and ``_header_menu``. They split the source, not the
+contract: every hook stays overridable on a subclass, and
+:class:`BridgeSlotsBase` is the one public name.
 """
 
 from __future__ import annotations
 
-import os
-import re
-import subprocess
-import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from qtpy import QtCore, QtWidgets
+import pythontk as ptk
+from qtpy import QtWidgets
 
-from uitk.widgets.pushButton import PushButton
 from uitk.widgets.comboBox import ComboBox
 from uitk.widgets.textEditLogHandler import TextEditLogHandler
 from uitk.widgets.mixins.text import RichTextFormatter
-from uitk.widgets.separator import Separator
 from uitk.managers.preset_manager import PresetManager
 from uitk.managers.field_visibility import FieldVisibility
 
-from uitk.bridge.spec import AttributeSpec, KindFactory
-from uitk.bridge.tooltip import Tooltip
+from uitk.bridge._output_dir import _OutputDirMixin
+from uitk.bridge._param_rows import _ParamRowsMixin
+from uitk.bridge._presets import _PresetsMixin
+from uitk.bridge._template_combo import _TemplateComboMixin
+from uitk.bridge._log_panel import _LogPanelMixin
+from uitk.bridge._header_menu import _HeaderMenuMixin
 
 
-# ----------------------------------------------------------------------
-# BridgeSlotsBase
-# ----------------------------------------------------------------------
+class _BridgeSlotsInternal(
+    _OutputDirMixin,
+    _ParamRowsMixin,
+    _PresetsMixin,
+    _TemplateComboMixin,
+    _LogPanelMixin,
+    _HeaderMenuMixin,
+):
+    """Private implementation of :class:`BridgeSlotsBase`: one base per panel concept.
 
-
-class _BridgeSlotsInternal(object):
-    """Private log-link-dispatch + temp-dir runtime for :class:`BridgeSlotsBase`.
-
-    The two registries are class attrs on this base so every bridge subclass
-    shares one process-wide log-link handler list and one temp-dir map (these
-    were module-level globals before the class-only encapsulation).
+    Each base is a part of ONE class, not a reusable mixin (the scene
+    exporter's ``_task_*`` phase mixins are the precedent): it reads what the
+    composed panel provides -- ``self.ui``, ``self.sb``, ``self.bridge`` and the
+    subclass contract below. No member is defined on two of them, so their
+    order decides nothing. The two process-wide registries, the log-link
+    handlers (``_log_panel``) and the temp Output Dirs (``_output_dir``), live
+    on their parts and read through this class as before.
     """
-
-    # --- Log-panel link dispatch (dependency inversion) --------------------
-    # uitk handles the DCC-agnostic ``action://open`` link itself; the DCC-specific
-    # actions (``select`` / ``reveal`` a node) are delegated to handlers the DCC
-    # package registers via ``BridgeSlotsBase.register_log_link_handler``. This keeps
-    # the dependency direction honest: uitk sits ABOVE pythontk and BELOW
-    # mayatk/blendertk, so it must not import them — each DCC registers its
-    # ``dispatch_log_link`` from its ``UiHandler.__init__`` instead. (Before this,
-    # uitk hard-imported ``mayatk``, which both inverted the layering AND left node
-    # links dead in a Blender session, where the mayatk import fails even though
-    # ``blendertk.dispatch_log_link`` exists.)
-    _LOG_LINK_HANDLERS: List[Callable] = []
-
-    # One temp Output Dir per bridge tag per host process, removed at process exit.
-    # Values are ``(TempArtifacts store, path)`` -- the store so a killed host's
-    # leftovers have a swept namespace to be reclaimed from, the path so reading
-    # it back needs nothing private.
-    _BRIDGE_TEMP_DIRS: Dict[str, Tuple[Any, str]] = {}
-
-    @staticmethod
-    def _open_in_file_manager(path: str) -> None:
-        """Best-effort reveal of *path* in the platform's file manager."""
-        if sys.platform == "win32":
-            os.startfile(path)  # noqa: S606 — Windows-only API
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", path])
-        else:
-            subprocess.Popen(["xdg-open", path])
-
-    @staticmethod
-    def _remove_bridge_temp_dir(key: str) -> None:
-        """Remove the temp Output Dir created for *key* (best-effort).
-
-        Exposed for tests and for a host that wants to reclaim early; the
-        ordinary path is the store's own ``atexit``.
-        """
-        entry = _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.pop(key, None)
-        if entry is not None:
-            entry[0].cleanup(force=True)
 
 
 class BridgeSlotsBase(_BridgeSlotsInternal):
@@ -115,9 +90,9 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
 
     * :attr:`UI_NAME` -- ``self.sb.loaded_ui.<UI_NAME>`` resolves to the panel.
     * :attr:`PRESETS_ROOT` -- per-bridge preset storage root.
-    * :attr:`params_module` (class attr or property) -- the per-bridge
-      ``parameters`` module exposing ``PARAMS`` / ``referenced_keys`` /
-      ``defaults``.
+    * :attr:`params_module` (class attr or property) -- the bridge's registry:
+      a :class:`uitk.bridge.ParamRegistry` subclass declaring ``PARAMS`` (or
+      any namespace exposing ``PARAMS`` / ``referenced_keys``).
     * :attr:`template_dir` (class attr or property) -- per-bridge
       template directory.
     * :meth:`make_bridge` -- factory returning the per-bridge bridge instance.
@@ -135,6 +110,9 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     * :attr:`OUTPUT_DIR_PERSISTS` -- set False so the Output Dir starts blank
       each session instead of restoring the previous one.
     * :attr:`TEMPLATE_EXTENSION` -- ``.py`` (default), ``.lua``, etc.
+
+    Those hooks live on the concept parts (see :class:`_BridgeSlotsInternal`);
+    this class keeps the contract, the init flow, bridge access and scope.
     """
 
     # ------------------ Required class attrs --------------------------
@@ -143,129 +121,10 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     PRESETS_ROOT: Optional[Path] = None
     LOG_TAG: str = "bridge"
 
-    # File extension of the per-template/script files under :attr:`template_dir`.
-    # ``.py`` for marmoset / substance, ``.lua`` for rizom. Used by
-    # :meth:`_refresh_param_visibility` to locate the placeholder source
-    # and by :meth:`_log_template_description` to dispatch the extractor.
-    TEMPLATE_EXTENSION: str = ".py"
-
-    # Whether ``cmb000``'s context menu carries the template-management rows
-    # (Refresh Templates / Open Templates Folder). True for the bridges that
-    # really do render per-template scripts off disk.
-    #
-    # Set False on a panel whose combo picks a MODE rather than a template file
-    # (unity's copy/manage, the WebXR preview's source). Those panels satisfy
-    # ``template_dir`` with their own package directory as a stand-in for the
-    # no-op description lookup, so the rows offered to re-scan it and to reveal
-    # it in the file manager -- pointing an artist at a folder of .py files and
-    # implying the list came from it. Both are wrong rather than merely idle:
-    # Refresh re-runs a scan that reads nothing, and Open reveals source code.
-    TEMPLATE_MENU: bool = True
-
-    # Whether the panel exposes a required "Output Dir" row above the
-    # parameter group. Disable for bridges whose roundtrip is in-place
-    # (rizom transfers UVs back onto the originals without writing
-    # artifacts the user needs to locate) -- the row is then never built,
-    # and ``require_output_dir()`` returns ``""`` so subclasses can call
-    # it unconditionally without a None guard.
-    REQUIRE_OUTPUT_DIR: bool = True
-
-    # When True, ``require_output_dir()`` falls back to a self-cleaning temp
-    # directory (``ensure_bridge_temp_dir``) instead of erroring when neither the
-    # user's value nor ``default_output_dir()`` resolves — so an unsaved scene can
-    # still hand off. Opt-in: enabled for the file-staging hand-off bridges
-    # (Substance / Marmoset) whose output is transient export artifacts the launched
-    # app reads once. Left False for bridges whose Output Dir must be a real,
-    # user-chosen location (e.g. Unity's project ``Assets`` dir), where silently
-    # writing to temp would be wrong — those keep the hard "Output Dir is required"
-    # error. No effect when :attr:`REQUIRE_OUTPUT_DIR` is False.
-    TEMP_OUTPUT_FALLBACK: bool = False
-
-    # Modes whose Output Dir holds only intermediates the run itself consumes
-    # and can therefore delete -- a BLOCKING roundtrip that relocates its
-    # durable output elsewhere (the Marmoset bake: maps go to the project's
-    # texture folder). For these, a blank field resolves to neither the
-    # scene/workspace default nor the session temp dir: ``require_output_dir``
-    # returns ``""`` and the bridge allocates -- and cleans up -- a scratch
-    # dir of its own (``ptk.TempArtifacts``, scoped), which is the only tier
-    # that removes the artifacts when the run is over. A value the user typed
-    # still wins: naming a folder is a decision to keep what lands in it.
-    TRANSIENT_OUTPUT_MODES: Tuple[str, ...] = ()
-
-    # Whether the Output Dir field's text is saved to QSettings and restored on
-    # the next session (the ``restore_state`` default every registered widget
-    # gets). True for bridges whose Output Dir is durable project config -- a
-    # Unity project root, a photogrammetry job folder -- where retyping it every
-    # session is the annoyance. Set False for a hand-off bridge whose blank field
-    # is the *useful* default (``default_output_dir`` / the temp fallback resolve
-    # it per run): there, a path persisted from a prior scene silently outranks
-    # the scene the user actually has open, and the artifacts land beside it. The
-    # recent-values history is persisted either way, so last session's path stays
-    # one click away.
-    OUTPUT_DIR_PERSISTS: bool = True
-
     # ------------------ Cosmetics -------------------------------------
 
+    # Label column width, shared by the Output Dir row and the parameter rows.
     LABEL_MIN_WIDTH = 90
-    OUTPUT_DIR_LABEL = "Output Dir:"
-    OUTPUT_DIR_PLACEHOLDER = "(defaults to scene dir / workspace)"
-    OUTPUT_DIR_TOOLTIP = (
-        "Directory where the export artifacts (FBX, manifest, rendered\n"
-        "scripts, baked maps) all land. Leave blank to default to the\n"
-        "current scene's directory (or the active workspace if the\n"
-        "scene hasn't been saved)."
-    )
-
-    # ------------------ Widget kind -- multi-line types ---------------
-    # Kinds whose widgets are composite (line edit + button, list +
-    # buttons, ...) or list-shaped, and must NOT have their parent row
-    # clamped to 19px because they are taller than one input line.
-    TALL_KINDS: Tuple[str, ...] = ("path", "file", "file_list", "check_list")
-
-    # ------------------ Header menu (declarative) ---------------------
-    # The default :meth:`header_init` builds a "Utilities" separator, the
-    # declared menu items, and the rich-text help -- so subclasses set
-    # *data*, not code. Each item is
-    # ``(label, objectName, tooltip, handler_method_name)``; the handler is
-    # resolved on the slot via ``getattr`` and connected to ``clicked``.
-    #
-    # The default item set is the script-template bridges' menu (marmoset /
-    # substance / blender / maya). Bridges with a different menu shape
-    # (rizom's UV-editor + scripts, unity's project folder, the
-    # photogrammetry panels' cancel/output) override ``HEADER_MENU_ITEMS``;
-    # the handlers they name live on the subclass.
-    #
-    # Template management deliberately does NOT live here: the template combo
-    # owns those tasks (it re-scans on panel open, and its context menu --
-    # built in ``cmb000_init`` -- carries Refresh / Open Folder), so the
-    # header stays for panel-level utilities only.
-    HEADER_MENU_TITLE: str = "Utilities"
-    HEADER_MENU_ITEMS: Tuple[Tuple[str, str, str, str], ...] = (
-        ("Clear Log", "btn_clear_log", "Clear the log panel below.", "clear_log"),
-    )
-    # ``fmt()`` keyword dict (``title`` / ``body`` / ``steps`` / ``sections`` /
-    # ``notes``) for the header help button, or ``None`` for no help.
-    # Subclasses set this (or override :meth:`help_spec` to compute it).
-    HELP_SPEC: Optional[Dict[str, Any]] = None
-
-    # Where the panel's detailed documentation lives (a web URL). When set,
-    # :meth:`_show_docs_link` logs ``"<DOCS_LABEL>: <url>"`` into the log pane
-    # once at startup as a clickable anchor -- the header help is a tooltip,
-    # so it can't carry a clickable link; the log pane can. Empty = no line.
-    # Subclasses set these (or override :meth:`docs_url` to compute the URL).
-    DOCS_URL: str = ""
-    DOCS_LABEL: str = "Detailed docs"
-
-    # ------------------ Supersessions ---------------------------------
-    # ``(trigger key, governed keys, reason)`` triples: while *trigger* reads
-    # truthy, the *governed* rows grey out with *reason* as their tooltip --
-    # the "an Auto toggle takes over the controls it replaces" shape, declared
-    # as data. Read from the parameter REGISTRY (``params_module.SUPERSESSIONS``)
-    # when it declares them, because which knob supersedes which is a property
-    # of the parameter set, not of a DCC's panel -- so both DCCs' panels
-    # sharing one registry behave identically without either restating it.
-    # This class attr is the fallback for a panel whose registry declares none.
-    PARAM_SUPERSESSIONS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = ()
 
     # ------------------ Subclass hooks --------------------------------
 
@@ -279,6 +138,13 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
 
     def make_bridge(self):  # pragma: no cover - subclass contract
         """Return a fresh bridge instance. Called once, lazily."""
+        raise NotImplementedError
+
+    def list_template_modes(self) -> List[Tuple[str, str]]:  # pragma: no cover
+        raise NotImplementedError
+
+    def b000(self):  # pragma: no cover - subclass contract
+        """Implement the per-bridge send action."""
         raise NotImplementedError
 
     # ------------------ Optional-package provisioning ------------------
@@ -338,31 +204,6 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
 
         OptionalPackageManager.default_install(spec)
 
-    def make_preset_store(self):
-        """Hook: return a :class:`pythontk.PresetStore` to switch presets into
-        **semantic mode**, or ``None`` (default) for **widget-state mode**.
-
-        *Widget-state mode* (default): presets are raw widget snapshots keyed by
-        ``objectName``, stored per-template under :attr:`PRESETS_ROOT`. Used by
-        the DCC bridges (marmoset / substance / rizom).
-
-        *Semantic mode*: presets are ``{param_key: value}`` run-templates keyed
-        by :class:`AttributeSpec` name. A panel returns the **same** store its
-        headless CLI uses (e.g. ``profile.preset_store()``), so a preset saved in
-        the UI is readable by the CLI and vice-versa, and shipped built-ins show
-        in the combo. The store is template-agnostic — one preset set per panel,
-        captured via :meth:`collect_param_values` and applied via
-        :meth:`_apply_param_dict`.
-        """
-        return None
-
-    def list_template_modes(self) -> List[Tuple[str, str]]:  # pragma: no cover
-        raise NotImplementedError
-
-    def b000(self):  # pragma: no cover - subclass contract
-        """Implement the per-bridge send action."""
-        raise NotImplementedError
-
     # ------------------------------------------------------------------ scope
     def resolve_scope_objects(self, scope: str):  # pragma: no cover - contract
         """Hook: turn a ``SCOPE`` value into host objects. DCC-specific.
@@ -370,10 +211,12 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         Implemented once per package on the DCC bridge-slots base
         (``MayaBridgeSlotsBase`` / ``BlenderBridgeSlotsBase``), so every bridge
         that ships the shared :meth:`uitk.bridge.Parameters.scope_spec`
-        parameter resolves it identically. The default returns the empty list:
-        a base that never overrides this simply has no scope support, and
-        :meth:`scoped_objects` then reports "nothing selected" rather than
-        silently exporting the wrong set.
+        parameter resolves it identically: it hands its scene reads to
+        :meth:`pythontk.HandoffScope.resolve`, which owns the words and their
+        fallbacks. The default returns the empty list: a base that never
+        overrides this simply has no scope support, and :meth:`scoped_objects`
+        then reports "nothing selected" rather than silently exporting the
+        wrong set.
         """
         return []
 
@@ -385,10 +228,10 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         the user asked for Entire Scene and the scene is empty.
         """
         return {
-            "all": "The scene contains no mesh geometry to export.",
-            "visible": "No visible mesh geometry to export.",
+            ptk.HandoffScope.ALL: "The scene contains no mesh geometry to export.",
+            ptk.HandoffScope.VISIBLE: "No visible mesh geometry to export.",
         }.get(
-            scope,
+            ptk.HandoffScope.word(scope),
             "Nothing selected. Select one or more objects, or change "
             "Scope to 'Entire Scene' / 'Visible Only'.",
         )
@@ -401,77 +244,11 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         that doesn't expose SCOPE resolves ``"selected"`` -- the behavior every
         bridge had before the parameter existed.
         """
-        scope = (params or {}).get("SCOPE", "selected")
+        scope = (params or {}).get(ptk.HandoffScope.PARAM, ptk.HandoffScope.SELECTED)
         objects = self.resolve_scope_objects(scope)
         if not objects and warn:
             self.bridge.logger.warning(self.empty_scope_message(scope))
         return objects
-
-    def select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int:
-        """Return the index of the preferred initial entry in *pairs*.
-
-        Default: 0 (first entry). Subclasses override to bias toward
-        e.g. ``("bake", "roundtrip")``.
-        """
-        return 0
-
-    def default_output_dir(self) -> str:
-        """Hook: fallback path when the user leaves Output Dir blank.
-
-        Returns the empty string by default. DCC-specific subclasses
-        override -- e.g. ``MayaBridgeSlotsBase`` returns
-        ``EnvUtils.default_artifact_dir()`` (scene dir, then workspace).
-        """
-        return ""
-
-    def template_description(self, template_path: Path) -> Optional[str]:
-        """Hook: extract a brief description from a template file."""
-        return Tooltip.template_description(template_path)
-
-    def format_param_tooltip(self, spec: AttributeSpec) -> str:
-        """Hook: build the rich-text tooltip for one parameter spec."""
-        return Tooltip.format_param_tooltip(spec)
-
-    # ------------------ Bridge runtime utilities ----------------------
-
-    @staticmethod
-    def register_log_link_handler(handler: Callable) -> None:
-        """Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel
-        ``action://`` links (returns True when it handled the link).
-
-        DCC packages (mayatk / blendertk) call this from their ``UiHandler.__init__``
-        so their node-dispatch runs without uitk importing them. Handlers are tried
-        in registration order until one returns True. Idempotent — re-registering
-        the same callable is a no-op.
-        """
-        if handler not in _BridgeSlotsInternal._LOG_LINK_HANDLERS:
-            _BridgeSlotsInternal._LOG_LINK_HANDLERS.append(handler)
-
-    @staticmethod
-    def ensure_bridge_temp_dir(tag: str) -> str:
-        """Create (once per host process) and return a temp Output Dir for *tag*.
-
-        Backs :attr:`TEMP_OUTPUT_FALLBACK`: the last-resort Output Dir when neither the
-        user's value nor the DCC scene/workspace default resolves (e.g. an unsaved scene with no
-        workspace), so a hand-off bridge can still export without forcing the user to pick a path. The
-        directory lives for the whole session (long enough for the launched external app to read the
-        exported files) and is removed at process exit. Reused across sends for the same *tag*.
-
-        Allocated through ``ptk.TempArtifacts`` (``session`` policy) rather than a hand-rolled
-        ``tempfile.gettempdir()`` join: the exit hook alone is not cleanup here. DCC hosts are
-        routinely killed, and an ``atexit`` that never fires used to leave the directory behind
-        with nothing left to reclaim it — one per killed session, forever. Every allocation now
-        joins a swept prefix namespace, so the worst case is delayed collection. The unique tag
-        also retires the PID that was keeping concurrent DCCs off a shared path."""
-        import pythontk as ptk
-
-        key = tag or "bridge"
-        entry = _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.get(key)
-        if entry is None:
-            store = ptk.TempArtifacts(f"uitk_bridge_{key}", policy="session")
-            entry = (store, store.dir_path())
-            _BridgeSlotsInternal._BRIDGE_TEMP_DIRS[key] = entry
-        return entry[1]
 
     # ------------------ Init flow -------------------------------------
 
@@ -595,1070 +372,3 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
         except Exception:  # noqa: BLE001 - some panels have no log widget
             pass
         getattr(self.sb.logger, level, self.sb.logger.info)(message)
-
-    # ------------------ Output Dir row --------------------------------
-
-    def _build_output_dir_row(self) -> None:
-        """Insert a persistent 'Output Dir' line edit (with option-box buttons) above params.
-
-        The path field carries uitk **option-box** icon buttons instead of a bare
-        ``...`` push-button. :meth:`_configure_output_dir_options` decides which —
-        the default is a persisted **recent-values** history + a **directory
-        browse** button; subclasses override it (e.g. the Unity bridge swaps the
-        browse button for an option *menu* of project actions).
-
-        The edit is parented into the row layout (with stretch) **before** the
-        option box wraps it, so the wrap reparents it in place via
-        ``replaceWidget`` (preserving the stretch factor) while it is already
-        layout-managed. Wrapping a *parentless* edit instead lets it briefly show
-        as a top-level widget, whose ``OptionBoxContainer.showEvent`` schedules an
-        ``_adjust_to_content`` that collapses + absolutely-positions the container
-        — leaving the field right-shifted instead of filling the row.
-        """
-        layout = self.ui.grp_process.layout()
-
-        row = QtWidgets.QWidget(self.ui.grp_process)
-        hbox = QtWidgets.QHBoxLayout(row)
-        hbox.setContentsMargins(0, 0, 0, 0)
-        hbox.setSpacing(2)
-
-        label = QtWidgets.QLabel(self.OUTPUT_DIR_LABEL, row)
-        label.setMinimumWidth(self.LABEL_MIN_WIDTH)
-        label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-
-        edit = QtWidgets.QLineEdit(row)
-        edit.setObjectName(f"{self.LOG_TAG}_output_dir")
-        edit.setPlaceholderText(self.OUTPUT_DIR_PLACEHOLDER)
-        edit.setMinimumHeight(19)
-        edit.setMaximumHeight(19)
-        edit.setToolTip(self.OUTPUT_DIR_TOOLTIP)
-        # Set before the row is registered: ``register_widget`` only defaults
-        # ``restore_state`` to True when the attribute is ABSENT, so this is what
-        # decides whether the field is saved/restored across sessions at all.
-        edit.restore_state = self.OUTPUT_DIR_PERSISTS
-        self._output_dir_edit = edit
-
-        hbox.addWidget(label)
-        hbox.addWidget(edit, 1)
-
-        # Wrap after the edit is in the layout: the option box replaces it in
-        # place (keeping the stretch) instead of leaving a stale top-level geom.
-        self._configure_output_dir_options(edit)
-
-        insert_at = layout.indexOf(self.ui.cmb000) + 1
-        layout.insertWidget(insert_at, row)
-        self._output_dir_row = row
-
-    # ------------------ Output Dir option-box buttons -----------------
-
-    def _output_dir_browse_title(self) -> str:
-        """Window title for the output-dir browse dialog (from the row label)."""
-        return self.OUTPUT_DIR_LABEL.rstrip(": ") or "Select directory"
-
-    def _add_recent_output_dir_option(self, edit) -> None:
-        """Attach the persisted recent-values history button to *edit* (shared)."""
-        edit.option_box.recent(
-            settings_key=f"{self.LOG_TAG}_output_dir_recent",
-            auto_record=True,
-            display_format="auto",
-        )
-
-    def _configure_output_dir_options(self, edit) -> None:
-        """Hook: option-box buttons for the output-dir field.
-
-        Default = a persisted recent-values history + a directory-browse button.
-        Subclasses override to customise (the Unity bridge uses an option menu of
-        project actions instead of the lone browse button).
-        """
-        self._add_recent_output_dir_option(edit)
-        edit.option_box.set_action(
-            callback=self._pick_output_dir,
-            icon="folder",
-            tooltip="Browse for a folder",
-            settings_key=False,
-        )
-
-    def _pick_output_dir(self) -> None:
-        """Open a directory dialog, load the choice into the field, and record it.
-
-        Shared by the default browse button and any subclass that surfaces the same
-        'Set …' action as a menu item.
-        """
-        edit = self._output_dir_edit
-        if edit is None:
-            return
-        start = self.resolved_output_dir() or str(Path.home())
-        path = QtWidgets.QFileDialog.getExistingDirectory(
-            self.ui, self._output_dir_browse_title(), start
-        )
-        if not path:
-            return
-        edit.setText(path)
-        self._record_output_dir(path)
-
-    @staticmethod
-    def _record_recent(edit, value) -> None:
-        """Record *value* into *edit*'s option-box recent-values history (no-op if none).
-
-        Programmatic ``setText`` doesn't fire the ``auto_record`` (editingFinished)
-        path, so any code that sets a recent-backed field in code (browse, a
-        subclass 'New Project' action, a host hand-off) calls this to keep the
-        history in sync. Shared by every recent-backed field — the base output-dir
-        row and any subclass row (e.g. the Unity workflow's Model File).
-        """
-        if edit is None:
-            return
-        from uitk.widgets.optionBox.options.recent_values import RecentValuesOption
-
-        recent = edit.option_box.find_option(RecentValuesOption)
-        if recent is not None:
-            recent.record(value)
-
-    def _record_output_dir(self, value) -> None:
-        """Record *value* into the output-dir field's recent-values history."""
-        self._record_recent(self._output_dir_edit, value)
-
-    def resolved_output_dir(self) -> str:
-        """Return the current Output Dir text trimmed of whitespace.
-
-        Returns the empty string when :attr:`REQUIRE_OUTPUT_DIR` is False
-        (the row was never built) so subclasses can call this unconditionally.
-        """
-        if self._output_dir_edit is None:
-            return ""
-        return self._output_dir_edit.text().strip()
-
-    def require_output_dir(self, mode: Optional[str] = None) -> Optional[str]:
-        """Return the Output Dir for a run in *mode*, or log an error on empty.
-
-        Resolution order:
-
-        1. The user's typed value in the line edit.
-        2. When *mode* is one of :attr:`TRANSIENT_OUTPUT_MODES`, ``""`` --
-           the run's artifacts are its own scratch, so the bridge allocates
-           and deletes them rather than inheriting a durable location.
-        3. :meth:`default_output_dir` (DCC-side fallback) -- on hit, the
-           chosen path is written back into the line edit and announced
-           in the log panel so the user sees where files landed.
-        4. When :attr:`TEMP_OUTPUT_FALLBACK` is set, a self-cleaning temp
-           directory (:func:`ensure_bridge_temp_dir`) -- also written back
-           and announced -- so an unsaved scene can still hand off.
-        5. Log an error + focus the field, return ``None`` to signal
-           the caller to abort.
-
-        When :attr:`REQUIRE_OUTPUT_DIR` is False, returns ``""``
-        unconditionally so the caller can pass the result through to
-        bridges that tolerate empty output dirs.
-
-        ``""`` and ``None`` are distinct returns: ``""`` means "no location
-        chosen -- the bridge decides", ``None`` means abort.
-        """
-        if not self.REQUIRE_OUTPUT_DIR:
-            return ""
-        output_dir = self.resolved_output_dir()
-        if output_dir:
-            return output_dir
-
-        if mode is not None and mode in self.TRANSIENT_OUTPUT_MODES:
-            # Deliberately NOT written back into the field: a scratch path
-            # parked there would read as the user's own choice on the next
-            # run, and point it at a directory this one already deleted.
-            return ""
-
-        fallback = self.default_output_dir()
-        if fallback:
-            self._apply_output_dir_fallback(
-                fallback,
-                f"Output Dir not set; using scene/workspace default: "
-                f'<a href="action://open?path={fallback}">{fallback}</a>',
-            )
-            return fallback
-
-        if self.TEMP_OUTPUT_FALLBACK:
-            temp_dir = self.ensure_bridge_temp_dir(self.LOG_TAG)
-            self._apply_output_dir_fallback(
-                temp_dir,
-                "Output Dir not set and no scene/workspace default; using a "
-                "temporary folder (removed when this session exits): "
-                f'<a href="action://open?path={temp_dir}">{temp_dir}</a>',
-            )
-            return temp_dir
-
-        self.bridge.logger.error(
-            "Output Dir is required and no scene/workspace default could "
-            "be resolved. Click '...' next to the Output Dir field to "
-            "choose where the export artifacts land."
-        )
-        if self._output_dir_edit is not None:
-            self._output_dir_edit.setFocus()
-        return None
-
-    def _apply_output_dir_fallback(self, path: str, message: str) -> None:
-        """Write a resolved fallback *path* back into the Output Dir field and announce it."""
-        if self._output_dir_edit is not None:
-            self._output_dir_edit.setText(path)
-        try:
-            self.bridge.logger.info(message)
-        except Exception:  # noqa: BLE001
-            pass
-
-    # ------------------ Parameter widgets -----------------------------
-
-    def _build_param_widgets(self) -> None:
-        """Inject a 'Parameters' group between the Output Dir row and Send.
-
-        Builds one row widget per registered :class:`AttributeSpec` via
-        :meth:`uitk.bridge.spec.KindFactory.make_widget` -- the shared registry powers
-        every kind including custom ones the bridge registered. A spec with
-        ``inline`` set is appended to the PREVIOUS row instead of claiming one
-        of its own (see :meth:`_build_inline_cell`).
-        """
-        grp = QtWidgets.QGroupBox("Parameters", self.ui.grp_process)
-        vbox = QtWidgets.QVBoxLayout(grp)
-        vbox.setContentsMargins(2, 4, 2, 2)
-        vbox.setSpacing(0)
-
-        host_row: Optional[QtWidgets.QWidget] = None
-        for key, spec in self.params_module.PARAMS.items():
-            # Start of a new category -> a titled divider above its first row.
-            # (One separator per section; sections are expected contiguous.)
-            section = getattr(spec, "section", "") or ""
-            self._param_section[key] = section
-            new_section = bool(section) and section not in self._section_separators
-            if new_section:
-                sep = Separator(grp, title=section)
-                vbox.addWidget(sep)
-                self._section_separators[section] = sep
-
-            tooltip_html = self.format_param_tooltip(spec)
-            # An inline spec joins the previous row; a section's opening spec
-            # starts one regardless, so a divider is never followed by a row
-            # whose first control belongs to the section above it.
-            inline = getattr(spec, "inline", False) and host_row is not None
-            if inline and not new_section:
-                self._build_inline_cell(spec, key, host_row, tooltip_html)
-                continue
-
-            row = QtWidgets.QWidget(grp)
-            hbox = QtWidgets.QHBoxLayout(row)
-            hbox.setContentsMargins(0, 0, 0, 0)
-            hbox.setSpacing(2)
-
-            label = QtWidgets.QLabel(spec.display_label + ":", row)
-            label.setMinimumWidth(self.LABEL_MIN_WIDTH)
-            label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            label.setToolTip(tooltip_html)
-            self._param_labels[key] = label
-
-            widget = self._make_param_widget(spec, key, row, tooltip_html)
-
-            hbox.addWidget(label)
-            hbox.addWidget(widget, 1)
-            vbox.addWidget(row)
-
-            self._param_rows[key] = row
-            host_row = row
-
-        parent_layout = self.ui.grp_process.layout()
-        insert_at = parent_layout.indexOf(self.ui.b000)
-        parent_layout.insertWidget(insert_at, grp)
-        self._param_group = grp
-
-        # Everything the panel shows conditionally, in one registry. The
-        # dividers and the group are registered WITH the rows rather than
-        # chased separately at refresh time, which is the bookkeeping this
-        # used to carry by hand.
-        fields = FieldVisibility()
-        for key, row in self._param_rows.items():
-            fields.register(key, row, section=self._param_section.get(key))
-        for section, sep in self._section_separators.items():
-            fields.divider(section, sep)
-        self._param_fields = fields.group(grp)
-
-    def _make_param_widget(
-        self,
-        spec: AttributeSpec,
-        key: str,
-        parent: QtWidgets.QWidget,
-        tooltip_html: str,
-    ) -> QtWidgets.QWidget:
-        """Build, name, clamp and register one spec's widget."""
-        widget = KindFactory.make_widget(spec, parent)
-        # Prefix the registry key so two panels in the same window
-        # can host the same AttributeSpec without objectName clashes.
-        widget.setObjectName(f"param_{key.lower()}")
-        if spec.kind not in self.TALL_KINDS:
-            widget.setMinimumHeight(19)
-            widget.setMaximumHeight(19)
-        widget.setToolTip(tooltip_html)
-        self._param_widgets[key] = widget
-        return widget
-
-    def _build_inline_cell(
-        self,
-        spec: AttributeSpec,
-        key: str,
-        host_row: QtWidgets.QWidget,
-        tooltip_html: str,
-    ) -> QtWidgets.QWidget:
-        """Append *spec* to the right of *host_row*'s widget, as its own cell.
-
-        The cell (label + widget) is what gets registered as this key's "row",
-        so :meth:`set_param_enabled` greys only this control and
-        :meth:`_refresh_param_visibility` can hide it without taking the host
-        control with it. The label carries no minimum width -- an inline
-        modifier reads as a suffix to the value beside it, not as a second
-        left-aligned column -- and the cell takes no stretch, so the host
-        widget keeps the row's free space.
-        """
-        cell = QtWidgets.QWidget(host_row)
-        hbox = QtWidgets.QHBoxLayout(cell)
-        hbox.setContentsMargins(0, 0, 0, 0)
-        hbox.setSpacing(2)
-
-        label = QtWidgets.QLabel(spec.display_label + ":", cell)
-        label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        label.setToolTip(tooltip_html)
-        self._param_labels[key] = label
-
-        widget = self._make_param_widget(spec, key, cell, tooltip_html)
-
-        hbox.addWidget(label)
-        hbox.addWidget(widget)
-        host_row.layout().addWidget(cell)
-
-        self._param_rows[key] = cell
-        return widget
-
-    def live_param_tooltips(self) -> Dict[str, Callable[[], str]]:
-        """Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.
-
-        :meth:`format_param_tooltip` runs once, at build time, so a row that
-        describes something the *session* owns -- a scene set the user defines
-        from a selection, a path that resolves per scene -- is stale the moment
-        that state moves. A provider registered here is called on every hover
-        instead (:mod:`uitk.widgets.mixins.tooltip_mixin`), so the row can
-        answer "what is captured right now?" with no refresh plumbing.
-
-        A provider returns the WHOLE tooltip, so fold the static text back in
-        with ``self.format_param_tooltip(spec)`` -- binding replaces the
-        widget's tooltip rather than appending to it. Pair it with
-        :meth:`uitk.widgets.mixins.tooltip_mixin.TooltipFormat.stored_items`
-        for the usual "here is what you captured" list.
-
-        Bound to the row's label AND its control -- both are hover targets for
-        the same row. An ``action`` row's buttons keep their own per-choice
-        tips: those describe the *click*, not the contents.
-
-        Returns:
-            (dict) Param key -> zero-argument callable returning tooltip HTML.
-            Prefer a bound method over a closure: the tooltip surface weakrefs
-            bound-method providers, so the binding can't outlive this panel.
-            Unknown keys are ignored, so a shared base may offer a row that
-            only some of its panels register.
-        """
-        return {}
-
-    def live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]:
-        """Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.
-
-        The composable counterpart to :meth:`live_param_tooltips`. That one owns
-        the WHOLE tooltip, which is right for a row whose static text is the
-        thing going stale -- and wrong for an ``action`` row, whose buttons each
-        carry their own per-choice description. Replacing three specific answers
-        ("what does Clear do?") with one general one is a bad trade, and the
-        buttons are exactly where the user is standing when they wonder what the
-        row currently holds.
-
-        A block provider returns only the live part, so every hover target on
-        the row -- label, control, and each action button -- keeps its own text
-        and gains the current contents underneath it.
-
-        Register a key in ONE of the two hooks: binding replaces a widget's
-        provider rather than stacking, and blocks are installed second, so a
-        key in both silently loses its whole-tooltip provider on the label and
-        the control while the buttons keep only the block.
-
-        Returns:
-            (dict) Param key -> zero-argument callable returning the live HTML
-            block (see
-            :meth:`uitk.widgets.mixins.tooltip_mixin.TooltipFormat.stored_items`).
-            Unknown keys are ignored.
-        """
-        return {}
-
-    def _bind_live_param_tooltips(self) -> None:
-        """Install every live tooltip provider on its row."""
-        for key, provider in (self.live_param_tooltips() or {}).items():
-            targets = [self._param_widgets.get(key), self._param_labels.get(key)]
-            self.sb.tooltip.bind([t for t in targets if t is not None], provider)
-        for key, provider in (self.live_param_tooltip_blocks() or {}).items():
-            self._bind_live_param_block(key, provider)
-
-    def _bind_live_param_block(self, key: str, provider) -> None:
-        """Append *provider*'s live block to every hover target of row *key*.
-
-        The composed providers are plain closures, so the tooltip surface stores
-        them directly rather than through its bound-method weakref. That keeps
-        this slot alive exactly as long as the widgets it bound -- which the
-        panel owns and destroys together -- rather than beyond them.
-        """
-        params = getattr(self.params_module, "PARAMS", {}) or {}
-        spec = params.get(key)
-        if spec is None:
-            return
-        widget = self._param_widgets.get(key)
-        static = self.format_param_tooltip(spec)
-        targets = [
-            (t, static) for t in (widget, self._param_labels.get(key)) if t is not None
-        ]
-        # An action row's buttons: each keeps its own per-choice description,
-        # promoted to HTML first (see :meth:`_as_tooltip_html`).
-        for button in (getattr(widget, "_action_buttons", None) or {}).values():
-            own = self._pristine_tooltip(button)
-            targets.append((button, self._as_tooltip_html(own) if own else static))
-        for target, base in targets:
-            self.sb.tooltip.bind(target, lambda _base=base, _p=provider: _base + _p())
-
-    #: Dynamic property holding a widget's own tooltip, captured before any
-    #: live provider could overwrite it (see :meth:`_pristine_tooltip`).
-    _STATIC_TOOLTIP_PROP = "_bridge_static_tooltip"
-
-    @classmethod
-    def _pristine_tooltip(cls, widget) -> str:
-        """The widget's OWN tooltip, from before a live provider rewrote it.
-
-        The tooltip surface writes each computed string back onto the widget as
-        it renders, so ``toolTip()`` stops being the widget's own text after the
-        first hover. Reading it again on a later bind would fold the previous
-        live block into the new base and stack a second copy on every rebind
-        (measured: two hovers, two lists). The first read is stashed as a Qt
-        dynamic property and reused from then on, so binding is idempotent.
-        """
-        stored = widget.property(cls._STATIC_TOOLTIP_PROP)
-        if stored is None:
-            stored = widget.toolTip()
-            widget.setProperty(cls._STATIC_TOOLTIP_PROP, stored)
-        return stored
-
-    #: An opening tag, as opposed to a bare ``<`` used as a less-than sign.
-    _HTML_TAG_RE = re.compile(r"<[a-zA-Z/!]")
-
-    @classmethod
-    def _as_tooltip_html(cls, text: str) -> str:
-        """Promote a plain-text tooltip to HTML, preserving its line breaks.
-
-        Qt renders a tooltip as rich text the moment it contains a tag, so
-        appending a live HTML block to a plain-text base silently collapses
-        every newline that base was relying on. Already-rich text passes
-        through untouched -- detected by an opening TAG rather than a bare
-        ``<``, so a tip that merely says ``width < height`` is still escaped
-        instead of having the comparison swallowed as markup.
-        """
-        if not text or cls._HTML_TAG_RE.search(text):
-            return text
-        from html import escape
-
-        return "<p style='margin:0'>" + escape(text).replace("\n", "<br>") + "</p>"
-
-    def _wire_action_params(self) -> None:
-        """Connect ``action``-kind param buttons to same-named slot methods.
-
-        An ``action`` row's container exposes ``_action_buttons``
-        (``{action_id: QPushButton}``, see :mod:`uitk.bridge.spec`); each id
-        that names a callable on this slot is wired to it, so a registry can
-        declare panel actions as data with zero per-panel wiring code. An id
-        with no matching method is disabled rather than silently inert.
-        """
-        for key, widget in self._param_widgets.items():
-            buttons = getattr(widget, "_action_buttons", None)
-            if not buttons:
-                continue
-            for action_id, btn in buttons.items():
-                handler = getattr(self, action_id, None)
-                if callable(handler):
-                    btn.clicked.connect(handler)
-                else:
-                    btn.setEnabled(False)
-                    btn.setToolTip(
-                        f"No handler '{action_id}' on {type(self).__name__}."
-                    )
-
-    def set_param_enabled(self, key: str, enabled: bool, reason: str = "") -> None:
-        """Grey out (or re-enable) one parameter row, with *reason* as its tooltip.
-
-        For parameters whose relevance depends on live session state rather
-        than on the template -- e.g. a suffix-pairing fallback that the scene's
-        explicit set makes moot. Visibility already answers "does this template
-        use the knob?" (:meth:`_refresh_param_visibility`); this answers "is it
-        in effect right now?", which is a different question and reads better
-        greyed than hidden -- the user can still see the value that *would*
-        apply, and why it doesn't.
-
-        The row container itself stays enabled and carries *reason*: Qt does
-        not deliver tooltip events to disabled widgets, but a disabled child
-        doesn't consume the hover either, so the parent's tooltip is what
-        surfaces. Unknown keys are ignored -- a shared base can offer the row
-        without every panel registering it.
-
-        Another parameter's inline cell (see :meth:`_build_inline_cell`) lives
-        inside this row but is NOT part of it, so it is skipped: greying the
-        value an "Auto" toggle superseded must not grey the toggle sitting
-        beside it, or the user cannot turn it back off.
-        """
-        row = self._param_rows.get(key)
-        if row is None:
-            return
-        others = {r for k, r in self._param_rows.items() if k != key}
-        layout = row.layout()
-        for i in range(layout.count() if layout is not None else 0):
-            child = layout.itemAt(i).widget()
-            if child is not None and child not in others:
-                child.setEnabled(enabled)
-        row.setToolTip("" if enabled else reason)
-
-    def _wire_enablement_refresh(self) -> None:
-        """Re-run :meth:`_refresh_param_enablement` on panel show + trigger edits.
-
-        Enablement keys off LIVE session state, which can change while the
-        panel is closed (a new scene, a set deleted from the outliner). The
-        template-change trigger alone would leave a row greyed for the
-        PREVIOUS scene locked out in the next one -- worse than merely stale,
-        because the control it hides is the one now in effect.
-
-        The supersession triggers are the other source: a parameter whose own
-        value decides whether OTHER rows apply has to re-evaluate on the
-        click, not on the next show, or the rows it governs stay live for a
-        mode that no longer reads them.
-
-        A panel whose root widget isn't a uitk ``MainWindow`` has no
-        ``on_show`` to hook; that's a no-op, not an error.
-        """
-        on_show = getattr(self.ui, "on_show", None)
-        if on_show is not None:
-            on_show.connect(self._refresh_param_enablement)
-        for trigger, _governed, _reason in self.param_supersessions():
-            widget = self._param_widgets.get(trigger)
-            if widget is not None:
-                KindFactory.connect_changed(
-                    widget, lambda *_: self._refresh_param_enablement()
-                )
-
-    def param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]:
-        """The ``(trigger, governed, reason)`` triples in effect for this panel.
-
-        The registry's own declaration wins; :attr:`PARAM_SUPERSESSIONS` is the
-        fallback. Override to compute them.
-        """
-        declared = getattr(self.params_module, "SUPERSESSIONS", None)
-        return tuple(declared if declared is not None else self.PARAM_SUPERSESSIONS)
-
-    def _refresh_param_enablement(self) -> None:
-        """Re-evaluate which rows are *in effect*, and grey the rest.
-
-        Called on every template change, every panel show, and every edit of a
-        supersession trigger; panels also call it themselves after an action
-        that changes the state it keys off. The default applies the declared
-        supersessions (:meth:`param_supersessions`); a subclass adds the
-        checks that need live session state -- calling ``super()`` first, or
-        the declared ones stop being applied -- driving
-        :meth:`set_param_enabled` for each.
-
-        Must not touch ``self.bridge``: this runs during panel construction,
-        where the engine may be an optional package the user declined to
-        install.
-        """
-        for trigger, governed, reason in self.param_supersessions():
-            if trigger not in self._param_widgets:
-                continue
-            active = bool(self._read_param(trigger))
-            for key in governed:
-                self.set_param_enabled(key, not active, reason if active else "")
-
-    def _read_param(self, key: str) -> Any:
-        """Extract the current value via the registered KindHandler."""
-        return KindFactory.read_value(self._param_widgets[key])
-
-    def _write_param(self, key: str, value: Any) -> None:
-        """Push *value* into the widget for *key* via the KindHandler."""
-        KindFactory.set_value(self._param_widgets[key], value)
-
-    def _set_param_choices(self, key: str, choices) -> None:
-        """Repopulate the entries of a choice-driven param (``choice`` /
-        ``check_list``) at runtime.
-
-        The hook for parameters whose real entry set is only knowable in the
-        live session -- installed app versions, deployable scripts, scene
-        contents. The registry declares the kind and any static entries; the
-        panel pushes the discovered ones in here from its ``__init__``.
-        """
-        KindFactory.set_choices(self._param_widgets[key], choices)
-
-    def collect_param_values(self) -> Dict[str, Any]:
-        """Snapshot every widget's current value, regardless of visibility.
-
-        ``action`` rows carry no value (their buttons are commands, not
-        data) and are excluded, so send params stay purely value-shaped.
-        """
-        return {
-            key: self._read_param(key)
-            for key, widget in self._param_widgets.items()
-            if not hasattr(widget, "_action_buttons")
-        }
-
-    def _relevant_param_keys(self) -> Optional[set]:
-        """Hook: the param keys whose rows should be visible for the current
-        selection, or ``None`` to skip the visibility update entirely (no
-        template selected / unreadable source).
-
-        Default: the placeholder keys referenced by the active template file
-        (the script-substitution bridges). Run-mode panels — e.g. a single
-        runner driven by a ``--stop-after``-style mode rather than per-template
-        files — override this to gate visibility on the selected mode, so the
-        parameter UI stays dynamic the same way the DCC bridges' does.
-        """
-        pair = self._selected_template_mode()
-        if not pair:
-            return None
-        template, _mode = pair
-        path = self.template_dir / f"{template}{self.TEMPLATE_EXTENSION}"
-        if not path.is_file():
-            return None
-        return self.params_module.referenced_keys(path.read_text(encoding="utf-8"))
-
-    def _refresh_param_visibility(self) -> None:
-        """Show only the rows relevant to the current selection.
-
-        Delegates the "which keys are relevant?" decision to
-        :meth:`_relevant_param_keys` so subclasses can drive visibility from a
-        template file (default) or a run mode; the row toggling, the dividers,
-        the empty group and the height re-fit are :class:`FieldVisibility`.
-        """
-        used = self._relevant_param_keys()
-        if used is None or self._param_fields is None:
-            return
-        self._param_fields.show(used)
-
-    # ------------------ Preset controls -------------------------------
-
-    def _build_preset_controls(self) -> None:
-        """Insert a user-preset combobox + 'Reset to Defaults' button above b000."""
-        layout = self.ui.grp_process.layout()
-
-        combo = ComboBox(self.ui.grp_process)
-        combo.setObjectName("cmb_user_presets")
-        combo.setMinimumHeight(19)
-        combo.setMaximumHeight(19)
-        combo.setToolTip(
-            "Saved user presets for the active template.\n"
-            "Open the side menu to Save / Rename / Delete the current values."
-        )
-
-        reset_btn = PushButton(self.ui.grp_process)
-        reset_btn.setObjectName("btn_reset_defaults")
-        reset_btn.setText("Reset to Defaults")
-        reset_btn.setMinimumHeight(19)
-        reset_btn.setMaximumHeight(19)
-        reset_btn.setToolTip("Restore every parameter widget to its registry default.")
-        reset_btn.clicked.connect(self._reset_to_defaults)
-
-        insert_at = layout.indexOf(self.ui.b000)
-        layout.insertWidget(insert_at, combo)
-        layout.insertWidget(insert_at + 1, reset_btn)
-
-        store = self.make_preset_store()
-        self._preset_store = store
-        self._semantic_presets = store is not None
-        # A live switch acts the moment it changes, so a preset carrying one
-        # would act on load: in either mode a preset neither holds nor sets it.
-        live = self._live_param_keys()
-
-        if store is not None:
-            # Semantic mode: presets are {param_key: value} run-templates shared
-            # with the headless CLI through one PresetStore (built-in + user
-            # tiers). The callbacks own (de)serialization, so no managed widget
-            # list is needed and presets are template-agnostic.
-            self._preset_mgr = PresetManager(
-                preset_dir=str(store.user_dir),
-                builtin_dir=str(store.builtin_dir) if store.builtin_dir else None,
-                value_provider=lambda: {
-                    k: v
-                    for k, v in self.collect_param_values().items()
-                    if k not in live
-                },
-                value_applier=lambda data: self._apply_param_dict(
-                    {k: v for k, v in data.items() if k not in live}
-                ),
-            )
-        else:
-            # Widget-state mode (DCC bridges): raw snapshots keyed by objectName,
-            # one preset subdir per template under PRESETS_ROOT.
-            #
-            # The kind-built widgets themselves, NOT their inner children. Each
-            # carries KindFactory's `_attr_kind` stamp, which PresetManager treats
-            # as the authority for read/write — so a composite is (de)serialized by
-            # the handler that built it. Substituting `_line_edit` here used to be
-            # the only way a `path` row survived a preset (the manager could not
-            # read the container), but it drops the stamp and reaches exactly one
-            # composite: `file_list` and `check_list` were silently unsaveable.
-            managed = [w for k, w in self._param_widgets.items() if k not in live]
-            if self.PRESETS_ROOT is None:
-                raise ValueError(
-                    f"{type(self).__name__} must set PRESETS_ROOT "
-                    "(or override make_preset_store() for semantic presets)."
-                )
-            self._preset_mgr = PresetManager.from_widgets(
-                preset_dir=self.PRESETS_ROOT / self._active_template(),
-                widgets=managed,
-            )
-        self._preset_mgr.wire_combo(combo)
-
-        # Live "modified" marker: any param edit re-evaluates the dirty state so
-        # the combo shows e.g. "specular *". StateManager fires these same
-        # change signals during session restore, so the marker self-corrects
-        # regardless of whether widgets restore before or after this wiring.
-        for widget in self._param_widgets.values():
-            KindFactory.connect_changed(
-                widget, lambda *_: self._preset_mgr.refresh_modified_state()
-            )
-        # Insurance against any widgets restored with signals blocked: one
-        # deferred recompute once the event loop settles (no-op headless).
-        try:
-            QtCore.QTimer.singleShot(0, self._preset_mgr.refresh_modified_state)
-        except Exception:  # noqa: BLE001
-            pass
-
-        self._preset_combo = combo
-        self._reset_btn = reset_btn
-
-    def _apply_param_dict(self, data: Dict[str, Any]) -> int:
-        """Apply a semantic ``{param_key: value}`` preset to the param widgets.
-
-        Keys absent from this panel's ``PARAMS`` are ignored (a shared CLI
-        preset may carry knobs this panel doesn't surface). Keys not present in
-        the preset keep their current widget values — overlay semantics matching
-        the CLI's ``--preset``. Returns the number of widgets updated.
-        """
-        applied = 0
-        for key, value in data.items():
-            if key not in self._param_widgets:
-                continue
-            try:
-                self._write_param(key, value)
-                applied += 1
-            except Exception:  # noqa: BLE001
-                # One bad key shouldn't abort the rest of the overlay.
-                continue
-        return applied
-
-    def _active_template(self) -> str:
-        """Active template stem (mode-agnostic preset key)."""
-        pair = self._selected_template_mode()
-        if pair:
-            return pair[0]
-        pairs = self.list_template_modes()
-        return pairs[0][0] if pairs else "default"
-
-    def _live_param_keys(self) -> set:
-        """The params that are live switches (``AttributeSpec.preset=False``)."""
-        return {
-            key
-            for key, spec in self.params_module.PARAMS.items()
-            if not getattr(spec, "preset", True)
-        }
-
-    def _reset_to_defaults(self) -> None:
-        """Restore every parameter widget to its registry default via KindHandler.
-
-        A live switch keeps its value: Reset is about settings, and switching
-        one would act (a share toggled Off takes every guest's link down).
-        """
-        live = self._live_param_keys()
-        for key, spec in self.params_module.PARAMS.items():
-            if key not in self._param_widgets or key in live:
-                continue
-            try:
-                self._write_param(key, spec.default)
-            except Exception:  # noqa: BLE001
-                # A bad handler shouldn't poison the rest of the reset --
-                # keep going so the user gets as close to "defaults" as
-                # possible even if one kind misbehaves.
-                continue
-
-        if self._preset_combo is not None:
-            self._preset_combo.blockSignals(True)
-            try:
-                self._preset_combo.setCurrentIndex(-1)
-            finally:
-                self._preset_combo.blockSignals(False)
-
-        # Reset abandons the active preset (values are now registry defaults,
-        # not any saved preset); clears the pointer + modified marker.
-        if self._preset_mgr is not None:
-            self._preset_mgr.active_preset = None
-
-    # ------------------ Template combo --------------------------------
-
-    @staticmethod
-    def _format_combo_label(template: str, mode: str) -> str:
-        """Display string for one (template, mode) combo entry.
-
-        Single-mode bridges (rizom) pass ``mode=""`` so the parens are
-        elided -- the combo just shows the template stem.
-        """
-        return f"{template} ({mode})" if mode else template
-
-    def cmb000_init(self, widget) -> None:
-        """Switchboard hook: populate the template combobox + wire change handler.
-
-        Template management lives ON the template widget: its context menu
-        carries Refresh / Open Folder (the header menu stays panel-level).
-        """
-        self._populate_template_combo(widget)
-        widget.currentIndexChanged.connect(lambda _: self._on_template_changed())
-        if not self.TEMPLATE_MENU:
-            self._on_template_changed()
-            return
-        try:
-            widget.menu.add(
-                "QPushButton",
-                setText="Refresh Templates",
-                setObjectName="btn_refresh_templates",
-                setToolTip="Re-scan the templates folder and rebuild this list.",
-            )
-            widget.menu.btn_refresh_templates.clicked.connect(self.refresh_templates)
-            widget.menu.add(
-                "QPushButton",
-                setText="Open Templates Folder",
-                setObjectName="btn_open_templates",
-                setToolTip="Reveal the template folder in the file manager.",
-            )
-            widget.menu.btn_open_templates.clicked.connect(self.open_templates_folder)
-        except Exception:  # noqa: BLE001 -- menu chrome must never block the combo
-            pass
-        self._on_template_changed()
-
-    def _populate_template_combo(self, widget) -> None:
-        """Fill cmb000 with ``"<template> (<mode>)"`` entries."""
-        pairs = self.list_template_modes()
-        widget.blockSignals(True)
-        try:
-            widget.clear()
-            for template, mode in pairs:
-                widget.addItem(
-                    self._format_combo_label(template, mode), (template, mode)
-                )
-            if pairs:
-                widget.setCurrentIndex(self.select_initial_template_index(pairs))
-        finally:
-            widget.blockSignals(False)
-
-    def refresh_templates(self) -> None:
-        """Re-scan disk and rebuild the template combo + parameter UI."""
-        self._populate_template_combo(self.ui.cmb000)
-        self._on_template_changed()
-
-    def _selected_template_mode(self) -> Optional[Tuple[str, str]]:
-        """``(template, mode)`` for the active combo entry, or *None*.
-
-        ``itemData`` stores a ``(template, mode)`` tuple, but some PySide
-        bindings round-trip it back through ``QVariant`` as a *list* --
-        so accept either and normalise to a tuple.
-        """
-        idx = self.ui.cmb000.currentIndex()
-        if idx < 0:
-            return None
-        data = self.ui.cmb000.itemData(idx)
-        if isinstance(data, (tuple, list)) and len(data) == 2:
-            return tuple(data)
-        return None
-
-    def _on_template_changed(self) -> None:
-        """Re-show/-enable rows + re-point preset dir + log description on combo change.
-
-        In semantic-preset mode the preset set is template-agnostic (one shared
-        store), so the preset dir is *not* re-pointed per template — only the
-        widget-state bridges keep per-template preset subdirs.
-        """
-        self._refresh_param_visibility()
-        self._refresh_param_enablement()
-        if self._preset_mgr is not None and not self._semantic_presets:
-            self._preset_mgr.preset_dir = self.PRESETS_ROOT / self._active_template()
-            refresh = getattr(self._preset_mgr, "_refresh_combo", None)
-            if callable(refresh):
-                refresh()
-        self._log_template_description()
-
-    def _log_template_description(self) -> None:
-        """Surface the active template's docstring in the log panel."""
-        pair = self._selected_template_mode()
-        if not pair:
-            return
-        template, mode = pair
-        path = self.template_dir / f"{template}{self.TEMPLATE_EXTENSION}"
-        desc = self.template_description(path)
-        if not desc:
-            return
-        label = self._format_combo_label(template, mode)
-        try:
-            self.bridge.logger.info(f"[{label}] {desc}")
-        except Exception:  # noqa: BLE001
-            pass
-
-    # ------------------ Log panel -------------------------------------
-
-    def _redirect_log_to_panel(self) -> None:
-        """Pipe the bridge logger into ``txt000``, no-op if redirect unavailable."""
-        try:
-            handler_cls = self.sb.registered_widgets.TextEditLogHandler
-        except AttributeError:
-            return
-        bridge = self.peek_bridge()
-        if bridge is None:  # optional engine missing — the panel still opens
-            return
-        try:
-            logger = bridge.logger
-            logger.hide_logger_name(True)
-            logger.set_text_handler(handler_cls)
-            logger.setup_logging_redirect(self.ui.txt000)
-        except AttributeError:
-            pass
-
-    def _on_log_link_clicked(self, url) -> None:
-        """Route ``action://`` URIs from the log panel to their handler.
-
-        The ``open`` action (reveal a file/folder) is DCC-agnostic, so it is
-        handled here with the cross-platform file-manager opener — this is what
-        lets output-dir links work when a panel runs as a standalone external
-        app (no Maya), which is the common case for the photogrammetry bridges.
-        Node-based actions (``select`` / ``reveal``) are delegated to whatever
-        handler the active DCC registered (see :func:`register_log_link_handler`),
-        so uitk never imports a DCC package. Plain ``http(s)`` anchors (the
-        docs link) never reach here -- :meth:`TextEditLogHandler.route_links`
-        opens them in the browser off the same ``anchorClicked`` signal.
-        """
-        try:
-            if url.scheme() == "action" and url.host() == "open":
-                from urllib.parse import parse_qs
-
-                params = parse_qs(url.query())
-                path = params.get("path", [""])[0] or params.get("filepath", [""])[0]
-                if path:
-                    self._open_in_file_manager(path)
-                return
-        except Exception as e:  # noqa: BLE001
-            self.bridge.logger.error(f"Could not open link: {e}")
-            return
-        # Non-``open`` actions: hand off to the DCC-registered dispatchers
-        # (dependency inversion — uitk never imports mayatk/blendertk). Try each
-        # until one reports it handled the link; an empty registry (standalone
-        # app, no DCC) simply no-ops. A misbehaving handler is logged but does
-        # not shadow the others.
-        for handler in _BridgeSlotsInternal._LOG_LINK_HANDLERS:
-            try:
-                if handler(url, self.bridge.logger):
-                    return
-            except Exception as e:  # noqa: BLE001
-                self.bridge.logger.error(f"Could not open link: {e}")
-
-    def _show_startup_info(self) -> None:
-        """Pipe the bridge's ``STARTUP_INFO`` into the log panel once.
-
-        No-op when the bridge doesn't declare a ``STARTUP_INFO`` constant
-        (marmoset / substance / rizom all rely on per-template docstrings
-        and leave this empty). Preserved as an opt-in hook for future
-        bridges that want a panel-level intro.
-        """
-        bridge = self.peek_bridge()
-        if bridge is None:  # optional engine missing — the panel still opens
-            return
-        info = getattr(bridge, "STARTUP_INFO", "")
-        if info:
-            self.panel_log(info)
-
-    def _show_docs_link(self) -> None:
-        """Log the panel's documentation link once at startup (opt-in).
-
-        ``"<DOCS_LABEL>: <a href=url>url</a>"`` -- the same closing line the
-        compositor's intro panel carries -- rendered as a clickable anchor
-        that :meth:`TextEditLogHandler.route_links` opens in the browser.
-        Goes through :meth:`panel_log` so it shows even when the optional
-        engine is missing, which is when a user most needs the docs. No-op
-        when :meth:`docs_url` is empty (the default).
-        """
-        url = self.docs_url()
-        if not url:
-            return
-        self.panel_log(f'{self.DOCS_LABEL}: <a href="{url}">{url}</a>')
-
-    # ------------------ Header menu utilities -------------------------
-
-    def header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]:
-        """Hook: the header-menu items. Default = :attr:`HEADER_MENU_ITEMS`."""
-        return self.HEADER_MENU_ITEMS
-
-    def help_spec(self) -> Optional[Dict[str, Any]]:
-        """Hook: the ``fmt()`` keyword dict for the header help, or ``None``.
-
-        Default = :attr:`HELP_SPEC` (static). Override to compute it (e.g. a
-        panel whose help depends on runtime state)."""
-        return self.HELP_SPEC
-
-    def docs_url(self) -> str:
-        """Hook: the panel's documentation URL, or ``""`` for no docs link.
-
-        Default = :attr:`DOCS_URL` (static). Override to compute it (e.g. a
-        panel that points at a per-engine page)."""
-        return self.DOCS_URL
-
-    def header_init(self, widget) -> None:
-        """Default header menu: a "Utilities" separator, the declared
-        :meth:`header_menu_items` (each wired to a handler method on this slot),
-        and the rich-text help from :meth:`help_spec`.
-
-        Subclasses customise by setting :attr:`HEADER_MENU_ITEMS` /
-        :attr:`HELP_SPEC` (or overriding the two hooks) -- *data, not code*. A
-        bridge that needs extra wiring can still override this method wholesale.
-        """
-        widget.menu.add("Separator", setTitle=self.HEADER_MENU_TITLE)
-        for label, name, tooltip, handler in self.header_menu_items():
-            widget.menu.add(
-                "QPushButton",
-                setText=label,
-                setObjectName=name,
-                setToolTip=tooltip,
-            )
-            getattr(widget.menu, name).clicked.connect(getattr(self, handler))
-
-        spec = self.help_spec()
-        if spec:
-            try:
-                from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
-
-                widget.set_help_text(TooltipFormat.fmt(**spec))
-            except Exception:  # noqa: BLE001 - help is non-essential chrome
-                pass
-
-    def reveal_folder(self, path) -> bool:
-        """Open *path* in the OS file manager (logs + returns False if missing).
-
-        Shared by header-menu "Open … folder" actions so subclasses don't each
-        re-implement the existence check + cross-platform reveal + error log.
-        """
-        if not path or not os.path.isdir(str(path)):
-            self.bridge.logger.info(f"Folder not found: {path or '(unset)'}")
-            return False
-        try:
-            self._open_in_file_manager(str(path))
-            return True
-        except Exception as e:  # noqa: BLE001
-            self.bridge.logger.error(f"Could not open folder: {e}")
-            return False
-
-    def open_templates_folder(self) -> None:
-        """Reveal :attr:`template_dir` in the OS file manager."""
-        self.reveal_folder(self.template_dir)
-
-    def clear_log(self) -> None:
-        """Clear the log panel (wired by subclass header menus)."""
-        self.ui.txt000.clear()

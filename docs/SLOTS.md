@@ -16,6 +16,8 @@ Given `editor.ui`, the Switchboard looks for a slot class in this order:
 
 Name candidates come from [switchboard/names.py](../uitk/switchboard/names.py) (`get_slot_class_names`, `get_slot_file_names`); the lookup order is `_find_slots_class` in [switchboard/slots.py](../uitk/switchboard/slots.py).
 
+The bound class's **name** is persistent state: it namespaces its users' shortcut overrides (`shortcuts[_<host>].<Class>.<method>` in the UI's settings branch, `_slot_shortcut_key` in [switchboard/shortcuts.py](../uitk/switchboard/shortcuts.py)). Renaming a bare `Editor` to `EditorSlots` keeps them: an override saved under `<Base>.<method>` is copied to `<Base>Slots.<method>` the first time it is read. Any other rename orphans them.
+
 ```python
 # editor.ui  →  EditorSlots class
 class EditorSlots:
@@ -267,10 +269,10 @@ Large apps split slot logic by domain. Each slot class handles one UI; a shared 
 slots/
 ├── maya/
 │   ├── _slots_maya.py     # class SlotsMaya: shared DCC base
-│   ├── cameras.py         # class Cameras(SlotsMaya)
-│   ├── editors.py         # class Editors(SlotsMaya)
-│   ├── selection.py       # class Selection(SlotsMaya)
-│   └── scene.py           # class Scene(SlotsMaya)
+│   ├── cameras.py         # class CamerasSlots(SlotsMaya)
+│   ├── editors.py         # class EditorsSlots(SlotsMaya)
+│   ├── selection.py       # class SelectionSlots(SlotsMaya)
+│   └── scene.py           # class SceneSlots(SlotsMaya)
 ```
 
 Each slot class wires a single UI (`cameras.ui`, `editors.ui`, …). The shared `_slots_maya` base carries `self.sb` setup, logging, common helpers.

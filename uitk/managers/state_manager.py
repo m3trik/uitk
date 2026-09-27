@@ -107,9 +107,9 @@ class StateManager(ptk.LoggingMixin):
         # stored value matches what :meth:`apply` looks up on restore.
         mode = self._restore_mode(widget)
         if mode == "text" and hasattr(widget, "currentText"):
-            return widget.currentText()
+            return ValueManager.combo_value(widget, "text")
         if mode == "data" and hasattr(widget, "currentData"):
-            return widget.currentData()
+            return ValueManager.combo_value(widget, "data")
         signal_name = widget.derived_type and widget.default_signals()
         if signal_name:
             # Use signal-based approach for compatibility
@@ -136,16 +136,30 @@ class StateManager(ptk.LoggingMixin):
         finally:
             widget.blockSignals(previously_blocked)
 
-    def apply(self, widget: QtWidgets.QWidget, value: Any) -> None:
-        """Apply the given value to the widget using ValueManager."""
+    def apply(self, widget: QtWidgets.QWidget, value: Any) -> bool:
+        """Apply the given value to the widget using ValueManager.
+
+        Returns:
+            False when the widget was left as it was because *value* does not
+            fit it -- an index past its items, a value its setter can't read
+            (text in a number field), a text / data no item carries -- or the
+            write raised. True when it was applied, or when there was nothing
+            to apply (``None`` for a text field, a combo's ``-1`` "no
+            selection"). ``PresetManager.load`` counts a False as a setting
+            the preset can no longer give the panel.
+        """
         # Stable-identity combo modes select by text / data (not index), which
         # sidesteps the out-of-range index guard below entirely.
         mode = self._restore_mode(widget)
         if mode != "index" and hasattr(widget, "setCurrentIndex"):
-            self._apply_combo_identity(widget, value, mode)
-            return
+            return self._apply_combo_identity(widget, value, mode)
 
         signal_name = widget.derived_type and widget.default_signals()
+
+        if signal_name == self._INDEX_SIGNAL and value == self._NO_SELECTION:
+            # "No selection" is a transient never stored (see _write_value),
+            # so there is nothing to apply -- not a value that failed to fit.
+            return True
 
         # A stored index can outrun a not-yet-populated model (e.g. a
         # combobox whose items load lazily, or a surface restored before its
@@ -159,7 +173,7 @@ class StateManager(ptk.LoggingMixin):
                     f"Skipping out-of-range index {value} for "
                     f"{widget.objectName()} (count={count()})"
                 )
-                return
+                return False
 
         # Don't apply None values for text-based widgets to prevent clearing valid text
         if value is None:
@@ -172,7 +186,7 @@ class StateManager(ptk.LoggingMixin):
                 self.logger.debug(
                     f"Skipping apply of None value to text widget {widget.objectName()}"
                 )
-                return
+                return True
 
         # Honor ``block_signals_on_restore`` (default False) so an outer
         # blockSignals(True) — e.g. init_slot — can't silently suppress the
@@ -181,12 +195,12 @@ class StateManager(ptk.LoggingMixin):
             try:
                 if signal_name:
                     # Use signal-based approach for compatibility with existing behavior
-                    ValueManager.set_value_by_signal(
+                    applied = ValueManager.set_value_by_signal(
                         widget, value, signal_name, block_signals=False
                     )
                 else:
                     # Fallback to direct value setting
-                    ValueManager.set_value(widget, value, block_signals=False)
+                    applied = ValueManager.set_value(widget, value, block_signals=False)
 
                 # Force visual update since signals may be blocked
                 widget.update()
@@ -194,6 +208,12 @@ class StateManager(ptk.LoggingMixin):
                 self.logger.debug(
                     f"Could not apply value '{value}' to widget {widget}: {e}"
                 )
+                return False
+        if not applied:
+            self.logger.debug(
+                f"{widget.objectName()} refused {value!r}; it keeps its value."
+            )
+        return applied
 
     @staticmethod
     def _legacy_combo_index(widget: QtWidgets.QWidget, value: Any) -> int:
@@ -245,7 +265,7 @@ class StateManager(ptk.LoggingMixin):
 
     def _apply_combo_identity(
         self, widget: QtWidgets.QWidget, value: Any, mode: str
-    ) -> None:
+    ) -> bool:
         """Select a combo item by stable identity (``text`` / ``data``).
 
         The text/data counterpart of :meth:`apply`'s index path: it resolves the
@@ -265,11 +285,15 @@ class StateManager(ptk.LoggingMixin):
         ``suppress_save``, which must write nothing). Text/data is always tried
         FIRST, so a combo whose items are literally named "1", "2", ... still
         matches by name rather than by position.
+
+        Returns:
+            False when no item is *value* (nor a legacy index for one) or the
+            selection raised; True when selected, or *value* is ``None``.
         """
         # ``None`` is the *absence* of a stored selection, not a request to pick
         # an item literally named "None" (which ``findText(str(None))`` would do).
         if value is None:
-            return
+            return True
         with self._restore_signal_scope(widget):
             try:
                 index = self._identity_index(widget, value, mode)
@@ -285,15 +309,16 @@ class StateManager(ptk.LoggingMixin):
                 if index >= 0:
                     widget.setCurrentIndex(index)
                     widget.update()
-                else:
-                    self.logger.debug(
-                        f"Restore-by-{mode}: {value!r} not in {widget.objectName()}; "
-                        "keeping current selection."
-                    )
+                    return True
+                self.logger.debug(
+                    f"Restore-by-{mode}: {value!r} not in {widget.objectName()}; "
+                    "keeping current selection."
+                )
             except Exception as e:
                 self.logger.debug(
                     f"Could not restore {widget.objectName()} by {mode}={value!r}: {e}"
                 )
+        return False
 
     @contextmanager
     def suppress_save(self):

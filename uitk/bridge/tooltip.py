@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from uitk.bridge.spec import AttributeSpec
-from uitk.widgets.mixins.tooltip_mixin import TooltipFormat
+from pythontk import TooltipFormat
 
 # A substitution placeholder (``__SCOPE__``). Matched inside comment prose to
 # tell a machine directive from a sentence -- see
