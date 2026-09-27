@@ -89,17 +89,29 @@ jobs:
           pytest --tb=short -v --timeout=300 --timeout-method=thread test/ \
             --ignore=test/test_marking_menu_integration.py 2>&1 | tee pytest_out.txt
           RC=${PIPESTATUS[0]}
-          OUTPUT=$(cat pytest_out.txt)
-          FAILED=$(echo "$OUTPUT" | grep -oP '\d+(?= failed)' | head -1 || echo "0")
-          PASSED=$(echo "$OUTPUT" | grep -oP '\d+(?= passed)' | head -1 || echo "0")
+          # Counts come off pytest's FINAL summary line only ("== 1 failed,
+          # 2 passed, 3 errors in 4.5s =="), never the whole log: a test that
+          # prints "0 failed" in its own output must not decide the gate.
+          SUMMARY=$(grep -E '^=+ .* in [0-9.]+s.*=+$' pytest_out.txt | tail -1)
+          FAILED=$(echo "$SUMMARY" | grep -oE '[0-9]+ failed' | head -1 | cut -d' ' -f1)
+          PASSED=$(echo "$SUMMARY" | grep -oE '[0-9]+ passed' | head -1 | cut -d' ' -f1)
+          # errors, NOT just failures: a collection or fixture error reports as
+          # "N errors" and leaves the failed count at 0, so "100 passed,
+          # 4 errors" read as green.
+          ERRORS=$(echo "$SUMMARY" | grep -oE '[0-9]+ errors?' | head -1 | cut -d' ' -f1)
           FAILED=${FAILED:-0}
           PASSED=${PASSED:-0}
-          if [ "$FAILED" -gt 0 ]; then
-            echo "::error::$FAILED test(s) failed"
+          ERRORS=${ERRORS:-0}
+          if [ "$FAILED" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+            echo "::error::$FAILED test(s) failed, $ERRORS error(s)"
             exit 1
           fi
+          # No summary line: pytest DIED mid-run (or failed collection), and the
+          # last streamed test above is the site. The exit code says how: 128+N
+          # is signal N (137 SIGKILL -- the OOM killer, say; 139 SIGSEGV), a
+          # small code an os._exit or a SystemExit that bypassed pytest.
           if [ "$PASSED" -eq 0 ]; then
-            echo "::error::No tests passed (likely collection error)"
+            echo "::error::pytest produced no summary (exit $RC): it died mid-run or failed collection, so this run says nothing about the change. The last streamed test above is the site."
             exit 1
           fi
           if [ "$RC" -ne 0 ]; then

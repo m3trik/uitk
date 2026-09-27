@@ -266,15 +266,26 @@ class TestPresetsRootHasOneOwner(BaseTestCase):
         # candidates (Qt's REAL AppConfig / GenericConfig dirs) must not be
         # hoisted into it: `<qt generic>/uitk` is the live store, and moving it
         # into a redirected root is the store-destroying bug the env-var guard
-        # exists for. A redirected environment means "use exactly this".
-        os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
-        os.environ["LOCALAPPDATA"] = str(self._tmp / "local")
-        os.environ["XDG_CONFIG_HOME"] = str(self._tmp / "local")
+        # exists for. A redirected environment means "use exactly this". Qt
+        # ignores %LOCALAPPDATA% (Windows: no candidates) but reads
+        # $XDG_CONFIG_HOME (Linux: its folders moved with the root), so the
+        # rule is that nothing OUTSIDE the redirect is a candidate.
         import platform
 
+        import pythontk as ptk
+
+        redirect = str(self._tmp / "local")
+        os.environ.pop(PRESETS_ROOT_ENV_VAR, None)
+        os.environ["LOCALAPPDATA"] = redirect
+        os.environ["XDG_CONFIG_HOME"] = redirect
         if platform.system() == "Darwin":
             self.skipTest("macOS resolves from $HOME, which Qt reads too")
-        self.assertEqual(pm.PresetManager._legacy_qt_root_candidates(), [])
+        outside = [
+            str(p)
+            for p in pm.PresetManager._legacy_qt_root_candidates()
+            if not ptk.FileUtils.is_under(str(p), redirect)
+        ]
+        self.assertEqual(outside, [])
 
     def test_pythontk_sandbox_moves_both(self):
         import pythontk as ptk

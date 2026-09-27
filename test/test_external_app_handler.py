@@ -658,15 +658,19 @@ class TestExternalAppHandlerLaunch(unittest.TestCase):
         refusal told the user to go do by hand. The host binary itself is
         still never pip'd (that is what would hang).
         """
-        import os
+        import shutil
         import tempfile
         from pathlib import Path
 
         tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
         bin_dir = os.path.join(tmp, "bin")
         os.makedirs(bin_dir)
-        host = os.path.join(bin_dir, "maya.exe")
-        sibling = os.path.join(bin_dir, "mayapy.exe")
+        # Host-shaped, as ptk.AppLauncher.companion_python looks: maya.exe ->
+        # mayapy.exe on Windows, Maya's maya.bin -> mayapy elsewhere.
+        ext = ".exe" if sys.platform == "win32" else ""
+        host = os.path.join(bin_dir, "maya.exe" if ext else "maya.bin")
+        sibling = os.path.join(bin_dir, "mayapy" + ext)
         for f in (host, sibling):
             Path(f).write_text("")
 
