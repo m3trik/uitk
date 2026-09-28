@@ -199,6 +199,12 @@ class Switchboard(
         # without the old import-time side effect.
         _ = self.app
 
+        # A host that owns the application (Maya) quits without finalizing
+        # Python; the guard keeps that exit out of shiboken's teardown fault.
+        from uitk.managers.host_exit_guard import HostExitGuard
+
+        HostExitGuard.arm()
+
         # Ensure plain QtWidgets (e.g. unpromoted QLineEdit in .ui files) expose
         # `widget.option_box`. patch_widget_class is idempotent (no-op if the
         # class already has the property), so repeated Switchboard inits are safe.

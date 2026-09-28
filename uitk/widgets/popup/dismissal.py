@@ -6,6 +6,8 @@ from typing import Callable, List, Optional
 
 from qtpy import QtCore, QtGui, QtWidgets
 
+from uitk.managers.host_exit_guard import HostExitGuard
+
 
 class AncestorDismissal(QtCore.QObject):
     """Dismiss a popup when the window hosting its anchor moves.
@@ -139,6 +141,7 @@ class OutsideClickDismissal(QtCore.QObject):
             app.removeEventFilter(self)
 
     def eventFilter(self, obj, event):
+        HostExitGuard.note(obj)  # an application filter: see its docstring
         event_type = event.type()
         if event_type == QtCore.QEvent.MouseButtonPress:
             # QCursor.pos() rather than the event's global position: dodges

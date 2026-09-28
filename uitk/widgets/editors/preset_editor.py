@@ -8,6 +8,9 @@ Tool › Mode), and adds what no single panel can:
 
 * **Lock** -- a locked preset can't be overwritten, renamed or deleted from its
   panel (Save offers ``"<name> copy"``). A guard against accidents, not security.
+* **Hide** -- a hidden preset (a shipped built-in too) leaves its panel's preset
+  list but stays on disk, dimmed here; the panel keeps showing the one it is on.
+  The row menu hides the selection, a tree node's menu everything under it.
 * **Collections** -- a named set of presets (at most one per preset) that is
   exported as one bundle, installed by other artists, and updated in place by a
   later version of the same bundle. The collections box beside the filter both
@@ -28,17 +31,40 @@ open panels learn about changes through :meth:`PresetManager.notify`.
 
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 from qtpy import QtCore, QtGui, QtWidgets
 import pythontk as ptk
 
 from uitk.managers.icon_manager import IconManager
 from uitk.managers.preset_manager import PresetManager
+from uitk.widgets.column_config import ColumnConfig
 from uitk.widgets.editors.editor_panel import EditorPanel
+from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.optionBox.options.filter import NEGATE_PREFIX, FilterOption
 
 Patterns = Union[str, List[str], None]
+
+
+class _PresetFlag(NamedTuple):
+    """A yes / no mark the editor's menus set on presets (lock, hide).
+
+    Parameters:
+        attr: The ``PresetEntry`` attribute that reads it.
+        setter: The ``PresetLibrary`` method that writes it
+            (``(entries, flag) -> count``).
+        builtins: Whether a shipped built-in can carry it.
+        on: The row that sets it: ``(label, tooltip)``.
+        off: The row that clears it: ``(label, tooltip)``.
+        done: The footer's words for each, past tense: ``(set, cleared)``.
+    """
+
+    attr: str
+    setter: str
+    builtins: bool
+    on: Tuple[str, str]
+    off: Tuple[str, str]
+    done: Tuple[str, str]
 
 
 class PresetEditor(EditorPanel):
@@ -78,10 +104,31 @@ class PresetEditor(EditorPanel):
         """
         cls.APP_LABELS[folder] = label
 
-    # Tool last: it is the long, redundant-once-a-tool-is-picked column, so it
-    # takes the leftover width instead of pushing the short ones off-screen.
-    HEADERS = ("Name", "Collection", "Tags", "Lock", "Modified", "Tool")
-    COL_NAME, COL_COLLECTION, COL_TAGS, COL_LOCK, COL_MODIFIED, COL_TOOL = range(6)
+    # Description last: prose of any length, it takes the width the window has
+    # to spare and grows with it, and its tooltip shows it whole. Every other
+    # column is as wide as what it shows. (The header menu reorders them; the
+    # spare width stays with Description wherever it is moved.)
+    HEADERS = (
+        "Name",
+        "Collection",
+        "Tags",
+        "Lock",
+        "Modified",
+        "Tool",
+        "Description",
+    )
+    (
+        COL_NAME,
+        COL_COLLECTION,
+        COL_TAGS,
+        COL_LOCK,
+        COL_MODIFIED,
+        COL_TOOL,
+        COL_DESCRIPTION,
+    ) = range(7)
+    #: The most of a description its tooltip shows (wrapped); past it, the
+    #: text is cut at a word and ends in an ellipsis.
+    DESCRIPTION_TIP_CHARS = 1000
     PAGE_PRESETS, PAGE_IMPORT = 0, 1
 
     #: Collections-box rows that are not a collection. Never a collection id
@@ -98,6 +145,11 @@ class PresetEditor(EditorPanel):
         ("Locked", "locked"),
         ("Editable", "unlocked", "Presets you can change: yours, not locked."),
         ("Built-in", "builtin"),
+        (
+            "Hidden",
+            "hidden",
+            "Presets left out of their panels' preset lists (kept on disk).",
+        ),
         None,
         (
             "Edited since export or install",
@@ -110,6 +162,30 @@ class PresetEditor(EditorPanel):
     #: Tag facet values beside the tags themselves (the tag-icon button).
     TAG_ANY = "@any"
     UNTAGGED = "@untagged"
+
+    #: The marks the row, tree and collection menus set and clear.
+    _FLAGS = {
+        "lock": _PresetFlag(
+            "read_only",
+            "set_read_only",
+            False,
+            ("Lock", "Protect them: none can be saved over, renamed or deleted."),
+            ("Unlock", "Let them be saved over, renamed and deleted again."),
+            ("Locked", "Unlocked"),
+        ),
+        "hide": _PresetFlag(
+            "hidden",
+            "set_hidden",
+            True,
+            (
+                "Hide",
+                "Leave them out of their panels' preset lists. Nothing is "
+                "deleted, and a panel keeps showing the one it is on.",
+            ),
+            ("Show", "List them in their panels' preset lists again."),
+            ("Hid", "Showed"),
+        ),
+    }
 
     def __init__(
         self,
@@ -144,12 +220,16 @@ class PresetEditor(EditorPanel):
         #: Collection members edited since export / install, worked out once
         #: per scan (it hashes each member) and only when a filter asks.
         self._edited: Optional[set] = None
+        #: ``(column, order)`` of the header's sort, or ``None`` (tool, name).
+        self._sort: Optional[Tuple[int, QtCore.Qt.SortOrder]] = None
 
         # The views first: the filter controls re-filter the table as they
         # restore their persisted state.
         self._tree = QtWidgets.QTreeWidget()
         self._tree.setObjectName("tree_tools")
         self._tree.setHeaderHidden(True)
+        self._tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self._tree.customContextMenuRequested.connect(self._on_tree_context_menu)
         self._table = self._build_table()
         self._stack = QtWidgets.QStackedWidget()
         self._stack.addWidget(self._table)
@@ -184,7 +264,7 @@ class PresetEditor(EditorPanel):
         self._search.setObjectName("le_search")
         self._search.setPlaceholderText("Filter (exact; * for substring; ! excludes)")
         self._search.setToolTip(
-            "Filter the presets by name, tool, collection or tag.\n"
+            "Filter the presets by name, description, tool, collection or tag.\n"
             "\n"
             "• Separate terms with commas — any matching term keeps the row.\n"
             "• Matching is exact (ignoring case) unless you add wildcards:\n"
@@ -237,8 +317,8 @@ class PresetEditor(EditorPanel):
         cmb.setMinimumContentsLength(16)
         cmb.setToolTip(
             "Show one collection's presets.\n"
-            "＋ makes a collection, ☰ edits, exports or deletes the one shown,\n"
-            "and a double-click renames it."
+            "＋ makes a collection; ☰ imports one, or edits, locks, exports or\n"
+            "deletes the one shown; a double-click renames it."
         )
         # Only the name is the user's to rewrite; version and count are facts.
         cmb.set_cells(
@@ -258,7 +338,8 @@ class PresetEditor(EditorPanel):
         cmb.option_box.add_action(
             callback=self._show_collection_menu,
             icon="menu",
-            tooltip="The collection shown: edit, export, delete.",
+            tooltip="Import a collection, or edit, lock, export or delete the one "
+            "shown.",
         )
         cmb.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         cmb.customContextMenuRequested.connect(
@@ -283,7 +364,25 @@ class PresetEditor(EditorPanel):
         table.setWordWrap(False)
         header = table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(self.COL_TOOL, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(self.COL_DESCRIPTION, QtWidgets.QHeaderView.Stretch)
+        # Item tooltips wrapped to a readable width, up long enough to read --
+        # a description's whole text.
+        TooltipPresenter.manage(table)
+        # A click sorts by that column, a second reverses it. The LIST is sorted
+        # (see _visible_entries), never the view: rows map to presets by
+        # position, and a view sort would leave every edit on the wrong one.
+        header.sectionClicked.connect(self._on_header_clicked)
+        # Right-click the header to show, hide or reorder columns (Name stays),
+        # kept with the window's other settings. The header itself is not
+        # movable -- a click on it sorts -- so the order is dragged in the menu.
+        ColumnConfig.attach(
+            table,
+            settings=self._settings,
+            settings_key="columns",
+            locked=[self.COL_NAME],
+            movable=False,
+            reorderable=True,
+        ).restore()
         table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(self._on_context_menu)
         table.itemChanged.connect(self._on_item_changed)
@@ -358,15 +457,17 @@ class PresetEditor(EditorPanel):
             "b_backup_to_file",
         )
         button(
-            "Import or restore…",
-            "Review a bundle (a shared collection or a backup), then apply it.",
-            self._on_import,
-            "b_import",
+            "Restore from backup…",
+            "Review a backup, then apply it. The presets as they are now are "
+            "backed up first. (A shared collection is imported from the "
+            "collections box's ☰ menu.)",
+            lambda: self._on_import(backups=True),
+            "b_restore",
         )
         button(
             "Open backups folder",
             "Open the folder holding backups.",
-            lambda: self._open_folder(self.library.root / ".backups"),
+            lambda: self._open_folder(self._backups_dir),
             "b_open_backups",
         )
         menu.add(Separator, setTitle="Maintenance")
@@ -582,6 +683,8 @@ class PresetEditor(EditorPanel):
             return entry.tier == "user" and not entry.read_only
         if status == "builtin":
             return entry.tier == "builtin"
+        if status == "hidden":
+            return entry.hidden
         if status == "edited":
             if self._edited is None:
                 self._edited = {
@@ -596,6 +699,7 @@ class PresetEditor(EditorPanel):
         fields = (
             entry.label,
             entry.name,
+            entry.description,
             *self._segment_labels(entry.domain),
             self._collection_name(entry.collection),
             *entry.tags,
@@ -618,9 +722,7 @@ class PresetEditor(EditorPanel):
         patterns = self._text_filter.patterns()
         out = []
         for entry in self._entries:
-            if prefix and not (
-                entry.domain == prefix or entry.domain.startswith(prefix + "/")
-            ):
+            if not self._is_under(entry.domain, prefix):
                 continue
             if collection == self.NO_COLLECTION:
                 if entry.collection:
@@ -637,9 +739,67 @@ class PresetEditor(EditorPanel):
             if patterns and not self._passes_text(entry, patterns):
                 continue
             out.append(entry)
-        return sorted(
-            out, key=lambda e: (self.tool_label(e.domain).lower(), e.label.lower())
+        out.sort(key=lambda e: (self.tool_label(e.domain).lower(), e.label.lower()))
+        if self._sort is not None:
+            column, order = self._sort
+            # Stable: rows the column ties keep the default order.
+            out.sort(
+                key=self._sort_key(column),
+                reverse=order == QtCore.Qt.DescendingOrder,
+            )
+        return out
+
+    @staticmethod
+    def _is_under(domain: str, prefix: str) -> bool:
+        """Whether store *domain* is under tree node *prefix* (``""``: all)."""
+        return not prefix or domain == prefix or domain.startswith(prefix + "/")
+
+    def _entries_under(self, prefix: str) -> List[ptk.PresetEntry]:
+        """The presets under tree node *prefix*, whatever the filter row shows."""
+        return [e for e in self._entries if self._is_under(e.domain, prefix)]
+
+    def _cell_texts(self, entry: ptk.PresetEntry) -> Dict[int, str]:
+        """What each column shows for *entry*."""
+        if entry.tier == "builtin":
+            lock = "Built-in"
+        else:
+            lock = "Locked" if entry.read_only else ""
+        return {
+            self.COL_NAME: entry.label,
+            self.COL_DESCRIPTION: entry.description,
+            self.COL_TOOL: self.tool_label(entry.domain),
+            self.COL_COLLECTION: self._collection_name(entry.collection),
+            self.COL_TAGS: ", ".join(entry.tags),
+            self.COL_LOCK: lock,
+            self.COL_MODIFIED: self._format_time(entry.modified),
+        }
+
+    def _sort_key(self, column: int):
+        """The key a header sort by *column* orders the presets with.
+
+        A name sorts naturally (``Take 2`` before ``Take 10``), the modified
+        time chronologically (not as the minute it shows), any other column by
+        the text it shows; all ignore case, and an empty cell comes first.
+        """
+        if column == self.COL_NAME:
+            return lambda e: ptk.StrUtils.natural_sort_key(e.label, ignore_case=True)
+        if column == self.COL_MODIFIED:
+            return lambda e: (e.modified is not None, e.modified or 0.0)
+        return lambda e: self._cell_texts(e)[column].casefold()
+
+    def _on_header_clicked(self, column: int) -> None:
+        """Sort the rows by *column*; the sorted column again reverses it."""
+        ascending = QtCore.Qt.AscendingOrder
+        order = (
+            QtCore.Qt.DescendingOrder
+            if self._sort == (column, ascending)
+            else ascending
         )
+        self._sort = (column, order)
+        header = self._table.horizontalHeader()
+        header.setSortIndicator(column, order)
+        header.setSortIndicatorShown(True)
+        self._populate_table()
 
     def _populate_table(self, *_args) -> None:
         if self._populating:
@@ -654,32 +814,37 @@ class PresetEditor(EditorPanel):
             italic = QtGui.QFont(table.font())
             italic.setItalic(True)
             badge = IconManager.get("stack", size=(12, 12))
+            # A hidden preset reads as out of use: its panel no longer lists it.
+            dim = QtGui.QBrush(
+                table.palette().color(QtGui.QPalette.Disabled, QtGui.QPalette.Text)
+            )
+            # Metadata any user preset takes, locked or not (a lock guards the
+            # payload); the name only while it can be renamed.
+            user_columns = (self.COL_TAGS, self.COL_DESCRIPTION)
             for row, entry in enumerate(self._rows):
                 editable = entry.tier == "user" and not entry.read_only
-                cells = {
-                    self.COL_NAME: entry.label,
-                    self.COL_TOOL: self.tool_label(entry.domain),
-                    self.COL_COLLECTION: self._collection_name(entry.collection),
-                    self.COL_TAGS: ", ".join(entry.tags),
-                    self.COL_LOCK: (
-                        "Built-in"
-                        if entry.tier == "builtin"
-                        else ("Locked" if entry.read_only else "")
-                    ),
-                    self.COL_MODIFIED: self._format_time(entry.modified),
-                }
-                for col, text in cells.items():
+                for col, text in self._cell_texts(entry).items():
                     item = QtWidgets.QTableWidgetItem(text)
                     flags = item.flags() & ~QtCore.Qt.ItemIsEditable
                     if (col == self.COL_NAME and editable) or (
-                        col == self.COL_TAGS and entry.tier == "user"
+                        col in user_columns and entry.tier == "user"
                     ):
                         flags |= QtCore.Qt.ItemIsEditable
                     item.setFlags(flags)
                     if entry.tier == "builtin":
                         item.setFont(italic)
+                    if entry.hidden:
+                        item.setForeground(dim)
                     table.setItem(row, col, item)
-                table.item(row, self.COL_NAME).setToolTip(str(entry.path))
+                tip = str(entry.path)
+                if entry.hidden:
+                    tip += "\nHidden: its panel's preset list leaves it out."
+                table.item(row, self.COL_NAME).setToolTip(tip)
+                if entry.description:
+                    # Whole, up to the cap; the presenter wraps it as it shows.
+                    table.item(row, self.COL_DESCRIPTION).setToolTip(
+                        self._description_tip(entry.description)
+                    )
                 collection_item = table.item(row, self.COL_COLLECTION)
                 collection_item.setIcon(badge)
                 collection_item.setToolTip(
@@ -694,6 +859,20 @@ class PresetEditor(EditorPanel):
         finally:
             self._populating = False
         self._update_status()
+
+    @classmethod
+    def _description_tip(cls, text: str) -> str:
+        """*text* whole, or past :attr:`DESCRIPTION_TIP_CHARS` cut at a word
+        (a single longer word at the cap) and ended with an ellipsis."""
+        cap = cls.DESCRIPTION_TIP_CHARS
+        if len(text) <= cap:
+            return text
+        head = text[:cap]
+        if not text[cap].isspace():  # the cap falls inside a word: drop it
+            words = head.rsplit(None, 1)
+            if len(words) > 1:
+                head = words[0]
+        return head.rstrip() + "…"
 
     def _select_rows(self, rows) -> None:
         """Select whole *rows*, adding to the selection (``selectRow`` would
@@ -794,15 +973,36 @@ class PresetEditor(EditorPanel):
     def lock(self, entries=None, flag: bool = True) -> int:
         """Lock (or unlock) presets; defaults to the selection."""
         entries = self.selected_entries() if entries is None else entries
+        return self._set_flag("lock", entries, flag)
+
+    def hide_presets(self, entries=None, flag: bool = True) -> int:
+        """Hide presets from their panels' preset lists, or list them again.
+
+        Defaults to the selection; built-ins too. Nothing is deleted, and a
+        panel keeps showing the preset it is on. (Not ``hide``: that is the
+        window's own.)
+        """
+        entries = self.selected_entries() if entries is None else entries
+        return self._set_flag("hide", entries, flag)
+
+    def _set_flag(self, flag: str, entries, value: bool) -> int:
+        """Set (or clear) mark *flag* (a :attr:`_FLAGS` key) on *entries*.
+
+        Returns:
+            How many presets took it (``0`` when a stale row stopped it).
+        """
+        spec = self._FLAGS[flag]
+        targets = [e for e in entries if spec.builtins or e.tier == "user"]
+        label = (spec.on if value else spec.off)[0]
         count = self._guarded(
-            entries,
-            f"{'lock' if flag else 'unlock'} them",
-            lambda: self.library.set_read_only(entries, flag),
+            targets,
+            f"{label.lower()} them",
+            lambda: getattr(self.library, spec.setter)(targets, value),
         )
         if count is None:
             return 0
-        self._changed(e.domain for e in entries)
-        self._report(f"{'Locked' if flag else 'Unlocked'} {count} preset(s).")
+        self._changed(e.domain for e in targets)
+        self._report(f"{spec.done[0 if value else 1]} {count} preset(s).")
         return count
 
     def duplicate(self, entry=None) -> Optional[ptk.PresetEntry]:
@@ -889,6 +1089,14 @@ class PresetEditor(EditorPanel):
             )
             if tagged is not None:
                 self._changed([entry.domain])
+        elif item.column() == self.COL_DESCRIPTION:
+            described = self._guarded(
+                [entry],
+                "describe it",
+                lambda: self.library.set_description([entry], text),
+            )
+            if described is not None:
+                self._changed([entry.domain])
 
     def _copy_contents(self, entry: ptk.PresetEntry) -> Optional[str]:
         """Copy *entry*'s file text to the clipboard; ``None`` when it is gone."""
@@ -901,23 +1109,20 @@ class PresetEditor(EditorPanel):
 
     # ------------------------------------------------------------ row menu
     def build_context_menu(self):
-        """The row menu for the selection, built but not shown (``None`` when
-        nothing is selected). Collection membership has its own menu, on the
-        Collection cell (:meth:`build_collection_cell_menu`); renaming is a
-        double-click (or F2) on the name."""
+        """The row menu for the selection, built but not shown.
+
+        ``None`` when nothing is selected. Collection membership has its own
+        menu, on the Collection cell (:meth:`build_collection_cell_menu`);
+        renaming is a double-click (or F2) on the name.
+        """
         from uitk.widgets.context_menu import ContextMenu
 
         entries = self.selected_entries()
         if not entries:
             return None
-        user = [e for e in entries if e.tier == "user"]
         menu = ContextMenu(parent=self._table)
-        if user:
-            any_unlocked = any(not e.read_only for e in user)
-            menu.add(
-                "Lock" if any_unlocked else "Unlock",
-                callback=lambda f=any_unlocked: self.lock(user, f),
-            )
+        self._add_flag_rows(menu, entries, "lock")
+        self._add_flag_rows(menu, entries, "hide")
         if len(entries) == 1:
             e = entries[0]
             menu.add("Duplicate", callback=lambda: self.duplicate(e))
@@ -930,6 +1135,21 @@ class PresetEditor(EditorPanel):
             menu.add_separator()
             menu.add("Delete", callback=lambda: self.delete(entries))
         return menu
+
+    def _add_flag_rows(self, menu, entries, flag: str, suffix: str = "") -> None:
+        """The set and clear rows of mark *flag* (``"lock"`` / ``"hide"``) for
+        *entries*: each row that would change something, so a mix offers both
+        and neither way takes two clicks. *suffix* words the rows for a group
+        (``" all"``)."""
+        spec = self._FLAGS[flag]
+        targets = [e for e in entries if spec.builtins or e.tier == "user"]
+        for value, (label, tip) in ((True, spec.on), (False, spec.off)):
+            if any(bool(getattr(e, spec.attr)) != value for e in targets):
+                menu.add(
+                    label + suffix,
+                    callback=lambda v=value: self._set_flag(flag, targets, v),
+                    setToolTip=tip,
+                )
 
     def _on_context_menu(self, pos) -> None:
         index = self._table.indexAt(pos)
@@ -944,12 +1164,53 @@ class PresetEditor(EditorPanel):
         if menu is not None:
             menu.exec_(global_pos)
 
+    # ------------------------------------------------------------ tree menu
+    def build_tree_menu(self, prefix: str):
+        """A tree node's menu (*prefix*; ``""`` is the root), built but not shown.
+
+        It acts on every preset under the node -- the ones its count counts,
+        whatever the filter row shows: hide or show them, lock or unlock them
+        (each row only when it would change something), open the node's
+        folder, back its presets up.
+        """
+        from uitk.widgets.context_menu import ContextMenu
+
+        entries = self._entries_under(prefix)
+        title = self.tool_label(prefix) if prefix else "All presets"
+        menu = ContextMenu(parent=self._tree)
+        menu.add_separator(f"{title} ({len(entries)})")
+        self._add_flag_rows(menu, entries, "hide", " all")
+        self._add_flag_rows(menu, entries, "lock", " all")
+        menu.add_separator()
+        folder = self.library.root.joinpath(*[p for p in prefix.split("/") if p])
+        menu.add(
+            "Open folder",
+            callback=lambda: self._open_folder(folder),
+            setToolTip="Open the folder these presets are saved in.",
+        )
+        if any(e.tier == "user" for e in entries):
+            keys = sorted({e.domain for e in entries})
+            menu.add(
+                "Back up these presets",
+                callback=lambda: self._on_backup(keys=keys, name=f"Backup ({title})"),
+                setToolTip="Save your presets here to the backups folder "
+                "(built-ins ship with their tools).",
+            )
+        return menu
+
+    def _on_tree_context_menu(self, pos) -> None:
+        item = self._tree.itemAt(pos)
+        if item is None:
+            return
+        menu = self.build_tree_menu(item.data(0, QtCore.Qt.UserRole) or "")
+        menu.exec_(self._tree.viewport().mapToGlobal(pos))
+
     # ------------------------------------------------- collection cell menu
     def build_collection_cell_menu(self, row: int):
-        """Collection membership for *row*'s preset (or the selection it is in),
-        built but not shown: add to, move between, take out of a collection.
+        """The Collection cell's membership menu, built but not shown.
 
-        What a collection IS -- its name, description, bundle -- is edited from
+        For *row*'s preset, or the selection it is in: add to, move between,
+        take out of a collection. What a collection IS -- its name, description, bundle -- is edited from
         the collections box; this menu only moves presets in and out.
         """
         from uitk.widgets.context_menu import ContextMenu
@@ -1062,8 +1323,10 @@ class PresetEditor(EditorPanel):
 
     # ------------------------------------------------------------ collections
     def collection_filter(self) -> str:
-        """The collections box's pick: a collection id, :attr:`ALL_PRESETS` or
-        :attr:`NO_COLLECTION`."""
+        """The collections box's pick.
+
+        A collection id, :attr:`ALL_PRESETS` or :attr:`NO_COLLECTION`.
+        """
         return self._cmb_collection.currentData() or self.ALL_PRESETS
 
     def set_collection_filter(self, value: str) -> bool:
@@ -1168,15 +1431,24 @@ class PresetEditor(EditorPanel):
         return counts
 
     def build_collection_menu(self):
-        """The ☰ menu of the collections box, built but not shown: edit, export
-        or delete the collection the box shows."""
+        """The collections box's ☰ menu, built but not shown.
+
+        *Import…* always; for the collection the box shows, edit, lock, export
+        and delete.
+        """
         from uitk.widgets.context_menu import ContextMenu
 
         menu = ContextMenu(parent=self._cmb_collection)
+        menu.add(
+            "Import…",
+            callback=self._on_import,
+            setToolTip="Review a shared collection's bundle, then install it.",
+        )
         cid = self.picked_collection()
         if cid is None:
+            menu.add_separator()
             menu.add(
-                "Pick a collection to edit, export or delete it",
+                "Pick a collection to edit, lock, export or delete it",
                 setEnabled=False,
             )
             return menu
@@ -1185,6 +1457,7 @@ class PresetEditor(EditorPanel):
         version = f" · v{header['version']}" if header.get("version") else ""
         menu.add_separator(f"{name}{version}")
         menu.add("Edit…", callback=lambda: self.prompt_edit_collection(cid))
+        self._add_flag_rows(menu, self.library.members(cid), "lock")
         menu.add(
             "Export…",
             callback=lambda: self._on_export_collection(cid),
@@ -1330,8 +1603,9 @@ class PresetEditor(EditorPanel):
             self.export_collection(collection_id, path)
 
     # ---------------------------------------------------------------- backup
-    def _on_backup(self) -> None:
-        path = self.library.backup()
+    def _on_backup(self, *, keys=None, name=None) -> None:
+        """Back up to the backups folder: every preset, or the stores *keys*."""
+        path = self.library.backup(keys=keys, name=name)
         if path is None:
             self._report("There are no presets to back up.", "warning")
         else:
@@ -1360,6 +1634,10 @@ class PresetEditor(EditorPanel):
             f"{counts['folders']} empty folder(s)."
         )
 
+    @property
+    def _backups_dir(self) -> Path:
+        return self.library.root / ".backups"
+
     @staticmethod
     def _open_folder(path: Path) -> None:
         path = Path(path)
@@ -1367,11 +1645,14 @@ class PresetEditor(EditorPanel):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(path)))
 
     # ---------------------------------------------------------------- import
-    def _on_import(self) -> None:
-        start = self.library.root / ".backups"
+    def _on_import(self, backups: bool = False) -> None:
+        """Pick a bundle and review it: a shared collection (the ☰ menu), or
+        with *backups* a backup (the header menu; opens in the backups folder).
+        The review reads the bundle, so either kind goes through either door."""
+        start = self._backups_dir if backups else Path.home()
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
-            "Import presets",
+            "Restore from backup" if backups else "Import a collection",
             str(start if start.is_dir() else Path.home()),
             "Preset bundles (*.zip)",
         )
@@ -1424,7 +1705,11 @@ class PresetEditor(EditorPanel):
         return plan
 
     def apply_import(self) -> Optional[ptk.ImportResult]:
-        """Apply the reviewed plan (a backup is taken first), then return to the list."""
+        """Apply the reviewed plan, then return to the list.
+
+        A backup is taken first. After a collection bundle, the box shows the
+        collection it installed.
+        """
         plan = self._plan
         if plan is None:
             return None
@@ -1436,6 +1721,9 @@ class PresetEditor(EditorPanel):
         self._plan = None
         self._stack.setCurrentIndex(self.PAGE_PRESETS)
         self._changed(result.domains)
+        installed = plan.header.get("id") if plan.kind == "collection" else None
+        if installed and self.set_collection_filter(installed):
+            self.select_prefix("")  # every tool: what arrived, all of it
         done = ", ".join(
             f"{n} {action}" for action, n in sorted(result.applied.items())
         )

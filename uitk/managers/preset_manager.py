@@ -1065,8 +1065,13 @@ class PresetManager(_PresetWidgetScope, _PresetRootMigration, ptk.LoggingMixin):
         same way, except that Save seeds ``"<name> copy"``: a locked preset can't
         be overwritten, so the save lands beside it.
 
+        A preset *hidden* in the Preset Editor (built-ins too) is left out of
+        the list -- it stays on disk and loads as before -- except the active
+        one, which stays listed until the panel moves off it. An item's tooltip
+        carries the preset's description, when it has one.
+
         The list re-reads the folder each time the dropdown opens (only
-        repopulating when names or locks changed), so presets added, locked or
+        repopulating when it changed), so presets added, locked, hidden or
         imported elsewhere -- another DCC, the Preset Editor -- show up without
         a manual Refresh.
 

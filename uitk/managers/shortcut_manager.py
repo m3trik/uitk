@@ -19,6 +19,8 @@ two would force the widget layer to import :mod:`uitk.switchboard`.
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from qtpy import QtCore, QtGui, QtWidgets
 
+from uitk.managers.host_exit_guard import HostExitGuard
+
 
 # Scope name <-> Qt.ShortcutContext mapping. Used for persistence (string form
 # survives JSON/QSettings) and editor UX. The two end-user-facing scopes are
@@ -126,7 +128,10 @@ class GlobalShortcut(QtCore.QObject):
             # Search top levels for the host's registered main window
             names = ShortcutManager.host_window_names()
             for widget in app.topLevelWidgets():
-                if isinstance(widget, QtWidgets.QWidget) and widget.objectName() in names:
+                if (
+                    isinstance(widget, QtWidgets.QWidget)
+                    and widget.objectName() in names
+                ):
                     return widget
 
         return explicit_parent
@@ -181,6 +186,8 @@ class GlobalShortcut(QtCore.QObject):
 
     def eventFilter(self, obj, event):
         """Monitor global events for the specific key release."""
+        # Installed on the application for the hold: see HostExitGuard.note.
+        HostExitGuard.note(obj)
         if (
             self._is_down
             and event.type() == QtCore.QEvent.KeyRelease

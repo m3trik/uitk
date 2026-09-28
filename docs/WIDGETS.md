@@ -151,6 +151,18 @@ OverflowIndicator.of(view).detach()
 
 It is a mouse-transparent sibling stacked above the viewport -- never a viewport child, which `viewport().scroll()` would drag along with the rows -- sized from the view's font and coloured from its palette (band: `Base` fading over the content; arrow: `Text`).
 
+### Quitting inside a host
+A host that owns the `QApplication` and quits without finalizing Python (Maya) runs PySide's teardown at DLL detach with the interpreter still up, and it faults on two shapes, filing a crash dump on quit: a C++-created object that a live wrapper keeps as a *referred object* (PySide's reference for `setModel`, `setScreen`, the return of `windowHandle()` and the like), and a static Qt object -- the pixmap cache -- that an application-wide event filter was handed, which PySide tagged when it wrapped it. `HostExitGuard` (`uitk/managers/host_exit_guard.py`) clears both on `aboutToQuit`. Every `Switchboard` arms it, and it arms only for an application Python did not create (a standalone process finalizes Python itself). Nothing is deleted, but a Python reference kept to one of those objects is dead after `aboutToQuit`: fetch it again from its getter. An application-wide event filter hands each object it sees to `note` -- uitk's three do:
+
+```python
+def eventFilter(self, obj, event):
+    HostExitGuard.note(obj)  # first line; returns at once while disarmed
+    ...
+
+HostExitGuard.arm()      # idempotent; False for a Python-created application
+HostExitGuard.release()  # what aboutToQuit runs; returns how many it cleared
+```
+
 ---
 
 ## The widget catalog
@@ -335,7 +347,7 @@ def tree_nodes(self, item, column):
 
 `create_item(text, data=None, parent=None)` returns the `QTreeWidgetItem` (a list of strings fills columns). `add(data, headers=None, clear=True, parent=None)` bulk-loads dicts/lists as hierarchy (dict keys become parents, values children).
 
-Methods: `add`, `create_item`, `set_item_type_icon`, `set_item_data`, `set_action_color`, `expand_all_items`, `collapse_all_items`, `set_selection_mode`.
+Methods: `add`, `create_item`, `set_item_type_icon`, `set_item_data`, `set_action_color`, `expand_all_items`, `collapse_all_items`, `set_selection_mode`, `enable_column_config` / `restore_column_state` (see [column config](#column-config)).
 
 ## TableWidget
 
@@ -351,6 +363,20 @@ def tbl_rows_init(self, widget):
 `set_action_color(item, key, row=-1, col=-1)` tints cells using the same action-color keys as `LineEdit`.
 
 See `uitk/widgets/table_actions.py` for bulk action helpers.
+
+### Column config
+
+`TreeWidget` and `TableWidget` share one header option, `enable_column_config(settings=None, settings_key=None, locked=(), reorderable=False)` + `restore_column_state()`: right-click the header for a checkable row per column, in the order the view shows them (ticked while shown); the last visible column and any `locked` ones can't be hidden; sections drag to reorder; the layout is saved on every change (`hidden_columns`, `column_order` under the `settings_key` branch) and applied by `restore_column_state()` once the headers are set. The option is `ColumnConfig` ([column_config.py](../uitk/widgets/column_config.py)), which attaches the same way to any plain `QTableWidget` / `QTreeWidget` (labels come from the model's header data):
+
+```python
+ColumnConfig.attach(table, settings=settings, settings_key="columns", locked=[0]).restore()
+ColumnConfig.of(table).set_hidden(3)        # refused (False) for a locked or last column
+ColumnConfig.of(table).set_order([2, 0, 1, 3])  # logical columns, left to right
+```
+
+`movable=False` keeps the header's order fixed -- for a header whose click sorts, since Qt turns any press on a movable header into a potential drag. `reorderable=True` moves reordering into the menu instead: its rows are a list that stays up, where a click shows or hides a column and a drag moves it (the press-move-release is the list's own, no `QDrag`).
+
+A column's width behaviour stays with the column wherever it goes. One that takes the spare width (`QHeaderView.Stretch`) goes on taking it; a fixed or content-sized one moved last stays that size. A view that fills with `stretchLastSection` -- which stretches a *position* -- has that fill handed to the column holding it (it becomes `Stretch`) before its first move, hide or restore. While every `Stretch` column is hidden, the last one showing fills instead of a gap opening at the right edge, and gets its own width back when one returns. A view with no stretching column, or one sizing a column itself (`set_stretch_column`), is left as it is.
 
 ## Menu
 
@@ -765,13 +791,16 @@ sb.editors.add_post_build_hook("shortcut", wire_dcc_collision_checker)
 
 ### Preset Editor
 
-`PresetEditor` is the window over `pythontk.PresetLibrary`: every preset store under the presets root (`UITK_PRESETS_ROOT`, default `%LOCALAPPDATA%/uitk`), shown as a tree of App › Tool › Mode beside a filterable table. It never imports or builds a tool: a store announces itself with a `.domain` marker in its folder, and a preset's metadata sits in a sidecar `.<name>.preset` beside it (id, label as typed, lock, collection, tags). The preset file itself is never modified, so tools and older installs read exactly what they always did.
+`PresetEditor` is the window over `pythontk.PresetLibrary`: every preset store under the presets root (`UITK_PRESETS_ROOT`, default `%LOCALAPPDATA%/uitk`), shown as a tree of App › Tool › Mode beside a filterable table. It never imports or builds a tool: a store announces itself with a `.domain` marker in its folder, and a preset's metadata sits in a sidecar `.<name>.preset` beside it (id, label as typed, lock, collection, tags, description, hidden); a hidden built-in, which has no sidecar, is listed in the store's `.hidden` file. The preset file itself is never modified, so tools and older installs read exactly what they always did.
 
-- **Lock** a preset (row menu) and its panel selector shows it italic with a lock tooltip, hides Rename/Delete, and seeds Save with `"<name> copy"`; `PresetManager.save` raises `pythontk.PresetReadOnlyError` for it. A lock guards against accidents; it is not security.
-- **Filter row** — the text field (`FilterOption` grammar: comma terms, exact unless `*`, `!` excludes; the filter icon silences it) carries two `ChoiceOption` facets: Status -- tick any of locked / editable / built-in / edited since export or install in one visit (the popup stays open; a row shows when it matches any ticked status) -- and Tag. Beside it, the **collections box** is both the collection filter and where collections are managed.
-- **Collections** — a named set of presets (at most one per preset). In the collections box: **＋** opens a New collection form (name, description, and "add the selected presets"); **☰** acts on the collection the box shows — *Edit…*, *Export…* (writes a bundle and bumps its version), *Delete* (presets kept, untagged) with *Delete with its presets* in its flyout (unedited members deleted, backup first); a double-click renames it in place. Rows show version and preset count, so an empty collection is as manageable as a full one. A preset's **Collection cell** (click it, or right-click) moves presets in, between and out of collections — it acts on the whole selection when the clicked row is part of it. Importing a later version of a collection updates unedited members in place, even locked ones.
+- **Lock** a preset (row menu), a whole collection (the collections box's ☰ menu) or everything under a tree node (its menu) -- a mix of locked and unlocked offers both Lock and Unlock -- and its panel selector shows it italic with a lock tooltip, hides Rename/Delete, and seeds Save with `"<name> copy"`; `PresetManager.save` raises `pythontk.PresetReadOnlyError` for it. A lock guards against accidents; it is not security.
+- **Hide** a preset (row menu, or a tree node's *Hide all*; built-ins too, the main declutter case): its panel's preset dropdown leaves it out -- except the one the panel is on, which stays until the panel moves off it -- while the file stays on disk and loads as before. Here it is dimmed, and the Status facet's *Hidden* lists them; *Show* lists them again. A hide is the user's own view: a collection export never carries it.
+- **Table** — a header click sorts by that column and a second reverses it (names naturally, Modified by time, the rest by their text ignoring case; the list is sorted, never the view, so every edit still lands on the row's preset; the sort survives filtering and rescans). *Description* is edited in place for your presets and shows a built-in's shipped `_meta.description` read-only; it is searched by the filter text and is the preset's tooltip in its panel dropdown. *Description* is the last column and takes the width the window has to spare; its tooltip shows the whole description wrapped (up to `DESCRIPTION_TIP_CHARS`, 1000, cut at a word past that). Right-click the header to show, hide or reorder columns (a click on a row toggles it, a drag moves it; Name stays; remembered with the window), via [column config](#column-config) with `reorderable=True`.
+- **Tree** — right-click a node (App, Tool, Mode, or *All presets*) for *Hide all* / *Show all*, *Lock all* / *Unlock all* (each only when it would change something), *Open folder* and *Back up these presets* (to the backups folder, named for the node) -- everything under the node, whatever the filter row shows.
+- **Filter row** — the text field (`FilterOption` grammar: comma terms, exact unless `*`, `!` excludes; the filter icon silences it; matches name, description, tool, collection and tags) carries two `ChoiceOption` facets: Status -- tick any of locked / editable / built-in / hidden / edited since export or install in one visit (the popup stays open; a row shows when it matches any ticked status) -- and Tag. Beside it, the **collections box** is both the collection filter and where collections are managed.
+- **Collections** — a named set of presets (at most one per preset). In the collections box: **＋** opens a New collection form (name, description, and "add the selected presets"); **☰** imports a collection (*Import…*, always there) and acts on the one the box shows — *Edit…*, *Lock* / *Unlock* (its presets), *Export…* (writes a bundle and bumps its version), *Delete* (presets kept, untagged) with *Delete with its presets* in its flyout (unedited members deleted, backup first); a double-click renames it in place. Rows show version and preset count, so an empty collection is as manageable as a full one. A preset's **Collection cell** (click it, or right-click) moves presets in, between and out of collections — it acts on the whole selection when the clicked row is part of it. Importing a later version of a collection updates unedited members in place, even locked ones.
 - **Focus** — `PresetEditor(inc=..., exc=...)` or `set_entry_filter(inc, exc)` limits the window to some stores: shell-style patterns naming folders under the root, each taking its stores with it (`"mayatk"`, `"mayatk/scene_*"`; `pythontk.PresetLibrary.in_scope`). Collections stay root-wide (counts show the presets in view), and a backup still covers everything.
-- **Backup / import** share one bundle format (a `.zip`). An import opens a review page (per-preset status: new / identical / update / conflict / removed, with an editable action) and writes nothing until *Apply*, which takes a backup first. Deleting from the editor also backs up first.
+- **Backup / import** share one bundle format (a `.zip`): a collection is imported from the ☰ menu, a backup restored from the header menu (*Restore from backup…*, opening in the backups folder). Either opens a review page (per-preset status: new / identical / update / conflict / removed, with an editable action) and writes nothing until *Apply*, which takes a backup first; an installed collection is then what the box shows. Deleting from the editor also backs up first.
 - Open panels learn about changes through `PresetManager.notify(keys)`; another process's selector re-lists its folder when its dropdown opens.
 
 ```python

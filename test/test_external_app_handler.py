@@ -1071,6 +1071,67 @@ class TestSpawnSnippet(unittest.TestCase):
         self.assertIn("pos='screen'", snippet)
         self.assertIn("app_exec=True", snippet)
 
+    def test_a_non_ascii_show_kwarg_rides_the_command_line_as_ascii(self):
+        """mayapy.exe (the python a Maya host resolves) decodes its command line
+        in the ANSI code page as UTF-8: measured on Maya 2025, "José" arrived as
+        "Jos\\udce9" and "Жук" as "???". The snippet spells values in ASCII
+        escapes, which every interpreter reads back exactly."""
+        title = "Jos\u00e9 \u0416\u0443\u043a"
+        with patch("pythontk.AppLauncher.launch") as launch:
+            ExternalAppHandler._spawn(
+                python=sys.executable,
+                module="foo",
+                entry="FooUI",
+                show_kwargs={"title": title, "pos": "screen"},
+            )
+        call = launch.call_args
+        snippet = (call.kwargs.get("args") or call.args[1])[1]
+        self.assertTrue(snippet.isascii(), ascii(snippet))
+        shown = snippet[snippet.index("ui.show(") + len("ui.show(") : -1]
+        self.assertEqual(eval(f"dict({shown})"), {"title": title, "pos": "screen"})
+
+    def test_a_non_ascii_show_kwarg_reaches_a_real_mayapy_ui_intact(self):
+        import glob
+        import json
+        import shutil
+        import subprocess
+
+        programs = os.environ.get("ProgramFiles", r"C:\Program Files")
+        found = sorted(
+            glob.glob(
+                os.path.join(programs, "Autodesk", "Maya20*", "bin", "mayapy.exe")
+            )
+        )
+        if not found:
+            self.skipTest("mayapy.exe not installed")
+        here = os.path.dirname(os.path.abspath(__file__))
+        where = os.path.join(here, "temp_tests", f"spawn {os.getpid()}")
+        os.makedirs(where)
+        self.addCleanup(shutil.rmtree, where, True)
+        out = os.path.join(where, "shown.json")
+        with open(os.path.join(where, "a5_probe_ui.py"), "w", encoding="utf-8") as fh:
+            fh.write(
+                "import json\n"
+                "class ProbeUI:\n"
+                "    def show(self, **kw):\n"
+                f"        json.dump(kw, open({out!r}, 'w', encoding='utf-8'))\n"
+            )
+        title = "Jos\u00e9 \u0416\u0443\u043a"
+
+        def run(python, args=None, **kw):
+            env = dict(os.environ, PYTHONPATH=where)
+            return subprocess.run([python, *args], env=env, timeout=120)
+
+        with patch("pythontk.AppLauncher.launch", side_effect=run):
+            ExternalAppHandler._spawn(
+                python=found[-1],
+                module="a5_probe_ui",
+                entry="ProbeUI",
+                show_kwargs={"title": title},
+            )
+        with open(out, encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh), {"title": title})
+
     def test_spawn_without_entry_uses_dash_m(self):
         with patch("pythontk.AppLauncher.launch") as launch:
             ExternalAppHandler._spawn(

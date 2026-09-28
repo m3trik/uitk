@@ -11,7 +11,7 @@ from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.overflow_indicator import OverflowIndicator
 from uitk.managers.icon_manager import IconManager
 from uitk.switchboard import Signals
-from uitk.managers.settings_manager import SettingsManager
+from uitk.widgets.column_config import ColumnConfig
 
 
 class HierarchyIconMixin:
@@ -626,9 +626,6 @@ class TreeWidget(
         # Column stretch support
         self._stretch_column = None
 
-        # Column configuration persistence
-        self._column_settings = None  # SettingsManager, set via enable_column_config()
-
         # Header action bar (lazy — created on first access)
         self._header_actions = None
 
@@ -1059,92 +1056,58 @@ class TreeWidget(
 
     # -- Column configuration (visibility, reorder, persistence) ----------
 
-    def enable_column_config(self, settings=None, settings_key=None):
+    def enable_column_config(
+        self, settings=None, settings_key=None, locked=(), reorderable=False
+    ):
         """Enable header right-click menu for column visibility and drag reorder.
+
+        The shared :class:`~uitk.widgets.column_config.ColumnConfig` --
+        ``TableWidget.enable_column_config`` is the same option.
 
         Parameters:
             settings: A SettingsManager instance (or any object with
-                ``value(key, default)`` / ``setValue(key, value)`` /
-                ``sync()``).  If *None*, a module-level SettingsManager
-                is created automatically.
+                ``branch(name)`` / ``value(key, default)`` /
+                ``setValue(key, value)`` / ``sync()``).  If *None*, a
+                SettingsManager (``org="uitk"``, ``app="TreeWidget"``) is
+                created automatically.
             settings_key: Namespace prefix for stored keys.  Defaults to
                 the widget's ``objectName()`` or ``"TreeWidget"``.
+            locked: Logical columns that can't be hidden.
+            reorderable: The menu's rows can also be dragged into another
+                column order (see ``ColumnConfig``).
         """
-        key = settings_key or self.objectName() or "TreeWidget"
-        if settings is None:
-            settings = SettingsManager(org="uitk", app="TreeWidget")
-        self._column_settings = settings.branch(key)
+        ColumnConfig.attach(
+            self,
+            settings=settings,
+            settings_key=settings_key or self.objectName() or "TreeWidget",
+            locked=locked,
+            app="TreeWidget",
+            reorderable=reorderable,
+        )
 
-        # Enable drag-to-reorder on the header
-        header = self.header()
-        header.setSectionsMovable(True)
-        header.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        header.customContextMenuRequested.connect(self._show_column_menu)
-        header.sectionMoved.connect(self._on_column_moved)
+    @property
+    def _column_settings(self):
+        """The layout's settings branch; ``None`` before :meth:`enable_column_config`."""
+        config = ColumnConfig.of(self)
+        return config.settings if config is not None else None
 
     def _show_column_menu(self, pos):
-        """Show a context menu on the header to toggle column visibility."""
-        header = self.header()
-        menu = QtWidgets.QMenu(header)
-        col_count = self.columnCount()
-        header_item = self.headerItem()
-
-        for logical in range(col_count):
-            label = header_item.text(logical) if header_item else f"Column {logical}"
-            action = menu.addAction(label)
-            action.setCheckable(True)
-            action.setChecked(not header.isSectionHidden(logical))
-            # Prevent hiding the last visible column
-            visible = sum(1 for c in range(col_count) if not header.isSectionHidden(c))
-            if visible <= 1 and not header.isSectionHidden(logical):
-                action.setEnabled(False)
-            action.setData(logical)
-
-        chosen = menu.exec_(header.mapToGlobal(pos))
-        if chosen is not None:
-            col = chosen.data()
-            hidden = not chosen.isChecked()
-            header.setSectionHidden(col, hidden)
-            self._save_column_state()
-
-    def _on_column_moved(self, _logical, _old_visual, _new_visual):
-        """Persist column order after the user drags a header section."""
-        self._save_column_state()
+        """Open the header's column menu at header position *pos*."""
+        config = ColumnConfig.of(self)
+        if config is not None:
+            config.show_menu(pos)
 
     def _save_column_state(self):
         """Write current visibility and visual order to settings."""
-        s = self._column_settings
-        if s is None:
-            return
-        header = self.header()
-        col_count = self.columnCount()
-
-        hidden = [c for c in range(col_count) if header.isSectionHidden(c)]
-        order = [header.logicalIndex(v) for v in range(col_count)]
-
-        s.setValue("hidden_columns", hidden)
-        s.setValue("column_order", order)
-        s.sync()
+        config = ColumnConfig.of(self)
+        if config is not None:
+            config.save()
 
     def restore_column_state(self):
         """Apply persisted visibility and order.  Call after headers are set."""
-        s = self._column_settings
-        if s is None:
-            return
-        header = self.header()
-        col_count = self.columnCount()
-
-        hidden = s.value("hidden_columns", [])
-        if hidden:
-            for c in range(col_count):
-                header.setSectionHidden(c, c in hidden)
-
-        order = s.value("column_order", [])
-        if order and len(order) == col_count:
-            for visual_target, logical in enumerate(order):
-                current_visual = header.visualIndex(logical)
-                if current_visual != visual_target:
-                    header.moveSection(current_visual, visual_target)
+        config = ColumnConfig.of(self)
+        if config is not None:
+            config.restore()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

@@ -47,6 +47,8 @@ from typing import Callable, List, Optional
 
 from qtpy import QtCore, QtGui, QtWidgets
 
+from uitk.managers.host_exit_guard import HostExitGuard
+
 
 class OverrideCursorGuard(QtCore.QObject):
     """Owns one application override cursor and guarantees its removal.
@@ -260,6 +262,7 @@ class _ModalSuspendFilter(QtCore.QObject):
         self._saved = []
 
     def eventFilter(self, obj, event):
+        HostExitGuard.note(obj)  # an application filter: see its docstring
         try:
             etype = event.type()
             if etype == QtCore.QEvent.WindowBlocked:
