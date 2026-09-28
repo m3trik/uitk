@@ -934,6 +934,25 @@ class TestDuplicateShortcutGuard(QtBaseTestCase):
             ShortcutManager.find_duplicate_application_shortcuts().get(seq), 2
         )
 
+    def test_a_stale_non_widget_wrapper_is_skipped(self):
+        """A stale ``QWidgetItem`` wrapper from ``allWidgets()`` (see
+        test_switchboard's twin) has no ``children``; the scan skips it."""
+        from unittest.mock import patch
+
+        from uitk.managers.shortcut_manager import ShortcutManager
+
+        host = self._host()
+        seq = "Ctrl+Alt+Shift+F8"
+        self._app_shortcut(host, seq)
+        self._app_shortcut(host, seq)
+        stale = QtWidgets.QWidgetItem(self.track_widget(QtWidgets.QWidget()))
+        with patch.object(
+            QtWidgets.QApplication, "allWidgets", return_value=[stale, host]
+        ):
+            self.assertEqual(
+                ShortcutManager.find_duplicate_application_shortcuts().get(seq), 2
+            )
+
     def test_disabled_duplicate_not_flagged(self):
         from uitk.managers.shortcut_manager import ShortcutManager
 

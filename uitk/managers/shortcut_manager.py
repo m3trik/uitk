@@ -508,6 +508,8 @@ class ShortcutManager:
         counts: Dict[str, int] = {}
         seen: set = set()
         for w in app.allWidgets():
+            if not isinstance(w, QtWidgets.QWidget):
+                continue  # a stale wrapper (see Switchboard.get_all_widgets)
             for child in w.children():
                 if not isinstance(child, shortcut_types) or id(child) in seen:
                     continue

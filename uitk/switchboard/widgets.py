@@ -602,10 +602,15 @@ class SwitchboardWidgetMixin:
         Returns:
             (list) widgets.
         """
+        # isinstance: allWidgets() can answer a widget with a stale wrapper of
+        # another type -- a layout item is no QObject, so shiboken never learns
+        # C++ deleted it, and a widget that reuses its address comes back as the
+        # old QWidgetItem (Linux CI, PySide6 6.10). It can't be asked anything.
         return [
             w
             for w in QtWidgets.QApplication.allWidgets()
-            if (name is None) or (w.objectName() == name)
+            if isinstance(w, QtWidgets.QWidget)
+            and ((name is None) or (w.objectName() == name))
         ]
 
     @staticmethod
