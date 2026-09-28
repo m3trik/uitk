@@ -1152,7 +1152,10 @@ class ExternalAppHandler(BaseHandler):
                     "app_exec": True,
                 }
             )
-            kwargs_src = ", ".join(f"{k}={v!r}" for k, v in sk.items())
+            # ascii(), not repr(): the literal must survive the command line, and
+            # mayapy (a Maya host's python) decodes that in the ANSI code page --
+            # "José" arrived as "Jos\udce9", "Жук" as "???" (measured, Maya 2025).
+            kwargs_src = ", ".join(f"{k}={ascii(v)}" for k, v in sk.items())
             snippet = (
                 f"from {module} import {entry};ui = {entry}();ui.show({kwargs_src})"
             )

@@ -10,20 +10,23 @@ on a Collection cell), the row menu, the header menu's buttons, the New / Edit
 collection form, the import review page.
 """
 
+import json
 import os
 import shutil
 import sys
+import time
 import uuid
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
-from conftest import QtBaseTestCase, setup_qt_application
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
 
 app = setup_qt_application()
 
 import pythontk as ptk  # noqa: E402
-from qtpy import QtCore, QtWidgets  # noqa: E402
+from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from qtpy.QtTest import QTest  # noqa: E402
 from uitk.managers.icon_manager import IconManager  # noqa: E402
 from uitk.managers.preset_manager import PresetManager  # noqa: E402
@@ -143,6 +146,20 @@ class _EditorCase(QtBaseTestCase):
         self.editor.prompt_new_collection()
         return self.editor.picked_collection()
 
+    def answer_open_dialog(self, path):
+        """Patch the open-file dialog to pick *path*; returns the folders it
+        opened in."""
+        opened_in = []
+
+        def pick(_parent, _caption, folder, *_filter):
+            opened_in.append(Path(folder))
+            return str(path), ""
+
+        patcher = mock.patch.object(QtWidgets.QFileDialog, "getOpenFileName", new=pick)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return opened_in
+
     def captured_menus(self):
         """Record every ContextMenu shown instead of blocking on it."""
         shown = []
@@ -162,6 +179,131 @@ class _EditorCase(QtBaseTestCase):
             table.viewport(), QtCore.Qt.LeftButton, modifier, rect.center()
         )
         QtWidgets.QApplication.processEvents()
+
+    def click_header(self, col, editor=None):
+        """Left-click column *col*'s header section."""
+        header = (editor or self.editor)._table.horizontalHeader()
+        x = header.sectionViewportPosition(col) + header.sectionSize(col) // 2
+        QTest.mouseClick(
+            header.viewport(),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+            QtCore.QPoint(x, header.height() // 2),
+        )
+        QtWidgets.QApplication.processEvents()
+
+    def column_menu(self, act=None, editor=None):
+        """Right-click the table header; while its menu is up, ``act(rows)``
+        with the menu's list of column rows.
+
+        Returns:
+            The row labels, top to bottom, as the menu opened.
+        """
+        seen, errors = [], []
+
+        def exec_(menu, pos):
+            try:
+                return run(menu, pos)
+            except BaseException as e:  # a slot's exception is only printed
+                errors.append(e)
+
+        def run(menu, pos):
+            menu.popup(pos)
+            QtWait.until(menu.isVisible, "the column menu never showed")
+            rows = menu.findChild(QtWidgets.QListWidget)
+            seen.extend(rows.item(i).text() for i in range(rows.count()))
+            if act is not None:
+                act(rows)
+            menu.hide()
+            return None
+
+        header = (editor or self.editor)._table.horizontalHeader()
+        with mock.patch.object(QtWidgets.QMenu, "exec_", exec_):
+            header.customContextMenuRequested.emit(QtCore.QPoint(4, 4))
+        if errors:
+            raise errors[0]
+        return seen
+
+    @staticmethod
+    def _row_point(rows, label):
+        [item] = rows.findItems(label, QtCore.Qt.MatchExactly)
+        return rows.visualItemRect(item).center()
+
+    def pick_column(self, label, editor=None):
+        """Click *label*'s row in the header's column menu; the menu's rows."""
+
+        def click(rows):
+            QTest.mouseClick(
+                rows.viewport(),
+                QtCore.Qt.LeftButton,
+                QtCore.Qt.NoModifier,
+                self._row_point(rows, label),
+            )
+
+        return self.column_menu(click, editor)
+
+    def drag_column(self, label, onto, editor=None):
+        """Drag *label*'s row in the header's column menu onto *onto*'s."""
+
+        def drag(rows):
+            viewport = rows.viewport()
+            start, end = self._row_point(rows, label), self._row_point(rows, onto)
+            left, none = QtCore.Qt.LeftButton, QtCore.Qt.NoModifier
+            QTest.mousePress(viewport, left, none, start)
+            QTest.mouseMove(viewport, start + QtCore.QPoint(0, 1))
+            QTest.mouseMove(viewport, end)
+            QTest.mouseRelease(viewport, left, none, end)
+
+        return self.column_menu(drag, editor)
+
+    def shown_columns(self, editor=None):
+        """The shown column headers, left to right."""
+        header = (editor or self.editor)._table.horizontalHeader()
+        return [
+            PresetEditor.HEADERS[header.logicalIndex(v)]
+            for v in range(header.count())
+            if not header.isSectionHidden(header.logicalIndex(v))
+        ]
+
+    def tree_menu(self, prefix, editor=None):
+        """Right-click the tree node for *prefix*; the menu it opened."""
+        editor = editor or self.editor
+        [item] = [
+            i
+            for i in editor._iter_tree_items()
+            if i.data(0, QtCore.Qt.UserRole) == prefix
+        ]
+        shown = self.captured_menus()
+        tree = editor._tree
+        tree.customContextMenuRequested.emit(tree.visualItemRect(item).center())
+        self.assertEqual(len(shown), 1, f"no menu for {prefix!r}")
+        return shown[0]
+
+    def ship(self, **payloads):
+        """A tool shipping built-in presets (``name=payload``), as a tool writes
+        its store on first use; the window rescans."""
+        shipped = self.other / "shipped"
+        shipped.mkdir()
+        for name, data in payloads.items():
+            (shipped / f"{name}.json").write_text(json.dumps(data), encoding="utf-8")
+        store = ptk.PresetStore("stock_tool", "uitk_test", builtin_dir=shipped)
+        store.user_dir.mkdir(parents=True)
+        store.list()  # the .domain marker: how the library finds the built-ins
+        self.editor.refresh()
+        return store
+
+    def open_panel(self, key="mayatk/scene_exporter"):
+        """An open panel selector over store *key*; returns its combo."""
+        from uitk.widgets.comboBox import ComboBox
+
+        chk = QtWidgets.QCheckBox()
+        chk.setObjectName("a")
+        self.addCleanup(chk.deleteLater)
+        mgr = PresetManager.from_widgets(preset_dir=key, widgets=[chk])
+        combo = ComboBox()
+        self.addCleanup(combo.deleteLater)
+        mgr.wire_combo(combo)
+        return combo
 
 
 class TreeAndFilterTest(_EditorCase):
@@ -332,6 +474,17 @@ class RowActionTest(_EditorCase):
         self.trigger("Unlock")
         self.assertEqual(self.cell("Unity", PresetEditor.COL_LOCK).text(), "")
 
+    def test_a_mixed_selection_can_be_unlocked_without_locking_it_first(self):
+        self.select("Unity")
+        self.trigger("Lock")
+        self.select("Unity", "WebXR")
+        self.assertLessEqual(
+            {"Lock", "Unlock"}, set(self.menu_rows(self.editor.build_context_menu()))
+        )
+        self.trigger("Unlock")
+        self.assertEqual(self.cell("Unity", PresetEditor.COL_LOCK).text(), "")
+        self.assertEqual(self.cell("WebXR", PresetEditor.COL_LOCK).text(), "")
+
     def test_a_locked_name_cell_is_not_editable_and_cannot_be_deleted(self):
         self.select("Unity")
         self.trigger("Lock")
@@ -391,6 +544,313 @@ class RowActionTest(_EditorCase):
         backups = ptk.PresetLibrary().backups()
         self.assertEqual(len(backups), 1)
         self.assertIn("Deleted 1 preset", self.editor.footer.statusText())
+
+
+class SortTest(_EditorCase):
+    """A header click sorts the presets by that column; a second reverses it.
+
+    The DATA is sorted, never the view: every edit maps a row to its preset by
+    position, so the list and the rows must stay in one order.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.exporter = ptk.PresetStore("scene_exporter", "mayatk")
+        self.exporter.save("Alpha", {"_meta": {"version": 1}, "a": 0})
+        self.editor.refresh()
+        # Default order: by tool, then name.
+        self.assertEqual(self.rows(), ["Game (FBX)", "Alpha", "Unity", "WebXR"])
+
+    def test_a_click_sorts_by_name_and_a_second_reverses_it(self):
+        header = self.editor._table.horizontalHeader()
+        self.assertFalse(header.isSortIndicatorShown())
+        self.click_header(PresetEditor.COL_NAME)
+        self.assertEqual(self.rows(), ["Alpha", "Game (FBX)", "Unity", "WebXR"])
+        self.assertTrue(header.isSortIndicatorShown())
+        self.click_header(PresetEditor.COL_NAME)
+        self.assertEqual(self.rows(), ["WebXR", "Unity", "Game (FBX)", "Alpha"])
+        self.assertEqual(
+            (header.sortIndicatorSection(), header.sortIndicatorOrder()),
+            (PresetEditor.COL_NAME, QtCore.Qt.DescendingOrder),
+        )
+
+    def test_after_sorting_each_rows_edits_hit_the_preset_it_shows(self):
+        self.click_header(PresetEditor.COL_NAME)
+        self.click_header(PresetEditor.COL_NAME)
+        self.cell("Unity", PresetEditor.COL_NAME).setText("Unity 6")
+        self.cell("Alpha", PresetEditor.COL_TAGS).setText("first")
+        self.click_cell("WebXR", PresetEditor.COL_NAME)  # select it by its row
+        self.trigger("Delete")
+        self.assertEqual(self.exporter.list(), ["Alpha", "Unity 6"])
+        self.assertEqual(self.exporter.info("Alpha")["tags"], ["first"])
+        self.assertEqual(self.rows(), ["Unity 6", "Game (FBX)", "Alpha"])
+
+    def test_names_sort_naturally_ignoring_case(self):
+        takes = ptk.PresetStore("takes", "uitk_test")
+        for name in ("Take 10", "take 2", "Take 1"):
+            takes.save(name, {})
+        self.editor.refresh()
+        self.editor.select_prefix("uitk_test/takes")
+        self.assertEqual(self.rows(), ["Take 1", "Take 10", "take 2"])
+        self.click_header(PresetEditor.COL_NAME)
+        self.assertEqual(self.rows(), ["Take 1", "take 2", "Take 10"])
+
+    def test_text_columns_sort_case_blind_with_empty_cells_first(self):
+        self.cell("WebXR", PresetEditor.COL_TAGS).setText("alpha")
+        self.cell("Unity", PresetEditor.COL_TAGS).setText("Beta")
+        self.click_header(PresetEditor.COL_TAGS)
+        self.assertEqual(self.rows(), ["Game (FBX)", "Alpha", "WebXR", "Unity"])
+
+    def test_modified_sorts_by_time_even_within_one_shown_minute(self):
+        # Four saves in one minute read the same; their order is still known.
+        minute = (int(time.time()) // 60) * 60 - 3600
+        paths = [
+            self.exporter.path("WebXR"),
+            self.exporter.path("Unity"),
+            self.exporter.path("Alpha"),
+            ptk.PresetStore("fbx_presets", "blendertk").path("Game (FBX)"),
+        ]
+        for second, path in enumerate(paths):
+            os.utime(path, (minute + 10 * second, minute + 10 * second))
+        self.editor.refresh()
+        shown = {self.cell(n, PresetEditor.COL_MODIFIED).text() for n in self.rows()}
+        self.assertEqual(len(shown), 1, shown)
+        self.click_header(PresetEditor.COL_MODIFIED)
+        self.assertEqual(self.rows(), ["WebXR", "Unity", "Alpha", "Game (FBX)"])
+
+    def test_the_sort_outlives_filters_and_rescans_and_keeps_the_selection(self):
+        self.select("Unity")
+        self.click_header(PresetEditor.COL_NAME)
+        self.click_header(PresetEditor.COL_NAME)
+        self.assertEqual([e.name for e in self.editor.selected_entries()], ["Unity"])
+        self.editor._search.setText("!game*")
+        self.assertEqual(self.rows(), ["WebXR", "Unity", "Alpha"])
+        self.editor.refresh()
+        self.assertEqual(self.rows(), ["WebXR", "Unity", "Alpha"])
+        self.assertEqual([e.name for e in self.editor.selected_entries()], ["Unity"])
+
+
+class HideTest(_EditorCase):
+    """Hide a preset from its panel's dropdown; it stays here, dimmed."""
+
+    def test_hide_from_the_row_menu_dims_the_row_and_drops_it_from_the_panel(self):
+        combo = self.open_panel()
+        self.select("Unity")
+        self.trigger("Hide")
+        self.assertEqual(combo.findText("Unity"), -1)
+        self.assertIn("Unity", self.rows())
+        self.assertTrue(ptk.PresetStore("scene_exporter", "mayatk").is_hidden("Unity"))
+        dim = self.editor._table.palette().color(
+            QtGui.QPalette.Disabled, QtGui.QPalette.Text
+        )
+        self.assertEqual(
+            self.cell("Unity", PresetEditor.COL_NAME).foreground().color(), dim
+        )
+        self.assertNotEqual(
+            self.cell("WebXR", PresetEditor.COL_NAME).foreground().color(), dim
+        )
+        self.select("Unity")
+        rows = self.menu_rows(self.editor.build_context_menu())
+        self.assertIn("Show", rows)
+        self.assertNotIn("Hide", rows)
+        self.trigger("Show")
+        self.assertNotEqual(combo.findText("Unity"), -1)
+
+    def test_a_mixed_selection_offers_hide_and_show(self):
+        self.select("Unity")
+        self.trigger("Hide")
+        self.select("Unity", "WebXR")
+        rows = self.menu_rows(self.editor.build_context_menu())
+        self.assertLessEqual({"Hide", "Show"}, set(rows))
+
+    def test_the_hidden_status_facet_lists_the_hidden_ones(self):
+        self.select("WebXR")
+        self.trigger("Hide")
+        self.click(self.editor._status_filter.build_menu(), "Hidden")
+        self.assertEqual(self.rows(), ["WebXR"])
+
+    def test_a_builtin_can_be_hidden_and_shown(self):
+        store = self.ship(Stock={"x": 0})
+        self.select("Stock")
+        self.trigger("Hide")
+        self.assertTrue(store.is_hidden("Stock"))
+        self.assertEqual(self.cell("Stock", PresetEditor.COL_LOCK).text(), "Built-in")
+        self.select("Stock")
+        self.trigger("Show")
+        self.assertFalse(store.is_hidden("Stock"))
+
+
+class DescriptionTest(_EditorCase):
+    def test_typing_a_description_saves_it_and_the_filter_finds_it(self):
+        self.cell("Unity", PresetEditor.COL_DESCRIPTION).setText("For the Unity export")
+        info = ptk.PresetStore("scene_exporter", "mayatk").info("Unity")
+        self.assertEqual(info["description"], "For the Unity export")
+        cell = self.cell("Unity", PresetEditor.COL_DESCRIPTION)
+        self.assertEqual(cell.toolTip(), "For the Unity export")
+        self.editor._search.setText("*unity export*")
+        self.assertEqual(self.rows(), ["Unity"])
+
+    def test_a_builtins_shipped_description_is_shown_read_only(self):
+        self.ship(Stock={"_meta": {"description": "The shipped look."}})
+        cell = self.cell("Stock", PresetEditor.COL_DESCRIPTION)
+        self.assertEqual(cell.text(), "The shipped look.")
+        self.assertFalse(cell.flags() & QtCore.Qt.ItemIsEditable)
+        self.assertTrue(cell.font().italic())
+        mine = self.cell("Unity", PresetEditor.COL_DESCRIPTION)
+        self.assertTrue(mine.flags() & QtCore.Qt.ItemIsEditable)
+
+
+class ColumnMenuTest(_EditorCase):
+    """Right-click the header: a column per row, ticked while shown."""
+
+    def test_unticking_a_column_hides_it_and_the_next_window_keeps_it_hidden(self):
+        rows = self.pick_column("Tags")
+        self.assertEqual(list(rows), list(PresetEditor.HEADERS))
+        self.assertTrue(self.editor._table.isColumnHidden(PresetEditor.COL_TAGS))
+        again = self.make_editor()
+        self.assertTrue(again._table.isColumnHidden(PresetEditor.COL_TAGS))
+        self.pick_column("Tags", again)
+        self.assertFalse(again._table.isColumnHidden(PresetEditor.COL_TAGS))
+
+    def test_the_name_column_cannot_be_hidden(self):
+        self.pick_column("Name")
+        self.assertFalse(self.editor._table.isColumnHidden(PresetEditor.COL_NAME))
+
+    def test_description_is_last_and_takes_the_spare_width(self):
+        self.assertEqual(self.shown_columns()[-1], "Description")
+        table = self.editor._table
+        header = table.horizontalHeader()
+        self.editor.resize(1400, 500)
+        self.editor.show()
+        QtWidgets.QApplication.processEvents()
+        widths = [header.sectionSize(c) for c in range(header.count())]
+        self.assertEqual(sum(widths), table.viewport().width(), "no gap, no overflow")
+        before = header.sectionSize(PresetEditor.COL_DESCRIPTION)
+        others = widths[: PresetEditor.COL_DESCRIPTION]
+        self.editor.resize(1600, 500)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(
+            header.sectionSize(PresetEditor.COL_DESCRIPTION) - before,
+            table.viewport().width() - sum(widths),
+            "the added width all goes to Description",
+        )
+        self.assertEqual(
+            [header.sectionSize(c) for c in range(PresetEditor.COL_DESCRIPTION)],
+            others,
+            "the other columns keep their widths",
+        )
+
+    def test_columns_are_reordered_by_dragging_their_rows_and_kept(self):
+        self.drag_column("Tool", "Name")
+        self.assertEqual(self.shown_columns()[:2], ["Tool", "Name"])
+        header = self.editor._table.horizontalHeader()
+        self.assertFalse(header.sectionsMovable(), "a header click still sorts")
+        again = self.make_editor()
+        self.assertEqual(self.shown_columns(again)[:2], ["Tool", "Name"])
+        self.assertEqual(
+            again._table.horizontalHeader().sectionResizeMode(
+                PresetEditor.COL_DESCRIPTION
+            ),
+            QtWidgets.QHeaderView.Stretch,
+            "the spare width stays with Description",
+        )
+
+    def test_a_long_description_shows_whole_and_wrapped_in_its_tooltip(self):
+        words = " ".join(f"word{i}" for i in range(400))  # ~3000 characters
+        self.cell("Unity", PresetEditor.COL_DESCRIPTION).setText(words)
+        table = self.editor._table
+        self.editor.show()
+        QtWidgets.QApplication.processEvents()
+        rect = table.visualItemRect(self.cell("Unity", PresetEditor.COL_DESCRIPTION))
+        shown = []
+        with mock.patch.object(
+            QtWidgets.QToolTip,
+            "showText",
+            new=lambda pos, text, *rest: shown.append(text),
+        ):
+            viewport = table.viewport()
+            event = QtGui.QHelpEvent(
+                QtCore.QEvent.ToolTip,
+                rect.center(),
+                viewport.mapToGlobal(rect.center()),
+            )
+            QtWidgets.QApplication.sendEvent(viewport, event)
+        [tip] = shown
+        lines = tip.splitlines()
+        self.assertGreater(len(lines), 10, "wrapped into lines")
+        self.assertLessEqual(max(map(len, lines)), 80, "each a readable width")
+        self.assertTrue(tip.startswith("word0 word1"), "from the start")
+        self.assertTrue(tip.endswith("…"), "a cut description says so")
+        shown_text = tip[:-1].replace("\n", " ")
+        cap = PresetEditor.DESCRIPTION_TIP_CHARS
+        self.assertTrue(words.startswith(shown_text + " "), "cut at a word")
+        self.assertLessEqual(len(shown_text), cap)
+        self.assertGreater(len(shown_text), cap - len("word399 "), "all it can hold")
+
+    def test_a_sort_by_a_column_that_gets_hidden_is_kept(self):
+        self.cell("WebXR", PresetEditor.COL_TAGS).setText("a")
+        self.cell("Unity", PresetEditor.COL_TAGS).setText("b")
+        self.click_header(PresetEditor.COL_TAGS)
+        self.click_header(PresetEditor.COL_TAGS)
+        self.assertEqual(self.rows(), ["Unity", "WebXR", "Game (FBX)"])
+        self.pick_column("Tags")
+        self.editor.refresh()
+        self.assertEqual(self.rows(), ["Unity", "WebXR", "Game (FBX)"])
+
+
+class TreeMenuTest(_EditorCase):
+    """Right-click a node of the left pane: act on every preset under it."""
+
+    def test_lock_all_locks_the_nodes_presets_only_and_unlock_all_undoes_it(self):
+        menu = self.tree_menu("mayatk")
+        rows = self.menu_rows(menu)
+        self.assertIn("Lock all", rows)
+        self.assertNotIn("Unlock all", rows)
+        self.click(menu, "Lock all")
+        self.assertEqual(self.cell("Unity", PresetEditor.COL_LOCK).text(), "Locked")
+        self.assertEqual(self.cell("WebXR", PresetEditor.COL_LOCK).text(), "Locked")
+        self.assertEqual(self.cell("Game (FBX)", PresetEditor.COL_LOCK).text(), "")
+        rows = self.menu_rows(self.tree_menu("mayatk"))
+        self.assertNotIn("Lock all", rows)
+        self.click(self.tree_menu("mayatk"), "Unlock all")
+        self.assertEqual(self.cell("Unity", PresetEditor.COL_LOCK).text(), "")
+
+    def test_hide_all_on_the_root_takes_every_preset(self):
+        self.click(self.tree_menu(""), "Hide all")
+        self.assertTrue(all(e.hidden for e in ptk.PresetLibrary().entries()))
+        rows = self.menu_rows(self.tree_menu(""))
+        self.assertIn("Show all", rows)
+        self.assertNotIn("Hide all", rows)
+
+    def test_open_folder_opens_the_nodes_folder(self):
+        opened = []
+        with mock.patch.object(
+            QtGui.QDesktopServices,
+            "openUrl",
+            new=lambda url: opened.append(Path(url.toLocalFile())),
+        ):
+            self.click(self.tree_menu("mayatk/scene_exporter"), "Open folder")
+        self.assertEqual(opened, [self.root / "mayatk" / "scene_exporter"])
+
+    def test_back_up_these_presets_covers_the_nodes_stores_only(self):
+        self.click(self.tree_menu("blendertk"), "Back up these presets")
+        [backup] = ptk.PresetLibrary().backups()
+        with zipfile.ZipFile(backup) as zf:
+            payloads = [
+                n
+                for n in zf.namelist()
+                if n.startswith("presets/") and not n.rsplit("/", 1)[-1].startswith(".")
+            ]
+        self.assertEqual(payloads, ["presets/blendertk/fbx_presets/Game _FBX_.json"])
+        self.assertIn("Backed up", self.editor.footer.statusText())
+
+    def test_a_node_of_built_ins_offers_what_applies_to_them(self):
+        self.ship(Stock={"x": 0})
+        rows = self.menu_rows(self.tree_menu("uitk_test"))
+        self.assertIn("Hide all", rows)
+        self.assertIn("Open folder", rows)
+        self.assertNotIn("Lock all", rows)
+        self.assertNotIn("Back up these presets", rows)
 
 
 class StaleRowTest(_EditorCase):
@@ -538,10 +998,39 @@ class CollectionBoxTest(_EditorCase):
         self.assertEqual(cmb.currentText(), "Other")
         self.assertIn("already exists", self.editor.footer.statusText())
 
-    def test_the_menu_needs_a_collection_in_the_box(self):
+    def test_without_a_collection_the_menu_offers_only_import(self):
         rows = self.menu_rows(self.editor.build_collection_menu())
-        [hint] = rows.values()
-        self.assertFalse(hint.isEnabled())
+        enabled = [text for text, row in rows.items() if row.isEnabled()]
+        self.assertEqual(enabled, ["Import…"])
+        self.assertEqual(len(rows), 2, "and a hint to pick one for the rest")
+
+    def test_lock_and_unlock_the_collection_from_the_box(self):
+        self.select("Unity", "WebXR")
+        self.create("Studio", add_selected=True)
+        rows = self.menu_rows(self.editor.build_collection_menu())
+        self.assertIn("Lock", rows)
+        self.assertNotIn("Unlock", rows)
+        self.click(self.editor.build_collection_menu(), "Lock")
+        for name in ("Unity", "WebXR"):
+            self.assertEqual(self.cell(name, PresetEditor.COL_LOCK).text(), "Locked")
+        fbx = ptk.PresetStore("fbx_presets", "blendertk")
+        self.assertFalse(
+            any(fbx.is_read_only(n) for n in fbx.list()),
+            "only the collection's presets",
+        )
+        rows = self.menu_rows(self.editor.build_collection_menu())
+        self.assertNotIn("Lock", rows)
+        # Mixed: either way is one click.
+        self.editor.lock([self.editor._rows[self.row_of("WebXR")]], False)
+        rows = self.menu_rows(self.editor.build_collection_menu())
+        self.assertLessEqual({"Lock", "Unlock"}, set(rows))
+        self.click(self.editor.build_collection_menu(), "Unlock")
+        self.assertEqual(self.cell("Unity", PresetEditor.COL_LOCK).text(), "")
+
+    def test_an_empty_collection_has_nothing_to_lock(self):
+        self.create("Empty")
+        rows = self.menu_rows(self.editor.build_collection_menu())
+        self.assertFalse({"Lock", "Unlock"} & set(rows))
 
     def test_edit_changes_name_and_description(self):
         cid = self.create("Studio")
@@ -743,6 +1232,25 @@ class ImportFlowTest(_EditorCase):
         )
         self.assertIn("Imported", artist.footer.statusText())
 
+    def test_import_from_the_collections_box_then_shows_the_collection(self):
+        bundle = self.export_studio("Unity", "WebXR")
+        artist = self.make_editor(ptk.PresetLibrary(self.other / "root"))
+        # The artist is looking at another tool's presets: what arrives must
+        # show anyway, so the tree goes back to every tool.
+        fbx = artist.library.domain("blendertk/fbx_presets").store()
+        fbx.save("Mine", {"axis": "Z"})
+        artist.refresh()
+        self.assertTrue(artist.select_prefix("blendertk/fbx_presets"))
+        self.assertEqual(self.rows(artist), ["Mine"])
+        opened_in = self.answer_open_dialog(bundle)
+        self.click(artist.build_collection_menu(), "Import…")
+        self.assertEqual(opened_in, [Path.home()], "a shared bundle, not a backup")
+        self.assertEqual(artist._stack.currentIndex(), PresetEditor.PAGE_IMPORT)
+        artist.apply_import()
+        [installed] = artist.library.collections()
+        self.assertEqual(artist.collection_filter(), installed["id"])
+        self.assertEqual(sorted(self.rows(artist)), ["Unity", "WebXR"])
+
     def test_changing_a_row_action_is_what_apply_does(self):
         bundle = self.export_studio("Unity")
         artist = self.make_editor(ptk.PresetLibrary(self.other / "root"))
@@ -775,6 +1283,20 @@ class MaintenanceTest(_EditorCase):
         [backup] = ptk.PresetLibrary().backups()
         self.assertEqual(backup.parent.name, ".backups")
         self.assertIn("Backed up", self.editor.footer.statusText())
+
+    def test_restore_opens_in_the_backups_folder_and_reviews_the_backup(self):
+        self.header_button("b_backup").click()
+        [backup] = ptk.PresetLibrary().backups()
+        opened_in = self.answer_open_dialog(backup)
+        self.header_button("b_restore").click()
+        self.assertEqual(opened_in, [backup.parent])
+        self.assertEqual(self.editor._stack.currentIndex(), PresetEditor.PAGE_IMPORT)
+        self.assertIn("Backup", self.editor._lbl_import.text())
+        self.assertEqual(
+            self.editor.collection_filter(),
+            PresetEditor.ALL_PRESETS,
+            "a backup is not a collection to show",
+        )
 
     def test_clean_up_removes_stray_metadata(self):
         store = ptk.PresetStore("scene_exporter", "mayatk")

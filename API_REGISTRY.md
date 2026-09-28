@@ -27,6 +27,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`managers/color_model.py`](#managers--color_model) — The observable colour value a picker and its widgets share.
 - [`managers/cursor_manager.py`](#managers--cursor_manager) — One owner for every cursor change in uitk.
 - [`managers/field_visibility.py`](#managers--field_visibility) — Which fields a container shows, per named mode.
+- [`managers/host_exit_guard.py`](#managers--host_exit_guard) — Keep a host application's exit from faulting in shiboken's static teardown.
 - [`managers/icon_manager.py`](#managers--icon_manager)
 - [`managers/optional_package_manager.py`](#managers--optional_package_manager) — Provisioning for optional packages a panel needs importable in THIS session.
 - [`managers/preset_manager.py`](#managers--preset_manager)
@@ -60,6 +61,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/checkBox.py`](#widgets--checkBox)
 - [`widgets/collapsableGroup.py`](#widgets--collapsableGroup)
 - [`widgets/colorSwatch.py`](#widgets--colorSwatch)
+- [`widgets/column_config.py`](#widgets--column_config) — A view's header menu of columns to show, hide and reorder, with the layout remembered.
 - [`widgets/comboBox.py`](#widgets--comboBox)
 - [`widgets/context_menu.py`](#widgets--context_menu) — A popup context menu whose rows can expand into sub-rows.
 - [`widgets/delegates/centered_icon.py`](#widgets--delegates--centered_icon) — Centered icon painting for item-view cells.
@@ -536,7 +538,7 @@ The observable colour value a picker and its widgets share.
 
 One owner for every cursor change in uitk.
 
-- **[`class OverrideCursorGuard(QtCore.QObject)`](uitk/uitk/managers/cursor_manager.py#L51)** — Owns one application override cursor and guarantees its removal.
+- **[`class OverrideCursorGuard(QtCore.QObject)`](uitk/uitk/managers/cursor_manager.py#L53)** — Owns one application override cursor and guarantees its removal.
   - `OverrideCursorGuard.shape(self)` *(property)* — The cursor shape this guard owns.
   - `OverrideCursorGuard.holding(self) -> bool` *(property)* — True while this guard holds an application override cursor.
   - `OverrideCursorGuard.apply(self) -> None` — Push the override (idempotent) and start the watchdog.
@@ -545,7 +547,7 @@ One owner for every cursor change in uitk.
   - `OverrideCursorGuard.is_stale(cls, cursor) -> bool` *(class)* — True if ``cursor`` is a guard-owned shape that no guard holds —
   - `OverrideCursorGuard.notify_stack_drained(cls) -> None` *(class)* — Drop every guard's ownership because the whole stack was dropped
   - `OverrideCursorGuard.reconcile(cls) -> None` *(class)* — Drop every orphaned guard cursor from the application stack,
-- **[`class CursorManager`](uitk/uitk/managers/cursor_manager.py#L291)** — Static service for both of Qt's cursor systems — see the module
+- **[`class CursorManager`](uitk/uitk/managers/cursor_manager.py#L294)** — Static service for both of Qt's cursor systems — see the module
   - `CursorManager.pop_stack(app=None) -> List[QtGui.QCursor]` *(static)* — Pop the whole application override-cursor stack.
   - `CursorManager.push_stack(saved, app=None) -> None` *(static)* — Re-push cursors captured by :meth:`pop_stack`, restoring the
   - `CursorManager.suspend()` *(static)* — Clear the application override-cursor stack for a ``with`` block.
@@ -575,6 +577,16 @@ Which fields a container shows, per named mode.
   - `FieldVisibility.set_visible(self, key: Hashable, on: bool) -> bool` — Show or hide ONE registered key and leave the rest as they are.
   - `FieldVisibility.set_widget_visible(cls, widget, on: bool) -> None` *(class)* — Show or hide *widget* as a field, marked with :attr:`HIDDEN_PROPERTY`.
   - `FieldVisibility.is_hidden_field(cls, widget) -> bool` *(class)* — Whether *widget* carries the mark :meth:`set_widget_visible` sets.
+
+<a id="managers--host_exit_guard"></a>
+### `managers/host_exit_guard.py`
+
+Keep a host application's exit from faulting in shiboken's static teardown.
+
+- **[`class HostExitGuard`](uitk/uitk/managers/host_exit_guard.py#L51)** — Clear, at quit, what shiboken's exit-time teardown would fault on.
+  - `HostExitGuard.arm(cls, app=None) -> bool` *(class)* — Run :meth:`release` on *app*'s ``aboutToQuit``, when a host owns *app*.
+  - `HostExitGuard.note(cls, obj) -> None` *(class)* — Keep *obj*, handed to an application-wide event filter, for :meth:`release`.
+  - `HostExitGuard.release(cls) -> int` *(class)* — Strip the noted objects' tags and invalidate the C++-created referred objects.
 
 <a id="managers--icon_manager"></a>
 ### `managers/icon_manager.py`
@@ -610,7 +622,7 @@ Provisioning for optional packages a panel needs importable in THIS session.
 <a id="managers--preset_manager"></a>
 ### `managers/preset_manager.py`
 
-- [`PRESETS_ROOT_ENV_VAR`](uitk/uitk/managers/preset_manager.py#L1176) — constant
+- [`PRESETS_ROOT_ENV_VAR`](uitk/uitk/managers/preset_manager.py#L1181) — constant
 - **[`class PresetManager(_PresetWidgetScope, _PresetRootMigration, pythontk.LoggingMixin)`](uitk/uitk/managers/preset_manager.py#L28)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
@@ -720,16 +732,16 @@ Typed file registries backing Switchboard discovery.
 
 Generic keyboard-shortcut primitives, usable by any Qt widget.
 
-- [`SCOPE_NAME_TO_CONTEXT`](uitk/uitk/managers/shortcut_manager.py#L26) — constant
-- [`SCOPE_CONTEXT_TO_NAME`](uitk/uitk/managers/shortcut_manager.py#L32) — constant
-- **[`class GlobalShortcut(QtCore.QObject)`](uitk/uitk/managers/shortcut_manager.py#L37)** — A robust global shortcut handler that detects both press and release events.
+- [`SCOPE_NAME_TO_CONTEXT`](uitk/uitk/managers/shortcut_manager.py#L28) — constant
+- [`SCOPE_CONTEXT_TO_NAME`](uitk/uitk/managers/shortcut_manager.py#L34) — constant
+- **[`class GlobalShortcut(QtCore.QObject)`](uitk/uitk/managers/shortcut_manager.py#L39)** — A robust global shortcut handler that detects both press and release events.
   - `GlobalShortcut.eventFilter(self, obj, event)` — Monitor global events for the specific key release.
   - `GlobalShortcut.setEnabled(self, enabled: bool)`
   - `GlobalShortcut.isEnabled(self) -> bool` — Whether the underlying QShortcut is armed (mirror of ``setEnabled``).
   - `GlobalShortcut.setKey(self, key_sequence: Union[str, QtGui.QKeySequence])`
   - `GlobalShortcut.setContext(self, context: QtCore.Qt.ShortcutContext)` — Live-update the underlying QShortcut's context.
   - `GlobalShortcut.dispose(self) -> None` — Disable, unregister, and schedule deletion of this shortcut.
-- **[`class ShortcutManager`](uitk/uitk/managers/shortcut_manager.py#L326)** — Centralized shortcut management with clear separation of concerns
+- **[`class ShortcutManager`](uitk/uitk/managers/shortcut_manager.py#L333)** — Centralized shortcut management with clear separation of concerns
   - `ShortcutManager.register_host_window(cls, object_name: str) -> None` *(class)* — Declare *object_name* as the host application's main window.
   - `ShortcutManager.unregister_host_window(cls, object_name: str) -> None` *(class)* — Forget a name :meth:`register_host_window` declared.
   - `ShortcutManager.host_window_names(cls) -> frozenset` *(class)* — The registered host main-window objectNames.
@@ -1116,6 +1128,28 @@ Dynamic attribute editor -- :class:`AttributeWindow`, a ``Menu`` popup whose
   - `ColorSwatch.updateBackgroundColor(self)` — Updates the widget's background color based on the check state.
   - `ColorSwatch.mouseDoubleClickEvent(self, event)` — Open the colour editor on double click.
 
+<a id="widgets--column_config"></a>
+### `widgets/column_config.py`
+
+A view's header menu of columns to show, hide and reorder, with the layout remembered.
+
+- **[`class ColumnConfig(QtCore.QObject)`](uitk/uitk/widgets/column_config.py#L123)** — Show, hide and reorder a view's columns from its header;
+  - `ColumnConfig.attach(cls, view: QtWidgets.QAbstractItemView, settings=None, settings_key: Optional[str] = None, locked: Iterable[int] = (), app: str = 'ColumnConfig', movable: bool = True, reorderable: bool = False) -> 'ColumnConfig'` *(class)* — *view*'s column config, made on the first call and re-pointed after.
+  - `ColumnConfig.of(cls, view: QtWidgets.QAbstractItemView) -> Optional['ColumnConfig']` *(class)* — The column config attached to *view*, or ``None``.
+  - `ColumnConfig.header_of(view: QtWidgets.QAbstractItemView) -> QtWidgets.QHeaderView` *(static)* — *view*'s horizontal header (``horizontalHeader`` / a tree's ``header``).
+  - `ColumnConfig.configure(self, view: QtWidgets.QAbstractItemView, settings=None, settings_key: Optional[str] = None, locked: Iterable[int] = (), app: str = 'ColumnConfig', movable: bool = True, reorderable: bool = False) -> None` — Point the layout at *settings* / *settings_key*;
+  - `ColumnConfig.header(self) -> QtWidgets.QHeaderView` *(property)*
+  - `ColumnConfig.settings(self)` *(property)* — The settings branch the layout is kept in.
+  - `ColumnConfig.labels(self) -> List[str]` — Each logical column's header text (``"Column <n>"`` when it has none).
+  - `ColumnConfig.order(self) -> List[int]` — The logical columns, left to right as the view shows them.
+  - `ColumnConfig.can_hide(self, column: int) -> bool` — Whether *column* may be hidden: not locked, not the last one showing.
+  - `ColumnConfig.set_hidden(self, column: int, hidden: bool = True) -> bool` — Hide (or show) *column* and save the layout.
+  - `ColumnConfig.set_order(self, order: Iterable[int]) -> bool` — Show the columns in *order* (logical indices, left to right);
+  - `ColumnConfig.build_menu(self) -> QtWidgets.QMenu` — The header menu, built but not shown: a ticked row per shown column,
+  - `ColumnConfig.show_menu(self, pos: QtCore.QPoint) -> None` — Open the menu at header position *pos*;
+  - `ColumnConfig.save(self) -> None` — Write the visibility and the visual order to the settings.
+  - `ColumnConfig.restore(self) -> None` — Apply the saved visibility and order.
+
 <a id="widgets--comboBox"></a>
 ### `widgets/comboBox.py`
 
@@ -1351,7 +1385,7 @@ An editor for a naming convention, built into a uitk ``Menu``.
 
 One window over every preset in the ecosystem: browse, lock, collect, share.
 
-- **[`class PresetEditor(EditorPanel)`](uitk/uitk/widgets/editors/preset_editor.py#L44)** — Manage every preset store under the presets root in one window.
+- **[`class PresetEditor(EditorPanel)`](uitk/uitk/widgets/editors/preset_editor.py#L70)** — Manage every preset store under the presets root in one window.
   - `PresetEditor.register_app_label(cls, folder: str, label: str) -> None` *(class)* — Show the presets under *folder* (a key's first segment) as *label*.
   - `PresetEditor.showEvent(self, event)`
   - `PresetEditor.tool_label(self, key: str) -> str` — ``"mayatk/rizom_bridge/unwrap_hard"`` -> ``"Maya › Rizom Bridge › Unwrap Hard"``.
@@ -1362,24 +1396,26 @@ One window over every preset in the ecosystem: browse, lock, collect, share.
   - `PresetEditor.selected_entries(self) -> List[ptk.PresetEntry]` — The presets of the selected table rows, in row order.
   - `PresetEditor.select_entries(self, names) -> None` — Select the rows whose preset name is in *names* (test/automation helper).
   - `PresetEditor.lock(self, entries=None, flag: bool = True) -> int` — Lock (or unlock) presets;
+  - `PresetEditor.hide_presets(self, entries=None, flag: bool = True) -> int` — Hide presets from their panels' preset lists, or list them again.
   - `PresetEditor.duplicate(self, entry=None) -> Optional[ptk.PresetEntry]` — Duplicate a preset (the selection) to an unlocked user copy.
   - `PresetEditor.assign(self, collection_id: Optional[str], entries=None) -> int` — Put presets (the selection) into a collection, or out of any (``None``).
   - `PresetEditor.delete(self, entries=None) -> int` — Delete presets (the selection); locked ones are skipped.
-  - `PresetEditor.build_context_menu(self)` — The row menu for the selection, built but not shown (``None`` when
-  - `PresetEditor.build_collection_cell_menu(self, row: int)` — Collection membership for *row*'s preset (or the selection it is in),
+  - `PresetEditor.build_context_menu(self)` — The row menu for the selection, built but not shown.
+  - `PresetEditor.build_tree_menu(self, prefix: str)` — A tree node's menu (*prefix*;
+  - `PresetEditor.build_collection_cell_menu(self, row: int)` — The Collection cell's membership menu, built but not shown.
   - `PresetEditor.eventFilter(self, obj, event)`
-  - `PresetEditor.collection_filter(self) -> str` — The collections box's pick: a collection id, :attr:`ALL_PRESETS` or
+  - `PresetEditor.collection_filter(self) -> str` — The collections box's pick.
   - `PresetEditor.set_collection_filter(self, value: str) -> bool` — Show one collection (an id), :attr:`ALL_PRESETS` or :attr:`NO_COLLECTION`.
   - `PresetEditor.picked_collection(self) -> Optional[str]` — The id of the collection the box shows, or ``None`` (all / none).
   - `PresetEditor.create_collection(self, name: str, description: str = '', entries=None) -> Optional[dict]` — Create collection *name* holding *entries* (user presets), and show it.
   - `PresetEditor.edit_collection(self, collection_id: str, **fields) -> Optional[dict]` — Change a collection's ``name`` / ``description``.
   - `PresetEditor.delete_collection(self, collection_id: str, *, delete_members: bool = False) -> Dict[str, int]` — Delete a collection;
-  - `PresetEditor.build_collection_menu(self)` — The ☰ menu of the collections box, built but not shown: edit, export
+  - `PresetEditor.build_collection_menu(self)` — The collections box's ☰ menu, built but not shown.
   - `PresetEditor.prompt_new_collection(self, members=None) -> Optional[dict]` — Ask for a new collection's name and description, then create it.
   - `PresetEditor.prompt_edit_collection(self, collection_id: str) -> Optional[dict]` — Ask for a collection's new name and description, then save them.
   - `PresetEditor.export_collection(self, collection_id: str, path) -> Path` — Export collection *collection_id* as a bundle at *path*.
   - `PresetEditor.import_bundle(self, path) -> Optional[ptk.ImportPlan]` — Plan an import of bundle *path* and show it for review (writes nothing).
-  - `PresetEditor.apply_import(self) -> Optional[ptk.ImportResult]` — Apply the reviewed plan (a backup is taken first), then return to the list.
+  - `PresetEditor.apply_import(self) -> Optional[ptk.ImportResult]` — Apply the reviewed plan, then return to the list.
   - `PresetEditor.cancel_import(self) -> None` — Leave the review without changing anything.
 
 <a id="widgets--editors--shortcut_editor--_action_cells"></a>
@@ -2328,7 +2364,7 @@ Choice option for OptionBox -- an icon button that picks from a popup.
   - `ChoiceOption.choices(self) -> List[Optional[Tuple[str, Any, str]]]` — The current rows as ``(label, value, tooltip)``, ``None`` separators.
   - `ChoiceOption.choice_values(self) -> List[Any]` — The values currently offered, in popup order.
   - `ChoiceOption.text_of(self, value: Any) -> Optional[str]` — The popup label of *value*, or ``None`` when it is not offered.
-  - `ChoiceOption.is_marked(self, value: Any) -> bool` — Whether *value*'s row reads as picked (with *multi*, the default's
+  - `ChoiceOption.is_marked(self, value: Any) -> bool` — Whether *value*'s row reads as picked.
   - `ChoiceOption.build_menu(self)` — The popup, built but not shown (a test reads and clicks its rows).
   - `ChoiceOption.show_menu(self) -> None` — Open the popup under the button;
   - `ChoiceOption.setup_widget(self)`
@@ -2493,10 +2529,10 @@ Arrows at the edges of a scroll view where its content continues past them.
 
 Event watchers that dismiss a popup: its host moved or hid, or the user left.
 
-- **[`class AncestorDismissal(QtCore.QObject)`](uitk/uitk/widgets/popup/dismissal.py#L10)** — Dismiss a popup when the window hosting its anchor moves.
+- **[`class AncestorDismissal(QtCore.QObject)`](uitk/uitk/widgets/popup/dismissal.py#L12)** — Dismiss a popup when the window hosting its anchor moves.
   - `AncestorDismissal.eventFilter(self, obj, event)`
   - `AncestorDismissal.detach(self) -> None` — Stop watching: remove the filter everywhere and drop the callback.
-- **[`class OutsideClickDismissal(QtCore.QObject)`](uitk/uitk/widgets/popup/dismissal.py#L94)** — App-wide watcher: a press outside the popup, or Escape, dismisses it.
+- **[`class OutsideClickDismissal(QtCore.QObject)`](uitk/uitk/widgets/popup/dismissal.py#L96)** — App-wide watcher: a press outside the popup, or Escape, dismisses it.
   - `OutsideClickDismissal.attach(self) -> None` — Start watching every event in the application.
   - `OutsideClickDismissal.detach(self) -> None` — Stop watching.
   - `OutsideClickDismissal.eventFilter(self, obj, event)`
@@ -3005,9 +3041,9 @@ A corner legend of a widget's mouse gestures and keyboard shortcuts.
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
 
-- **[`class HeaderMixin`](uitk/uitk/widgets/tableWidget.py#L20)**
+- **[`class HeaderMixin`](uitk/uitk/widgets/tableWidget.py#L21)**
   - `HeaderMixin.default_header_click_behavior(self, col)`
-- **[`class CellFormatMixin(ItemFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L47)** — Generic cell/column/header formatting for QTableWidget.
+- **[`class CellFormatMixin(ItemFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L48)** — Generic cell/column/header formatting for QTableWidget.
   - `CellFormatMixin.set_column_formatter(self, col, formatter, append=False)` — Set a formatter for a specific column.
   - `CellFormatMixin.set_header_formatter(self, header, formatter, append=False)` — Set a formatter for a specific header.
   - `CellFormatMixin.set_cell_formatter(self, row, col, formatter, append=False)` — Set a formatter for a specific cell (row, column).
@@ -3023,11 +3059,11 @@ A corner legend of a widget's mouse gestures and keyboard shortcuts.
   - `CellFormatMixin.make_color_map_formatter(self, color_map: dict)`
   - `CellFormatMixin.add_section_row(table: QtWidgets.QTableWidget, title: str, row: int = -1, col_count: int = None, bg: Any = None, fg: Any = '#999', bold: bool = True, font_delta: int = -1, height: int = 22) -> int` *(static)* — Insert a non-selectable section header that spans all columns.
   - `CellFormatMixin.is_section_row(table: QtWidgets.QTableWidget, row: int) -> bool` *(static)* — Return ``True`` if *row* is a section header.
-- **[`class TableSelection`](uitk/uitk/widgets/tableWidget.py#L449)** — Immutable representation of a single selected row.
+- **[`class TableSelection`](uitk/uitk/widgets/tableWidget.py#L450)** — Immutable representation of a single selected row.
   - `TableSelection.get(self, key: str, default: Any = None)`
   - `TableSelection.item(self, key: str) -> Optional[QtWidgets.QTableWidgetItem]`
   - `TableSelection.text(self, key: str, default: str = '') -> str`
-- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L536)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
+- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L537)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
   - `TableWidget.set_scrub_columns(self, columns: Iterable[int]) -> None` — Enable MMB-drag value scrubbing for *columns*.
   - `TableWidget.add_scrub_column(self, column: int) -> None` — Add a single column to the MMB-scrub set.
   - `TableWidget.remove_scrub_column(self, column: int) -> None` — Remove a column from the MMB-scrub set.
@@ -3066,6 +3102,8 @@ A corner legend of a widget's mouse gestures and keyboard shortcuts.
   - `TableWidget.selected_rows(self, include_current=False)` — Get all selected row numbers
   - `TableWidget.clear_all(self)`
   - `TableWidget.set_stretch_column(self, col: int)` — Set a column to automatically stretch to fill the available space.
+  - `TableWidget.enable_column_config(self, settings=None, settings_key=None, locked=(), reorderable=False)` — Enable header right-click menu for column visibility and drag reorder.
+  - `TableWidget.restore_column_state(self)` — Apply persisted visibility and order.
   - `TableWidget.resizeEvent(self, event)`
   - `TableWidget.stretch_column_to_fill(self, stretch_col: int)`
   - `TableWidget.compute_autofit_size(content, chrome, scrollbar, maximum, minimum)` *(static)* — Return the ``(w, h)`` window size that shows *content* whole, capped.
@@ -3174,7 +3212,7 @@ Scrollable rich-text viewer window.
   - `TreeWidget.select_items_by_data(self, data_list: List[Any], column: int = 0)` — Select multiple items by their data values.
   - `TreeWidget.select_items_by_text(self, text_list: List[str], column: int = 0)` — Select multiple items by their text values.
   - `TreeWidget.set_stretch_column(self, col: int)` — Set a column to automatically stretch to fill available space.
-  - `TreeWidget.enable_column_config(self, settings=None, settings_key=None)` — Enable header right-click menu for column visibility and drag reorder.
+  - `TreeWidget.enable_column_config(self, settings=None, settings_key=None, locked=(), reorderable=False)` — Enable header right-click menu for column visibility and drag reorder.
   - `TreeWidget.restore_column_state(self)` — Apply persisted visibility and order.
   - `TreeWidget.resizeEvent(self, event)`
   - `TreeWidget.showEvent(self, event)`

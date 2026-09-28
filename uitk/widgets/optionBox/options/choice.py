@@ -241,8 +241,10 @@ class ChoiceOption(ButtonOption):
         return None
 
     def is_marked(self, value: Any) -> bool:
-        """Whether *value*'s row reads as picked (with *multi*, the default's
-        row does while nothing is)."""
+        """Whether *value*'s row reads as picked.
+
+        With *multi*, the default's row does while nothing is.
+        """
         if not self._multi:
             return value == self._value
         if value == self._default:

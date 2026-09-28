@@ -12,6 +12,7 @@ import pythontk as ptk
 from uitk.widgets.mixins.item_format import ItemFormatMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
+from uitk.widgets.column_config import ColumnConfig
 from uitk.widgets.table_actions import TableActions
 from uitk.widgets.overflow_indicator import OverflowIndicator
 from uitk.managers.cursor_manager import CursorManager
@@ -1466,6 +1467,45 @@ class TableWidget(
         """Set a column to automatically stretch to fill the available space."""
         self._stretch_column = col
         self.stretch_column_to_fill(col)
+
+    # -- Column configuration (visibility, reorder, persistence) ----------
+
+    def enable_column_config(
+        self, settings=None, settings_key=None, locked=(), reorderable=False
+    ):
+        """Enable header right-click menu for column visibility and drag reorder.
+
+        The shared :class:`~uitk.widgets.column_config.ColumnConfig`, as
+        ``TreeWidget.enable_column_config``: one checkable row per column, the
+        last visible (and any *locked*) column kept, the layout saved on every
+        change.
+
+        Parameters:
+            settings: A SettingsManager instance (or any object with
+                ``branch(name)`` / ``value(key, default)`` /
+                ``setValue(key, value)`` / ``sync()``).  If *None*, a
+                SettingsManager (``org="uitk"``, ``app="TableWidget"``) is
+                created automatically.
+            settings_key: Namespace prefix for stored keys.  Defaults to
+                the widget's ``objectName()`` or ``"TableWidget"``.
+            locked: Logical columns that can't be hidden.
+            reorderable: The menu's rows can also be dragged into another
+                column order (see ``ColumnConfig``).
+        """
+        ColumnConfig.attach(
+            self,
+            settings=settings,
+            settings_key=settings_key or self.objectName() or "TableWidget",
+            locked=locked,
+            app="TableWidget",
+            reorderable=reorderable,
+        )
+
+    def restore_column_state(self):
+        """Apply persisted visibility and order.  Call after headers are set."""
+        config = ColumnConfig.of(self)
+        if config is not None:
+            config.restore()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

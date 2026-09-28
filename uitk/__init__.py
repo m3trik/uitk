@@ -121,6 +121,8 @@ DEFAULT_INCLUDE = {
     "widgets.embeddedMenu": ["EmbeddedMenuWidget", "PersistentMenu"],
     "widgets.expandableList": "ExpandableList",
     "widgets.context_menu": ["ContextMenu", "MenuRow"],
+    # A view header's show / hide / reorder menu (TableWidget / TreeWidget option).
+    "widgets.column_config": "ColumnConfig",
     "widgets.header": "Header",
     "widgets.footer": ["Footer", "FooterStatusController"],
     "widgets.formPanel": "FormPanel",
@@ -204,6 +206,7 @@ DEFAULT_INCLUDE = {
     "managers.cursor_manager": ["CursorManager", "OverrideCursorGuard"],
     "managers.color_model": "ColorModel",
     "managers.field_visibility": "FieldVisibility",
+    "managers.host_exit_guard": "HostExitGuard",
     "managers.window_height": "WindowHeight",
     "managers.window_auto_hide": "WindowAutoHide",
     "managers.icon_manager": "IconManager",

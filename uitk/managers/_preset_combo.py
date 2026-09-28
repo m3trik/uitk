@@ -29,27 +29,51 @@ class _PresetComboWiring:
         placeholder = placeholder or "Presets…"
 
         def listing():
-            """``(names, read-only tooltips)`` from ONE store build.
+            """``(names, marks)`` from ONE store build.
 
-            A name is read-only when it ships as a built-in not shadowed by a
-            user preset, or is a user preset locked in the Preset Editor. Resolved
-            in one pass (two globs + one sidecar read per user preset) rather than
-            probing ``source(nm)`` per name -- each call rebuilt the store and
-            stat'd both tiers, so a preset-heavy panel paid O(N) store builds.
+            *names* are what the dropdown offers; *marks* is ``{name:
+            (read_only, tooltip)}`` for the ones that need either. A name is
+            read-only when it ships as a built-in not shadowed by a user preset,
+            or is a user preset locked in the Preset Editor; the tooltip carries
+            that, and the preset's description. A preset hidden in the Preset
+            Editor is left out -- unless it is the active one: a hide never
+            blanks the selection a panel is on. Resolved in one pass (two globs
+            + one sidecar read per user preset) rather than probing
+            ``source(nm)`` per name -- each call rebuilt the store and stat'd
+            both tiers, so a preset-heavy panel paid O(N) store builds. A
+            built-in not shadowed by a user preset still costs its own lookups
+            (``is_hidden`` reads the store's ``.hidden`` list, ``description``
+            its payload): built-ins are few, and ``PresetStore`` has no batch
+            read of either.
             """
             store = mgr._store
             builtin_names = set(store.list(tier="builtin"))
             user_names = set(store.list(tier="user"))
-            read_only = {}
-            for nm in sorted(builtin_names - user_names):
-                read_only[nm] = f"{nm} (built-in, read-only)"
-            for nm in user_names:
-                if store.info(nm).get("read_only"):
-                    read_only[nm] = f"{nm} (locked; unlock it in the Preset Editor)"
-            return sorted(builtin_names | user_names), read_only
+            active = store.active
+            names, marks = [], {}
+            for nm in sorted(builtin_names | user_names):
+                if nm in user_names:
+                    info = store.info(nm)
+                    hidden = bool(info.get("hidden"))
+                    read_only = bool(info.get("read_only"))
+                    note = "locked; unlock it in the Preset Editor" if read_only else ""
+                    description = str(info.get("description") or "")
+                else:
+                    hidden = store.is_hidden(nm)
+                    read_only = True
+                    note = "built-in, read-only"
+                    description = store.description(nm)
+                if hidden and nm != active:
+                    continue
+                names.append(nm)
+                lines = [f"{nm} ({note})" if note else "", description]
+                tip = "\n".join(line for line in lines if line)
+                if read_only or tip:
+                    marks[nm] = (read_only, tip)
+            return names, marks
 
-        def mark_read_only(names, read_only):
-            """Italicise read-only presets (built-in or locked) + a tooltip.
+        def mark_items(names, marks):
+            """Italicise read-only presets (built-in or locked); set tooltips.
 
             Sets the model item's font/tooltip rather than its text, so
             ``itemText`` stays the raw preset name for load/rename/delete. The
@@ -62,16 +86,18 @@ class _PresetComboWiring:
             italic = QtGui.QFont(combo.font())
             italic.setItalic(True)
             for i, nm in enumerate(names):
-                tip = read_only.get(nm)
-                if tip is None:
+                mark = marks.get(nm)
+                item = model.item(i) if mark is not None else None
+                if item is None:
                     continue
-                item = model.item(i)
-                if item is not None:
+                read_only, tip = mark
+                if read_only:
                     item.setFont(italic)
+                if tip:
                     item.setToolTip(tip)
 
-        # (names, read-only tooltips) the combo last showed; the popup hook
-        # compares against it so an unchanged folder costs no repopulate.
+        # (names, marks) the combo last showed; the popup hook compares against
+        # it so an unchanged folder costs no repopulate.
         shown = {"listing": None}
 
         def refresh(select_name: Optional[str] = None):
@@ -89,14 +115,14 @@ class _PresetComboWiring:
             """
             if select_name is None:
                 select_name = mgr.active_preset
-            names, read_only = listing()
-            shown["listing"] = (names, read_only)
+            names, marks = listing()
+            shown["listing"] = (names, marks)
             combo.blockSignals(True)
             try:
                 combo.clear()
                 if names:
                     combo.addItems(names)
-                    mark_read_only(names, read_only)
+                    mark_items(names, marks)
                     # findText -> -1 when the (stale) name is gone, which falls
                     # through to the placeholder rather than a silent item-0.
                     index = combo.findText(select_name) if select_name else -1
@@ -279,9 +305,9 @@ class _PresetComboWiring:
             return items
 
         def refresh_if_changed():
-            """Re-list on dropdown open; repopulate only if names or locks changed.
+            """Re-list on dropdown open; repopulate only if the list or marks changed.
 
-            Picks up presets added, locked or imported outside this panel (another
+            Picks up presets added, locked, hidden or imported outside this panel (another
             DCC, the Preset Editor) without a manual Refresh, at the cost of the
             same globs a refresh does -- and without disturbing the list when
             nothing changed.

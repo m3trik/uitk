@@ -113,6 +113,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class FieldVisibility`
   - methods: register, divider, group, define, bind, keys, mode, visible, show, set_visible, set_widget_visible, is_hidden_field
 
+### `managers/host_exit_guard.py` — Keep a host application's exit from faulting in shiboken's static teardown.
+- `class HostExitGuard`
+  - methods: arm, note, release
+
 ### `managers/icon_manager.py`
 - `class IconManager`
   - methods: set_default_color, register_icon_dir, get, fit_size, fit_icon, swap_icon, set_icon, set_label_icon, registered_info, update_widget_icons, clear_cache, get_cache_stats
@@ -256,6 +260,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin)`
   - methods: color, keep_square, setSwatchColor, setKeepSquare, resizeEvent, settings, saveColor, loadColor, canSaveLoadColor, initializeColor, updateBackgroundColor, mouseDoubleClickEvent
 
+### `widgets/column_config.py` — A view's header menu of columns to show, hide and reorder, with the layout remembered.
+- `class ColumnConfig(QtCore.QObject)`
+  - methods: attach, of, header_of, configure, header, settings, labels, order, can_hide, set_hidden, set_order, build_menu, show_menu, save, restore
+
 ### `widgets/comboBox.py`
 - `class CustomStyle(QtWidgets.QProxyStyle)`
   - methods: drawComplexControl, styleHint, pixelMetric
@@ -325,7 +333,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/editors/preset_editor.py` — One window over every preset in the ecosystem: browse, lock, collect, share.
 - `class PresetEditor(EditorPanel)`
-  - methods: register_app_label, showEvent, tool_label, set_entry_filter, refresh, selected_prefix, select_prefix, selected_entries, select_entries, lock, duplicate, assign, delete, build_context_menu, build_collection_cell_menu, eventFilter, collection_filter, set_collection_filter, picked_collection, create_collection, edit_collection, delete_collection, build_collection_menu, prompt_new_collection, prompt_edit_collection, export_collection, import_bundle, apply_import, cancel_import
+  - methods: register_app_label, showEvent, tool_label, set_entry_filter, refresh, selected_prefix, select_prefix, selected_entries, select_entries, lock, hide_presets, duplicate, assign, delete, build_context_menu, build_tree_menu, build_collection_cell_menu, eventFilter, collection_filter, set_collection_filter, picked_collection, create_collection, edit_collection, delete_collection, build_collection_menu, prompt_new_collection, prompt_edit_collection, export_collection, import_bundle, apply_import, cancel_import
 
 ### `widgets/editors/shortcut_editor/_action_cells.py` — The Scope and Reset icon cells of a ShortcutEditor row, and the scope vocabulary.
 - constants: USER_SCOPES, SCOPE_LABELS, SCOPE_ICONS, SCOPE_TOOLTIPS
@@ -752,7 +760,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class TableSelection`
   - methods: get, item, text
 - `class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`
-  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, setLeftClickSelectOnly, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, resizeEvent, stretch_column_to_fill, compute_autofit_size, max_autofit_size, fit_window_to_contents, get_selected_data, get_selection, register_menu_action, unregister_menu_action
+  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, setLeftClickSelectOnly, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, enable_column_config, restore_column_state, resizeEvent, stretch_column_to_fill, compute_autofit_size, max_autofit_size, fit_window_to_contents, get_selected_data, get_selection, register_menu_action, unregister_menu_action
 
 ### `widgets/table_actions.py` — Reusable action-column management for :class:`TableWidget`.
 - `class TableActions`

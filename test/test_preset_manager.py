@@ -2484,5 +2484,95 @@ class TestLockedPresetsInCombo(BaseTestCase):
         self.assertNotEqual(self.combo.findText("c"), -1)
 
 
+class TestHiddenPresetsInCombo(BaseTestCase):
+    """A preset hidden in the Preset Editor, seen from its panel's selector.
+
+    Hidden means gone from the dropdown, not from disk -- built-ins included --
+    except the preset the panel is on, which a hide never blanks.
+    """
+
+    KEY = "uitk_test/hidden_tool"
+
+    def setUp(self):
+        super().setUp()
+        import pythontk as ptk
+        from qtpy import QtWidgets
+        from uitk.widgets.comboBox import ComboBox
+
+        base = Path(__file__).parent / "temp_tests" / f"hidden_{self._testMethodName}"
+        self.root, self.builtin = base / "root", base / "shipped"
+        shutil.rmtree(base, ignore_errors=True)
+        self.root.mkdir(parents=True)
+        self.builtin.mkdir()
+        self.addCleanup(shutil.rmtree, base, ignore_errors=True)
+        (self.builtin / "stock.json").write_text(
+            json.dumps(
+                {"_meta": {"version": 1, "description": "The shipped default."}},
+            ),
+            encoding="utf-8",
+        )
+        patcher = mock.patch.dict(os.environ, {PRESETS_ROOT_ENV_VAR: str(self.root)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        self.chk = QtWidgets.QCheckBox()
+        self.chk.setObjectName("chk_a")
+        self.mgr = PresetManager.from_widgets(
+            preset_dir=self.KEY, widgets=[self.chk], builtin_dir=str(self.builtin)
+        )
+        self.mgr.save("a")
+        self.mgr.save("b")
+        self.combo = ComboBox()
+        self.addCleanup(self.combo.deleteLater)
+        self.mgr.wire_combo(self.combo)
+        self.lib = ptk.PresetLibrary()
+
+    def items(self):
+        return [self.combo.itemText(i) for i in range(self.combo.count())]
+
+    def hide(self, name, flag=True):
+        self.lib.set_hidden([self.lib.entry(self.KEY, name)], flag)
+        PresetManager.notify([self.KEY])
+
+    def tip(self, name):
+        return self.combo.model().item(self.combo.findText(name)).toolTip()
+
+    def test_a_hidden_preset_leaves_the_dropdown_but_not_the_disk(self):
+        self.assertEqual(self.items(), ["a", "b", "stock"])
+        self.hide("b")
+        self.hide("stock")
+        self.assertEqual(self.items(), ["a"])
+        self.assertTrue(self.mgr.exists("b") and self.mgr.exists("stock"))
+        self.hide("stock", False)
+        self.assertEqual(self.items(), ["a", "stock"])
+
+    def test_the_active_preset_stays_listed_while_hidden(self):
+        self.mgr.active_preset = "b"
+        self.mgr.refresh_combo()
+        self.hide("b")
+        self.assertEqual(self.items(), ["a", "b", "stock"])
+        self.assertEqual(self.combo.currentText(), "b")
+        # The user moves on: the next look at the list no longer offers it.
+        TestBuiltinTier._pick(self.combo, "a")
+        self.combo.showPopup()
+        self.addCleanup(self.combo.hidePopup)
+        self.assertEqual(self.items(), ["a", "stock"])
+
+    def test_opening_the_dropdown_drops_a_preset_hidden_elsewhere(self):
+        self.lib.set_hidden([self.lib.entry(self.KEY, "a")])  # no notify
+        self.assertIn("a", self.items())
+        self.combo.showPopup()
+        self.addCleanup(self.combo.hidePopup)
+        self.assertNotIn("a", self.items())
+
+    def test_the_item_tooltip_shows_the_description(self):
+        self.lib.set_description([self.lib.entry(self.KEY, "a")], "For hero shots.")
+        PresetManager.notify([self.KEY])
+        self.assertIn("For hero shots.", self.tip("a"))
+        self.assertIn("The shipped default.", self.tip("stock"))
+        self.assertIn("built-in", self.tip("stock"))
+        self.assertEqual(self.tip("b"), "")
+
+
 if __name__ == "__main__":
     unittest.main()
