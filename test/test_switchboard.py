@@ -1603,6 +1603,24 @@ class TestSwitchboardGetAllWidgets(QtBaseTestCase):
             any(w.objectName() == "test_unique_widget_name" for w in result)
         )
 
+    def test_a_stale_non_widget_wrapper_is_skipped(self):
+        """``allWidgets()`` can hand back a stale wrapper of another type.
+
+        A layout item is no QObject, so shiboken never learns C++ deleted it;
+        when a widget later reuses its address, ``allWidgets()`` answers that
+        widget with the old ``QWidgetItem`` wrapper (seen on Linux CI, PySide6
+        6.10), which has no ``objectName``. The scan skips it."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.setObjectName("test_stale_neighbour")
+        stale = QtWidgets.QWidgetItem(self.track_widget(QtWidgets.QWidget()))
+        with mock.patch.object(
+            QtWidgets.QApplication, "allWidgets", return_value=[stale, widget]
+        ):
+            self.assertEqual(
+                Switchboard.get_all_widgets(name="test_stale_neighbour"), [widget]
+            )
+            self.assertEqual(Switchboard.get_all_widgets(), [widget])
+
 
 # =============================================================================
 # SlotWrapper Tests

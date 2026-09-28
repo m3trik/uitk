@@ -413,6 +413,8 @@ class _MenuActionsMixin:
 
         # Find match buttons in other menus
         for widget in app.allWidgets():
+            if not isinstance(widget, QtWidgets.QWidget):
+                continue  # a stale wrapper (see Switchboard.get_all_widgets)
             if widget.objectName() == target_btn_name and widget is not current_btn:
                 # Traverse up to find the menu
                 parent = widget.parent()

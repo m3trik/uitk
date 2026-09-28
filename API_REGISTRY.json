@@ -3866,7 +3866,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], action: Callable, description: str = '', context: QtCore.Qt.ShortcutContext = QtCore.Qt.WidgetShortcut, hidden: bool = False) -> QtWidgets.QShortcut",
               "summary": "Add a keyboard shortcut with optional description and context",
-              "line": 549,
+              "line": 551,
               "deprecated": false
             },
             {
@@ -3875,7 +3875,7 @@
               "kind": "method",
               "signature": "(self, shortcuts_config: List[Tuple[Union[str, QtGui.QKeySequence], Callable, str]]) -> List[QtWidgets.QShortcut]",
               "summary": "Add multiple shortcuts from a configuration list",
-              "line": 604,
+              "line": 606,
               "deprecated": false
             },
             {
@@ -3884,7 +3884,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut",
               "summary": "Add a global shortcut (robust press/release detection).",
-              "line": 635,
+              "line": 637,
               "deprecated": false
             },
             {
@@ -3893,7 +3893,7 @@
               "kind": "method",
               "signature": "(self, key_label: str, description: str) -> None",
               "summary": "Register a display-only entry (e.g.",
-              "line": 678,
+              "line": 680,
               "deprecated": false
             },
             {
@@ -3902,7 +3902,7 @@
               "kind": "method",
               "signature": "(self, group: str, keys: str, description: str) -> None",
               "summary": "Register a display-only mouse gesture under *group*.",
-              "line": 697,
+              "line": 699,
               "deprecated": false
             },
             {
@@ -3911,7 +3911,7 @@
               "kind": "method",
               "signature": "(self, host: QtWidgets.QWidget, anchor: str = 'bottom-right', max_keys: int = 4)",
               "summary": "A :class:`~uitk.widgets.shortcut_overlay.ShortcutOverlay` for this",
-              "line": 709,
+              "line": 711,
               "deprecated": false
             },
             {
@@ -3920,7 +3920,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
               "summary": "Remove a specific shortcut",
-              "line": 722,
+              "line": 724,
               "deprecated": false
             },
             {
@@ -3929,7 +3929,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove all shortcuts",
-              "line": 761,
+              "line": 763,
               "deprecated": false
             },
             {
@@ -3938,7 +3938,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable) -> None",
               "summary": "Register a callback invoked after any shortcut is rebound.",
-              "line": 769,
+              "line": 771,
               "deprecated": false
             },
             {
@@ -3947,7 +3947,7 @@
               "kind": "method",
               "signature": "(self, old_key: str, new_key: str) -> bool",
               "summary": "Change the key sequence for an existing shortcut.",
-              "line": 779,
+              "line": 781,
               "deprecated": false
             },
             {
@@ -3956,7 +3956,7 @@
               "kind": "method",
               "signature": "(self, parent=None, title: str = 'Shortcuts') -> None",
               "summary": "Open the unified shortcut editor for this manager's bindings.",
-              "line": 804,
+              "line": 806,
               "deprecated": false
             },
             {
@@ -3965,7 +3965,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, str]",
               "summary": "Get information about all registered shortcuts",
-              "line": 830,
+              "line": 832,
               "deprecated": false
             },
             {
@@ -3974,7 +3974,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool",
               "summary": "Check if a shortcut is registered",
-              "line": 838,
+              "line": 840,
               "deprecated": false
             },
             {
@@ -3983,7 +3983,7 @@
               "kind": "method",
               "signature": "(self, key_sequence: Union[str, QtGui.QKeySequence]) -> Optional[QtWidgets.QShortcut]",
               "summary": "Get a specific shortcut object",
-              "line": 853,
+              "line": 855,
               "deprecated": false
             },
             {
@@ -3992,7 +3992,7 @@
               "kind": "method",
               "signature": "(self) -> List[Dict]",
               "summary": "Registry entries for this manager's shortcuts, in the shared editor",
-              "line": 875,
+              "line": 877,
               "deprecated": false
             }
           ]
@@ -5722,7 +5722,7 @@
               "kind": "staticmethod",
               "signature": "(pos, top_widget_only=True)",
               "summary": "Get visible and enabled widget(s) located at the given position.",
-              "line": 612,
+              "line": 617,
               "deprecated": false
             }
           ]
@@ -12376,7 +12376,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the 'Restore Defaults' button is enabled.",
-              "line": 426,
+              "line": 428,
               "deprecated": false
             },
             {
@@ -12385,7 +12385,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the presets combo is enabled.",
-              "line": 445,
+              "line": 447,
               "deprecated": false
             },
             {
