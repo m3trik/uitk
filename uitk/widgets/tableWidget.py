@@ -468,6 +468,27 @@ class TableSelection:
         return widget_item.text() if widget_item is not None else default
 
 
+class _SortKeyItem(QtWidgets.QTableWidgetItem):
+    """A cell that sorts by a key, not by its text (``TableWidget.set_sorted_cell``).
+
+    A cell with no key sorts before every keyed one; two without fall back to
+    the text.
+    """
+
+    KEY_ROLE = QtCore.Qt.UserRole + 64
+
+    def __lt__(self, other):
+        mine, theirs = self.data(self.KEY_ROLE), other.data(self.KEY_ROLE)
+        if mine is None or theirs is None:
+            if mine is None and theirs is None:
+                return super().__lt__(other)
+            return mine is None
+        try:
+            return mine < theirs
+        except TypeError:
+            return super().__lt__(other)
+
+
 class _ZeroSpacingEditorDelegate(QtWidgets.QStyledItemDelegate):
     """Strip frame and internal padding from text editors so entering
     edit mode doesn't visually shift the cell's text.
@@ -533,6 +554,39 @@ class _ZeroSpacingEditorDelegate(QtWidgets.QStyledItemDelegate):
             )
         return editor
 
+    def _edit_as(self, index):
+        """The ``TableWidget.edit_cell_as`` request open on *index*, or ``None``."""
+        pending = getattr(self.parent(), "_edit_as_pending", None)
+        if pending and pending["cell"] == (index.row(), index.column()):
+            return pending
+        return None
+
+    def setEditorData(self, editor, index):
+        pending = self._edit_as(index)
+        if pending is None or not isinstance(editor, QtWidgets.QLineEdit):
+            return super().setEditorData(editor, index)
+        editor.setText(pending["text"])
+        start, length = pending["select"]
+
+        def select():
+            # After the view's own select-all on open, which would undo it.
+            try:
+                editor.setSelection(start, length)
+            except RuntimeError:  # the editor closed first
+                pass
+
+        QtCore.QTimer.singleShot(0, select)
+
+    def setModelData(self, editor, model, index):
+        pending = self._edit_as(index)
+        if pending is None:
+            return super().setModelData(editor, model, index)
+        self.parent()._edit_as_pending = None
+        text = editor.text() if isinstance(editor, QtWidgets.QLineEdit) else None
+        if text is not None and text != pending["text"]:
+            # Once the editor has closed: the host may rebuild the table.
+            QtCore.QTimer.singleShot(0, lambda: pending["on_commit"](text))
+
 
 class TableWidget(
     QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin
@@ -544,6 +598,14 @@ class TableWidget(
 
     # Class-level menu defaults (applied when menu is first accessed)
     _menu_defaults = {"hide_on_leave": True}
+
+    #: Emitted just before the context menu opens, so a host can fit its items
+    #: to the selection -- relabel, hide or disable them. The menu has no
+    #: per-selection hook of its own.
+    context_menu_about_to_show = QtCore.Signal()
+
+    #: The open :meth:`edit_cell_as` request, read by the editor delegate.
+    _edit_as_pending: Optional[Dict[str, Any]] = None
 
     # Middle-mouse scrub-edit signals (opt-in via ``set_scrub_columns``).
     # Callers translate pixel deltas into value changes — the widget is
@@ -1169,9 +1231,101 @@ class TableWidget(
         except Exception:
             pass
 
+    def set_sorted_cell(
+        self, row: int, column: int, text: str, key: Any, editable: bool = False
+    ) -> QtWidgets.QTableWidgetItem:
+        """Show *text* in a cell that sorts by *key* rather than by its text.
+
+        For a column of figures written for reading -- ``"900 KB"`` sorts after
+        ``"2 MB"`` as text -- give the number as *key* (``None`` sorts first).
+        Replaces the cell's item the first time, keeping its tooltip, user data
+        and colours; re-keys it in place after. Read-only unless *editable*.
+
+        Returns:
+            The cell's item.
+        """
+        item = self.item(row, column)
+        if not isinstance(item, _SortKeyItem):
+            fresh = _SortKeyItem()
+            if item is not None:
+                for role in (
+                    QtCore.Qt.ToolTipRole,
+                    QtCore.Qt.UserRole,
+                    QtCore.Qt.ForegroundRole,
+                    QtCore.Qt.BackgroundRole,
+                ):
+                    fresh.setData(role, item.data(role))
+            item = fresh
+            self.setItem(row, column, item)
+        item.setText(text)
+        item.setData(_SortKeyItem.KEY_ROLE, key)
+        flags = item.flags()
+        item.setFlags(
+            flags | QtCore.Qt.ItemIsEditable
+            if editable
+            else flags & ~QtCore.Qt.ItemIsEditable
+        )
+        return item
+
+    def edit_cell_as(
+        self,
+        row: int,
+        column: int,
+        text: str,
+        on_commit: Callable[[str], Any],
+        select: Optional[Tuple[int, int]] = None,
+    ) -> bool:
+        """Open a cell's inline editor on *text* instead of the cell's own,
+        handing what is typed to *on_commit*.
+
+        For an edit of PART of what a cell shows -- a rename that offers just
+        the file name of a path cell, in place. The cell keeps its text: Enter
+        (or leaving the editor) calls ``on_commit(new_text)`` once the editor
+        has closed, only when the text changed, and writes nothing to the cell
+        -- no ``cellChanged``; Esc cancels. The request is for this one edit:
+        the next opens on the cell's own text again. Needs the table's own
+        editor delegate.
+
+        Parameters:
+            row, column: The cell; it must hold an editable item.
+            text: What the editor opens on.
+            on_commit: Called with the new text.
+            select: ``(start, length)`` pre-selected. Default: the stem --
+                everything before the last dot -- as a file manager selects a
+                name for renaming.
+
+        Returns:
+            False when the cell cannot be edited (no item, not editable, an
+            editor already open); nothing is opened then.
+        """
+        item = self.item(row, column)
+        if item is None or not item.flags() & QtCore.Qt.ItemIsEditable:
+            return False
+        if self.state() == QtWidgets.QAbstractItemView.EditingState:
+            return False
+        if select is None:
+            dot = text.rfind(".")
+            select = (0, dot if dot > 0 else len(text))
+        self._edit_as_pending = {
+            "cell": (row, column),
+            "text": text,
+            "on_commit": on_commit,
+            "select": select,
+        }
+        self._drag_selected_indexes = None  # a drag's propagation is not this
+        self.scrollToItem(item)
+        self.editItem(item)
+        if self.state() != QtWidgets.QAbstractItemView.EditingState:
+            self._edit_as_pending = None
+            return False
+        return True
+
     def closeEditor(self, editor, hint):
         """Propagate committed value to all drag-selected cells."""
         super().closeEditor(editor, hint)
+        # An edit_cell_as request is over with its editor: committed (the
+        # delegate cleared it) or cancelled (here).
+        self._edit_as_pending = None
 
         if (
             self._drag_selected_indexes is not None
@@ -1302,6 +1456,7 @@ class TableWidget(
         """Show the context menu at the given position."""
         # Only show if menu exists and has items (avoid creating empty menu)
         if self.has_menu and self.menu.contains_items:
+            self.context_menu_about_to_show.emit()
             # Set the position before showing
             global_pos = self.mapToGlobal(position)
             self.menu.position = global_pos
@@ -1471,7 +1626,12 @@ class TableWidget(
     # -- Column configuration (visibility, reorder, persistence) ----------
 
     def enable_column_config(
-        self, settings=None, settings_key=None, locked=(), reorderable=False
+        self,
+        settings=None,
+        settings_key=None,
+        locked=(),
+        reorderable=False,
+        hidden_by_default=(),
     ):
         """Enable header right-click menu for column visibility and drag reorder.
 
@@ -1491,6 +1651,8 @@ class TableWidget(
             locked: Logical columns that can't be hidden.
             reorderable: The menu's rows can also be dragged into another
                 column order (see ``ColumnConfig``).
+            hidden_by_default: Logical columns hidden until the user's own
+                layout is saved -- optional columns they turn on from the menu.
         """
         ColumnConfig.attach(
             self,
@@ -1499,6 +1661,7 @@ class TableWidget(
             locked=locked,
             app="TableWidget",
             reorderable=reorderable,
+            hidden_by_default=hidden_by_default,
         )
 
     def restore_column_state(self):

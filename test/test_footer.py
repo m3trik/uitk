@@ -122,6 +122,37 @@ class TestFooterStatusText(QtBaseTestCase):
         footer.setStatusText("Fine")
         self.assertNotIn("color:", footer.status_label.styleSheet())
 
+    def _shown(self, width):
+        from qtpy import QtWidgets
+
+        footer = self.track_widget(Footer())
+        footer.resize(width, 25)
+        footer.show()
+        QtWidgets.QApplication.processEvents()
+        return footer
+
+    def test_rich_text_shows_formatted_while_it_fits(self):
+        from qtpy import QtCore
+
+        footer = self._shown(600)
+        footer.setStatusText("Keys a fade on <b>3</b> selected")
+        self.assertEqual(footer.status_label.textFormat(), QtCore.Qt.RichText)
+        self.assertEqual(footer.text(), "Keys a fade on <b>3</b> selected")
+
+    def test_rich_text_too_wide_elides_as_plain_text(self):
+        """Eliding the markup counted its tags as text and could leave half a
+        tag on screen."""
+        from qtpy import QtCore
+
+        footer = self._shown(140)
+        footer.setStatusText(
+            "<b>Start</b> and a middle long enough that it has to go <b>End</b>"
+        )
+        self.assertEqual(footer.status_label.textFormat(), QtCore.Qt.PlainText)
+        self.assertNotIn("<", footer.text())
+        self.assertIn("…", footer.text())
+        self.assertTrue(footer.text().startswith("Sta"), footer.text())
+
     def test_level_colors_come_from_pythontk_log_colors(self):
         """Severity colours are sourced from pythontk's LOG_COLORS SSoT."""
         from pythontk.core_utils.logging_mixin import LoggingMixin

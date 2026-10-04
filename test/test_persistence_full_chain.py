@@ -832,5 +832,80 @@ class TestHostNamespacedWidgetState(_PersistBase):
         )
 
 
+# ===========================================================================
+# Scenario 12: a widget whose value is not a scalar (the check_list kind)
+# ===========================================================================
+
+
+class TestCheckListRoundTrip(_PersistBase):
+    """A bridge ``check_list`` row keeps its checked entries across sessions.
+
+    Regression: the row is a ``QListWidget``, which persistence keyed on that
+    class's default signal, ``itemClicked``. That signal carries the clicked
+    ITEM (unstorable, so nothing was written) and never fires for a check
+    changed in code -- the WebXR Preview panel's Viewer Scripts came back
+    empty every session. The widget now declares its own change signal and
+    value (``state_signal`` / ``state_value`` / ``set_state_value``).
+    """
+
+    CHOICES = [("Turntable", "turntable"), ("Inspect", "inspect"), ("Snap", "snap")]
+
+    def _build_session(self):
+        from uitk.bridge.spec import AttributeSpec, KindFactory
+
+        choices = self.CHOICES
+
+        class Repro:
+            def __init__(s, switchboard, **_):
+                s.sb = switchboard
+                s.ui = switchboard.loaded_ui.repro
+                s.scripts = KindFactory.make_widget(
+                    AttributeSpec(
+                        key="param_scripts",
+                        kind="check_list",
+                        default=[],
+                        choices=choices,
+                    ),
+                    s.ui.centralWidget(),
+                )
+                s.ui.centralWidget().layout().addWidget(s.scripts)
+
+        sb, ui = self._make_sb("repro", ["tb000"], Repro)
+        scripts = ui.slots.scripts
+        ui.register_children()
+        self._drain()
+        return sb, ui, scripts
+
+    def test_checked_entries_survive_a_new_session(self):
+        from uitk.bridge.spec import KindFactory
+
+        sb1, ui1, scripts = self._build_session()
+        scripts.item(1).setCheckState(QtCore.Qt.Checked)  # what a click does
+        scripts.item(2).setCheckState(QtCore.Qt.Checked)
+        self._drain()
+        ui1.settings.sync()
+        ui1.close()
+        sb1.deleteLater()
+        self._drain()
+
+        sb2, ui2, scripts2 = self._build_session()
+        self.assertEqual(KindFactory.read_value(scripts2), ["inspect", "snap"])
+
+    def test_unchecking_everything_is_stored_too(self):
+        """An empty selection is a choice, not a missing value."""
+        from uitk.bridge.spec import KindFactory
+
+        sb1, ui1, scripts = self._build_session()
+        scripts.item(0).setCheckState(QtCore.Qt.Checked)
+        scripts.item(0).setCheckState(QtCore.Qt.Unchecked)
+        self._drain()
+        ui1.close()
+        sb1.deleteLater()
+        self._drain()
+
+        sb2, ui2, scripts2 = self._build_session()
+        self.assertEqual(KindFactory.read_value(scripts2), [])
+
+
 if __name__ == "__main__":
     unittest.main()

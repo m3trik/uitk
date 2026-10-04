@@ -230,6 +230,37 @@ class ColumnConfigTest(_ColumnCase):
         self.assertIs(ColumnConfig.of(view), first)
         self.assertTrue(self.header(view).sectionsMovable())
 
+    def test_an_optional_column_starts_hidden_until_the_user_decides(self):
+        """``hidden_by_default``: off on a view with no saved layout, and the
+        user's own choice -- showing it, or later showing every column --
+        outranks the default from then on. (A saved EMPTY hidden list used to
+        apply nothing, which would have left a defaulted column hidden after
+        the user showed it.) Added: 2026-10-04
+        """
+        view = self.make(QtWidgets.QTableWidget)
+        ColumnConfig.attach(view, settings=self.settings, hidden_by_default=[3])
+        ColumnConfig.of(view).restore()
+        self.assertEqual(self.hidden(view), ["Notes"])
+        self.pick(view, "Notes")  # shown by the user
+        self.assertEqual(self.hidden(view), [])
+
+        again = self.make(QtWidgets.QTableWidget)
+        ColumnConfig.attach(again, settings=self.settings, hidden_by_default=[3])
+        ColumnConfig.of(again).restore()
+        self.assertEqual(self.hidden(again), [], "the user's choice outranks it")
+
+    def test_showing_or_hiding_a_column_is_announced(self):
+        """A host whose column is costly to fill fills it only once it shows:
+        ``visibility_changed(column, hidden)`` says when. Added: 2026-10-04"""
+        view = self.make(QtWidgets.QTableWidget)
+        config = ColumnConfig.attach(view, settings=self.settings)
+        seen = []
+        config.visibility_changed.connect(lambda c, h: seen.append((c, h)))
+        self.pick(view, "Type")
+        self.pick(view, "Type")
+        config.set_hidden(1, False)  # already shown: nothing to announce
+        self.assertEqual(seen, [(1, True), (1, False)])
+
 
 class ColumnReorderTest(_ColumnCase):
     """``reorderable``: the menu's rows are dragged into the column order."""
@@ -370,6 +401,16 @@ class TableWidgetColumnConfigTest(_ColumnCase):
         again.enable_column_config(settings=self.settings)
         again.restore_column_state()
         self.assertEqual(self.hidden(again), ["Value"])
+
+    def test_both_options_take_columns_hidden_by_default(self):
+        for cls in (TreeWidget, TableWidget):
+            with self.subTest(view=cls.__name__):
+                view = self.make(cls, name=f"{cls.__name__}_optional")
+                view.enable_column_config(
+                    settings=self.settings, hidden_by_default=[2, 3]
+                )
+                view.restore_column_state()
+                self.assertEqual(self.hidden(view), ["Value", "Notes"])
 
     def test_the_table_option_takes_locked_columns(self):
         table = self.make(TableWidget)

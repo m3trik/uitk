@@ -2647,6 +2647,23 @@ class TestDialogsYieldToBusyCursor(QtBaseTestCase):
             self.assertTrue(sb.confirm("Really?", yes="Go", no="Stay"))
         box.assert_called_once_with("Really?", "Go", "Stay")
 
+    def test_message_box_toast_is_timed_to_its_text_by_default(self):
+        """A passive toast stays up for its reading time (``timeout="auto"``),
+        not a flat 3 s that cut long messages off and held short ones."""
+        sb = Switchboard()
+        text = "Exported 12 objects to the scene folder."
+        sb.message_box(text)
+        box = sb._messageBox
+        try:
+            self.assertEqual(box.timeout, "auto")
+            self.assertTrue(box.menu_timer.isActive())
+            self.assertEqual(
+                box.menu_timer.interval(),
+                round(box.reading_time(box.text()) * 1000),
+            )
+        finally:
+            box.close()
+
     def test_data_view_dialog_renders_colour_coded_json(self):
         """Every token role takes its DATA_COLORS colour; markup in the data is
         escaped, never rendered."""

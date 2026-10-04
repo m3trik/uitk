@@ -866,13 +866,22 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._status_label.setFont(font)
 
     def _elide_status_text(self):
-        """Elide the displayed status text to fit available label width."""
+        """Elide the displayed status text to fit available label width.
+
+        Rich text shows whole while it fits, measured as it renders (bold is
+        wider than the plain metrics say). Past that it is elided as PLAIN
+        text: eliding the markup itself counted the tags as text and could
+        leave half a tag on screen.
+        """
+        label = self._status_label
         text = self._status_text or self._default_status_text
+        rich = bool(text) and QtGui.Qt.mightBeRichText(text)
+        label.setTextFormat(QtCore.Qt.RichText if rich else QtCore.Qt.PlainText)
         if not text:
-            self._status_label.setText("")
+            label.setText("")
             return
 
-        fm = QtGui.QFontMetrics(self._status_label.font())
+        fm = QtGui.QFontMetrics(label.font())
         indent = self._status_label.indent()
         margin = (indent if indent > 0 else 8) * 2
         if self._size_grip and not self._size_grip.isHidden():
@@ -883,11 +892,20 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
 
         if available <= 0:
             # Widget not laid out yet; show full text (will be elided on show)
-            self._status_label.setText(text)
+            label.setText(text)
             return
 
-        elided = fm.elidedText(text, QtCore.Qt.ElideMiddle, available)
-        self._status_label.setText(elided)
+        if rich:
+            doc = QtGui.QTextDocument()
+            doc.setDefaultFont(label.font())
+            doc.setDocumentMargin(0)
+            doc.setHtml(text)
+            if doc.idealWidth() <= available:
+                label.setText(text)
+                return
+            label.setTextFormat(QtCore.Qt.PlainText)
+            text = doc.toPlainText()
+        label.setText(fm.elidedText(text, QtCore.Qt.ElideMiddle, available))
 
     def _apply_transparent_style(self):
         """Style children to blend seamlessly with the footer.

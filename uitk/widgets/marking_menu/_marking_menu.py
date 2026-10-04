@@ -572,7 +572,7 @@ class MarkingMenu(
             return
         patterns = list(self.HOSTED_PAGE_PATTERNS)
         add_hook(
-            "browser",
+            "ui_browser",
             lambda browser: browser.set_entry_filter(exc=patterns),
         )
 

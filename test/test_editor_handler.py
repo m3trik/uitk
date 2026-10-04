@@ -65,8 +65,8 @@ class EditorRows(_Base):
             self.assertFalse(entry.editable_tags)
 
     def test_the_ui_browser_lists_itself(self):
-        browser = self.sb.editors.get("browser")
-        self.assertIn("browser", browser._model._names)
+        browser = self.sb.editors.get("ui_browser")
+        self.assertIn("ui_browser", browser._model._names)
         self.assertIn("alpha", browser._model._names)
 
     def test_a_registered_ui_keeps_a_name_an_editor_also_has(self):
@@ -76,17 +76,17 @@ class EditorRows(_Base):
         Regression: the editor rows were listed unconditionally, and the
         browser keeps ONE row per name -- the last, which is the editor's (its
         handler registers after the UI handler) -- so the host's own
-        ``presets`` UI vanished from the launcher.
+        ``preset_editor`` UI vanished from the launcher.
         """
-        path = os.path.join(self.dir, "presets.ui")
-        _write_ui(path, "presets")
+        path = os.path.join(self.dir, "preset_editor.ui")
+        _write_ui(path, "preset_editor")
         self.sb.register(ui_location=path)
-        rows = [e for e in self.sb.iter_handler_entries() if e.name == "presets"]
+        rows = [e for e in self.sb.iter_handler_entries() if e.name == "preset_editor"]
         self.assertEqual([e.kind for e in rows], ["ui_file"])
         editor_rows = {
             e.name for e in self.sb.iter_handler_entries() if e.kind == "editor"
         }
-        self.assertEqual(editor_rows, set(self.sb.editors.names()) - {"presets"})
+        self.assertEqual(editor_rows, set(self.sb.editors.names()) - {"preset_editor"})
 
     def test_a_switchboard_can_opt_out(self):
         sb = Switchboard(ui_source=self.dir, handlers={"editor": None})
@@ -100,24 +100,24 @@ class EditorRows(_Base):
 
 class EditorLifecycle(_Base):
     def test_launch_close_and_visibility(self):
-        self.assertFalse(self.handler.is_visible("style"))
-        editor = self.handler.launch("style")
-        self.assertIs(editor, self.sb.editors.peek("style"))
-        self.assertTrue(self.handler.is_visible("style"))
-        self.handler.close("style")
-        self.assertFalse(self.handler.is_visible("style"))
+        self.assertFalse(self.handler.is_visible("style_editor"))
+        editor = self.handler.launch("style_editor")
+        self.assertIs(editor, self.sb.editors.peek("style_editor"))
+        self.assertTrue(self.handler.is_visible("style_editor"))
+        self.handler.close("style_editor")
+        self.assertFalse(self.handler.is_visible("style_editor"))
 
     def test_row_refreshes_when_an_editor_hides_by_any_path(self):
         """Wired at build, so a window opened outside the handler (a slot's
         ``sb.editors.show``) still refreshes its row."""
-        editor = self.sb.editors.show("style")
+        editor = self.sb.editors.show("style_editor")
         seen = []
         self.sb.on_handler_entry_changed.connect(
             lambda handler, name: seen.append((handler, name))
         )
         editor.hide()
         QtWidgets.QApplication.processEvents()
-        self.assertIn(("editor", "style"), seen)
+        self.assertIn(("editor", "style_editor"), seen)
 
     def test_a_hide_is_relayed_after_it_returns_never_inside_it(self):
         """Qt sends a window its Hide from inside ``~QWidget`` too. Relayed
@@ -128,7 +128,7 @@ class EditorLifecycle(_Base):
         deleted right after hiding."""
         import shiboken6
 
-        editor = self.sb.editors.show("style")
+        editor = self.sb.editors.show("style_editor")
         QtWidgets.QApplication.processEvents()
         seen = []
         self.sb.on_handler_entry_changed.connect(
@@ -137,7 +137,7 @@ class EditorLifecycle(_Base):
         editor.hide()
         self.assertEqual(seen, [], "the Hide was relayed inside hide() itself")
         QtWidgets.QApplication.processEvents()
-        self.assertIn(("editor", "style"), seen)
+        self.assertIn(("editor", "style_editor"), seen)
 
         seen.clear()
         editor.show()
@@ -146,30 +146,30 @@ class EditorLifecycle(_Base):
         shiboken6.delete(editor)  # ~QWidget sends the Hide
         self.assertEqual(seen, [], "the destructor's Hide was relayed synchronously")
         QtWidgets.QApplication.processEvents()
-        self.assertIn(("editor", "style"), seen)
+        self.assertIn(("editor", "style_editor"), seen)
 
     def test_focus_and_close_never_build_an_editor(self):
-        self.handler.focus("presets")
-        self.handler.close("presets")
-        self.assertIsNone(self.sb.editors.peek("presets"))
-        self.assertFalse(self.handler.is_visible("presets"))
+        self.handler.focus("preset_editor")
+        self.handler.close("preset_editor")
+        self.assertIsNone(self.sb.editors.peek("preset_editor"))
+        self.assertFalse(self.handler.is_visible("preset_editor"))
 
 
 class EditorLaunchCode(_Base):
     def test_the_browsers_snippet_carries_the_registry(self):
-        code = self.handler.launch_code("browser")
+        code = self.handler.launch_code("ui_browser")
         compile(code, "<launch_code>", "exec")
         self.assertIn("sb.register(", code)
         ui_dir = os.path.abspath(self.dir)
         if os.sep == "\\":
             ui_dir = ui_dir.replace("\\", "/")
         self.assertIn(f"ui_location={ui_dir!r},", code)
-        self.assertIn("handler.sb.editors.show('browser')", code)
+        self.assertIn("handler.sb.editors.show('ui_browser')", code)
 
     def test_an_editor_with_its_own_store_needs_no_sources(self):
-        code = self.handler.launch_code("style")
+        code = self.handler.launch_code("style_editor")
         self.assertNotIn(".register(", code)
-        self.assertIn("handler.sb.editors.show('style')", code)
+        self.assertIn("handler.sb.editors.show('style_editor')", code)
 
     def test_unknown_editor_has_no_code(self):
         self.assertIsNone(self.handler.launch_code("nope"))
@@ -180,16 +180,16 @@ class EditorLaunchCode(_Base):
         from conftest import run_launch_snippet
 
         probe = (
-            "[ns['handler'].sb.editors.peek('browser').isVisible(), "
-            "sorted(ns['handler'].sb.editors.peek('browser')._model._names), "
+            "[ns['handler'].sb.editors.peek('ui_browser').isVisible(), "
+            "sorted(ns['handler'].sb.editors.peek('ui_browser')._model._names), "
             "len(exec_calls)]"
         )
         visible, names, loops = run_launch_snippet(
-            self.handler.launch_code("browser"), probe
+            self.handler.launch_code("ui_browser"), probe
         )
         self.assertTrue(visible)
         self.assertIn("alpha", names)
-        self.assertIn("browser", names)
+        self.assertIn("ui_browser", names)
         self.assertEqual(loops, 1)
 
 

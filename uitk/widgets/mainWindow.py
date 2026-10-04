@@ -429,8 +429,12 @@ class MainWindow(
         widget.type = type(widget)
         widget.derived_type = ptk.get_derived_type(widget, module="QtWidgets")
         # Use cached derived_type lookup instead of per-call isinstance loop
-        widget.default_signals = lambda w=widget: self.sb.default_signals.get(
-            w.derived_type, None
+        # A widget whose value is not its Qt base class's (a check list's value
+        # is its checked SET, not the item ``itemClicked`` carries) names its
+        # own change signal; see ValueManager.get_value for the value half.
+        widget.default_signals = lambda w=widget: (
+            getattr(w, "state_signal", None)
+            or self.sb.default_signals.get(w.derived_type, None)
         )
 
         widget.get_slot = lambda w=widget: getattr(

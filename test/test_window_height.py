@@ -248,5 +248,63 @@ class TestFitHost(WindowHeightTestCase):
         WindowHeight.fit_host(None)
 
 
+class TestFitHostLater(WindowHeightTestCase):
+    """The deferred form, for a widget that has just shown or hidden its parts."""
+
+    def _recording(self, shown=True):
+        win, central = self._window()
+        calls = []
+        win.fit_height_to_content = lambda: calls.append(1)
+        if not shown:
+            win.hide()
+        return central.findChild(QtWidgets.QLabel), calls
+
+    @staticmethod
+    def _turn():
+        from qtpy import QtCore
+
+        loop = QtCore.QEventLoop()
+        QtCore.QTimer.singleShot(30, loop.quit)
+        loop.exec_() if hasattr(loop, "exec_") else loop.exec()
+
+    def test_it_fits_on_the_next_turn_not_now(self):
+        """A container asked while it is still hiding children measures the
+        layout it is leaving."""
+        from uitk import WindowHeight
+
+        row, calls = self._recording()
+        WindowHeight.fit_host_later(row)
+        self.assertEqual(calls, [], "not synchronously")
+        self._turn()
+        self.assertEqual(calls, [1])
+
+    def test_calls_in_one_turn_fit_once(self):
+        from uitk import WindowHeight
+
+        row, calls = self._recording()
+        for _ in range(3):
+            WindowHeight.fit_host_later(row)
+        self._turn()
+        self.assertEqual(calls, [1])
+        WindowHeight.fit_host_later(row)
+        self._turn()
+        self.assertEqual(calls, [1, 1], "the next turn may fit again")
+
+    def test_a_window_not_on_screen_is_left_to_its_show(self):
+        """A fit queued during a build lands after the show and overrides the
+        size that show restored."""
+        from uitk import WindowHeight
+
+        row, calls = self._recording(shown=False)
+        WindowHeight.fit_host_later(row)
+        self._turn()
+        self.assertEqual(calls, [])
+
+    def test_no_widget_is_no_error(self):
+        from uitk import WindowHeight
+
+        WindowHeight.fit_host_later(None)
+
+
 if __name__ == "__main__":
     unittest.main()

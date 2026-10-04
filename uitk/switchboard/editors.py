@@ -8,9 +8,12 @@ state — :class:`StyleEditor`, :class:`ShortcutEditor`,
 re-implements the same five-line pattern of "cache, probe for deletion,
 recreate if dead, show, raise". This mixin centralizes that:
 
-    self.sb.editors.show("style")          # opens / focuses by name
+    self.sb.editors.show("style_editor")   # opens / focuses by name
     self.sb.editors.browser                # property access
-    self.sb.editors.show("browser").raise_()
+    self.sb.editors.show("ui_browser").raise_()
+
+An editor's name is its window title's (``"UI Browser"`` -> ``"ui_browser"``),
+so the launcher row it gets reads like the header of the window it opens.
 
 Editor instances are cached on the registry — re-showing the same window
 across invocations rather than spawning a new one — and auto-recover when
@@ -23,6 +26,8 @@ because the Switchboard itself is the ambient host.
 """
 
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional
+
+import pythontk as ptk
 
 if TYPE_CHECKING:  # pragma: no cover
     from qtpy import QtWidgets
@@ -42,32 +47,56 @@ class _EditorRegistry:
     # needs_switchboard[, kwargs]) tuple resolved lazily so importing the mixin
     # doesn't drag every editor module into memory. The optional 4th element is a
     # dict of extra constructor kwargs (e.g. a focused-launch flag).
+    #
+    # A name is its window title's, lowercased with underscores: the launcher
+    # lists the editors by name beside the UIs, whose rows read like their
+    # headers.
     _EDITORS: Dict[str, tuple] = {
-        "style": ("uitk.widgets.editors.style_editor", "StyleEditor", False),
-        "shortcut": (
+        "style_editor": ("uitk.widgets.editors.style_editor", "StyleEditor", False),
+        "shortcut_editor": (
             "uitk.widgets.editors.shortcut_editor.registry_editor",
             "ShortcutEditor",
             True,
         ),
         # The same editor pinned to the ⌘ Commands view with the UI selector
         # hidden — a focused "global shortcuts" panel (marking-menu activation key
-        # + navigation commands). Cached separately from "shortcut" so the full
-        # customiser and this focused view are independent windows.
+        # + navigation commands). Cached separately from "shortcut_editor" so the
+        # full customiser and this focused view are independent windows.
         "global_shortcuts": (
             "uitk.widgets.editors.shortcut_editor.registry_editor",
             "ShortcutEditor",
             True,
             {"focus": "commands"},
         ),
-        "browser": (
+        "ui_browser": (
             "uitk.widgets.editors.switchboard_browser",
             "SwitchboardBrowser",
             True,
         ),
         # Every preset of every tool (lock, collections, backup / import) --
         # needs no switchboard: it reads the presets root, never a loaded UI.
-        "presets": ("uitk.widgets.editors.preset_editor", "PresetEditor", False),
+        "preset_editor": (
+            "uitk.widgets.editors.preset_editor",
+            "PresetEditor",
+            False,
+        ),
     }
+
+    #: The names the editors had before they took their titles'.
+    _canonical = staticmethod(
+        ptk.Deprecation.values(
+            {
+                "style": "style_editor",
+                "shortcut": "shortcut_editor",
+                "browser": "ui_browser",
+                "presets": "preset_editor",
+            },
+            what="Switchboard editor name",
+            remove_in="1.8.0",
+            since="2026-09-28",
+            reason="An editor is named for its window title.",
+        )
+    )
 
     def __init__(self, sb):
         self._sb = sb
@@ -96,10 +125,7 @@ class _EditorRegistry:
             name: Editor name (one of :meth:`names`).
             hook: ``Callable[[editor], None]``.
         """
-        if name not in self._EDITORS:
-            raise KeyError(
-                f"Unknown editor {name!r}. Available: {', '.join(self.names())}"
-            )
+        name = self._known(name)
         bucket = self._post_build_hooks.setdefault(name, [])
         if hook not in bucket:
             bucket.append(hook)
@@ -111,10 +137,7 @@ class _EditorRegistry:
         instance unless the Qt object has been destroyed, in which case
         the registry rebuilds transparently.
         """
-        if name not in self._EDITORS:
-            raise KeyError(
-                f"Unknown editor {name!r}. Available: {', '.join(self.names())}"
-            )
+        name = self._known(name)
         cached = self.peek(name)
         if cached is not None:
             return cached
@@ -128,7 +151,7 @@ class _EditorRegistry:
         Never builds -- the probe for "is this editor open" questions that
         must not construct a window to answer them.
         """
-        cached = self._cache.get(name)
+        cached = self._cache.get(self._canonical(name))
         if cached is not None and self._sb._widget_is_alive(cached):
             return cached
         return None
@@ -152,10 +175,7 @@ class _EditorRegistry:
         Raises:
             KeyError: *name* is not an editor this registry knows.
         """
-        if name not in self._EDITORS:
-            raise KeyError(
-                f"Unknown editor {name!r}. Available: {', '.join(self.names())}"
-            )
+        name = self._known(name)
         cached = self.peek(name)
         if cached is not None:
             return cached is widget
@@ -166,14 +186,11 @@ class _EditorRegistry:
     def requires_switchboard(self, name: str) -> bool:
         """Whether *name* operates on this switchboard's registry.
 
-        True for the UI Browser and the Shortcut Editor, which list the
-        registered UIs; False for editors reading their own stores (style,
-        presets).
+        True for the UI Browser and the Shortcut Editors, which list the
+        registered UIs; False for editors reading their own stores (the Style
+        and Preset Editors).
         """
-        if name not in self._EDITORS:
-            raise KeyError(
-                f"Unknown editor {name!r}. Available: {', '.join(self.names())}"
-            )
+        name = self._known(name)
         return bool(self._EDITORS[name][2])
 
     def show(self, name: str, *, raise_window: bool = True) -> "QtWidgets.QWidget":
@@ -200,21 +217,34 @@ class _EditorRegistry:
 
     @property
     def style(self) -> "QtWidgets.QWidget":
-        return self.get("style")
+        return self.get("style_editor")
 
     @property
     def shortcut(self) -> "QtWidgets.QWidget":
-        return self.get("shortcut")
+        return self.get("shortcut_editor")
 
     @property
     def browser(self) -> "QtWidgets.QWidget":
-        return self.get("browser")
+        return self.get("ui_browser")
 
     @property
     def presets(self) -> "QtWidgets.QWidget":
-        return self.get("presets")
+        return self.get("preset_editor")
 
     # ── Internal ────────────────────────────────────────────────────────────
+
+    def _known(self, name: str) -> str:
+        """*name* as the registry keys it (a retired name warns and resolves).
+
+        Raises:
+            KeyError: *name* is not an editor this registry knows.
+        """
+        name = self._canonical(name)
+        if name not in self._EDITORS:
+            raise KeyError(
+                f"Unknown editor {name!r}. Available: {', '.join(self.names())}"
+            )
+        return name
 
     def _resolve_parent(self):
         """Pick the most appropriate parent for a freshly-built editor.

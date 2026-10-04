@@ -29,6 +29,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 import pythontk as ptk
 from uitk.managers.color_model import ColorModel
+from uitk.managers.window_height import WindowHeight
 from uitk.widgets.gradient_slider import GradientSlider
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.separator import Separator
@@ -166,12 +167,9 @@ class ColorEditor(QtWidgets.QWidget, AttributesMixin):
 
         if not self._advanced_names:
             return
-        # A section header with its lid down, not a "More" button: the
-        # advanced rows are a section of this editor, and a titled rule is how
-        # every other section in a uitk column is captioned.
-        self._disclosure = Separator(self, title=self.ADVANCED_TITLE, checkable=True)
-        self._disclosure.setObjectName("advanced_toggle")
-        self._disclosure.setToolTip("Show or hide the advanced colour controls.")
+        self._disclosure = self._advanced_disclosure(
+            self, "Show or hide the advanced colour controls."
+        )
         layout.addWidget(self._disclosure)
 
         self._advanced_box = QtWidgets.QWidget(self)
@@ -186,8 +184,22 @@ class ColorEditor(QtWidgets.QWidget, AttributesMixin):
         layout.addWidget(self._advanced_box)
         self._disclosure.toggled.connect(self._on_advanced_toggled)
 
+    @classmethod
+    def _advanced_disclosure(cls, parent, tooltip: str) -> Separator:
+        """The closed rule the advanced sections open under, for any host of them.
+
+        A section header with its lid down, not a "More" button: the advanced
+        rows are a section, and a titled rule is how every other section in a
+        uitk column is captioned.
+        """
+        disclosure = Separator(parent, title=cls.ADVANCED_TITLE, checkable=True)
+        disclosure.setObjectName("advanced_toggle")
+        disclosure.setToolTip(tooltip)
+        return disclosure
+
     def _on_advanced_toggled(self, shown: bool) -> None:
         self._advanced_box.setHidden(not shown)
+        WindowHeight.fit_host_later(self)
 
     def _make(self, name: str) -> Optional[QtWidgets.QWidget]:
         factory = self.SECTIONS.get(name)
@@ -847,8 +859,12 @@ class ColorRampEditor(QtWidgets.QWidget):
             previews draw it over the transparency board at an alpha of its
             brightness, so a black end reads as nothing added rather than as
             a black surface (:class:`ColorEditor`, :class:`RampPreview`).
-        editor_kwargs: Forwarded to every :class:`ColorEditor` -- pass
-            ``advanced=()`` for a compact embedded row.
+        advanced: Section names every end opens TOGETHER, under one
+            disclosure spanning the ramp -- the ends are one relationship, so
+            one end's sliders without the other's are half a comparison.
+            ``None`` takes :attr:`ColorEditor.DEFAULT_ADVANCED`; an empty
+            sequence (a compact embedded row) removes the disclosure.
+        editor_kwargs: Forwarded to every end's :class:`ColorEditor`.
     """
 
     #: Live, as any end is dragged: ``(QColor, ...)`` in label order.
@@ -870,6 +886,7 @@ class ColorRampEditor(QtWidgets.QWidget):
         values=None,
         linear: bool = False,
         additive: bool = False,
+        advanced: Optional[Sequence[str]] = None,
         **editor_kwargs,
     ):
         super().__init__(parent)
@@ -913,22 +930,26 @@ class ColorRampEditor(QtWidgets.QWidget):
             self._after_caption.setVisible(False)
             previews.addWidget(self._after)
 
-        row = QtWidgets.QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
-        outer.addLayout(row)
+        # One grid rather than a column per end, so a row that spans the ends
+        # (the disclosure) can sit between rows that do not, and each end's
+        # advanced rows still line up under it.
+        grid = QtWidgets.QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(1)
+        outer.addLayout(grid)
         for index, label in enumerate(self._labels):
-            column = QtWidgets.QVBoxLayout()
-            column.setContentsMargins(0, 0, 0, 0)
-            column.setSpacing(1)
+            column = self._column(index)
+            grid.setColumnStretch(column, 1)
             caption = QtWidgets.QLabel(label, self)
             caption.setAlignment(QtCore.Qt.AlignCenter)
-            column.addWidget(caption)
+            grid.addWidget(caption, 0, column)
             seed = colors[index] if index < len(colors) else None
             editor = ColorEditor(
                 color=self._to_display(seed),
                 parent=self,
                 additive=self._additive,
+                advanced=(),
                 **editor_kwargs,
             )
             editor.setObjectName(f"editor_{label.lower()}")
@@ -936,12 +957,12 @@ class ColorRampEditor(QtWidgets.QWidget):
             editor.colorCommitted.connect(
                 lambda color, i=index: self._emit_committed(i, color)
             )
-            column.addWidget(editor)
-            # Inserted at the FRONT: the stops arrive high first, and a ramp
-            # is read from its low end, so the last stop lands leftmost.
-            row.insertLayout(0, column)
+            grid.addWidget(editor, 1, column)
             self._editors.append(editor)
             self._authored.append(self._authored_state(editor, seed))
+        self._build_advanced(
+            grid, ColorEditor.DEFAULT_ADVANCED if advanced is None else advanced
+        )
 
         if self.preview is not None:
             # The preview reads the stops rather than being pushed them, so a
@@ -950,6 +971,51 @@ class ColorRampEditor(QtWidgets.QWidget):
             for editor in self._editors:
                 editor.colorChanged.connect(self._sync_preview)
             self._sync_preview()
+
+    def _column(self, index: int) -> int:
+        """The grid column end *index* is drawn in.
+
+        Reversed: the stops arrive high first, and a ramp is read from its low
+        end, so the last stop lands leftmost.
+        """
+        return len(self._labels) - 1 - index
+
+    def _build_advanced(self, grid, names) -> None:
+        """One disclosure across every end, over each end's advanced rows.
+
+        Each end's rows are a second :class:`ColorEditor` on that end's MODEL
+        -- two editors sharing a model edit one colour -- so they need no
+        wiring to the end above them; only their commits are relayed, under
+        the end they speak for.
+        """
+        self._advanced_editors: List[ColorEditor] = []
+        if not names:
+            return
+        self._disclosure = ColorEditor._advanced_disclosure(
+            self, "Show or hide the advanced colour controls, for every end at once."
+        )
+        grid.addWidget(self._disclosure, 2, 0, 1, len(self._labels))
+        for index, (label, end) in enumerate(zip(self._labels, self._editors)):
+            more = ColorEditor(
+                model=end.model,
+                sections=names,
+                advanced=(),
+                parent=self,
+                additive=self._additive,
+            )
+            more.setObjectName(f"advanced_{label.lower()}")
+            more.colorCommitted.connect(
+                lambda color, i=index: self._emit_committed(i, color)
+            )
+            more.setHidden(True)
+            grid.addWidget(more, 3, self._column(index))
+            self._advanced_editors.append(more)
+        self._disclosure.toggled.connect(self._on_advanced_toggled)
+
+    def _on_advanced_toggled(self, shown: bool) -> None:
+        for editor in self._advanced_editors:
+            editor.setHidden(not shown)
+        WindowHeight.fit_host_later(self)
 
     def _preview_column(self, caption: str):
         """``(container, caption label, preview)`` -- one captioned preview."""
@@ -1058,8 +1124,12 @@ class ColorRampEditor(QtWidgets.QWidget):
         if showing:
             self.reference.set_stops(stops)
             self.reference.set_shape(**self.preview.shape)
+        if self._before.isHidden() != showing:
+            return  # Already up (or down): the colours were all that changed.
         self._before.setVisible(showing)
         self._after_caption.setVisible(showing)
+        # The comparison adds a caption row; the window follows it both ways.
+        WindowHeight.fit_host_later(self)
 
     # ------------------------------------------------------------------
 

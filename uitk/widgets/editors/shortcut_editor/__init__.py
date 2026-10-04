@@ -7,7 +7,7 @@ One unified editor serves every shortcut backend:
 * :mod:`~uitk.widgets.editors.shortcut_editor.registry_editor` —
   :class:`ShortcutEditor`, the preset-aware, collision-checking editor for the
   Switchboard global shortcut **registry** (``sb.get_shortcut_registry``,
-  UI-less commands, scopes). Reached via ``sb.editors.show("shortcut")``.
+  UI-less commands, scopes). Reached via ``sb.editors.show("shortcut_editor")``.
 
 * :mod:`~uitk.widgets.editors.shortcut_editor.collision_conflict` —
   :class:`CollisionConflict`, what a collision checker reports. Qt-free, so a

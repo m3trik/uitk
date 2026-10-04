@@ -1584,6 +1584,65 @@ class TestCheckListKind(BaseTestCase):
         self.assertLess(few.height(), many.height())
         self.assertLessEqual(many.maximumHeight(), 140)  # capped, then scrolls
 
+    def _shown(self, w):
+        w.resize(240, 80)
+        w.show()
+        self.addCleanup(w.deleteLater)
+        self.addCleanup(w.close)
+        return w
+
+    def _click(self, w, row, on_indicator=False):
+        from qtpy import QtCore, QtTest
+
+        rect = w.visualItemRect(w.item(row))
+        x = rect.x() + (6 if on_indicator else rect.width() // 2)
+        QtTest.QTest.mouseClick(
+            w.viewport(), QtCore.Qt.LeftButton, pos=QtCore.QPoint(x, rect.center().y())
+        )
+
+    def test_clicking_the_label_toggles_the_row(self):
+        """The whole row is the hit target, as a QCheckBox's label is -- a
+        click on the text that silently does nothing reads as a dead widget."""
+        w = self._shown(self._widget(choices=self.CHOICES, default=[]))
+        self._click(w, 1)
+        self.assertEqual(KindFactory.read_value(w), ["shot_metadata"])
+        self._click(w, 1)
+        self.assertEqual(KindFactory.read_value(w), [])
+
+    def test_clicking_the_box_toggles_once(self):
+        """The delegate's own indicator toggle must not stack with the row
+        toggle -- a double flip would leave a box click doing nothing."""
+        w = self._shown(self._widget(choices=self.CHOICES, default=[]))
+        self._click(w, 0, on_indicator=True)
+        self.assertEqual(KindFactory.read_value(w), ["audio_event"])
+
+    def test_the_unchecked_box_is_visible_in_every_theme(self):
+        """The dark theme draws borderless (``BORDER_W: 0px``) with the box
+        filled the list's own colour -- an unchecked row showed no box at all."""
+        from qtpy import QtGui, QtWidgets
+
+        from uitk.themes.style_sheet import StyleSheet
+
+        for theme in ("light", "dark", "high-contrast"):
+            with self.subTest(theme=theme):
+                host = QtWidgets.QWidget()
+                lay = QtWidgets.QVBoxLayout(host)
+                w = self._widget(choices=self.CHOICES, default=[])
+                lay.addWidget(w)
+                StyleSheet().set(host, theme=theme)
+                self._shown(host)
+                QtWidgets.QApplication.processEvents()
+                img = w.viewport().grab().toImage()
+                rect = w.visualItemRect(w.item(0))
+                ground = QtGui.QColor(img.pixel(rect.right() - 2, rect.center().y()))
+                box = [
+                    QtGui.QColor(img.pixel(x, y))
+                    for x in range(rect.x(), rect.x() + 16)
+                    for y in range(rect.y(), rect.bottom() + 1)
+                ]
+                contrast = max(abs(c.lightness() - ground.lightness()) for c in box)
+                self.assertGreater(contrast, 40, f"no visible box in {theme}")
+
     def test_per_entry_tooltip_from_a_triple(self):
         w = self._widget(choices=[("Audio Event", "audio_event", "Plays clips.")])
         self.assertEqual(w.item(0).toolTip(), "Plays clips.")

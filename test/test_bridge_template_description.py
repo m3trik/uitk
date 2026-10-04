@@ -85,6 +85,17 @@ class LuaTemplateDescriptionTest(unittest.TestCase):
         self.assertIsNone(Tooltip.template_description(self._write("ZomPack({})\n")))
         self.assertIsNone(Tooltip.template_description(self.root / "missing.lua"))
 
+    def test_a_template_saved_with_a_bom_keeps_its_description(self):
+        """A UTF-8 BOM (Windows PowerShell 5.1 writes one) is not content: the
+        ``.lua`` first line must still read as a comment, and the ``.py`` one
+        must still parse."""
+        lua = self.root / "bom.lua"
+        lua.write_text("-- Pack the islands.\nZomPack({})\n", encoding="utf-8-sig")
+        self.assertEqual(Tooltip.template_description(lua), "Pack the islands.")
+        py = self.root / "bom.py"
+        py.write_text('"""Bake the maps."""\n', encoding="utf-8-sig")
+        self.assertEqual(Tooltip.template_description(py), "Bake the maps.")
+
     def test_unknown_extension_is_none(self):
         path = self.root / "preset.txt"
         path.write_text("-- Summary.\n", encoding="utf-8")

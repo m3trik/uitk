@@ -214,6 +214,11 @@ class CurveUtils:
         ``stepnext`` / ``linear`` / cubic-Bézier via ``cp1``/``cp2``) shared
         by the clip curve preview and the background curve painter, so a
         tangent-rendering change can't silently diverge between them.
+
+        A segment may also carry ``samples`` -- ``[(t, v), ...]`` strictly
+        between its endpoints -- for a span neither a line nor one cubic can
+        draw (Blender's eased interpolations: SINE, BACK, BOUNCE, ...); it is
+        drawn through them, whatever its ``out_type`` says.
         """
         path = QtGui.QPainterPath()
         if not segments:
@@ -239,7 +244,12 @@ class CurveUtils:
             ot = seg.get("out_type", "spline")
             cp1 = seg.get("cp1")
             cp2 = seg.get("cp2")
-            if ot == "step":
+            samples = seg.get("samples")
+            if samples:
+                for t, v in samples:
+                    path.lineTo(map_x(t), map_y(v))
+                path.lineTo(x1, y1)
+            elif ot == "step":
                 # Hold value, then jump at next key
                 path.lineTo(x1, map_y(seg["v0"]))
                 path.lineTo(x1, y1)

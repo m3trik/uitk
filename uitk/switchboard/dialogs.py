@@ -172,17 +172,26 @@ class SwitchboardDialogsMixin:
         string,
         *buttons,
         location="topMiddle",
-        timeout=3,
+        timeout="auto",
         background=0.75,
+        default=None,
     ):
         """Spawns a message box with the given text and optionally sets buttons.
 
         Parameters:
             string: HTML text to display.
-            *buttons: Optional standard-button flags.  When provided the
-                box is modal (``exec_``); otherwise a passive popup.
+            *buttons: Optional buttons: Qt standard-button names (``"Yes"``,
+                ``"Cancel"``) or any other label, which becomes a button of
+                its own (``"Override All"``). When provided the box is modal
+                (``exec_``) and returns the clicked button's name or label;
+                otherwise a passive popup.
+            default: The button Enter answers, by name or label (modal
+                only). ``None`` leaves Qt's choice.
             location: Placement hint (default ``"topMiddle"``).
-            timeout: Auto-dismiss seconds (default 3).
+            timeout: Auto-dismiss seconds for the passive popup. ``"auto"``
+                (default) times it to the text -- long enough to read, never
+                more than a few seconds (``MessageBox.reading_time``);
+                ``None`` or ``0`` keeps it up until dismissed.
             background (bool/float/str): Controls the label background.
                 ``True`` uses default dark grey at 50% opacity,
                 ``False`` disables the background,
@@ -198,6 +207,8 @@ class SwitchboardDialogsMixin:
             msg_box.location = location
             msg_box.timeout = timeout
             msg_box.setStandardButtons(*buttons)
+            if default is not None:
+                msg_box.set_default_button(default)
             msg_box.setText(string, background=background)
             # Modal: suspend any slot busy-cursor so buttons show an arrow.
             with CursorManager.suspend():

@@ -570,6 +570,14 @@ def output_group_init(self, widget):
     widget.setChecked(True)   # start expanded
 ```
 
+In a code-built form, `FormRows.add_section(title, setObjectName=...)` embeds one flush (0 px margins) and returns the form inside it; the fields added there are exposed on the outer form too, and a field a mode's `FieldVisibility` hid stays hidden when the fold opens.
+
+```python
+settings = rows.add_section("Settings", setObjectName="grp_settings")
+settings.add("QSpinBox", setObjectName="spn_frames")
+rows.spn_frames  # the same widget
+```
+
 ## ColorSwatch
 
 ```python
@@ -700,7 +708,7 @@ Each option is a class extending `BaseOption` or `ButtonOption`. Multiple option
 | `ActionOption` | Generic icon button triggering any callback |
 | `MenuOption` | Button that opens a pre-built `Menu` instance |
 
-Further options ship in [`optionBox/options/`](../uitk/widgets/optionBox/options/): `ValueOption` (inline editable value field), `AffixOption` (Auto/Suffix/Prefix picker), `ResetOption` (reset-to-default with bypass toggle), `DisableOption`, `FilterOption`, `ToggleOption`, `ChoiceOption` (a filter facet: an icon button picking one value from a popup, tinted while it narrows).
+Further options ship in [`optionBox/options/`](../uitk/widgets/optionBox/options/): `ValueOption` (inline editable value field), `AffixOption` (Auto/Suffix/Prefix picker), `ResetOption` (reset-to-default with bypass toggle), `DisableOption`, `FilterOption`, `ToggleOption`, `ChoiceOption` (a filter facet: an icon button picking one value from a popup, tinted while it narrows; `multi=True` picks several, `exclude=True` makes it a show list whose ticked rows are shown, and `ChoiceOption.Section(caption)` captions a group of rows).
 
 Basic usage via the manager (auto-patched):
 
@@ -784,9 +792,9 @@ Real-world integration: [mayatk's shot_sequencer_slots.py](https://github.com/m3
 They're exposed on the Switchboard via `sb.editors` ([uitk/switchboard/editors.py](../uitk/switchboard/editors.py)) — a lazy, auto-recovering singleton registry with names `style`, `shortcut`, `global_shortcuts` (the ShortcutEditor pinned to its Commands view), `browser`, and `presets`:
 
 ```python
-sb.editors.show("style")          # open / focus by name
+sb.editors.show("style_editor")          # open / focus by name
 sb.editors.browser                # property access (style / shortcut / browser / presets)
-sb.editors.add_post_build_hook("shortcut", wire_dcc_collision_checker)
+sb.editors.add_post_build_hook("shortcut_editor", wire_dcc_collision_checker)
 ```
 
 ### Preset Editor
@@ -797,15 +805,15 @@ sb.editors.add_post_build_hook("shortcut", wire_dcc_collision_checker)
 - **Hide** a preset (row menu, or a tree node's *Hide all*; built-ins too, the main declutter case): its panel's preset dropdown leaves it out -- except the one the panel is on, which stays until the panel moves off it -- while the file stays on disk and loads as before. Here it is dimmed, and the Status facet's *Hidden* lists them; *Show* lists them again. A hide is the user's own view: a collection export never carries it.
 - **Table** — a header click sorts by that column and a second reverses it (names naturally, Modified by time, the rest by their text ignoring case; the list is sorted, never the view, so every edit still lands on the row's preset; the sort survives filtering and rescans). *Description* is edited in place for your presets and shows a built-in's shipped `_meta.description` read-only; it is searched by the filter text and is the preset's tooltip in its panel dropdown. *Description* is the last column and takes the width the window has to spare; its tooltip shows the whole description wrapped (up to `DESCRIPTION_TIP_CHARS`, 1000, cut at a word past that). Right-click the header to show, hide or reorder columns (a click on a row toggles it, a drag moves it; Name stays; remembered with the window), via [column config](#column-config) with `reorderable=True`.
 - **Tree** — right-click a node (App, Tool, Mode, or *All presets*) for *Hide all* / *Show all*, *Lock all* / *Unlock all* (each only when it would change something), *Open folder* and *Back up these presets* (to the backups folder, named for the node) -- everything under the node, whatever the filter row shows.
-- **Filter row** — the text field (`FilterOption` grammar: comma terms, exact unless `*`, `!` excludes; the filter icon silences it; matches name, description, tool, collection and tags) carries two `ChoiceOption` facets: Status -- tick any of locked / editable / built-in / hidden / edited since export or install in one visit (the popup stays open; a row shows when it matches any ticked status) -- and Tag. Beside it, the **collections box** is both the collection filter and where collections are managed.
+- **Filter row** — the text field (`FilterOption` grammar: comma terms, exact unless `*`, `!` excludes; the filter icon silences it; matches name, description, tool, collection and tags) carries one `ChoiceOption` show list (the eye): every kind of preset, ticked while shown, in sections (Kind: built-in / locked / editable; In panel lists: listed / hidden; Since export or install: edited / unchanged; Tags: untagged + each tag). Untick a kind to hide it; a row shows while one of its kinds is ticked in every section, and the popup stays open between flips. Beside it, the **collections box** is both the collection filter and where collections are managed.
 - **Collections** — a named set of presets (at most one per preset). In the collections box: **＋** opens a New collection form (name, description, and "add the selected presets"); **☰** imports a collection (*Import…*, always there) and acts on the one the box shows — *Edit…*, *Lock* / *Unlock* (its presets), *Export…* (writes a bundle and bumps its version), *Delete* (presets kept, untagged) with *Delete with its presets* in its flyout (unedited members deleted, backup first); a double-click renames it in place. Rows show version and preset count, so an empty collection is as manageable as a full one. A preset's **Collection cell** (click it, or right-click) moves presets in, between and out of collections — it acts on the whole selection when the clicked row is part of it. Importing a later version of a collection updates unedited members in place, even locked ones.
 - **Focus** — `PresetEditor(inc=..., exc=...)` or `set_entry_filter(inc, exc)` limits the window to some stores: shell-style patterns naming folders under the root, each taking its stores with it (`"mayatk"`, `"mayatk/scene_*"`; `pythontk.PresetLibrary.in_scope`). Collections stay root-wide (counts show the presets in view), and a backup still covers everything.
 - **Backup / import** share one bundle format (a `.zip`): a collection is imported from the ☰ menu, a backup restored from the header menu (*Restore from backup…*, opening in the backups folder). Either opens a review page (per-preset status: new / identical / update / conflict / removed, with an editable action) and writes nothing until *Apply*, which takes a backup first; an installed collection is then what the box shows. Deleting from the editor also backs up first.
 - Open panels learn about changes through `PresetManager.notify(keys)`; another process's selector re-lists its folder when its dropdown opens.
 
 ```python
-sb.editors.show("presets")
-sb.editors.add_post_build_hook("presets", lambda e: e.set_entry_filter(inc="mayatk"))
+sb.editors.show("preset_editor")
+sb.editors.add_post_build_hook("preset_editor", lambda e: e.set_entry_filter(inc="mayatk"))
 lib = ptk.PresetLibrary()
 plan = lib.plan_import("Acme Standard.presets.zip")   # review, then:
 lib.apply(plan)

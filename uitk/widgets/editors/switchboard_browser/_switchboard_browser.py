@@ -132,8 +132,8 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
     Mirrors the ``mayatk.MayaUiHandler`` pattern of "use what's given,
     otherwise stand one up" so the browser can be opened from anywhere
     without forcing the caller to wire a switchboard first. A browser built
-    either way is its switchboard's ``browser`` editor (``sb.editors``) when
-    that has none open, so the launcher's own "browser" row is this window.
+    either way is its switchboard's ``ui_browser`` editor (``sb.editors``) when
+    that has none open, so the launcher's own "ui_browser" row is this window.
 
     ``inc`` / ``exc`` (``pythontk.filter_list`` shell-style name patterns)
     apply a *structural* entry filter: excluded entries are never
@@ -355,13 +355,13 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         self._select_first_row()
         self._update_footer_status()
 
-        # Built directly, this is the switchboard's "browser" editor unless one
+        # Built directly, this is the switchboard's "ui_browser" editor unless one
         # is already open: the launcher's row for it -- and ``sb.editors`` --
         # then reach THIS window instead of building a second. (A registry
         # build adopts here too, and the registry skips re-running the hooks.)
         editors = getattr(self.sb, "editors", None)
         if editors is not None:
-            editors.adopt("browser", self)
+            editors.adopt("ui_browser", self)
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -400,7 +400,7 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         of the browser carries the policy::
 
             sb.editors.add_post_build_hook(
-                "browser",
+                "ui_browser",
                 lambda b: b.set_entry_filter(exc=["*#startmenu*", "*#submenu*"]),
             )
 

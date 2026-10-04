@@ -7553,11 +7553,19 @@ class TestShortcutOverlay(BaseTestCase):
         middle = image.pixelColor(image.width() // 2, image.height() // 2)
         self.assertGreater(middle.red(), 30, f"opaque card: {middle.getRgb()}")
         self.assertLess(middle.red(), 220, f"no card drawn: {middle.getRgb()}")
+
+        def theme_green(c):
+            # The theme's GREEN: green over both red and blue.  Green over red
+            # alone also matched the cyan fringe of sub-pixel antialiased white
+            # legend text on the red ground (measured (208, 255, 255)), so the
+            # check failed on font rendering wherever ClearType is on.
+            return c.green() > c.red() + 40 and c.green() > c.blue() + 40
+
         greens = [
             (x, y)
             for y in range(0, image.height(), 2)
             for x in range(0, image.width(), 2)
-            if image.pixelColor(x, y).green() > image.pixelColor(x, y).red() + 40
+            if theme_green(image.pixelColor(x, y))
         ]
         self.assertEqual(
             greens,
@@ -8575,6 +8583,23 @@ class TestAMalformedCurveSegmentCannotCrashTheHost(BaseTestCase):
             [{"t0": 0.0, "v0": 0.0, "t1": 10.0, "v1": 1.0, "out_type": "linear"}]
         )
         self.assertFalse(path.isEmpty())
+
+    def test_a_sampled_segment_is_drawn_through_its_samples(self):
+        """``samples`` carry a span no line or single cubic can draw."""
+        seg = {
+            "t0": 0.0,
+            "v0": 0.0,
+            "t1": 10.0,
+            "v1": 0.0,
+            "out_type": "linear",
+            "samples": [(5.0, 4.0)],
+        }
+        path = self._path([seg])
+        self.assertEqual(path.elementCount(), 3)  # moveTo, the sample, the end
+        mid = path.elementAt(1)
+        self.assertEqual((mid.x, mid.y), (5.0, 4.0))
+        seg.pop("samples")
+        self.assertEqual(self._path([seg]).elementCount(), 2)
 
     def test_the_good_segments_of_a_mixed_list_survive(self):
         path = self._path(

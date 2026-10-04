@@ -285,5 +285,90 @@ class MultiChoiceOptionTest(QtBaseTestCase):
         self.assertEqual(self.choice.value, ())
 
 
+class ExcludeChoiceOptionTest(MultiChoiceOptionTest):
+    """``exclude=True``: a show list -- ticked rows are shown, the value is
+    what is left out."""
+
+    def setUp(self):
+        QtBaseTestCase.setUp(self)
+        self.window = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(self.window)
+        self.field = LineEdit()
+        layout.addWidget(self.field)
+        self.settings = _DictSettings()
+        self.picked = []
+        self.items = [
+            ("Show all", "all"),
+            ChoiceOption.Section("Kind"),
+            ("Locked", "locked"),
+            ("Built-in", "builtin"),
+            ChoiceOption.Section("Tags"),
+            "hero",
+        ]
+        self.choice = self.field.option_box.add_choice(
+            icon="eye",
+            label="Show",
+            choices=lambda: self.items,
+            default="all",
+            exclude=True,
+            on_changed=self.picked.append,
+            settings=self.settings,
+            settings_key="filter.show",
+        )
+        layout.addWidget(self.field.option_box.container)
+        self.window.show()
+
+    # The inherited ANY-of tests read picks as ticks; a show list reads the
+    # other way, so they are replaced here.
+    test_several_rows_are_picked_in_one_visit = None
+    test_a_second_click_unpicks_and_the_any_row_clears = None
+    test_picks_persist_as_a_list_and_come_back = None
+    test_a_single_pick_saved_before_multi_comes_back_as_one_pick = None
+
+    def test_everything_is_ticked_until_a_row_is_left_out(self):
+        menu, rows = self.open_menu()
+        marked = {t for t, r in rows.items() if r.property("marked")}
+        self.assertEqual(marked, {"Show all", "Locked", "Built-in", "hero"})
+        self.interact(menu, rows["Built-in"])
+        self.interact(menu, rows["hero"])
+        self.assertTrue(menu.isVisible(), "the popup stays open for the next flip")
+        self.assertEqual(self.choice.value, ("builtin", "hero"))
+        marked = {t for t, r in rows.items() if r.property("marked")}
+        self.assertEqual(marked, {"Locked"})
+        self.assertEqual(self.choice.widget.toolTip(), "Show: all but Built-in, hero")
+        self.assertTrue(self.choice.is_active)
+        self.assertEqual(self.settings.value("filter.show"), ["builtin", "hero"])
+
+    def test_show_all_brings_every_row_back(self):
+        menu, rows = self.open_menu()
+        self.interact(menu, rows["Locked"])
+        self.interact(menu, rows["Locked"])
+        self.assertEqual(self.choice.value, ())
+        self.interact(menu, rows["Built-in"])
+        self.interact(menu, rows["Show all"])
+        self.assertEqual(self.choice.value, ())
+        self.assertFalse(self.choice.is_active)
+        self.assertEqual(self.choice.widget.toolTip(), "Show: Show all")
+
+    def test_refresh_drops_only_the_picks_no_longer_offered(self):
+        self.choice.set_value(("locked", "hero"))
+        del self.items[-1]  # the tag went: its row is gone, so is its exclusion
+        self.choice.refresh()
+        self.assertEqual(self.choice.value, ("locked",))
+        self.assertEqual(self.picked, [("locked",)])
+
+    def test_sections_caption_their_rows_and_are_not_choices(self):
+        menu, _rows = self.open_menu()
+        captions = [
+            w.getTitle()
+            for w in menu.list._row_widgets()
+            if type(w).__name__ == "Separator"
+        ]
+        self.assertEqual(captions, ["Show", "Kind", "Tags"])
+        self.assertEqual(
+            self.choice.choice_values(), ["all", "locked", "builtin", "hero"]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

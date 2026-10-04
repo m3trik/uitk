@@ -41,6 +41,7 @@ from uitk.managers.preset_manager import PresetManager
 from uitk.widgets.column_config import ColumnConfig
 from uitk.widgets.editors.editor_panel import EditorPanel
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
+from uitk.widgets.optionBox.options.choice import ChoiceOption
 from uitk.widgets.optionBox.options.filter import NEGATE_PREFIX, FilterOption
 
 Patterns = Union[str, List[str], None]
@@ -136,32 +137,56 @@ class PresetEditor(EditorPanel):
     ALL_PRESETS = "@all"
     NO_COLLECTION = "@none"
 
-    #: Status facet values (the lock-icon button on the filter field). Several
-    #: can be ticked at once; "Any status" clears them.
-    STATUS_ANY = "@any"
-    STATUS_CHOICES = (
-        ("Any status", STATUS_ANY),
-        None,
-        ("Locked", "locked"),
-        ("Editable", "unlocked", "Presets you can change: yours, not locked."),
-        ("Built-in", "builtin"),
+    #: The Show list (the eye button on the filter field): every kind of
+    #: preset, ticked while shown. Each section splits the presets, and a row
+    #: shows while, in every section, a kind it has is ticked -- so unticking
+    #: "Built-in" hides the built-ins, and unticking all but "Edited" in its
+    #: section shows only those. Values start with ``@``; a tag is its own.
+    SHOW_ALL = "@all"
+    UNTAGGED = "@untagged"
+    SHOW_SECTIONS = (
         (
-            "Hidden",
-            "hidden",
-            "Presets left out of their panels' preset lists (kept on disk).",
+            "Kind",
+            (
+                ("Built-in", "@builtin", "Presets shipped with a tool."),
+                (
+                    "Locked",
+                    "@locked",
+                    "Your presets protected from being saved over, renamed or deleted.",
+                ),
+                ("Editable", "@unlocked", "Your presets, not locked."),
+            ),
         ),
-        None,
         (
-            "Edited since export or install",
-            "edited",
-            "Collection presets whose content changed since the collection was "
-            "last exported or installed -- what a re-export would ship, or what "
-            "an update would call a conflict.",
+            "In panel lists",
+            (
+                ("Listed", "@listed", "Presets their panels' preset lists show."),
+                (
+                    "Hidden",
+                    "@hidden",
+                    "Presets left out of their panels' preset lists (kept on disk).",
+                ),
+            ),
+        ),
+        (
+            "Since export or install",
+            (
+                (
+                    "Edited",
+                    "@edited",
+                    "Collection presets whose content changed since the "
+                    "collection was last exported or installed -- what a "
+                    "re-export would ship, or what an update would call a "
+                    "conflict.",
+                ),
+                (
+                    "Unchanged",
+                    "@unchanged",
+                    "Every other preset, in a collection or not.",
+                ),
+            ),
         ),
     )
-    #: Tag facet values beside the tags themselves (the tag-icon button).
-    TAG_ANY = "@any"
-    UNTAGGED = "@untagged"
 
     #: The marks the row, tree and collection menus set and clear.
     _FLAGS = {
@@ -271,7 +296,7 @@ class PresetEditor(EditorPanel):
             "    *  any run of characters (*web* = contains)   ?  one character\n"
             "• Prefix a term with ! to exclude it, e.g.  maya, !*test*\n"
             "• The filter icon turns the text off without clearing it; the\n"
-            "  lock and tag icons narrow by status and by tag."
+            "  eye lists every kind of preset and tag: untick one to hide it."
         )
         row.addWidget(self._search, 1)
         box = self._search.option_box
@@ -283,24 +308,15 @@ class PresetEditor(EditorPanel):
             on_toggled=lambda _on: self._populate_table(),
         )
         self._text_filter = box.find_option(FilterOption)
-        self._status_filter = box.add_choice(
-            icon="lock",
-            label="Status",
-            choices=self.STATUS_CHOICES,
-            default=self.STATUS_ANY,
-            multi=True,  # tick several: a row passes on ANY status picked
+        self._show_filter = box.add_choice(
+            icon="eye",
+            label="Show",
+            choices=self._show_choices,
+            default=self.SHOW_ALL,
+            exclude=True,  # ticked = shown; the value is what is left out
             on_changed=lambda _value: self._populate_table(),
             settings=self._settings,
-            settings_key="filter.status",
-        )
-        self._tag_filter = box.add_choice(
-            icon="tag",
-            label="Tag",
-            choices=self._tag_choices,
-            default=self.TAG_ANY,
-            on_changed=lambda _value: self._populate_table(),
-            settings=self._settings,
-            settings_key="filter.tag",
+            settings_key="filter.show",
         )
 
     def _build_collection_box(self, row: QtWidgets.QHBoxLayout) -> None:
@@ -526,7 +542,7 @@ class PresetEditor(EditorPanel):
         editors post-build hook so every build of the window carries it::
 
             sb.editors.add_post_build_hook(
-                "presets", lambda e: e.set_entry_filter(inc=["mayatk", "uitk"])
+                "preset_editor", lambda e: e.set_entry_filter(inc=["mayatk", "uitk"])
             )
         """
         self._inc, self._exc = inc, exc
@@ -541,8 +557,7 @@ class PresetEditor(EditorPanel):
         self._populate_collections()
         self._populating = True  # a facet falling back re-filters once, below
         try:
-            self._status_filter.refresh()
-            self._tag_filter.refresh()
+            self._show_filter.refresh()
         finally:
             self._populating = False
         self._populate_tree()
@@ -668,32 +683,54 @@ class PresetEditor(EditorPanel):
             stack.extend(item.child(i) for i in range(item.childCount()))
 
     # ---------------------------------------------------------------- filters
-    def _tag_choices(self) -> list:
+    def _show_choices(self) -> list:
+        """The Show list: every kind, then the tags in use."""
+        choices = [
+            (
+                "Show all",
+                self.SHOW_ALL,
+                "Tick every row again. Untick a row to hide the presets of its "
+                "kind; the list stays open for the next.",
+            )
+        ]
+        for caption, rows in self.SHOW_SECTIONS:
+            choices.append(ChoiceOption.Section(caption))
+            choices.extend(rows)
+        choices.append(ChoiceOption.Section("Tags"))
+        choices.append(("Untagged", self.UNTAGGED, "Presets with no tag."))
         tags = sorted({t for e in self._entries for t in e.tags}, key=str.lower)
-        choices = [("Any tag", self.TAG_ANY), ("Untagged", self.UNTAGGED)]
-        if tags:
-            choices.append(None)
-            choices.extend(tags)  # a tag is its own label
+        choices.extend(tags)  # a tag is its own label
         return choices
 
-    def _passes_status(self, entry: ptk.PresetEntry, status: str) -> bool:
-        if status == "locked":
-            return entry.tier == "user" and entry.read_only
-        if status == "unlocked":
-            return entry.tier == "user" and not entry.read_only
-        if status == "builtin":
-            return entry.tier == "builtin"
-        if status == "hidden":
-            return entry.hidden
-        if status == "edited":
-            if self._edited is None:
-                self._edited = {
-                    (e.domain, e.name)
-                    for e in self._entries
-                    if e.collection and self.library.is_modified(e)
-                }
-            return (entry.domain, entry.name) in self._edited
-        return True
+    def _passes_show(self, entry: ptk.PresetEntry, left_out: set) -> bool:
+        """Whether *entry* shows with the Show list's *left_out* unticked.
+
+        In every section it needs a kind still ticked: its tier / lock, its
+        panel-list state, its edited state, and -- any one of -- its tags.
+        """
+        if entry.tier == "builtin":
+            kind = "@builtin"
+        else:
+            kind = "@locked" if entry.read_only else "@unlocked"
+        if kind in left_out:
+            return False
+        if ("@hidden" if entry.hidden else "@listed") in left_out:
+            return False
+        if left_out & {"@edited", "@unchanged"}:
+            edited = self._is_edited(entry)
+            if ("@edited" if edited else "@unchanged") in left_out:
+                return False
+        return any(t not in left_out for t in entry.tags or (self.UNTAGGED,))
+
+    def _is_edited(self, entry: ptk.PresetEntry) -> bool:
+        """Whether *entry* is a collection member changed since export / install."""
+        if self._edited is None:
+            self._edited = {
+                (e.domain, e.name)
+                for e in self._entries
+                if e.collection and self.library.is_modified(e)
+            }
+        return (entry.domain, entry.name) in self._edited
 
     def _passes_text(self, entry: ptk.PresetEntry, patterns) -> bool:
         fields = (
@@ -717,8 +754,7 @@ class PresetEditor(EditorPanel):
     def _visible_entries(self) -> List[ptk.PresetEntry]:
         prefix = self.selected_prefix()
         collection = self.collection_filter()
-        statuses = self._status_filter.value
-        tag = self._tag_filter.value
+        left_out = set(self._show_filter.value)
         patterns = self._text_filter.patterns()
         out = []
         for entry in self._entries:
@@ -729,12 +765,7 @@ class PresetEditor(EditorPanel):
                     continue
             elif collection != self.ALL_PRESETS and entry.collection != collection:
                 continue
-            if tag == self.UNTAGGED:
-                if entry.tags:
-                    continue
-            elif tag != self.TAG_ANY and tag not in entry.tags:
-                continue
-            if statuses and not any(self._passes_status(entry, s) for s in statuses):
+            if left_out and not self._passes_show(entry, left_out):
                 continue
             if patterns and not self._passes_text(entry, patterns):
                 continue

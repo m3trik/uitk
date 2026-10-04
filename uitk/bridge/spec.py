@@ -90,6 +90,44 @@ class KindHandler:
             )
 
 
+class _CheckList(QtWidgets.QListWidget):
+    """The ``check_list`` row: a list whose VALUE is its checked entries.
+
+    Persistence keys a plain ``QListWidget`` on ``itemClicked``, which carries
+    the clicked item (unstorable) and never fires for a check set in code, so
+    the row never saved. It declares its own change signal and value instead
+    (the ``state_signal`` / ``state_value`` / ``set_state_value`` protocol
+    ``MainWindow`` and ``ValueManager`` honor), and window state, presets and
+    resets round-trip the checked values like any other row.
+    """
+
+    checkedChanged = QtCore.Signal(list)
+    state_signal = "checkedChanged"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._last_checked: List[Any] = []
+        # itemChanged also fires for a label, data or tooltip write (every row
+        # a refill builds); only a change of the checked SET is one.
+        self.itemChanged.connect(self._emit_if_changed)
+
+    def _emit_if_changed(self, _item=None) -> None:
+        checked = self.state_value()
+        if checked != self._last_checked:
+            self._last_checked = checked
+            self.checkedChanged.emit(checked)
+
+    def state_value(self) -> List[Any]:
+        return _KindFactoryInternal._read_check_list(self)
+
+    def set_state_value(self, value) -> bool:
+        """Check exactly *value*'s entries; False when one is no longer listed
+        (the ``ValueManager.set_value`` contract a preset load counts)."""
+        _KindFactoryInternal._write_check_list(self, value)
+        wanted = _KindFactoryInternal._as_value_list(value)
+        return len(self.state_value()) == len(wanted)
+
+
 class _KindFactoryInternal(object):
     """Registry + built-in per-kind build/read/write helpers for KindFactory."""
 
@@ -806,18 +844,54 @@ class _KindFactoryInternal(object):
 
     @staticmethod
     def _build_check_list(spec, parent):
-        w = QtWidgets.QListWidget(parent)
+        w = _CheckList(parent)
         # Checking is the interaction; a selection highlight on top of it just
         # reads as a second, meaningless state.
         w.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         w.setUniformItemSizes(True)
+        # Rows are the font's height and so is the check box; without a gap
+        # the boxes stack into one ladder instead of reading as one per row.
+        w.setSpacing(1)
         w.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         w.customContextMenuRequested.connect(
             lambda pos, lw=w: _KindFactoryInternal._check_list_menu(lw, pos)
         )
+        _KindFactoryInternal._toggle_on_row_click(w)
         _KindFactoryInternal._set_choices_check_list(w, spec.choices or [])
         _KindFactoryInternal._write_check_list(w, spec.default)
         return w
+
+    @staticmethod
+    def _toggle_on_row_click(widget) -> None:
+        """Make the whole row the hit target, as a QCheckBox's label is.
+
+        Qt toggles a checkable item only on its indicator; a click on the text
+        does nothing, which reads as a dead widget. The delegate's own toggle
+        runs before ``clicked`` fires, so the row toggles only when the state
+        is still what it was at press -- a box click never flips twice.
+        """
+        at_press = {}
+
+        def pressed(index):
+            at_press["index"] = index
+            at_press["state"] = index.data(QtCore.Qt.CheckStateRole)
+
+        def clicked(index):
+            if at_press.get("index") != index:
+                return
+            if index.data(QtCore.Qt.CheckStateRole) != at_press.get("state"):
+                return  # the indicator already took this click
+            item = widget.itemFromIndex(index)
+            if item is None or not item.flags() & QtCore.Qt.ItemIsUserCheckable:
+                return
+            item.setCheckState(
+                QtCore.Qt.Unchecked
+                if item.checkState() == QtCore.Qt.Checked
+                else QtCore.Qt.Checked
+            )
+
+        widget.pressed.connect(pressed)
+        widget.clicked.connect(clicked)
 
     #: Height bounds (px) of a check_list row -- tall enough to read as a list
     #: when nearly empty, capped so a long set scrolls instead of eating the panel.
@@ -833,7 +907,8 @@ class _KindFactoryInternal(object):
         follows them.
         """
         row_h = widget.sizeHintForRow(0) if widget.count() else 0
-        wanted = widget.count() * (row_h or 18) + 2 * widget.frameWidth() + 4
+        row_h = (row_h or 18) + 2 * widget.spacing()
+        wanted = widget.count() * row_h + 2 * widget.frameWidth() + 4
         height = min(
             max(wanted, _KindFactoryInternal.CHECK_LIST_MIN_H),
             _KindFactoryInternal.CHECK_LIST_MAX_H,
@@ -1024,9 +1099,9 @@ class KindFactory(_KindFactoryInternal):
             False when the widget refused *value* (a ``choice`` no entry
             carries), else the kind's writer's answer (None for most kinds).
         """
-        return KindFactory.get_handler(
-            _KindFactoryInternal._widget_kind(widget)
-        ).write(widget, value)
+        return KindFactory.get_handler(_KindFactoryInternal._widget_kind(widget)).write(
+            widget, value
+        )
 
     @staticmethod
     def set_choices(widget: QtWidgets.QWidget, choices: ChoicesSeq) -> None:
@@ -1169,7 +1244,7 @@ KindFactory.register_kind(
         _KindFactoryInternal._build_check_list,
         _KindFactoryInternal._read_check_list,
         _KindFactoryInternal._write_check_list,
-        signal="itemChanged",
+        signal="checkedChanged",
         set_choices=_KindFactoryInternal._set_choices_check_list,
     ),
 )

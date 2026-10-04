@@ -11,7 +11,9 @@ Content is built the way a :class:`~uitk.widgets.menu.Menu` is built —
 :meth:`add` takes a widget-class name, an instance or a class, applies
 setter-style kwargs (``setText=``, ``setObjectName=``, a signal name to
 connect), places it as a form row and exposes it as ``panel.<objectName>``.
-One idiom for a popup and for a window; only the lifecycle differs. The
+One idiom for a popup and for a window; only the lifecycle differs. The form
+itself is a :class:`~uitk.widgets.form_rows.FormRows`, which any layout can
+hold on its own (a page of a stacked panel). The
 popup machinery a Menu carries (hide-on-trigger, grab handoffs, deferred
 registration) is exactly what a persistent window must not inherit, so the
 two share the vocabulary and not the implementation.
@@ -23,7 +25,6 @@ preset-enabled subclass. Keeping presets out of the base makes
 surfaces without dragging in editor-specific machinery.
 """
 
-import inspect
 import logging
 from typing import TYPE_CHECKING, Dict, Optional, Union
 
@@ -31,8 +32,8 @@ from qtpy import QtWidgets, QtCore
 from uitk._bootstrap import Bootstrap
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
+from uitk.widgets.form_rows import FormRows
 from uitk.widgets.mixins.attributes import AttributesMixin
-from pythontk import TooltipFormat
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -161,36 +162,16 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         self._body_layout.setSpacing(2)
         frame_layout.addWidget(body, 1)
 
-        # The form region — where :meth:`add` puts things. A QFormLayout, so
-        # a labelled row's caption sits to the LEFT of its control and every
-        # caption shares one column (the fields line up under each other).
-        # Created eagerly and placed FIRST in the body so its position is
-        # deterministic whatever a subclass appends after it (an output
-        # pane, a table) and however late the first ``add`` arrives; empty,
-        # it has no height. Growable content (a table, a log pane) belongs on
-        # ``body_layout`` directly, with a stretch — a form row is compact.
-        self._rows_host = QtWidgets.QWidget(body)
-        self._rows_layout = QtWidgets.QFormLayout(self._rows_host)
-        self._rows_layout.setContentsMargins(0, 0, 0, 0)
-        self._rows_layout.setHorizontalSpacing(4)
-        self._rows_layout.setVerticalSpacing(2)
-        self._rows_layout.setLabelAlignment(
-            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
-        )
-        self._rows_layout.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        self._rows_layout.setFieldGrowthPolicy(
-            QtWidgets.QFormLayout.AllNonFixedFieldsGrow
-        )
-        self._rows_layout.setRowWrapPolicy(QtWidgets.QFormLayout.DontWrapRows)
+        # The form region — where :meth:`add` puts things: a FormRows (a
+        # labelled row's caption sits to the LEFT of its control, every
+        # caption in one column). Created eagerly and placed FIRST in the body
+        # so its position is deterministic whatever a subclass appends after
+        # it (an output pane, a table) and however late the first ``add``
+        # arrives; empty, it has no height. Growable content (a table, a log
+        # pane) belongs on ``body_layout`` directly, with a stretch.
+        self._rows_host = FormRows(body)
         self._body_layout.addWidget(self._rows_host)
-        #: widget -> the widgets that grey out WITH it: its caption, then any
-        #: companions sharing its cell. What a subclass keeping rows in step
-        #: (FormPanel's ``enabled_by``) reads.
-        self._row_widgets: Dict[QtWidgets.QWidget, list] = {}
-        #: Every row caption, in add order -- the label column, which is
-        #: sized as one (see :meth:`_sync_caption_widths`).
-        self._captions: list = []
-        #: objectNames :meth:`add` exposed as attributes — un-exposed by
+        #: objectNames :meth:`add` exposed on the WINDOW — un-exposed by
         #: :meth:`clear_rows`, so a rebuilt panel holds no dead wrappers.
         self._exposed_names = set()
 
@@ -466,7 +447,27 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
     @property
     def rows_layout(self) -> QtWidgets.QFormLayout:
         """The ``QFormLayout`` :meth:`add` places rows in."""
-        return self._rows_layout
+        return self._rows_host.rows_layout
+
+    @property
+    def form(self) -> FormRows:
+        """The :class:`FormRows` holding the panel's rows."""
+        return self._rows_host
+
+    # The form's internals, as the subclasses keeping rows in step read them
+    # (FormPanel's ``enabled_by`` reads the companions; its custom rows the
+    # layout).
+    @property
+    def _rows_layout(self) -> QtWidgets.QFormLayout:
+        return self._rows_host.rows_layout
+
+    @property
+    def _row_widgets(self) -> Dict[QtWidgets.QWidget, list]:
+        return self._rows_host._row_widgets
+
+    @property
+    def _captions(self) -> list:
+        return self._rows_host._captions
 
     # ── Dynamic build — the Menu idiom ──────────────────────────────
 
@@ -482,40 +483,9 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
     ) -> Union[QtWidgets.QWidget, list]:
         """Add a widget to the body the way ``Menu.add`` adds an item.
 
-        Parameters:
-            x: What to add — a widget-class NAME (resolved through the uitk
-                root registry first, so ``"CheckBox"`` is uitk's and
-                ``"Separator"`` works, then ``QtWidgets``), a widget instance,
-                a widget class, or a list/tuple of any of those. A string
-                that names no widget class becomes a caption label carrying
-                that text — ``add("Output:")`` — the same affordance a Menu
-                has (and the same trap: a typo'd class name is a label, so
-                the fallthrough is logged at DEBUG).
-            label: Caption placed to the LEFT of the control, in the shared
-                label column. Without one the widget spans the row.
-            hint: What this row will DO. Rendered as a formatted tooltip on
-                the caption, the widget and its companions alike, titled
-                with the label — so hovering a form row reads like hovering
-                any other control in the toolset.
-            tooltip: Pre-formatted rich text used verbatim instead of the
-                ``label``/``hint`` composition.
-            companions: Widgets that share the field cell (a Browse button
-                beside a path field) and grey out with it.
-            label_align: Where the caption's TEXT sits inside the column its
-                plate fills — ``"left"`` (default), ``"right"``, ``"center"``,
-                or a Qt alignment. Right for a caption that reads as a
-                lead-in to the control beside it (``"Operation:"``); left
-                where the text itself lines up down the column (a leading
-                marker, an icon).
-            **kwargs: Applied through :meth:`AttributesMixin.set_attributes`
-                — setter-style (``setText=``, ``setObjectName=``,
-                ``setEnabled=``) and any signal name to connect
-                (``clicked=self.on_click``) — exactly a Menu item's kwargs.
-
-        Returns:
-            The widget (a list of them for a list/tuple), exposed as
-            ``self.<objectName>`` when it has one and the name does not
-            collide with a real attribute of the window.
+        :meth:`FormRows.add` on the panel's form (every parameter is its), the
+        widget then exposed on the WINDOW as well -- ``panel.<objectName>`` --
+        under the window's ownership rule (:meth:`_expose_as_attribute`).
 
         Example::
 
@@ -525,117 +495,32 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
                       setObjectName="txt_src")
             panel.chk_dry.isChecked()
         """
-        if isinstance(x, (list, tuple)):
-            return [
-                self.add(
-                    item,
-                    label=label,
-                    hint=hint,
-                    tooltip=tooltip,
-                    companions=companions,
-                    label_align=label_align,
-                    **kwargs,
-                )
-                for item in x
-            ]
-        widget = self._build_widget(x)
-        self.set_attributes(widget, **kwargs)
-        self._add_row(
-            widget,
+        added = self._rows_host.add(
+            x,
             label=label,
             hint=hint,
             tooltip=tooltip,
             companions=companions,
             label_align=label_align,
+            **kwargs,
         )
-        self._expose_as_attribute(widget)
-        return widget
+        for widget in added if isinstance(added, list) else [added]:
+            if isinstance(widget, QtWidgets.QWidget):
+                self._expose_as_attribute(widget)
+        return added
 
-    @staticmethod
-    def _resolve_widget_class(name: str):
-        """The widget class *name* denotes, or None.
-
-        The uitk root registry (``DEFAULT_INCLUDE``) is the single source of
-        truth for widget names, so it is asked first — no second table of
-        names is born here — and ``QtWidgets`` second. That registry also
-        resolves NON-widgets (managers, mixins), so a hit is type-checked
-        before anything is instantiated.
-        """
-        import uitk
-
-        for source in (uitk, QtWidgets):
-            try:
-                candidate = getattr(source, name)
-            except AttributeError:
-                continue
-            if inspect.isclass(candidate) and issubclass(candidate, QtWidgets.QWidget):
-                return candidate
-        return None
+    _resolve_widget_class = staticmethod(FormRows._resolve_widget_class)
+    _row_tooltip = staticmethod(FormRows._row_tooltip)
+    _LABEL_ALIGNMENTS = FormRows._LABEL_ALIGNMENTS
 
     def _build_widget(self, x) -> QtWidgets.QWidget:
         """Turn an :meth:`add` argument into a widget instance."""
-        if isinstance(x, QtWidgets.QWidget):
-            return x
-        if inspect.isclass(x) and issubclass(x, QtWidgets.QWidget):
-            return x()
-        if isinstance(x, str):
-            cls = self._resolve_widget_class(x)
-            if cls is not None:
-                return cls()
-            if x.isidentifier() and x[:1].isupper():
-                _logger.debug(
-                    "WindowPanel.add: %r names no widget class; added as a caption.",
-                    x,
-                )
-            caption = QtWidgets.QLabel(x)
-            caption.setProperty("caption", True)
-            return caption
-        raise TypeError(
-            "add() expects a widget-class name, a QWidget instance or class, "
-            f"or a list/tuple of those; got {type(x).__name__}"
-        )
-
-    @staticmethod
-    def _row_tooltip(title, hint, tooltip) -> str:
-        """A row's tooltip: the explicit one, else the title + hint composed.
-
-        Composed rather than concatenated so a hint reads as the answer to
-        the caption beside it — the title/body shape every other tooltip in
-        the toolset uses. A row with no caption (a checkbox, whose label is
-        its own text) gets the body alone.
-        """
-        if tooltip:
-            return str(tooltip)
-        if not hint:
-            return ""
-        return TooltipFormat.fmt(title=str(title) if title else None, body=str(hint))
-
-    #: ``label_align`` spellings — the caption's TEXT inside the plate that
-    #: fills the label column (see :meth:`_sync_caption_widths`). Vertical
-    #: centering is never optional: a caption is height-matched to the
-    #: control it names.
-    _LABEL_ALIGNMENTS = {
-        "left": QtCore.Qt.AlignLeft,
-        "right": QtCore.Qt.AlignRight,
-        "center": QtCore.Qt.AlignHCenter,
-    }
+        return FormRows._build_widget(x)
 
     @classmethod
     def _label_alignment(cls, align):
-        """*align* as a Qt alignment — a name, a flag, or None for the default."""
-        if align is None:
-            return QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
-        if isinstance(align, str):
-            try:
-                flag = cls._LABEL_ALIGNMENTS[align.lower()]
-            except KeyError:
-                raise ValueError(
-                    f"label_align must be one of {sorted(cls._LABEL_ALIGNMENTS)} "
-                    f"or a Qt alignment; got {align!r}"
-                ) from None
-        else:
-            flag = align
-        return flag | QtCore.Qt.AlignVCenter
+        """*align* as a Qt alignment -- see :meth:`FormRows._label_alignment`."""
+        return FormRows._label_alignment(align)
 
     def _add_row(
         self,
@@ -646,92 +531,19 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         companions=(),
         label_align=None,
     ) -> Optional[QtWidgets.QLabel]:
-        """Place *widget* as a form row; returns its caption label, if any.
-
-        The caption carries the theme's ``caption`` hook — a label that
-        NAMES the control beside it rather than being a field of its own,
-        so it drops the base QLabel's border but keeps its opaque plate (a
-        panel body is translucent; a transparent caption would read against
-        the viewport behind the window) — and mirrors the control's enabled
-        state at add time so a settled row greys out whole.
-        """
-        companions = list(companions)
-        tip = self._row_tooltip(label, hint, tooltip)
-
-        caption = None
-        if label:
-            caption = QtWidgets.QLabel(str(label))
-            caption.setProperty("caption", True)
-            caption.setAlignment(self._label_alignment(label_align))
-            font = caption.font()
-            font.setBold(True)
-            caption.setFont(font)
-            caption.setEnabled(widget.isEnabled())
-
-        for companion in companions:
-            companion.setEnabled(widget.isEnabled())
-        if tip:
-            for target in (caption, widget, *companions):
-                if target is not None:
-                    target.setToolTip(tip)
-                    TooltipPresenter.manage(target)
-
-        if companions:
-            cell = QtWidgets.QHBoxLayout()
-            cell.setSpacing(2)
-            # The row's WIDTH belongs to the control it names: companions ride
-            # at their own hint (a button, a tick), and everything left over
-            # goes to the field. Without the stretch a companion carrying a
-            # long caption simply outbids the control -- a Copy/Move combo
-            # crushed to a few pixels by the tick box beside it.
-            cell.addWidget(widget, 1)
-            for companion in companions:
-                cell.addWidget(companion)
-            field = cell
-        else:
-            field = widget
-
-        if caption is not None:
-            self._rows_layout.addRow(caption, field)
-        else:
-            self._rows_layout.addRow(field)
-        self._row_widgets[widget] = [w for w in (caption, *companions) if w is not None]
-        if caption is not None:
-            self._captions.append(caption)
-            self._sync_caption_widths()
-        return caption
+        """Place *widget* as a form row (:meth:`FormRows._add_row`)."""
+        return self._rows_host._add_row(
+            widget,
+            label=label,
+            hint=hint,
+            tooltip=tooltip,
+            companions=companions,
+            label_align=label_align,
+        )
 
     def _sync_caption_widths(self) -> None:
-        """Floor every caption at the widest one: the label column, filled.
-
-        QFormLayout sizes a label to its OWN hint and aligns it inside the
-        label column, so every caption but the widest stops short of the
-        control it names -- and a caption carries an opaque PLATE, so that
-        gap is not whitespace, it is a ragged edge down the middle of the
-        form. Flooring them all at the widest hint fills the column the
-        layout already reserved: the plates end on one line, flush against
-        the field column, and nothing moves (the floor is the column's own
-        width, so no field loses a pixel).
-
-        Stateless: each caption's floor is dropped before it is measured, so
-        a re-sync after the theme lands (or after a row is added) measures
-        the TEXT rather than the floor the last pass set.
-        """
-        hints = []
-        live = []
-        for caption in self._captions:
-            try:  # a row rebuilt behind us leaves a deleted C++ wrapper here
-                caption.setMinimumWidth(0)
-                hints.append(caption.sizeHint().width())
-            except RuntimeError:
-                continue
-            live.append(caption)
-        self._captions = live
-        if not live:
-            return
-        column = max(hints)
-        for caption in live:
-            caption.setMinimumWidth(column)
+        """Floor every caption at the widest (:meth:`FormRows._sync_caption_widths`)."""
+        self._rows_host._sync_caption_widths()
 
     def _expose_as_attribute(self, widget: QtWidgets.QWidget) -> None:
         """Expose a widget as ``self.<objectName>`` — Menu's rule, tightened.
@@ -770,28 +582,9 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         for name in self._exposed_names:
             self.__dict__.pop(name, None)
         self._exposed_names.clear()
-        self._row_widgets.clear()
-        self._captions.clear()
-        while self._rows_layout.count():
-            item = self._rows_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.setParent(None)
-                widget.deleteLater()
-            elif item.layout() is not None:
-                self._drop_layout(item.layout())
+        self._rows_host.clear_rows()
 
-    @classmethod
-    def _drop_layout(cls, layout) -> None:
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.setParent(None)
-                widget.deleteLater()
-            elif item.layout() is not None:
-                cls._drop_layout(item.layout())
-        layout.deleteLater()
+    _drop_layout = FormRows._drop_layout
 
     def tighten_sublayouts(self, spacing: int = 1) -> None:
         """Set every nested sub-layout inside ``body_layout`` to *spacing*.

@@ -684,7 +684,7 @@ class TestMarkingMenuBrowserEntryFilter(QtBaseTestCase):
         and verify the gesture pages never materialise in its model."""
         self.MarkingMenu._register_browser_entry_filter(self.menu_stub)
 
-        browser = self.sb.editors.get("browser")
+        browser = self.sb.editors.get("ui_browser")
         self.track_widget(browser)
 
         self.assertEqual(browser._model._names, ["tool"])
@@ -694,7 +694,7 @@ class TestMarkingMenuBrowserEntryFilter(QtBaseTestCase):
         self.menu_stub.HOSTED_PAGE_PATTERNS = ()
         self.MarkingMenu._register_browser_entry_filter(self.menu_stub)
 
-        browser = self.sb.editors.get("browser")
+        browser = self.sb.editors.get("ui_browser")
         self.track_widget(browser)
 
         self.assertEqual(

@@ -16,7 +16,10 @@ it:
   width goes on taking it wherever it is moved, and a fixed one moved last
   stays fixed (see :meth:`ColumnConfig._settle_fill`);
 * the layout saved on every change (``hidden_columns`` and ``column_order``,
-  logical indices, under one settings branch) and applied by :meth:`restore`.
+  logical indices, under one settings branch) and applied by :meth:`restore`;
+* optional columns, hidden until the user's own layout says otherwise
+  (``hidden_by_default``), and :attr:`ColumnConfig.visibility_changed`, so a
+  host whose column is costly to fill can fill it only once it shows.
 
 The plain menu is a ``QMenu`` of checkable actions: a flat list of toggles,
 where ``ContextMenu``'s flyouts and option boxes have nothing to add, and a
@@ -141,7 +144,14 @@ class ColumnConfig(QtCore.QObject):
         reorderable: The menu's rows can be dragged into another column order
             (a click on a row still shows or hides its column, and the menu
             stays up for the next). The way to reorder with *movable* off.
+        hidden_by_default: Logical columns :meth:`restore` hides while no
+            layout has been saved -- optional columns a user turns on. Once one
+            is saved, it decides alone.
     """
+
+    #: ``(column, hidden)`` -- a column was shown or hidden through
+    #: :meth:`set_hidden` (the menu included); not emitted when nothing changed.
+    visibility_changed = QtCore.Signal(int, bool)
 
     #: A reorderable menu row's role holding whether its column is shown (the
     #: row shows a tick while it is).
@@ -156,17 +166,28 @@ class ColumnConfig(QtCore.QObject):
         app: str = "ColumnConfig",
         movable: bool = True,
         reorderable: bool = False,
+        hidden_by_default: Iterable[int] = (),
     ):
         header = self.header_of(view)
         super().__init__(header)
         self.locked = set()
+        self.hidden_by_default = set()
         self.reorderable = False
         self._settings = None
         self._moving = False
         #: True while ``stretchLastSection`` is this class's own fallback (see
         #: :meth:`_settle_fill`), not the view's way of filling.
         self._fallback = False
-        self.configure(view, settings, settings_key, locked, app, movable, reorderable)
+        self.configure(
+            view,
+            settings,
+            settings_key,
+            locked,
+            app,
+            movable,
+            reorderable,
+            hidden_by_default,
+        )
         header.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         header.customContextMenuRequested.connect(self.show_menu)
         header.sectionMoved.connect(self._on_moved)
@@ -182,19 +203,19 @@ class ColumnConfig(QtCore.QObject):
         app: str = "ColumnConfig",
         movable: bool = True,
         reorderable: bool = False,
+        hidden_by_default: Iterable[int] = (),
     ) -> "ColumnConfig":
         """*view*'s column config, made on the first call and re-pointed after.
 
         Parameters are those of the class. A second call keeps the one menu
         and reconfigures it (settings, key, locked columns, movable,
-        reorderable).
+        reorderable, the columns hidden by default).
         """
+        args = (settings, settings_key, locked, app, movable, reorderable)
         config = cls.of(view)
         if config is None:
-            return cls(view, settings, settings_key, locked, app, movable, reorderable)
-        config.configure(
-            view, settings, settings_key, locked, app, movable, reorderable
-        )
+            return cls(view, *args, hidden_by_default)
+        config.configure(view, *args, hidden_by_default)
         return config
 
     @classmethod
@@ -217,6 +238,7 @@ class ColumnConfig(QtCore.QObject):
         app: str = "ColumnConfig",
         movable: bool = True,
         reorderable: bool = False,
+        hidden_by_default: Iterable[int] = (),
     ) -> None:
         """Point the layout at *settings* / *settings_key*; lock *locked*."""
         key = settings_key or view.objectName() or type(view).__name__
@@ -224,6 +246,7 @@ class ColumnConfig(QtCore.QObject):
             settings = SettingsManager(org="uitk", app=app)
         self._settings = settings.branch(key)
         self.locked = set(locked)
+        self.hidden_by_default = set(hidden_by_default)
         self.reorderable = bool(reorderable)
         self.header.setSectionsMovable(movable)
 
@@ -280,6 +303,7 @@ class ColumnConfig(QtCore.QObject):
         header.setSectionHidden(column, bool(hidden))
         self._settle_fill()
         self.save()
+        self.visibility_changed.emit(column, bool(hidden))
         return True
 
     def set_order(self, order: Iterable[int]) -> bool:
@@ -450,7 +474,9 @@ class ColumnConfig(QtCore.QObject):
         """Apply the saved visibility and order. Call once the headers are set.
 
         An order saved for another number of columns is ignored, and a locked
-        column shows whatever was saved.
+        column shows whatever was saved. With no layout saved yet, the
+        :attr:`hidden_by_default` columns are hidden; once one is saved -- even
+        one hiding nothing -- it alone decides.
         """
         s = self._settings
         if s is None:
@@ -458,7 +484,15 @@ class ColumnConfig(QtCore.QObject):
         header = self.header
         count = header.count()
         self._settle_fill()  # the column the view fills with, as authored
-        hidden = s.value("hidden_columns", [])
+        hidden = s.value("hidden_columns", None)
+        if hidden is None:
+            hidden = sorted(self.hidden_by_default)
+        elif not hidden:
+            # Saved as "nothing hidden": show what only a default hid.
+            hidden = []
+            for column in self.hidden_by_default:
+                if column < count:
+                    header.setSectionHidden(column, False)
         if hidden:
             for column in range(count):
                 header.setSectionHidden(

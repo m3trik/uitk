@@ -11,7 +11,9 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
 
     Parameters:
         location (str)(point) = move the messagebox to the specified location. Can be given as a qpoint or string value. default is: 'topMiddle'
-        timeout (int): time in seconds before the messagebox auto closes.
+        timeout (float/str/None): seconds before the messagebox auto closes;
+            ``"auto"`` times it to its text (:meth:`reading_time`); ``None``
+            or ``0`` never closes it.
     """
 
     buttonMapping = {
@@ -45,6 +47,17 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
     # Sentinel — using a class-level constant resolved at call time so changes
     # to ``MessageBox._default_theme`` after import affect new instances.
     _USE_DEFAULT_THEME = object()
+
+    #: Label -> button for the non-standard names :meth:`setStandardButtons`
+    #: was given. Read-only here; each box rebinds its own.
+    _labelled_buttons: dict = {}
+
+    #: ``timeout="auto"``: a glance to find the box plus the visible text at
+    #: READING_CHARS_PER_SECOND (~200 wpm), clamped to AUTO_TIMEOUT_RANGE. The
+    #: ceiling keeps a long message from lingering; the full text is logged.
+    READING_GLANCE = 1.0
+    READING_CHARS_PER_SECOND = 20
+    AUTO_TIMEOUT_RANGE = (1.5, 4.0)
 
     # A MessageBox is two widgets wearing one class: a PASSIVE TOAST that must
     # never take focus, and an INTERACTIVE PROMPT that cannot work unless it
@@ -101,11 +114,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         self.menu_timer.setSingleShot(True)
         self.menu_timer.timeout.connect(self.autoClose)
 
-        # Start the timer only if timeout is set and valid
-        if timeout is not None and timeout > 0:
-            self.timeout = timeout
-        else:
-            self.timeout = None
+        self.timeout = timeout
 
         self.setProperty("class", self.__class__.__name__)
         # Resolve default sentinel against the *class* attribute at call time
@@ -119,6 +128,48 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         self._apply_theme()
         self.set_attributes(**kwargs)
 
+    @property
+    def timeout(self):
+        """Seconds before a buttonless box closes itself, ``"auto"``, or
+        ``None`` (never). Set ``None``, ``0`` or less to never close."""
+        return self._timeout
+
+    @timeout.setter
+    def timeout(self, value) -> None:
+        if isinstance(value, str):
+            if value != "auto":
+                raise ValueError(f"timeout must be seconds, 'auto' or None: {value!r}")
+            self._timeout = value
+        else:
+            self._timeout = float(value) if value and value > 0 else None
+
+    @classmethod
+    def reading_time(cls, text: str) -> float:
+        """Seconds to read *text* (HTML or plain) -- the ``"auto"`` timeout.
+
+        Counts the visible characters, so markup costs nothing and a long
+        path costs what it takes to read; clamped to
+        :attr:`AUTO_TIMEOUT_RANGE`.
+        """
+        doc = QtGui.QTextDocument()
+        doc.setHtml(text or "")
+        chars = len(" ".join(doc.toPlainText().split()))
+        low, high = cls.AUTO_TIMEOUT_RANGE
+        seconds = cls.READING_GLANCE + chars / cls.READING_CHARS_PER_SECOND
+        return min(max(seconds, low), high)
+
+    def _present(self) -> None:
+        """Time and place the box for its current text: (re)start the
+        auto-close countdown and move it to :attr:`location`."""
+        seconds = (
+            self.reading_time(self.text()) if self._timeout == "auto" else self._timeout
+        )
+        if seconds is None:
+            self.menu_timer.stop()
+        else:
+            self.menu_timer.start(round(seconds * 1000))
+        self.move_(self.location)
+
     def _apply_theme(self) -> None:
         """Register with the StyleSheet engine for theme tokens."""
         if self._theme is None:
@@ -130,41 +181,80 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
         StyleSheet(self).set(theme=self._theme)
 
     def setStandardButtons(self, *buttons):
-        """Set the standard buttons for the message box. Defaults to no buttons if none are provided."""
+        """Set the box's buttons; none given means no buttons.
+
+        Each is a Qt ``StandardButton`` or its name (case-insensitive,
+        ``"YesToAll"``), or any other string, which becomes a button wearing
+        that label -- so a prompt can name what each answer does
+        (``"Override All"``) instead of borrowing Yes/No. Labelled buttons sit
+        after the standard ones' roles in the platform's order, among
+        themselves in the order given, and :meth:`exec_` answers with the
+        label. Calling again replaces every button.
+        """
+        for custom in self._labelled_buttons.values():
+            self.removeButton(custom)
+            custom.deleteLater()
+        self._labelled_buttons = {}
         if not buttons:
             # Set to no buttons if none are provided
             super().setStandardButtons(QtWidgets.QMessageBox.NoButton)
             return
 
         standardButtons = QtWidgets.QMessageBox.StandardButtons()
+        labels = []
         for button in buttons:
             if isinstance(button, str):
-                # Match the real Qt StandardButton names case-insensitively.
-                # ``str.capitalize()`` lowercased interior capitals, so
-                # multi-word names ("RestoreDefaults", "YesToAll") never
-                # resolved and were silently dropped.
-                resolved = next(
-                    (
-                        v
-                        for k, v in self.buttonMapping.items()
-                        if isinstance(k, str) and k.lower() == button.lower()
-                    ),
-                    QtWidgets.QMessageBox.NoButton,
-                )
-                if resolved == QtWidgets.QMessageBox.NoButton:
-                    # A dropped button leaves a dialog missing its affirmative
-                    # action (live-caught: "Fix" produced a Cancel-only box) —
-                    # make the mistake loud instead of cosmetic.
-                    print(
-                        f"[MessageBox] Unknown standard button {button!r} "
-                        f"dropped. Valid: "
-                        f"{sorted(k for k in self.buttonMapping if isinstance(k, str))}"
-                    )
+                resolved = self._standard_button(button)
+                if resolved is None:
+                    # Not a Qt name: a button of its own. (A dropped name left
+                    # a dialog missing its affirmative action -- live-caught:
+                    # "Fix" produced a Cancel-only box.)
+                    labels.append(button)
+                    continue
                 standardButtons |= resolved
             elif isinstance(button, QtWidgets.QMessageBox.StandardButton):
                 standardButtons |= button
 
         super().setStandardButtons(standardButtons)
+        for label in labels:
+            self._labelled_buttons[label] = self.addButton(
+                label, QtWidgets.QMessageBox.ActionRole
+            )
+
+    def set_default_button(self, name: str) -> None:
+        """Make the button called *name* the one Enter answers.
+
+        *name* is a standard button's name or a labelled button's label, as
+        given to :meth:`setStandardButtons`. Left unset, Qt picks one itself
+        -- for a prompt that can waive a safety check, name the safe answer.
+
+        Raises:
+            ValueError: No button of the box is called *name*.
+        """
+        button = self._labelled_buttons.get(name)
+        if button is None:
+            standard = self._standard_button(name)
+            button = self.button(standard) if standard is not None else None
+        if button is None:
+            raise ValueError(f"MessageBox has no button called {name!r}.")
+        self.setDefaultButton(button)
+
+    @classmethod
+    def _standard_button(cls, name: str):
+        """The Qt ``StandardButton`` *name* spells, case-insensitively, or None.
+
+        Matched against the real names: ``str.capitalize()`` once lowercased
+        interior capitals, so "RestoreDefaults" / "YesToAll" never resolved.
+        """
+        wanted = str(name).lower()
+        return next(
+            (
+                v
+                for k, v in cls.buttonMapping.items()
+                if isinstance(k, str) and k.lower() == wanted
+            ),
+            None,
+        )
 
     def move_(self, location) -> None:
         # Honor an explicit QPoint — the class docstring promises point support.
@@ -234,6 +324,11 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
             string, align=self.align, font_color=fontColor, font_size=fontSize
         )
         super().setText(s)
+        # A reused, still-showing box gets no showEvent from show(): time and
+        # place the new text here, or it inherits what was left of the old
+        # one's time and grows off-centre from the old one's position.
+        if self.isVisible():
+            self._present()
 
         if background is None:
             return  # Theme handles styling.
@@ -256,12 +351,7 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
             self.accept()
 
     def showEvent(self, event):
-        # Start the timer when the MessageBox is shown and a timeout is set
-        if self.timeout is not None:
-            self.menu_timer.start(
-                self.timeout * 1000
-            )  # Convert seconds to milliseconds
-        self.move_(self.location)
+        self._present()
         super().showEvent(event)
 
     def hideEvent(self, event):
@@ -294,6 +384,14 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
 
         # Call the original exec_ method and store the result
         resultEnum = super().exec_()
+
+        # A labelled button answers with its label. Asked FIRST: Qt returns an
+        # opaque index for a non-standard button, which could collide with a
+        # standard button's enum value.
+        clicked = self.clickedButton()
+        for label, button in self._labelled_buttons.items():
+            if button is clicked:
+                return label
 
         # Convert the enum result to a string using the buttonMapping
         resultString = next(

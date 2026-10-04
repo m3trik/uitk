@@ -99,7 +99,7 @@ INIT_SUFFIX = "_init"
 
 | Method | Purpose |
 |:---|:---|
-| `message_box(string, *buttons, location="topMiddle", timeout=3, background=0.75)` | Themed QMessageBox replacement |
+| `message_box(string, *buttons, location="topMiddle", timeout="auto", background=0.75)` | Themed QMessageBox replacement; `"auto"` times the popup to its text (1.5–4 s) |
 | `file_dialog(file_types=["*.*"], title="Select files to open", start_dir="/home", filter_description="All Files", allow_multiple=True) -> str \| list` | Static — themed file picker |
 | `dir_dialog(title="Select a directory", start_dir="/home") -> str` | Static — themed directory picker |
 | `save_file_dialog(file_types=["*.*"], title="Save file", start_dir="/home", filter_description="All Files") -> str \| None` | Static — save-destination picker |
@@ -349,7 +349,7 @@ Subclass for DCC integration — override `show`, `default_persistence`, or prov
 
 Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handlers/handler_entry.py](../uitk/handlers/handler_entry.py) · [handlers/external_app_handler.py](../uitk/handlers/external_app_handler.py) · [handlers/editor_handler.py](../uitk/handlers/editor_handler.py). Handler-ecosystem prose (registration, `DEFAULTS`, `sb.handlers.*`): [Architecture](ARCHITECTURE.md).
 
-**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`. Optional, probed by the browser: `save_tags(name, tags)`, `focus(name)` (the row's Focus button) and `launch_code(name, **options) -> str | None` (the row menu's *Copy launch code*).
+**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("ui_browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`. Optional, probed by the browser: `save_tags(name, tags)`, `focus(name)` (the row's Focus button) and `launch_code(name, **options) -> str | None` (the row menu's *Copy launch code*).
 
 **`HandlerEntry`** — the launchable-entry data class every handler yields from `entries()`; `all_tags` and `editable_tags` properties.
 

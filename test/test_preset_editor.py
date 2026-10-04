@@ -358,22 +358,65 @@ class TreeAndFilterTest(_EditorCase):
         self.assertEqual(len(self.rows()), 3)
         self.assertEqual(self.editor._search.text(), "unity")
 
-    def test_the_status_facet_shows_every_status_picked(self):
+    def show(self, *labels, editor=None):
+        """Flip the Show list's *labels* in one visit (it stays open)."""
+        menu = (editor or self.editor)._show_filter.build_menu()
+        for label in labels:
+            self.click(menu, label)
+
+    def test_the_show_list_is_one_button_for_every_kind(self):
+        """The Status and Tag facets were two buttons narrowing by what was
+        picked: built-ins or locked presets could not be left out."""
+        box = self.editor._search.option_box
+        facets = [
+            o
+            for o in box.container._option_box._sort_options()
+            if isinstance(o, ChoiceOption)
+        ]
+        self.assertEqual(facets, [self.editor._show_filter])
+        self.cell("Unity", PresetEditor.COL_TAGS).setText("hero")
+        rows = self.menu_rows(self.editor._show_filter.build_menu())
+        self.assertLessEqual(
+            {
+                "Show all",
+                "Built-in",
+                "Locked",
+                "Editable",
+                "Listed",
+                "Hidden",
+                "Edited",
+                "Unchanged",
+                "Untagged",
+                "hero",
+            },
+            set(rows),
+        )
+        self.assertTrue(
+            all(r.property("marked") for r in rows.values()),
+            "everything is shown until a kind is unticked",
+        )
+
+    def test_unticking_a_kind_hides_it(self):
+        self.ship(Stock={"x": 0})
         self.select("Unity")
         self.trigger("Lock")
-        facet = self.editor._status_filter
-        menu = facet.build_menu()  # one visit: the popup stays open
-        self.click(menu, "Locked")
-        self.assertEqual(self.rows(), ["Unity"])
+        self.assertEqual(len(self.rows()), 4)
+        self.show("Built-in")
+        self.assertNotIn("Stock", self.rows())
+        self.show("Locked")
+        self.assertEqual(sorted(self.rows()), ["Game (FBX)", "WebXR"])
+        facet = self.editor._show_filter
         tint = IconManager.registered_info(facet.widget).get("color")
         self.assertEqual(tint, IconManager._normalize_color(ChoiceOption.ACTIVE_COLOR))
-        self.click(menu, "Editable")
-        self.assertEqual(len(self.rows()), 3, "locked OR editable")
-        self.click(menu, "Locked")
-        self.assertEqual(sorted(self.rows()), ["Game (FBX)", "WebXR"])
-        self.click(menu, "Any status")
-        self.assertEqual(len(self.rows()), 3)
+        self.show("Show all")
+        self.assertEqual(len(self.rows()), 4)
         self.assertFalse(facet.is_active)
+
+    def test_unticking_the_other_kinds_of_a_section_shows_only_one(self):
+        self.select("Unity")
+        self.trigger("Lock")
+        self.show("Editable")
+        self.assertEqual(self.rows(), ["Unity"])
 
     def test_edited_since_export_finds_changed_collection_members(self):
         self.select("Unity", "WebXR")
@@ -383,34 +426,40 @@ class TreeAndFilterTest(_EditorCase):
             "WebXR", {"_meta": {"version": 1}, "a": 99}
         )
         self.editor.refresh()
-        self.click(
-            self.editor._status_filter.build_menu(), "Edited since export or install"
-        )
+        self.show("Unchanged")
         self.assertEqual(self.rows(), ["WebXR"])
+        self.show("Unchanged", "Edited")
+        self.assertIn("Unity", self.rows())
+        self.assertNotIn("WebXR", self.rows())
 
-    def test_the_tag_facet_offers_the_tags_in_use(self):
-        self.cell("Unity", PresetEditor.COL_TAGS).setText("hero")
-        facet = self.editor._tag_filter
-        self.assertIn("hero", self.menu_rows(facet.build_menu()))
-        self.click(facet.build_menu(), "hero")
+    def test_the_tags_in_use_are_listed_and_a_row_shows_on_any_ticked(self):
+        self.cell("Unity", PresetEditor.COL_TAGS).setText("hero, web")
+        self.show("Untagged")
         self.assertEqual(self.rows(), ["Unity"])
-        self.click(facet.build_menu(), "Untagged")
-        self.assertEqual(sorted(self.rows()), ["Game (FBX)", "WebXR"])
+        self.show("hero")
+        self.assertEqual(self.rows(), ["Unity"], "still tagged web")
+        self.show("web")
+        self.assertEqual(self.rows(), [])
 
-    def test_a_vanished_tag_drops_its_facet_back_to_any(self):
+    def test_a_vanished_tag_is_no_longer_left_out(self):
         self.cell("Unity", PresetEditor.COL_TAGS).setText("hero")
-        self.click(self.editor._tag_filter.build_menu(), "hero")
-        self.cell("Unity", PresetEditor.COL_TAGS).setText("")
-        self.assertEqual(self.editor._tag_filter.value, PresetEditor.TAG_ANY)
+        self.show("hero")
+        self.assertNotIn("Unity", self.rows())
+        [unity] = [e for e in self.editor._entries if e.name == "Unity"]
+        self.editor.library.set_tags([unity], [])
+        self.editor.refresh()
+        self.assertEqual(self.editor._show_filter.value, ())
         self.assertEqual(len(self.rows()), 3)
 
     def test_the_filter_row_comes_back_with_the_window(self):
         self.editor._search.setText("*web*")
-        self.click(self.editor._status_filter.build_menu(), "Editable")
+        self.select("WebXR")
+        self.trigger("Lock")
+        self.show("Locked")
         again = self.make_editor()
         self.assertEqual(again._search.text(), "*web*")
-        self.assertEqual(again._status_filter.value, ("unlocked",))
-        self.assertEqual(self.rows(again), ["WebXR"])
+        self.assertEqual(again._show_filter.value, ("@locked",))
+        self.assertEqual(self.rows(again), [])
 
 
 class FocusTest(_EditorCase):
@@ -663,10 +712,10 @@ class HideTest(_EditorCase):
         rows = self.menu_rows(self.editor.build_context_menu())
         self.assertLessEqual({"Hide", "Show"}, set(rows))
 
-    def test_the_hidden_status_facet_lists_the_hidden_ones(self):
+    def test_the_show_list_lists_only_the_hidden_ones(self):
         self.select("WebXR")
         self.trigger("Hide")
-        self.click(self.editor._status_filter.build_menu(), "Hidden")
+        self.click(self.editor._show_filter.build_menu(), "Listed")
         self.assertEqual(self.rows(), ["WebXR"])
 
     def test_a_builtin_can_be_hidden_and_shown(self):
@@ -1307,11 +1356,11 @@ class MaintenanceTest(_EditorCase):
 
 
 class RegistryTest(_EditorCase):
-    def test_switchboard_exposes_the_editor_as_presets(self):
+    def test_switchboard_exposes_the_editor_as_preset_editor(self):
         from uitk.switchboard.editors import _EditorRegistry
 
-        self.assertIn("presets", _EditorRegistry._EDITORS)
-        module, cls_name, needs_sb = _EditorRegistry._EDITORS["presets"][:3]
+        self.assertIn("preset_editor", _EditorRegistry._EDITORS)
+        module, cls_name, needs_sb = _EditorRegistry._EDITORS["preset_editor"][:3]
         self.assertEqual(
             (module, cls_name, needs_sb),
             ("uitk.widgets.editors.preset_editor", "PresetEditor", False),

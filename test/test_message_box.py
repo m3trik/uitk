@@ -88,24 +88,50 @@ class TestMessageBoxStandardButtons(QtBaseTestCase):
         self.assertTrue(_has_button(flags, QtWidgets.QMessageBox.YesToAll))
         self.assertTrue(_has_button(flags, QtWidgets.QMessageBox.NoToAll))
 
-    def test_unknown_name_resolves_to_no_button(self):
-        """An unrecognized name contributes nothing (NoButton) — but loudly.
-
-        The drop used to be silent, which cosmetically broke callers: a
-        confirmation asking for ("Fix", "Cancel") rendered a Cancel-only box
-        with no affirmative action (live-caught in the tentacle scene panel).
-        The console warning is the tell that turns that into a 5-second fix.
+    def test_a_name_qt_has_no_button_for_becomes_a_labelled_button(self):
+        """A confirmation asking for ("Fix", "Cancel") used to render a
+        Cancel-only box -- the unknown name was dropped (live-caught in the
+        tentacle scene panel), later with a console warning. Any other name
+        is now a button wearing that label, beside the standard ones, so a
+        prompt can say what each answer DOES ("Override All").
+        Changed: 2026-10-04
         """
-        import contextlib
-        import io
-
         w = self._make()
-        captured = io.StringIO()
-        with contextlib.redirect_stdout(captured):
-            w.setStandardButtons("NotARealButton")
-        self.assertEqual(w.standardButtons(), QtWidgets.QMessageBox.NoButton)
-        self.assertIn("NotARealButton", captured.getvalue())
-        self.assertIn("Valid:", captured.getvalue())
+        w.setStandardButtons("Override All", "Override", "Cancel")
+        self.assertTrue(_has_button(w.standardButtons(), QtWidgets.QMessageBox.Cancel))
+        labels = [b.text().replace("&", "") for b in w.buttons()]
+        self.assertIn("Override All", labels)
+        self.assertIn("Override", labels)
+        # Re-setting replaces them rather than piling up a second pair.
+        w.setStandardButtons("Fix", "Cancel")
+        labels = sorted(b.text().replace("&", "") for b in w.buttons())
+        self.assertEqual(labels, ["Cancel", "Fix"])
+
+    def test_a_labelled_button_answers_with_its_label(self):
+        """``exec_`` answers with the clicked button's name: Qt's own name for
+        a standard button, the label for any other. Driven by a click queued
+        into the modal loop, so the test never blocks on it."""
+        w = self._make()
+        w.setStandardButtons("Override All", "Override", "Cancel")
+        target = next(b for b in w.buttons() if b.text() == "Override")
+        QtCore.QTimer.singleShot(0, target.click)
+        self.assertEqual(w.exec_(), "Override")
+        cancel = w.button(QtWidgets.QMessageBox.Cancel)
+        QtCore.QTimer.singleShot(0, cancel.click)
+        self.assertEqual(w.exec_(), "Cancel")
+
+    def test_the_default_button_is_chosen_by_name(self):
+        """Enter answers the default -- for a prompt that can override a
+        safety check that must be the safe answer, not whichever button Qt
+        found first."""
+        w = self._make()
+        w.setStandardButtons("Override All", "Override", "Cancel")
+        w.set_default_button("Cancel")
+        self.assertIs(w.defaultButton(), w.button(QtWidgets.QMessageBox.Cancel))
+        w.set_default_button("Override")
+        self.assertEqual(w.defaultButton().text(), "Override")
+        with self.assertRaises(ValueError):
+            w.set_default_button("Nope")
 
     def test_accepts_enum_value(self):
         """A real StandardButton enum still passes through."""
@@ -269,6 +295,79 @@ class TestMessageBoxLinks(QtBaseTestCase):
         self.assertIn(f'<a href="{url}">{url}</a>.', label.text())
         self.assertTrue(label.openExternalLinks())
         self.assertTrue(label.textInteractionFlags() & QtCore.Qt.LinksAccessibleByMouse)
+
+
+class TestMessageBoxAutoTimeout(QtBaseTestCase):
+    """``timeout="auto"`` keeps a toast up long enough to read its text, and
+    never longer than a few seconds -- the full text is in the log anyway."""
+
+    def _make(self, **kwargs):
+        return self.track_widget(MessageBox(theme=None, **kwargs))
+
+    def test_longer_text_stays_up_longer(self):
+        short = MessageBox.reading_time("Done.")
+        longer = MessageBox.reading_time("Exported 12 objects to the scene folder.")
+        self.assertLess(short, longer)
+
+    def test_reading_time_is_clamped_to_a_few_seconds(self):
+        low, high = MessageBox.AUTO_TIMEOUT_RANGE
+        self.assertLessEqual(high, 5.0, "a toast must leave within a few seconds")
+        self.assertEqual(MessageBox.reading_time(""), low)
+        self.assertEqual(MessageBox.reading_time("word " * 500), high)
+
+    def test_reading_time_counts_the_visible_text_not_the_markup(self):
+        self.assertEqual(
+            MessageBox.reading_time("<font color='red'><b>Done.</b></font>"),
+            MessageBox.reading_time("Done."),
+        )
+
+    def test_auto_starts_the_timer_for_the_reading_time(self):
+        box = self._make(timeout="auto")
+        box.setText("Exported 12 objects to the scene folder.")
+        box.show()
+        self.assertTrue(box.menu_timer.isActive())
+        expected = MessageBox.reading_time(box.text())
+        self.assertEqual(box.menu_timer.interval(), round(expected * 1000))
+
+    def test_new_text_on_a_showing_toast_is_timed_afresh(self):
+        """``sb.message_box`` reuses one passive box; ``show()`` on a visible
+        widget sends no showEvent, so a second message inherited what was left
+        of the first one's time."""
+        box = self._make(timeout="auto")
+        box.setText("Done.")
+        box.show()
+        box.setText("A much longer message that needs more time to read. " * 2)
+        self.assertEqual(
+            box.menu_timer.interval(),
+            round(MessageBox.reading_time(box.text()) * 1000),
+        )
+
+    def test_new_text_on_a_showing_toast_is_placed_afresh(self):
+        """The same missing showEvent skipped ``move_``: a longer second
+        message grew rightward from where the first was centred."""
+        box = self._make(timeout="auto")
+        box.setText("Done.")
+        box.show()
+        box.setText("A much longer message that needs more time to read. " * 2)
+        with patch.object(box, "move") as mock_move:
+            box.move_(box.location)
+        self.assertEqual(box.pos(), mock_move.call_args[0][0])
+
+    def test_zero_timeout_never_auto_closes(self):
+        """0 meant "no timeout" to ``__init__`` but was assigned verbatim by
+        ``sb.message_box``, so the timer started at 0 ms and closed the box
+        on the next event-loop turn."""
+        box = self._make()
+        box.timeout = 0
+        box.setText("Stays until dismissed.")
+        box.show()
+        self.assertIsNone(box.timeout)
+        self.assertFalse(box.menu_timer.isActive())
+
+    def test_an_unknown_timeout_word_is_rejected(self):
+        box = self._make()
+        with self.assertRaises(ValueError):
+            box.timeout = "soon"
 
 
 if __name__ == "__main__":

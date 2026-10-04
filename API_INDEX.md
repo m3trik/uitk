@@ -121,6 +121,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class IconManager`
   - methods: set_default_color, register_icon_dir, get, fit_size, fit_icon, swap_icon, set_icon, set_label_icon, registered_info, update_widget_icons, clear_cache, get_cache_stats
 
+### `managers/model_binding.py` — Keep widgets in step with a model uitk never sees: read on change, write on edit.
+- `class ModelBinding`
+  - methods: fields, widget, bind, refresh
+
 ### `managers/optional_package_manager.py` — Provisioning for optional packages a panel needs importable in THIS session.
 - `class OptionalPackageManager(_OptionalPackageManagerInternal)`
   - methods: available, pip_python, default_install, install, ensure, version_tuple, split_requirement
@@ -171,7 +175,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `managers/window_height.py` — How a window follows the height of what it is holding.
 - `class WindowHeight`
-  - methods: activate_layouts, sync_min, adjust_by, fit_to_content, fit_host
+  - methods: activate_layouts, sync_min, adjust_by, fit_to_content, fit_host, fit_host_later
 
 ### `switchboard/_core.py`
 - `class Switchboard(QtCore.QObject, pythontk.HelpMixin, pythontk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardRulesMixin, SwitchboardWidgetValuesMixin, SwitchboardControlGroupsMixin, SwitchboardDialogsMixin, SwitchboardPlacementMixin, SwitchboardEventLoopMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin, SwitchboardNamespaceMixin)`
@@ -394,6 +398,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class FormPanel(WindowPanel)`
   - methods: add, clear_rows, set_fields, revalidate, values, set_values, editor, logger, clear_output, set_status, run, apply_pending, pending_commit, arm_apply, disarm_apply, exec_panel, hideEvent, closeEvent, keyPressEvent
 
+### `widgets/form_rows.py` — A form any layout can hold: labelled rows built the way a Menu is built.
+- `class FormRows(QtWidgets.QWidget, AttributesMixin)`
+  - methods: rows_layout, row_widgets, showEvent, add, add_section, clear_rows
+
 ### `widgets/gradient_slider.py` — A slider whose track shows the colour it is about to set.
 - constants: STEPS
 - `class GradientSlider(Slider)`
@@ -451,7 +459,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/messageBox.py`
 - `class MessageBox(QtWidgets.QMessageBox, AttributesMixin)`
-  - methods: setStandardButtons, move_, setText, autoClose, showEvent, hideEvent, as_prompt, exec_
+  - methods: timeout, reading_time, setStandardButtons, set_default_button, move_, setText, autoClose, showEvent, hideEvent, as_prompt, exec_
 
 ### `widgets/mixins/attributes.py`
 - `class AttributesMixin`
@@ -760,7 +768,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class TableSelection`
   - methods: get, item, text
 - `class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`
-  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, setLeftClickSelectOnly, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, enable_column_config, restore_column_state, resizeEvent, stretch_column_to_fill, compute_autofit_size, max_autofit_size, fit_window_to_contents, get_selected_data, get_selection, register_menu_action, unregister_menu_action
+  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, set_sorted_cell, edit_cell_as, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, setLeftClickSelectOnly, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, enable_column_config, restore_column_state, resizeEvent, stretch_column_to_fill, compute_autofit_size, max_autofit_size, fit_window_to_contents, get_selected_data, get_selection, register_menu_action, unregister_menu_action
 
 ### `widgets/table_actions.py` — Reusable action-column management for :class:`TableWidget`.
 - `class TableActions`
@@ -798,4 +806,4 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/windowPanel.py` — Themed top-level uitk window: Header → body → Footer.
 - `class WindowPanel(QtWidgets.QWidget, AttributesMixin)`
-  - methods: style, showEvent, persist_geometry, save_window_geometry, restore_window_geometry, clear_saved_geometry, resizeEvent, moveEvent, hideEvent, closeEvent, present, is_in_popup_context, header, footer, body_layout, rows_layout, add, clear_rows, tighten_sublayouts, icon_button
+  - methods: style, showEvent, persist_geometry, save_window_geometry, restore_window_geometry, clear_saved_geometry, resizeEvent, moveEvent, hideEvent, closeEvent, present, is_in_popup_context, header, footer, body_layout, rows_layout, form, add, clear_rows, tighten_sublayouts, icon_button

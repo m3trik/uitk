@@ -1497,6 +1497,11 @@ class ComboBox(
             window.activateWindow()
 
     def showPopup(self):
+        # Activate the host window first, so the first click in the popup
+        # selects an item rather than being swallowed re-activating the window.
+        # Before the view is read: activation runs the host's code, which may
+        # replace the view (``setView`` deletes the old one).
+        self._activate_host_window()
         view = self.view()
         view.setMinimumWidth(view.sizeHintForColumn(0))
         self._cell_columns = self._measure_cell_columns()
@@ -1515,9 +1520,6 @@ class ComboBox(
         # tests and inspection.
         if not isinstance(view.itemDelegate(), _CurrentItemIndicatorDelegate):
             view.setItemDelegate(_CurrentItemIndicatorDelegate(self))
-        # Ensure the host window is active so the first click in the popup selects
-        # an item rather than being swallowed re-activating the window.
-        self._activate_host_window()
         self._ensure_popup_filters(view)
         # Arrows at the popup's top/bottom edge while rows are scrolled out
         # of view past it. Attached here rather than in __init__ because a
@@ -1557,7 +1559,7 @@ class ComboBox(
                 app.setEffectEnabled(effect, True)
 
     def _ensure_popup_filters(self, view):
-        """Install the popup event filters once.
+        """Install the popup event filters on *view* (the one in place now).
 
         - :class:`_PopupItemClickCommitter` on the list viewport: lets a
           deliberate click on a row commit even inside QComboBox's
@@ -1567,13 +1569,16 @@ class ComboBox(
         - :meth:`_popup_mouseButtonPressEvent` on the popup container: the
           second click of a double-click on the combo body lands there, not on
           the combo — this is what makes ``rename_on_double_click`` reachable.
+
+        The container outlives a ``setView``, so its filter goes on once; the
+        viewport's goes on every call, for a view swapped in since (Qt moves a
+        filter already installed rather than adding it twice).
         """
-        if getattr(self, "_item_click_filter", None) is not None:
-            return
-        self._item_click_filter = _PopupItemClickCommitter(self)
+        if getattr(self, "_item_click_filter", None) is None:
+            self._item_click_filter = _PopupItemClickCommitter(self)
+            self._body_double_click_filter = self._mouse_press_filter("_popup_")
+            self._body_double_click_filter.install(view.parentWidget())
         view.viewport().installEventFilter(self._item_click_filter)
-        self._body_double_click_filter = self._mouse_press_filter("_popup_")
-        self._body_double_click_filter.install(view.parentWidget())
 
     def _mouse_press_filter(self, handler_prefix):
         """An :class:`EventFactoryFilter` routing press/double-click to

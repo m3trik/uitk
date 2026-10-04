@@ -31,7 +31,7 @@ class _TooltipInternal(object):
     @staticmethod
     def _python_module_docstring(template_path: Path) -> Optional[str]:
         try:
-            tree = ast.parse(template_path.read_text(encoding="utf-8"))
+            tree = ast.parse(template_path.read_text(encoding="utf-8-sig"))
         except (OSError, SyntaxError):
             return None
         return ast.get_docstring(tree)
@@ -60,7 +60,7 @@ class _TooltipInternal(object):
         makes the panel show its Scope row -- never prose.
         """
         try:
-            text = template_path.read_text(encoding="utf-8")
+            text = template_path.read_text(encoding="utf-8-sig")
         except OSError:
             return None
         out: List[str] = []
