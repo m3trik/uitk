@@ -1575,6 +1575,48 @@ class TestCheckListKind(BaseTestCase):
         internal._set_all_checked(w, False)
         self.assertEqual(KindFactory.read_value(w), [])
 
+    def test_a_change_after_a_blocked_write_is_still_announced(self):
+        """A preset load, a model refresh or ``KindFactory.set_value`` under a
+        block writes the row with its signals blocked. What the row last
+        announced did not follow that write, so the user putting it back to
+        the set it held before announced nothing: not saved, no slot.
+        Fixed: 2026-10-04
+        """
+        from qtpy import QtCore
+
+        w = self._widget(choices=self.CHOICES, default=[])
+        heard = []
+        w.checkedChanged.connect(heard.append)
+        blocked = w.blockSignals(True)
+        KindFactory.set_value(w, ["audio_event"])
+        w.blockSignals(blocked)
+        self.assertEqual(heard, [])
+        w.item(0).setCheckState(QtCore.Qt.Unchecked)  # the user, back to []
+        self.assertEqual(heard, [[]])
+
+    def test_a_write_a_refill_or_a_bulk_toggle_is_one_change(self):
+        """Each row's write was announced on its own: a two-entry write as two
+        changes, a refill as the empty set its clear left and then each
+        partial set on the way back -- every one a save and a slot call.
+        Fixed: 2026-10-04
+        """
+        from uitk.bridge.spec import _KindFactoryInternal as internal
+
+        w = self._widget(choices=self.CHOICES, default=[])
+        heard = []
+        w.checkedChanged.connect(heard.append)
+        KindFactory.set_value(w, ["audio_event", "shot_metadata"])
+        self.assertEqual(heard, [["audio_event", "shot_metadata"]])
+        KindFactory.set_choices(
+            w, [("Audio Event", "audio_event"), ("Shadow Plane", "shadow_plane")]
+        )
+        self.assertEqual(heard[1:], [["audio_event"]], "the end state, not the steps")
+        internal._set_all_checked(w, True)
+        internal._set_all_checked(w, False)
+        self.assertEqual(heard[2:], [["audio_event", "shadow_plane"], []])
+        KindFactory.set_choices(w, list(self.CHOICES))
+        self.assertEqual(heard[4:], [], "nothing checked before or after")
+
     def test_row_height_follows_the_entry_count(self):
         """Entries arrive at runtime, so a fixed height would either scroll a
         short list or leave dead space under a long one."""

@@ -75,7 +75,14 @@ class SwitchboardWidgetValuesMixin:
         return ValueManager.combo_value(combo, "data", fallback="index")
 
     def _widget_value_reader(self, widget):
-        """``getter(widget) -> value`` for *widget*, or ``None`` if untabled."""
+        """``getter(widget) -> value`` for *widget*, or ``None`` if untabled.
+
+        A widget that names its own value (``state_value``: a check list's is
+        its checked set) is read by it, as ``ValueManager.get_value`` and
+        persistence read it.
+        """
+        if callable(getattr(widget, "state_value", None)):
+            return lambda w: w.state_value()
         for wtype, getter in self._WIDGET_VALUE_READERS:
             if isinstance(widget, wtype):
                 if getter.startswith("_"):
@@ -142,17 +149,25 @@ class SwitchboardWidgetValuesMixin:
         ``@Signals.blockSignals``-decorated. Everything else delegates to
         ``ValueManager.set_value``, the ecosystem's one answer to "set this
         widget's value"; the combo family is the ONLY place a uitk widget
-        silences a setter, so nothing else can be surprised that way.
+        silences a setter, so nothing else can be surprised that way. A
+        widget that names its own value (``set_state_value``) is writable
+        too, as :meth:`_widget_value_reader` reads it by ``state_value``.
         """
         if isinstance(widget, QtWidgets.QComboBox):
             return self._set_combo_value
-        if isinstance(widget, self._WIDGET_VALUE_WRITABLE):
+        if isinstance(widget, self._WIDGET_VALUE_WRITABLE) or callable(
+            getattr(widget, "set_state_value", None)
+        ):
             return ValueManager.set_value
         return None
 
     def _value_change_signal(self, widget):
         """Name of the signal announcing a value change on *widget*: the
-        override table first, then the Switchboard's ``default_signals``."""
+        widget's own ``state_signal``, then the override table, then the
+        Switchboard's ``default_signals``."""
+        own = getattr(widget, "state_signal", None)
+        if own and hasattr(widget, own):
+            return own
         for wtype, name in self._VALUE_CHANGE_SIGNALS:
             if isinstance(widget, wtype) and hasattr(widget, name):
                 return name

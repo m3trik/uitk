@@ -15,11 +15,14 @@ change events.
 """
 
 import contextlib
+import logging
 from typing import Any, Callable, ContextManager, Dict, Mapping, Optional, Tuple
 
 from qtpy import QtWidgets
 
 from uitk.managers.value_manager import ValueManager
+
+_log = logging.getLogger(__name__)
 
 
 class ModelBinding:
@@ -76,16 +79,6 @@ class ModelBinding:
         #: binding's own echo (see :meth:`refresh`).
         self._writing = 0
 
-    @property
-    def fields(self) -> Tuple[str, ...]:
-        """The bound field names, in bind order."""
-        return tuple(self._fields)
-
-    def widget(self, field: str) -> Optional[QtWidgets.QWidget]:
-        """The widget bound to *field*, or ``None``."""
-        entry = self._fields.get(field)
-        return entry[0] if entry else None
-
     def bind(
         self,
         field: str,
@@ -141,7 +134,8 @@ class ModelBinding:
         Inside the *applying* context when the binding has one (the widgets'
         own signals flow, marked as applied for the user); otherwise with each
         widget's signals blocked. A widget deleted under the binding is dropped
-        from it.
+        from it. A model that cannot be read leaves the widgets as they are,
+        and is logged.
 
         A no-op while one of the binding's own writes is in flight: the change
         the model announces is the edit already on screen, and an edit that
@@ -152,7 +146,12 @@ class ModelBinding:
             return
         try:
             values = self._read() or {}
-        except Exception:
+        except Exception as error:
+            _log.warning(
+                "ModelBinding.refresh: the model could not be read (%r); "
+                "the widgets keep their values.",
+                error,
+            )
             return
         self._syncing = True
         try:

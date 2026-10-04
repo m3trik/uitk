@@ -151,6 +151,16 @@ OverflowIndicator.of(view).detach()
 
 It is a mouse-transparent sibling stacked above the viewport -- never a viewport child, which `viewport().scroll()` would drag along with the rows -- sized from the view's font and coloured from its palette (band: `Base` fading over the content; arrow: `Text`).
 
+### Window height follows content
+`WindowHeight` ([managers/window_height.py](../uitk/managers/window_height.py)) is the one implementation of "my content changed -- follow it": `adjust_by(window, delta, baseline=)` applies a pixel delta and keeps height the user added by hand; `fit_to_content(window)` snaps to what the content needs. A caller holding a widget rather than a window uses `fit_host(widget)`, which fits the widget's window its own way (a `MainWindow`'s `fit_height_to_content`, else `adjustSize`). `fit_host_later(widget)` is the same a turn of the event loop later -- the form for a widget that has just shown or hidden parts of itself, since a container asked while still hiding children measures the layout it is leaving; calls for one window in one turn fit it once. `FieldVisibility` and the colour editors use it.
+
+A window not on screen is not fitted when asked. A `MainWindow` shown before is fitted once on its next show, since only its first show sizes it; one never shown yet is left to that first show, which fits or restores its size. Any other hidden window is left alone.
+
+```python
+self.advanced.setVisible(on)
+WindowHeight.fit_host_later(self.advanced)
+```
+
 ### Quitting inside a host
 A host that owns the `QApplication` and quits without finalizing Python (Maya) runs PySide's teardown at DLL detach with the interpreter still up, and it faults on two shapes, filing a crash dump on quit: a C++-created object that a live wrapper keeps as a *referred object* (PySide's reference for `setModel`, `setScreen`, the return of `windowHandle()` and the like), and a static Qt object -- the pixmap cache -- that an application-wide event filter was handed, which PySide tagged when it wrapped it. `HostExitGuard` (`uitk/managers/host_exit_guard.py`) clears both on `aboutToQuit`. Every `Switchboard` arms it, and it arms only for an application Python did not create (a standalone process finalizes Python itself). Nothing is deleted, but a Python reference kept to one of those objects is dead after `aboutToQuit`: fetch it again from its getter. An application-wide event filter hands each object it sees to `note` -- uitk's three do:
 
@@ -364,14 +374,35 @@ def tbl_rows_init(self, widget):
 
 See `uitk/widgets/table_actions.py` for bulk action helpers.
 
+Host hooks:
+
+- `edit_cell_as(row, column, text, on_commit, select=None) -> bool` opens a cell's inline editor on *text* instead of the cell's own, the stem (everything before the last dot) pre-selected -- an edit of part of a cell, such as renaming a file by its name inside its path cell. Enter hands the new text to `on_commit` once the editor has closed, if it changed; the cell is never written and no `cellChanged` fires. Esc cancels. False when the cell can't be edited this way (no item, not editable, an editor already open, a delegate other than the table's own).
+- `set_sorted_cell(row, column, text, key, editable=False)` makes a cell that sorts by *key*, not its text, so `"900 KB"` sorts before `"2 MB"` (a cell with no key sorts first). Read-only unless *editable*.
+- `context_menu_about_to_show` is emitted just before the row menu opens, so a host can fit the items to the selection (relabel, hide, disable).
+
+```python
+widget.set_sorted_cell(row, 2, "900 KB", 900_000)
+widget.context_menu_about_to_show.connect(self._fit_row_menu)
+widget.edit_cell_as(row, 1, os.path.basename(path), lambda name: self._rename(path, name))
+```
+
 ### Column config
 
-`TreeWidget` and `TableWidget` share one header option, `enable_column_config(settings=None, settings_key=None, locked=(), reorderable=False)` + `restore_column_state()`: right-click the header for a checkable row per column, in the order the view shows them (ticked while shown); the last visible column and any `locked` ones can't be hidden; sections drag to reorder; the layout is saved on every change (`hidden_columns`, `column_order` under the `settings_key` branch) and applied by `restore_column_state()` once the headers are set. The option is `ColumnConfig` ([column_config.py](../uitk/widgets/column_config.py)), which attaches the same way to any plain `QTableWidget` / `QTreeWidget` (labels come from the model's header data):
+`TreeWidget` and `TableWidget` share one header option, `enable_column_config(settings=None, settings_key=None, locked=(), reorderable=False, hidden_by_default=())` + `restore_column_state()`: right-click the header for a checkable row per column, in the order the view shows them (ticked while shown); the last visible column and any `locked` ones can't be hidden; sections drag to reorder; the layout is saved on every change (`hidden_columns`, `column_order` under the `settings_key` branch) and applied by `restore_column_state()` once the headers are set. The option is `ColumnConfig` ([column_config.py](../uitk/widgets/column_config.py)), which attaches the same way to any plain `QTableWidget` / `QTreeWidget` (labels come from the model's header data):
 
 ```python
 ColumnConfig.attach(table, settings=settings, settings_key="columns", locked=[0]).restore()
 ColumnConfig.of(table).set_hidden(3)        # refused (False) for a locked or last column
 ColumnConfig.of(table).set_order([2, 0, 1, 3])  # logical columns, left to right
+```
+
+`hidden_by_default` names optional columns, hidden until the user's own layout is saved; from then on the saved layout alone decides. `ColumnConfig.visibility_changed(column, hidden)` fires when a column is shown or hidden (through `set_hidden` or the menu), so a host fills a costly column only once it shows:
+
+```python
+table.enable_column_config(settings_key="files", hidden_by_default=[4])
+ColumnConfig.of(table).visibility_changed.connect(
+    lambda column, hidden: column == 4 and not hidden and self._fill_hashes()
+)
 ```
 
 `movable=False` keeps the header's order fixed -- for a header whose click sorts, since Qt turns any press on a movable header into a potential drag. `reorderable=True` moves reordering into the menu instead: its rows are a list that stays up, where a click shows or hides a column and a drag moves it (the press-move-release is the list's own, no `QDrag`).
@@ -595,7 +626,10 @@ Styled dialog matching the active theme.
 
 ```python
 result = sb.message_box("Save changes?", "Yes", "No", "Cancel")
+result = sb.message_box("Overwrite 3 files?", "Override All", "Cancel", default="Cancel")
 ```
+
+A button name Qt has a standard button for (`"Yes"`, `"YesToAll"`, case-insensitive) is that button; any other name is a button wearing that label, and the box answers with the label. `MessageBox.set_default_button(name)` (`message_box(..., default=)`) picks the button Enter answers -- for a prompt that can waive a safety check, name the safe one. Without buttons the box is a passive toast that closes itself (`timeout="auto"` times it to its text, `MessageBox.reading_time`); a box with buttons waits for its answer.
 
 ## Region
 
@@ -663,9 +697,35 @@ Enhanced `QToolBox`. `.add(widget, text, icon=None)`.
 
 ## WindowPanel
 
-Themed top-level window shell with a `Header` / body / `Footer` layout — the base for standalone uitk windows (the [`EditorPanel` family](#editors-package) extends it). Subclasses populate `body_layout`; the header buttons, status text, and size-gripped footer come standard. `persist_geometry(settings)` opts in to saving/restoring window geometry; `WindowPanel.icon_button(...)` is a static icon-button helper.
+Themed top-level window shell with a `Header` / body / `Footer` layout — the base for standalone uitk windows (the [`EditorPanel` family](#editors-package) extends it). Subclasses populate `body_layout`; the header buttons, status text, and size-gripped footer come standard. `persist_geometry(settings)` opts in to saving/restoring window geometry; `WindowPanel.icon_button(...)` is a static icon-button helper. Rows are added the way a `Menu` adds items: `panel.add(...)` places one in the panel's form (`panel.form`, a `FormRows`) and exposes it as `panel.<objectName>`; `clear_rows()` drops them and their names.
 
 See [uitk/widgets/windowPanel.py](../uitk/widgets/windowPanel.py) (`WindowPanel`).
+
+### FormRows
+
+`FormRows` ([form_rows.py](../uitk/widgets/form_rows.py)) is that form region as a widget any layout can hold -- a page of a stacked panel, a section of a Switchboard window. `add(x, label=None, hint=None, tooltip=None, companions=(), label_align=None, **setters)` takes a widget-class name, an instance or a class, applies setter-style kwargs and signal connections, and places a row: caption on the left (every caption in one column), the field on the right, *companions* sharing the field's cell and greying out with it. A named widget is exposed as `rows.<objectName>`; `clear_rows()` drops rows and names; `add_section(title)` adds a fold (see [CollapsableGroup](#collapsablegroup)).
+
+```python
+rows = FormRows(page)
+page.layout().addWidget(rows)
+rows.add("QSpinBox", label="Frames", hint="How many frames to bake.", setObjectName="spn_frames")
+rows.add("QLineEdit", label="Output", setObjectName="txt_out", companions=[browse_button])
+rows.spn_frames.value()
+```
+
+### ModelBinding
+
+`ModelBinding(read, write, applying=None)` ([managers/model_binding.py](../uitk/managers/model_binding.py)) keeps widgets in step with a model uitk never sees -- a scene setting, a record a build reads -- reached only through two callables: `read()` returns the model's values as a mapping, `write(field, value)` stores one. `bind(field, widget, getter=None, setter=None, signal=None)` binds a widget (its edit signal comes from `signal`, the widget's own `state_signal`, or its type; `getter` / `setter` convert between widget and model terms). A bound widget opts out of state restore, since the model owns its value. An edit writes the model; `refresh()` fills every widget from it and writes nothing back. Hook `refresh` to the model's change events: a refresh the model announces while one of the binding's own writes is landing is skipped, and a model that cannot be read is logged and leaves the widgets as they are. With `applying` (a context manager, such as the window's `ui.state.suppress_save`), a refresh runs inside it with the widgets' signals flowing; without, each widget's signals are blocked while it is filled.
+
+```python
+binding = ModelBinding(read=lambda: store.recipe.to_dict(),
+                       write=lambda field, value: store.update(**{field: value}),
+                       applying=self.ui.state.suppress_save)
+binding.bind("duty", spn_duty, getter=lambda: spn_duty.value() / 100.0,
+             setter=lambda v: spn_duty.setValue(round(v * 100)))
+store.on_change(binding.refresh)
+binding.refresh()
+```
 
 ## TextViewBox
 
@@ -789,7 +849,7 @@ Real-world integration: [mayatk's shot_sequencer_slots.py](https://github.com/m3
 | `SwitchboardBrowser` | Searchable launcher over every UI registered with a Switchboard — filter by name/tags, launch, hide, open in Designer ([switchboard_browser/](../uitk/widgets/editors/switchboard_browser/__init__.py)) |
 | `PresetEditor` | Every tool's presets in one window — lock, rename, tag, group into collections, back up, import — see [Preset Editor](#preset-editor) below ([preset_editor.py](../uitk/widgets/editors/preset_editor.py)) |
 
-They're exposed on the Switchboard via `sb.editors` ([uitk/switchboard/editors.py](../uitk/switchboard/editors.py)) — a lazy, auto-recovering singleton registry with names `style`, `shortcut`, `global_shortcuts` (the ShortcutEditor pinned to its Commands view), `browser`, and `presets`:
+They're exposed on the Switchboard via `sb.editors` ([uitk/switchboard/editors.py](../uitk/switchboard/editors.py)) — a lazy, auto-recovering singleton registry. Each editor is named for its window title: `style_editor`, `shortcut_editor`, `global_shortcuts` (the ShortcutEditor pinned to its Commands view), `ui_browser`, and `preset_editor`. The earlier names (`style`, `shortcut`, `browser`, `presets`) still resolve, with a `DeprecationWarning`:
 
 ```python
 sb.editors.show("style_editor")          # open / focus by name
@@ -802,7 +862,7 @@ sb.editors.add_post_build_hook("shortcut_editor", wire_dcc_collision_checker)
 `PresetEditor` is the window over `pythontk.PresetLibrary`: every preset store under the presets root (`UITK_PRESETS_ROOT`, default `%LOCALAPPDATA%/uitk`), shown as a tree of App › Tool › Mode beside a filterable table. It never imports or builds a tool: a store announces itself with a `.domain` marker in its folder, and a preset's metadata sits in a sidecar `.<name>.preset` beside it (id, label as typed, lock, collection, tags, description, hidden); a hidden built-in, which has no sidecar, is listed in the store's `.hidden` file. The preset file itself is never modified, so tools and older installs read exactly what they always did.
 
 - **Lock** a preset (row menu), a whole collection (the collections box's ☰ menu) or everything under a tree node (its menu) -- a mix of locked and unlocked offers both Lock and Unlock -- and its panel selector shows it italic with a lock tooltip, hides Rename/Delete, and seeds Save with `"<name> copy"`; `PresetManager.save` raises `pythontk.PresetReadOnlyError` for it. A lock guards against accidents; it is not security.
-- **Hide** a preset (row menu, or a tree node's *Hide all*; built-ins too, the main declutter case): its panel's preset dropdown leaves it out -- except the one the panel is on, which stays until the panel moves off it -- while the file stays on disk and loads as before. Here it is dimmed, and the Status facet's *Hidden* lists them; *Show* lists them again. A hide is the user's own view: a collection export never carries it.
+- **Hide** a preset (row menu, or a tree node's *Hide all*; built-ins too, the main declutter case): its panel's preset dropdown leaves it out -- except the one the panel is on, which stays until the panel moves off it -- while the file stays on disk and loads as before. Here it is dimmed; untick *Listed* under the Show list's *In panel lists* to see only the hidden ones, and the row menu's *Show* lists a preset again. A hide is the user's own view: a collection export never carries it.
 - **Table** — a header click sorts by that column and a second reverses it (names naturally, Modified by time, the rest by their text ignoring case; the list is sorted, never the view, so every edit still lands on the row's preset; the sort survives filtering and rescans). *Description* is edited in place for your presets and shows a built-in's shipped `_meta.description` read-only; it is searched by the filter text and is the preset's tooltip in its panel dropdown. *Description* is the last column and takes the width the window has to spare; its tooltip shows the whole description wrapped (up to `DESCRIPTION_TIP_CHARS`, 1000, cut at a word past that). Right-click the header to show, hide or reorder columns (a click on a row toggles it, a drag moves it; Name stays; remembered with the window), via [column config](#column-config) with `reorderable=True`.
 - **Tree** — right-click a node (App, Tool, Mode, or *All presets*) for *Hide all* / *Show all*, *Lock all* / *Unlock all* (each only when it would change something), *Open folder* and *Back up these presets* (to the backups folder, named for the node) -- everything under the node, whatever the filter row shows.
 - **Filter row** — the text field (`FilterOption` grammar: comma terms, exact unless `*`, `!` excludes; the filter icon silences it; matches name, description, tool, collection and tags) carries one `ChoiceOption` show list (the eye): every kind of preset, ticked while shown, in sections (Kind: built-in / locked / editable; In panel lists: listed / hidden; Since export or install: edited / unchanged; Tags: untagged + each tag). Untick a kind to hide it; a row shows while one of its kinds is ticked in every section, and the popup stays open between flips. Beside it, the **collections box** is both the collection filter and where collections are managed.

@@ -191,7 +191,8 @@ class SwitchboardDialogsMixin:
             timeout: Auto-dismiss seconds for the passive popup. ``"auto"``
                 (default) times it to the text -- long enough to read, never
                 more than a few seconds (``MessageBox.reading_time``);
-                ``None`` or ``0`` keeps it up until dismissed.
+                ``None`` or ``0`` keeps it up until dismissed. A box with
+                buttons always waits for its answer.
             background (bool/float/str): Controls the label background.
                 ``True`` uses default dark grey at 50% opacity,
                 ``False`` disables the background,

@@ -11,9 +11,10 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
 
     Parameters:
         location (str)(point) = move the messagebox to the specified location. Can be given as a qpoint or string value. default is: 'topMiddle'
-        timeout (float/str/None): seconds before the messagebox auto closes;
-            ``"auto"`` times it to its text (:meth:`reading_time`); ``None``
-            or ``0`` never closes it.
+        timeout (float/str/None): seconds before a box without buttons
+            closes itself; ``"auto"`` times it to its text
+            (:meth:`reading_time`); ``None`` or ``0`` never closes it. A box
+            with buttons waits for its answer.
     """
 
     buttonMapping = {
@@ -160,11 +161,12 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
 
     def _present(self) -> None:
         """Time and place the box for its current text: (re)start the
-        auto-close countdown and move it to :attr:`location`."""
+        auto-close countdown and move it to :attr:`location`. A box with
+        buttons is waiting for an answer and gets no countdown."""
         seconds = (
             self.reading_time(self.text()) if self._timeout == "auto" else self._timeout
         )
-        if seconds is None:
+        if seconds is None or self.buttons():
             self.menu_timer.stop()
         else:
             self.menu_timer.start(round(seconds * 1000))
@@ -346,8 +348,10 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
             label.setStyleSheet("background-color: transparent; padding: 8px;")
 
     def autoClose(self):
-        # Close the MessageBox if no standard buttons are set
-        if self.standardButtons() == QtWidgets.QMessageBox.NoButton:
+        # Only a buttonless box closes itself. Asked of buttons(), not
+        # standardButtons(): a prompt whose buttons are all labelled has no
+        # standard one, and was closed before it was answered.
+        if not self.buttons():
             self.accept()
 
     def showEvent(self, event):

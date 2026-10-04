@@ -499,7 +499,7 @@ class FormPanel(WindowPanel):
         """Make a companion widget a FIELD in its own right.
 
         It shares its host's cell, so it also shares the host's enabled
-        state (:meth:`WindowPanel._add_row` greys a row whole) — but its
+        state (:meth:`FormRows._add_row` greys a row whole) — but its
         VALUE is its own: it is read by :meth:`values`, re-validates on
         change, and answers to ``panel.<name>`` like any other field.
 

@@ -1243,11 +1243,21 @@ class SwitchboardSlotsMixin:
             f"'{widget.ui.objectName()}'."
         )
 
+    def _slot_signal(self, widget):
+        """The signal :meth:`connect_slot` wires a widget's slot to when the
+        slot names none: the widget's own ``state_signal`` (a check list's
+        value is its checked set, not the row ``itemClicked`` carries), else
+        its type's entry in :attr:`default_signals` -- the answer
+        ``widget.default_signals()`` and persistence give."""
+        return getattr(widget, "state_signal", None) or self.default_signals.get(
+            widget.derived_type
+        )
+
     def notify_missing_slot(self, widget):
         """Invoke the missing-slot policy hook for a widget ``connect_slot`` couldn't wire.
 
-        Only fires for widgets the switchboard *would* have connected (signal-bearing
-        ``derived_type``), and never for nav ``MenuButton``s (they own navigation, not a
+        Only fires for widgets the switchboard *would* have connected (one with a
+        :meth:`_slot_signal`), and never for nav ``MenuButton``s (they own navigation, not a
         slot). No-op when no ``on_missing_slot`` hook is set — the production default.
         """
         hook = getattr(self, "on_missing_slot", None)
@@ -1257,7 +1267,7 @@ class SwitchboardSlotsMixin:
 
         if isinstance(widget, MenuButton):
             return
-        if not self.default_signals.get(widget.derived_type):
+        if not self._slot_signal(widget):
             return
         try:
             hook(widget)
@@ -1293,11 +1303,7 @@ class SwitchboardSlotsMixin:
             )
             return
 
-        signals = getattr(
-            slot,
-            "signals",
-            ptk.make_iterable(self.default_signals.get(widget.derived_type)),
-        )
+        signals = getattr(slot, "signals", ptk.make_iterable(self._slot_signal(widget)))
 
         for signal_name in signals:
             if not isinstance(signal_name, str):

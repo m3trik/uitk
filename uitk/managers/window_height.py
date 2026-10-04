@@ -263,6 +263,8 @@ class WindowHeight:
 
     #: Dynamic property on a window while a :meth:`fit_host_later` is queued.
     _PENDING_PROPERTY = "windowHeightFitPending"
+    #: Dynamic property on a hidden window while a fit waits for its next show.
+    _ON_SHOW_PROPERTY = "windowHeightFitOnShow"
 
     @staticmethod
     def fit_host_later(widget) -> None:
@@ -274,14 +276,22 @@ class WindowHeight:
         children measures the layout it is leaving. Calls for one window in
         the same turn fit it once.
 
-        A window not on screen when asked is left alone: it sizes itself when
-        shown, and a fit queued during its build lands AFTER that show and
-        overrides the size it restored.
+        A window not on screen when asked is not fitted then. One that has
+        been shown before and announces its shows (a ``MainWindow``:
+        ``is_initialized``, ``on_show``) is fitted once when it is shown
+        again -- a later show restores no size of its own, so it would come
+        back sized for what it held when it hid. One never shown yet is left
+        to its first show, which sizes it: a fit queued during its build
+        would land after that show and override the size it restored. Any
+        other window not on screen is left alone; its host refits it.
         """
         if widget is None:
             return
         host = widget.window() if hasattr(widget, "window") else None
-        if host is None or not host.isVisible():
+        if host is None:
+            return
+        if not host.isVisible():
+            WindowHeight._fit_on_next_show(host)
             return
         if host.property(WindowHeight._PENDING_PROPERTY):
             return
@@ -296,3 +306,22 @@ class WindowHeight:
                 pass  # Deleted while the fit was queued.
 
         QtCore.QTimer.singleShot(0, fit)
+
+    @staticmethod
+    def _fit_on_next_show(host) -> None:
+        """Fit *host* once on its next show (see :meth:`fit_host_later`): only
+        a window shown before that announces its shows; once however many
+        changes arrive while it is hidden."""
+        on_show = getattr(host, "on_show", None)
+        if not getattr(host, "is_initialized", False) or on_show is None:
+            return
+        if host.property(WindowHeight._ON_SHOW_PROPERTY):
+            return
+        host.setProperty(WindowHeight._ON_SHOW_PROPERTY, True)
+
+        def fit() -> None:
+            on_show.disconnect(fit)
+            host.setProperty(WindowHeight._ON_SHOW_PROPERTY, False)
+            WindowHeight.fit_host_later(host)
+
+        on_show.connect(fit)

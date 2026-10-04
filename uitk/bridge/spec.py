@@ -28,6 +28,7 @@ bare widget reference.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -112,10 +113,32 @@ class _CheckList(QtWidgets.QListWidget):
         self.itemChanged.connect(self._emit_if_changed)
 
     def _emit_if_changed(self, _item=None) -> None:
+        """Announce the checked set when it differs from the last one.
+
+        The last one moves even while the list's signals are blocked (the
+        emit is dropped then): a write made under a block -- a preset load, a
+        model refresh -- must still count, or the user putting the list back
+        to the set it held before would announce nothing.
+        """
         checked = self.state_value()
         if checked != self._last_checked:
             self._last_checked = checked
             self.checkedChanged.emit(checked)
+
+    @contextlib.contextmanager
+    def _one_change(self):
+        """Change several rows' check states as ONE change of the checked set.
+
+        Nothing is announced on the way -- a refill's ``clear`` would announce
+        the empty set, then each partial set on the way back -- and the whole
+        set once after, through :meth:`_emit_if_changed`.
+        """
+        blocked = self.blockSignals(True)
+        try:
+            yield
+        finally:
+            self.blockSignals(blocked)
+        self._emit_if_changed()
 
     def state_value(self) -> List[Any]:
         return _KindFactoryInternal._read_check_list(self)
@@ -941,8 +964,9 @@ class _KindFactoryInternal(object):
     @staticmethod
     def _set_all_checked(widget, checked: bool) -> None:
         state = QtCore.Qt.Checked if checked else QtCore.Qt.Unchecked
-        for i in range(widget.count()):
-            widget.item(i).setCheckState(state)
+        with widget._one_change():
+            for i in range(widget.count()):
+                widget.item(i).setCheckState(state)
 
     @staticmethod
     def _check_list_value(item) -> Any:
@@ -967,22 +991,24 @@ class _KindFactoryInternal(object):
 
     @staticmethod
     def _set_choices_check_list(widget, choices) -> None:
-        """(Re)fill the rows, preserving the checked values that survive."""
+        """(Re)fill the rows, preserving the checked values that survive --
+        one change of the checked set, announced only when it is one."""
         checked = _KindFactoryInternal._read_check_list(widget)
-        widget.clear()
-        for entry in choices or []:
-            label, value, tip = _KindFactoryInternal._split_choice(entry)
-            item = QtWidgets.QListWidgetItem(str(label), widget)
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            if value is not _NO_VALUE:
-                item.setData(QtCore.Qt.UserRole, value)
-            if tip:
-                item.setToolTip(tip)
-            item.setCheckState(
-                QtCore.Qt.Checked
-                if _KindFactoryInternal._check_list_value(item) in checked
-                else QtCore.Qt.Unchecked
-            )
+        with widget._one_change():
+            widget.clear()
+            for entry in choices or []:
+                label, value, tip = _KindFactoryInternal._split_choice(entry)
+                item = QtWidgets.QListWidgetItem(str(label), widget)
+                item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+                if value is not _NO_VALUE:
+                    item.setData(QtCore.Qt.UserRole, value)
+                if tip:
+                    item.setToolTip(tip)
+                item.setCheckState(
+                    QtCore.Qt.Checked
+                    if _KindFactoryInternal._check_list_value(item) in checked
+                    else QtCore.Qt.Unchecked
+                )
         _KindFactoryInternal._fit_check_list_height(widget)
 
     @staticmethod
@@ -997,13 +1023,14 @@ class _KindFactoryInternal(object):
     @staticmethod
     def _write_check_list(widget, value) -> None:
         wanted = _KindFactoryInternal._as_value_list(value)
-        for i in range(widget.count()):
-            item = widget.item(i)
-            item.setCheckState(
-                QtCore.Qt.Checked
-                if _KindFactoryInternal._check_list_value(item) in wanted
-                else QtCore.Qt.Unchecked
-            )
+        with widget._one_change():
+            for i in range(widget.count()):
+                item = widget.item(i)
+                item.setCheckState(
+                    QtCore.Qt.Checked
+                    if _KindFactoryInternal._check_list_value(item) in wanted
+                    else QtCore.Qt.Unchecked
+                )
 
 
 class KindFactory(_KindFactoryInternal):

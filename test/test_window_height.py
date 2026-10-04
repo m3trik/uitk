@@ -305,6 +305,61 @@ class TestFitHostLater(WindowHeightTestCase):
 
         WindowHeight.fit_host_later(None)
 
+    def _main_window(self):
+        """A uitk ``MainWindow`` -- it fits itself on its FIRST show only."""
+        from uitk.switchboard import Switchboard
+        from uitk.widgets.mainWindow import MainWindow
+
+        central = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(central).addWidget(QtWidgets.QLabel("row", central))
+        win = MainWindow(
+            "fit_on_show_probe",
+            Switchboard(log_level="WARNING"),
+            central_widget=central,
+            log_level="WARNING",
+        )
+        self.track_widget(win)
+        calls = []
+        win.fit_height_to_content = lambda: calls.append(1)
+        return win, central.findChild(QtWidgets.QLabel), calls
+
+    def test_a_window_hidden_since_a_show_fits_when_shown_again(self):
+        """Content changed while a once-shown window was hidden (a mode switched
+        from elsewhere) came back at the height of what it had left: the
+        window fits itself on its first show only.
+        Fixed: 2026-10-04
+        """
+        from uitk import WindowHeight
+
+        win, row, calls = self._main_window()
+        win.show()
+        self._turn()
+        win.hide()
+        before = len(calls)
+        for _ in range(2):
+            WindowHeight.fit_host_later(row)
+        self._turn()
+        self.assertEqual(len(calls), before, "not while hidden")
+        win.show()
+        self._turn()
+        self.assertEqual(len(calls), before + 1, "on the show it comes back with")
+        win.hide()
+        win.show()
+        self._turn()
+        self.assertEqual(len(calls), before + 1, "once")
+
+    def test_a_window_never_shown_is_left_to_its_first_show(self):
+        """Its first show sizes it (fitting or restoring); a fit queued during
+        the build would land after that show and override the restore."""
+        from uitk import WindowHeight
+
+        win, row, calls = self._main_window()
+        WindowHeight.fit_host_later(row)
+        win.show()
+        shown = len(calls)
+        self._turn()
+        self.assertEqual(len(calls), shown)
+
 
 if __name__ == "__main__":
     unittest.main()

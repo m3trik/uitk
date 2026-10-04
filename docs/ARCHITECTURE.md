@@ -198,7 +198,7 @@ def eventFilter(self, watched, event):
 | `widget.legal_name()` | Illegal chars replaced with `_` |
 | `widget.type` | `type(widget)` |
 | `widget.derived_type` | Nearest `QtWidgets` base class |
-| `widget.default_signals()` | Default signal name for this type |
+| `widget.default_signals()` | Default signal name: the widget's own `state_signal`, else its type's ([Slots §3](SLOTS.md#3-default-signals)) |
 | `widget.get_slot()` | Connected slot method or None |
 | `widget.init_slot()` | Manually invoke `*_init` (args ignored) |
 | `widget.call_slot(*a, **kw)` | Manually invoke the handler |

@@ -196,6 +196,51 @@ class TestModelBinding(QtBaseTestCase):
         with self.assertRaises(ValueError):
             self.binding.bind("period", QtWidgets.QLabel())
 
+    def test_an_applying_context_lets_signals_flow_and_writes_nothing(self):
+        """``applying=`` (a panel's ``ui.state.suppress_save``): the setters run
+        inside it with the widgets' own signals flowing -- a lock re-baselines,
+        a readout follows -- and nothing is written back to the model."""
+        import contextlib
+
+        state = {"applying": False}
+
+        @contextlib.contextmanager
+        def applying():
+            state["applying"] = True
+            try:
+                yield
+            finally:
+                state["applying"] = False
+
+        binding = ModelBinding(
+            read=lambda: dict(self.model),
+            write=lambda field, value: self.writes.append((field, value)),
+            applying=applying,
+        )
+        period = self._spin()
+        heard = []
+        period.valueChanged.connect(lambda v: heard.append((v, state["applying"])))
+        binding.bind("period", period)
+        binding.refresh()
+        self.assertEqual(heard, [(2.5, True)], "set inside the context, signal flowing")
+        self.assertEqual(self.writes, [])
+        self.assertFalse(state["applying"], "the context is left")
+
+    def test_a_model_that_cannot_be_read_is_reported(self):
+        """A refresh whose read raises leaves the widgets as they are -- and
+        says why, where it used to return in silence."""
+
+        def unreadable():
+            raise KeyError("recipe")
+
+        binding = ModelBinding(read=unreadable, write=lambda field, value: None)
+        period = binding.bind("period", self._spin())
+        period.setValue(1.0)
+        with self.assertLogs("uitk.managers.model_binding", level="WARNING") as caught:
+            binding.refresh()
+        self.assertIn("recipe", caught.output[0])
+        self.assertEqual(period.value(), 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

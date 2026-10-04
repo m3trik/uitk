@@ -23,7 +23,7 @@ from conftest import QtBaseTestCase, setup_qt_application
 
 app = setup_qt_application()
 
-from qtpy import QtWidgets
+from qtpy import QtCore, QtWidgets
 from uitk.switchboard import Switchboard
 from uitk.widgets.menuButton import MenuButton
 from uitk.examples.example import ExampleSlots
@@ -166,6 +166,20 @@ class TestMissingSlotHook(_PolicyTestBase):
         b = QtWidgets.QPushButton(self.ui)
         self.register(b, "b910")
         self.assertIn(b, seen)
+
+    def test_hook_invoked_for_a_widget_naming_its_own_signal(self):
+        """A widget whose Qt base has no default signal but that names its own
+        (``state_signal``) is one ``connect_slot`` would wire -- so it is
+        reported when it has no slot, like any other."""
+
+        class Field(QtWidgets.QWidget):
+            changed = QtCore.Signal(object)
+            state_signal = "changed"
+
+        seen = []
+        self.sb.on_missing_slot = seen.append
+        field = self.register(Field(self.ui), "fld913")
+        self.assertIn(field, seen)
 
     def test_hook_skips_nav_menubutton(self):
         seen = []

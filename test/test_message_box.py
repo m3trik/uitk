@@ -353,6 +353,29 @@ class TestMessageBoxAutoTimeout(QtBaseTestCase):
             box.move_(box.location)
         self.assertEqual(box.pos(), mock_move.call_args[0][0])
 
+    def test_a_box_with_buttons_never_closes_itself(self):
+        """Buttons that are ALL labelled are no standard button, and the
+        auto-close took that for a toast: ``sb.message_box`` times every box
+        ``"auto"``, so the WebXR panel's ("Open Page", "Not Now") offer closed
+        itself after a few seconds and answered None.
+        Fixed: 2026-10-04
+        """
+        box = self._make(timeout="auto")
+        box.setStandardButtons("Open Page", "Not Now")
+        box.setText("Open the preview page?")
+        box.show()
+        self.assertFalse(box.menu_timer.isActive(), "a prompt waits for its answer")
+        box.autoClose()  # what the timer would call
+        self.assertTrue(box.isVisible())
+
+    def test_a_toast_still_closes_itself(self):
+        box = self._make(timeout="auto")
+        box.setText("Done.")
+        box.show()
+        self.assertTrue(box.menu_timer.isActive())
+        box.autoClose()
+        self.assertFalse(box.isVisible())
+
     def test_zero_timeout_never_auto_closes(self):
         """0 meant "no timeout" to ``__init__`` but was assigned verbatim by
         ``sb.message_box``, so the timer started at 0 ms and closed the box

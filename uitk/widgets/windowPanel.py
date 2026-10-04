@@ -465,10 +465,6 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
     def _row_widgets(self) -> Dict[QtWidgets.QWidget, list]:
         return self._rows_host._row_widgets
 
-    @property
-    def _captions(self) -> list:
-        return self._rows_host._captions
-
     # ── Dynamic build — the Menu idiom ──────────────────────────────
 
     def add(
@@ -509,37 +505,11 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
                 self._expose_as_attribute(widget)
         return added
 
-    _resolve_widget_class = staticmethod(FormRows._resolve_widget_class)
     _row_tooltip = staticmethod(FormRows._row_tooltip)
-    _LABEL_ALIGNMENTS = FormRows._LABEL_ALIGNMENTS
 
     def _build_widget(self, x) -> QtWidgets.QWidget:
         """Turn an :meth:`add` argument into a widget instance."""
         return FormRows._build_widget(x)
-
-    @classmethod
-    def _label_alignment(cls, align):
-        """*align* as a Qt alignment -- see :meth:`FormRows._label_alignment`."""
-        return FormRows._label_alignment(align)
-
-    def _add_row(
-        self,
-        widget,
-        label=None,
-        hint=None,
-        tooltip=None,
-        companions=(),
-        label_align=None,
-    ) -> Optional[QtWidgets.QLabel]:
-        """Place *widget* as a form row (:meth:`FormRows._add_row`)."""
-        return self._rows_host._add_row(
-            widget,
-            label=label,
-            hint=hint,
-            tooltip=tooltip,
-            companions=companions,
-            label_align=label_align,
-        )
 
     def _sync_caption_widths(self) -> None:
         """Floor every caption at the widest (:meth:`FormRows._sync_caption_widths`)."""
@@ -583,8 +553,6 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
             self.__dict__.pop(name, None)
         self._exposed_names.clear()
         self._rows_host.clear_rows()
-
-    _drop_layout = FormRows._drop_layout
 
     def tighten_sublayouts(self, spacing: int = 1) -> None:
         """Set every nested sub-layout inside ``body_layout`` to *spacing*.

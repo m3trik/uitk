@@ -489,6 +489,16 @@ class _SortKeyItem(QtWidgets.QTableWidgetItem):
             return super().__lt__(other)
 
 
+@dataclass
+class _EditAsRequest:
+    """One :meth:`TableWidget.edit_cell_as` request."""
+
+    cell: Tuple[int, int]
+    text: str
+    on_commit: Callable[[str], Any]
+    select: Tuple[int, int]
+
+
 class _ZeroSpacingEditorDelegate(QtWidgets.QStyledItemDelegate):
     """Strip frame and internal padding from text editors so entering
     edit mode doesn't visually shift the cell's text.
@@ -554,19 +564,38 @@ class _ZeroSpacingEditorDelegate(QtWidgets.QStyledItemDelegate):
             )
         return editor
 
-    def _edit_as(self, index):
-        """The ``TableWidget.edit_cell_as`` request open on *index*, or ``None``."""
-        pending = getattr(self.parent(), "_edit_as_pending", None)
-        if pending and pending["cell"] == (index.row(), index.column()):
+    #: Dynamic property carrying an ``edit_cell_as`` request on its editor --
+    #: on the C++ object, which a collected Python wrapper cannot take with it.
+    _EDIT_AS_PROPERTY = "uitkEditCellAs"
+
+    @classmethod
+    def _request_of(cls, editor) -> Optional[_EditAsRequest]:
+        """The ``TableWidget.edit_cell_as`` request *editor* serves, or ``None``."""
+        return editor.property(cls._EDIT_AS_PROPERTY)
+
+    def _take_edit_as(self, editor, index) -> Optional[_EditAsRequest]:
+        """The request *editor* serves: its own, else the table's pending one
+        for *index*, moved onto the editor as it opens. Carried by its editor,
+        a request ends however that editor does -- committed, cancelled, or
+        its row removed under it -- and never waits on for the next edit of
+        a cell in the same place."""
+        pending = self._request_of(editor)
+        if pending is not None:
             return pending
-        return None
+        table = self.parent()
+        pending = getattr(table, "_edit_as_pending", None)
+        if pending is None or pending.cell != (index.row(), index.column()):
+            return None
+        table._edit_as_pending = None
+        editor.setProperty(self._EDIT_AS_PROPERTY, pending)
+        return pending
 
     def setEditorData(self, editor, index):
-        pending = self._edit_as(index)
+        pending = self._take_edit_as(editor, index)
         if pending is None or not isinstance(editor, QtWidgets.QLineEdit):
             return super().setEditorData(editor, index)
-        editor.setText(pending["text"])
-        start, length = pending["select"]
+        editor.setText(pending.text)
+        start, length = pending.select
 
         def select():
             # After the view's own select-all on open, which would undo it.
@@ -578,14 +607,13 @@ class _ZeroSpacingEditorDelegate(QtWidgets.QStyledItemDelegate):
         QtCore.QTimer.singleShot(0, select)
 
     def setModelData(self, editor, model, index):
-        pending = self._edit_as(index)
+        pending = self._request_of(editor)
         if pending is None:
             return super().setModelData(editor, model, index)
-        self.parent()._edit_as_pending = None
         text = editor.text() if isinstance(editor, QtWidgets.QLineEdit) else None
-        if text is not None and text != pending["text"]:
+        if text is not None and text != pending.text:
             # Once the editor has closed: the host may rebuild the table.
-            QtCore.QTimer.singleShot(0, lambda: pending["on_commit"](text))
+            QtCore.QTimer.singleShot(0, lambda: pending.on_commit(text))
 
 
 class TableWidget(
@@ -604,8 +632,8 @@ class TableWidget(
     #: per-selection hook of its own.
     context_menu_about_to_show = QtCore.Signal()
 
-    #: The open :meth:`edit_cell_as` request, read by the editor delegate.
-    _edit_as_pending: Optional[Dict[str, Any]] = None
+    #: An :meth:`edit_cell_as` request until its editor opens and takes it.
+    _edit_as_pending: Optional[_EditAsRequest] = None
 
     # Middle-mouse scrub-edit signals (opt-in via ``set_scrub_columns``).
     # Callers translate pixel deltas into value changes — the widget is
@@ -1198,6 +1226,8 @@ class TableWidget(
         force-sets the text directly: some Qt styles don't repaint
         ``QLineEdit`` when its ``text`` property is set via
         ``QStyledItemDelegate.setEditorData`` while the editor has focus.
+        An :meth:`edit_cell_as` editor is left alone: it shows the host's
+        text, not the cell's.
         """
         if self.state() != QtWidgets.QAbstractItemView.EditingState:
             return
@@ -1207,6 +1237,8 @@ class TableWidget(
         editor = viewport.focusWidget()
         if editor is None:
             return
+        if _ZeroSpacingEditorDelegate._request_of(editor) is not None:
+            return  # an edit_cell_as editor shows the host's text, not the cell's
         index = self.currentIndex()
         if not index.isValid():
             return
@@ -1284,7 +1316,8 @@ class TableWidget(
         has closed, only when the text changed, and writes nothing to the cell
         -- no ``cellChanged``; Esc cancels. The request is for this one edit:
         the next opens on the cell's own text again. Needs the table's own
-        editor delegate.
+        editor delegate: a cell drawn by another (``setItemDelegate``) is
+        refused.
 
         Parameters:
             row, column: The cell; it must hold an editable item.
@@ -1295,37 +1328,32 @@ class TableWidget(
                 name for renaming.
 
         Returns:
-            False when the cell cannot be edited (no item, not editable, an
-            editor already open); nothing is opened then.
+            False when the cell cannot be edited this way (no item, not
+            editable, another delegate, an editor already open); nothing is
+            opened then.
         """
         item = self.item(row, column)
         if item is None or not item.flags() & QtCore.Qt.ItemIsEditable:
             return False
         if self.state() == QtWidgets.QAbstractItemView.EditingState:
             return False
+        delegate = self.itemDelegateForIndex(self.indexFromItem(item))
+        if not isinstance(delegate, _ZeroSpacingEditorDelegate):
+            return False  # another editor would show and write the cell's own text
         if select is None:
             dot = text.rfind(".")
             select = (0, dot if dot > 0 else len(text))
-        self._edit_as_pending = {
-            "cell": (row, column),
-            "text": text,
-            "on_commit": on_commit,
-            "select": select,
-        }
+        self._edit_as_pending = _EditAsRequest((row, column), text, on_commit, select)
         self._drag_selected_indexes = None  # a drag's propagation is not this
         self.scrollToItem(item)
         self.editItem(item)
-        if self.state() != QtWidgets.QAbstractItemView.EditingState:
-            self._edit_as_pending = None
-            return False
-        return True
+        # The editor took the request as it opened; with none open, nothing will.
+        self._edit_as_pending = None
+        return self.state() == QtWidgets.QAbstractItemView.EditingState
 
     def closeEditor(self, editor, hint):
         """Propagate committed value to all drag-selected cells."""
         super().closeEditor(editor, hint)
-        # An edit_cell_as request is over with its editor: committed (the
-        # delegate cleared it) or cancelled (here).
-        self._edit_as_pending = None
 
         if (
             self._drag_selected_indexes is not None
