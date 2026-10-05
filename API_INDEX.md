@@ -123,7 +123,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `managers/model_binding.py` — Keep widgets in step with a model uitk never sees: read on change, write on edit.
 - `class ModelBinding`
-  - methods: fields, widget, bind, refresh
+  - methods: bind, refresh
 
 ### `managers/optional_package_manager.py` — Provisioning for optional packages a panel needs importable in THIS session.
 - `class OptionalPackageManager(_OptionalPackageManagerInternal)`

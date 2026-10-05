@@ -2,13 +2,11 @@
 
 _Diff vs the last release (origin/main @ 82814a0)._
 
-## Added (19)
+## Added (17)
 
 - `managers/model_binding.py::ModelBinding(class)`
 - `managers/model_binding.py::ModelBinding.bind(self, field: str, widget: QtWidgets.QWidget, getter: Optional[Callable[[], Any]] = None, setter: Optional[Callable[[Any], Any]] = None, signal: Optional[str] = None) -> QtWidgets.QWidget`
-- `managers/model_binding.py::ModelBinding.fields(self) -> Tuple[str, ...]`
 - `managers/model_binding.py::ModelBinding.refresh(self, *_args) -> None`
-- `managers/model_binding.py::ModelBinding.widget(self, field: str) -> Optional[QtWidgets.QWidget]`
 - `managers/window_height.py::WindowHeight.fit_host_later(widget) -> None`
 - `widgets/form_rows.py::FormRows(class)`
 - `widgets/form_rows.py::FormRows.add(self, x: Union[str, QtWidgets.QWidget, type, list, tuple], label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), label_align=None, **kwargs) -> Union[QtWidgets.QWidget, list]`
@@ -28,7 +26,7 @@ _Diff vs the last release (origin/main @ 82814a0)._
 
 _Live retirement debt, earliest deadline first. An **EXPIRED** row has outlived its window: delete the alias and its tests rather than moving the date. A **HELD** row is due by version, but its notice has not yet had its calendar window._
 
-- `bridge/parameters.py::Parameters.shader_type_spec` — remove in 1.7.0, not before 2026-10-26
+- **HELD** `bridge/parameters.py::Parameters.shader_type_spec` — remove in 1.7.0, not before 2026-10-26
 
 ## Signature changed (6)
 

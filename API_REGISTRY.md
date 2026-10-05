@@ -281,12 +281,12 @@ Generic DCC-bridge slot base class.
 
 Kind-handler registry for parameterised forms (the Qt half of the contract).
 
-- [`INT_MIN`](uitk/uitk/bridge/spec.py#L45) — constant
-- [`INT_MAX`](uitk/uitk/bridge/spec.py#L46) — constant
-- [`FLOAT_MIN`](uitk/uitk/bridge/spec.py#L47) — constant
-- [`FLOAT_MAX`](uitk/uitk/bridge/spec.py#L48) — constant
-- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L57)** — Bundle of callables that build / read / write a widget kind.
-- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L1009)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
+- [`INT_MIN`](uitk/uitk/bridge/spec.py#L46) — constant
+- [`INT_MAX`](uitk/uitk/bridge/spec.py#L47) — constant
+- [`FLOAT_MIN`](uitk/uitk/bridge/spec.py#L48) — constant
+- [`FLOAT_MAX`](uitk/uitk/bridge/spec.py#L49) — constant
+- **[`class KindHandler`](uitk/uitk/bridge/spec.py#L58)** — Bundle of callables that build / read / write a widget kind.
+- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L1036)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
   - `KindFactory.infer_kind(value: Any) -> str` *(static)* — Map a Python value to one of the built-in kinds.
   - `KindFactory.register_kind(name: str, handler: KindHandler) -> None` *(static)* — Register a new kind (or override an existing one).
   - `KindFactory.get_handler(kind: str) -> KindHandler` *(static)* — Return the handler for *kind* (raises KeyError if unregistered).
@@ -612,9 +612,7 @@ Keep a host application's exit from faulting in shiboken's static teardown.
 
 Keep widgets in step with a model uitk never sees: read on change, write on edit.
 
-- **[`class ModelBinding`](uitk/uitk/managers/model_binding.py#L25)** — Two-way binding between widgets and the fields of an external model.
-  - `ModelBinding.fields(self) -> Tuple[str, ...]` *(property)* — The bound field names, in bind order.
-  - `ModelBinding.widget(self, field: str) -> Optional[QtWidgets.QWidget]` — The widget bound to *field*, or ``None``.
+- **[`class ModelBinding`](uitk/uitk/managers/model_binding.py#L28)** — Two-way binding between widgets and the fields of an external model.
   - `ModelBinding.bind(self, field: str, widget: QtWidgets.QWidget, getter: Optional[Callable[[], Any]] = None, setter: Optional[Callable[[Any], Any]] = None, signal: Optional[str] = None) -> QtWidgets.QWidget` — Bind *widget* to the model's *field*.
   - `ModelBinding.refresh(self, *_args) -> None` — Fill every bound widget from the model, writing nothing back.
 
@@ -3093,7 +3091,7 @@ A corner legend of a widget's mouse gestures and keyboard shortcuts.
   - `TableSelection.get(self, key: str, default: Any = None)`
   - `TableSelection.item(self, key: str) -> Optional[QtWidgets.QTableWidgetItem]`
   - `TableSelection.text(self, key: str, default: str = '') -> str`
-- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L591)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
+- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L619)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
   - `TableWidget.set_scrub_columns(self, columns: Iterable[int]) -> None` — Enable MMB-drag value scrubbing for *columns*.
   - `TableWidget.add_scrub_column(self, column: int) -> None` — Add a single column to the MMB-scrub set.
   - `TableWidget.remove_scrub_column(self, column: int) -> None` — Remove a column from the MMB-scrub set.
