@@ -4,7 +4,7 @@
 
 from typing import List, Optional
 
-from qtpy import QtWidgets
+from qtpy import QtCore, QtWidgets
 
 from uitk.widgets.mixins.size_grip import SizeGripMixin
 
@@ -33,6 +33,8 @@ class WindowHeight:
     :meth:`fit_host` is the form for a caller that holds a widget rather than
     a window -- it resolves the window and picks that window's own way of
     fitting, which is how a panel and a popup menu can share one call site.
+    :meth:`fit_host_later` is the same a turn later, for a widget that has
+    just shown or hidden parts of itself.
 
     Companion to :class:`SizeGripMixin`, which owns what the content's real
     minimum and maximum ARE (and the grip that drags between them); this owns
@@ -238,8 +240,9 @@ class WindowHeight:
         registry of rows it has just shown or hidden, say. A host that states
         its own ``fit_height_to_content`` (any :class:`MainWindow`, and
         anything that overrides it) is asked in its own terms, so a panel
-        that fits differently keeps doing so; anything else is asked to
-        ``adjustSize``, which is how a popup menu re-measures. Resolved at
+        that fits differently keeps doing so; anything else has its layouts
+        settled and is asked to ``adjustSize``, which is how a popup menu
+        re-measures. Resolved at
         call time rather than bound once, because the window a widget is in
         is not necessarily the one it was built in.
         """
@@ -252,4 +255,73 @@ class WindowHeight:
         if callable(fit):
             fit()
         elif callable(getattr(host, "adjustSize", None)):
+            # Measured as fit_to_content measures: a hidden child's change
+            # reaches the host's hint one posted event per level, so a bare
+            # adjustSize sized it to the content it just left.
+            WindowHeight.activate_layouts(host)
             host.adjustSize()
+
+    #: Dynamic property on a window while a :meth:`fit_host_later` is queued.
+    _PENDING_PROPERTY = "windowHeightFitPending"
+    #: Dynamic property on a hidden window while a fit waits for its next show.
+    _ON_SHOW_PROPERTY = "windowHeightFitOnShow"
+
+    @staticmethod
+    def fit_host_later(widget) -> None:
+        """:meth:`fit_host`, a turn of the event loop later.
+
+        The form for a widget that has just shown or hidden parts of itself --
+        a page switched, a section disclosed, a comparison put up. Deferred,
+        because a container asked to re-measure while it is still hiding
+        children measures the layout it is leaving. Calls for one window in
+        the same turn fit it once.
+
+        A window not on screen when asked is not fitted then. One that has
+        been shown before and announces its shows (a ``MainWindow``:
+        ``is_initialized``, ``on_show``) is fitted once when it is shown
+        again -- a later show restores no size of its own, so it would come
+        back sized for what it held when it hid. One never shown yet is left
+        to its first show, which sizes it: a fit queued during its build
+        would land after that show and override the size it restored. Any
+        other window not on screen is left alone; its host refits it.
+        """
+        if widget is None:
+            return
+        host = widget.window() if hasattr(widget, "window") else None
+        if host is None:
+            return
+        if not host.isVisible():
+            WindowHeight._fit_on_next_show(host)
+            return
+        if host.property(WindowHeight._PENDING_PROPERTY):
+            return
+        host.setProperty(WindowHeight._PENDING_PROPERTY, True)
+
+        def fit() -> None:
+            try:
+                host.setProperty(WindowHeight._PENDING_PROPERTY, False)
+                if host.isVisible():
+                    WindowHeight.fit_host(widget)
+            except RuntimeError:
+                pass  # Deleted while the fit was queued.
+
+        QtCore.QTimer.singleShot(0, fit)
+
+    @staticmethod
+    def _fit_on_next_show(host) -> None:
+        """Fit *host* once on its next show (see :meth:`fit_host_later`): only
+        a window shown before that announces its shows; once however many
+        changes arrive while it is hidden."""
+        on_show = getattr(host, "on_show", None)
+        if not getattr(host, "is_initialized", False) or on_show is None:
+            return
+        if host.property(WindowHeight._ON_SHOW_PROPERTY):
+            return
+        host.setProperty(WindowHeight._ON_SHOW_PROPERTY, True)
+
+        def fit() -> None:
+            on_show.disconnect(fit)
+            host.setProperty(WindowHeight._ON_SHOW_PROPERTY, False)
+            WindowHeight.fit_host_later(host)
+
+        on_show.connect(fit)

@@ -108,6 +108,9 @@ class ShortcutEditor(_ActionCellsMixin, _CollisionChecksMixin, EditorPanel):
     # their headers are left blank — the icons and per-control tooltips carry
     # the meaning, and a text title would only crowd the narrow fixed columns.
     _COLUMN_LABELS = ("Action", "Shortcut", "", "", "Description", "UI")
+    #: A focused launch's window title, by ``focus`` -- the name the launcher
+    #: lists it under (``sb.editors``' ``"global_shortcuts"``).
+    _TITLES = {"commands": "Global Shortcuts"}
 
     def __init__(self, switchboard, parent=None, focus=None):
         # A facade launch may re-brand the window (e.g. the Macro Manager) via
@@ -115,7 +118,7 @@ class ShortcutEditor(_ActionCellsMixin, _CollisionChecksMixin, EditorPanel):
         # keep that path byte-for-byte unchanged.
         facade_title = getattr(switchboard, "editor_title", None)
         super().__init__(
-            title=facade_title or "Shortcut Editor",
+            title=facade_title or self._TITLES.get(focus, "Shortcut Editor"),
             status_text=getattr(switchboard, "editor_status_text", None)
             or "Customize keyboard shortcuts.",
             parent=parent,

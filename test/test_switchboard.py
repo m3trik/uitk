@@ -2462,6 +2462,58 @@ class TestDefaultSignalsLookupEfficiency(QtBaseTestCase):
         self.assertIsNone(result)
 
 
+class TestStateSignalSlotWiring(QtBaseTestCase):
+    """A widget that names its own change signal (``state_signal``) has its slot
+    wired to it, as persistence already reads it. A check list's slot was
+    wired to the ``itemClicked`` of its Qt base class, which carries the
+    clicked row and never fires for a check made in code.
+    Fixed: 2026-10-04
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_its_slot_hears_its_own_signal(self):
+        from uitk.bridge.spec import AttributeSpec, KindFactory
+
+        heard = []
+        slots = self.sb.get_slots_instance(self.ui)
+        slots.lst_state_scripts = lambda *args: heard.append(args)
+        self.addCleanup(slots.__dict__.pop, "lst_state_scripts", None)
+        scripts = KindFactory.make_widget(
+            AttributeSpec(
+                key="scripts",
+                kind="check_list",
+                choices=[("A", "a"), ("B", "b")],
+                default=[],
+            ),
+            self.ui.centralWidget(),
+        )
+        scripts.setObjectName("lst_state_scripts")
+        self.ui.register_widget(scripts)
+        self.sb.connect_slot(scripts)
+        self.assertEqual(set(self.ui.connected_slots[scripts]), {"checkedChanged"})
+        scripts.item(1).setCheckState(QtCore.Qt.Checked)  # a check made in code
+        self.assertEqual(heard, [(["b"],)])
+
+
 class TestSwitchboardActiveUi(QtBaseTestCase):
     """The ``active_ui`` no-warn peek vs ``current_ui`` auto-load+warn property.
 
@@ -2646,6 +2698,53 @@ class TestDialogsYieldToBusyCursor(QtBaseTestCase):
         with mock.patch.object(sb, "message_box", return_value="Go") as box:
             self.assertTrue(sb.confirm("Really?", yes="Go", no="Stay"))
         box.assert_called_once_with("Really?", "Go", "Stay")
+
+    def test_message_box_toast_is_timed_to_its_text_by_default(self):
+        """A passive toast stays up for its reading time (``timeout="auto"``),
+        not a flat 3 s that cut long messages off and held short ones."""
+        sb = Switchboard()
+        text = "Exported 12 objects to the scene folder."
+        sb.message_box(text)
+        box = sb._messageBox
+        try:
+            self.assertEqual(box.timeout, "auto")
+            self.assertTrue(box.menu_timer.isActive())
+            self.assertEqual(
+                box.menu_timer.interval(),
+                round(box.reading_time(box.text()) * 1000),
+            )
+        finally:
+            box.close()
+
+    def test_a_prompt_with_labelled_buttons_waits_for_its_answer(self):
+        """Every button labelled is no STANDARD button, and the auto-close read
+        that as a toast: ``sb.confirm(q, yes="Open Page", no="Not Now")`` -- the
+        WebXR panel's offer -- closed itself after its reading time and
+        answered None, which ``confirm`` reads as "Not Now". Answered after
+        that time instead, here.
+        Fixed: 2026-10-04
+        """
+        from uitk.widgets.messageBox import MessageBox
+
+        sb = Switchboard()
+        question = "Open the preview page?"
+
+        def answer():
+            for box in QtWidgets.QApplication.topLevelWidgets():
+                if not (isinstance(box, MessageBox) and box.isVisible()):
+                    continue
+                go = [b for b in box.buttons() if b.text().replace("&", "") == "Go"]
+                if go:
+                    go[0].click()
+                else:
+                    box.reject()  # never leave the modal loop spinning
+
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(answer)
+        timer.start(round((MessageBox.reading_time(question) + 0.5) * 1000))
+        self.addCleanup(timer.stop)
+        self.assertEqual(sb.message_box(question, "Go", "Stay"), "Go")
 
     def test_data_view_dialog_renders_colour_coded_json(self):
         """Every token role takes its DATA_COLORS colour; markup in the data is

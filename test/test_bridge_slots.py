@@ -1575,6 +1575,48 @@ class TestCheckListKind(BaseTestCase):
         internal._set_all_checked(w, False)
         self.assertEqual(KindFactory.read_value(w), [])
 
+    def test_a_change_after_a_blocked_write_is_still_announced(self):
+        """A preset load, a model refresh or ``KindFactory.set_value`` under a
+        block writes the row with its signals blocked. What the row last
+        announced did not follow that write, so the user putting it back to
+        the set it held before announced nothing: not saved, no slot.
+        Fixed: 2026-10-04
+        """
+        from qtpy import QtCore
+
+        w = self._widget(choices=self.CHOICES, default=[])
+        heard = []
+        w.checkedChanged.connect(heard.append)
+        blocked = w.blockSignals(True)
+        KindFactory.set_value(w, ["audio_event"])
+        w.blockSignals(blocked)
+        self.assertEqual(heard, [])
+        w.item(0).setCheckState(QtCore.Qt.Unchecked)  # the user, back to []
+        self.assertEqual(heard, [[]])
+
+    def test_a_write_a_refill_or_a_bulk_toggle_is_one_change(self):
+        """Each row's write was announced on its own: a two-entry write as two
+        changes, a refill as the empty set its clear left and then each
+        partial set on the way back -- every one a save and a slot call.
+        Fixed: 2026-10-04
+        """
+        from uitk.bridge.spec import _KindFactoryInternal as internal
+
+        w = self._widget(choices=self.CHOICES, default=[])
+        heard = []
+        w.checkedChanged.connect(heard.append)
+        KindFactory.set_value(w, ["audio_event", "shot_metadata"])
+        self.assertEqual(heard, [["audio_event", "shot_metadata"]])
+        KindFactory.set_choices(
+            w, [("Audio Event", "audio_event"), ("Shadow Plane", "shadow_plane")]
+        )
+        self.assertEqual(heard[1:], [["audio_event"]], "the end state, not the steps")
+        internal._set_all_checked(w, True)
+        internal._set_all_checked(w, False)
+        self.assertEqual(heard[2:], [["audio_event", "shadow_plane"], []])
+        KindFactory.set_choices(w, list(self.CHOICES))
+        self.assertEqual(heard[4:], [], "nothing checked before or after")
+
     def test_row_height_follows_the_entry_count(self):
         """Entries arrive at runtime, so a fixed height would either scroll a
         short list or leave dead space under a long one."""
@@ -1583,6 +1625,65 @@ class TestCheckListKind(BaseTestCase):
         self.assertEqual(few.minimumHeight(), few.maximumHeight())
         self.assertLess(few.height(), many.height())
         self.assertLessEqual(many.maximumHeight(), 140)  # capped, then scrolls
+
+    def _shown(self, w):
+        w.resize(240, 80)
+        w.show()
+        self.addCleanup(w.deleteLater)
+        self.addCleanup(w.close)
+        return w
+
+    def _click(self, w, row, on_indicator=False):
+        from qtpy import QtCore, QtTest
+
+        rect = w.visualItemRect(w.item(row))
+        x = rect.x() + (6 if on_indicator else rect.width() // 2)
+        QtTest.QTest.mouseClick(
+            w.viewport(), QtCore.Qt.LeftButton, pos=QtCore.QPoint(x, rect.center().y())
+        )
+
+    def test_clicking_the_label_toggles_the_row(self):
+        """The whole row is the hit target, as a QCheckBox's label is -- a
+        click on the text that silently does nothing reads as a dead widget."""
+        w = self._shown(self._widget(choices=self.CHOICES, default=[]))
+        self._click(w, 1)
+        self.assertEqual(KindFactory.read_value(w), ["shot_metadata"])
+        self._click(w, 1)
+        self.assertEqual(KindFactory.read_value(w), [])
+
+    def test_clicking_the_box_toggles_once(self):
+        """The delegate's own indicator toggle must not stack with the row
+        toggle -- a double flip would leave a box click doing nothing."""
+        w = self._shown(self._widget(choices=self.CHOICES, default=[]))
+        self._click(w, 0, on_indicator=True)
+        self.assertEqual(KindFactory.read_value(w), ["audio_event"])
+
+    def test_the_unchecked_box_is_visible_in_every_theme(self):
+        """The dark theme draws borderless (``BORDER_W: 0px``) with the box
+        filled the list's own colour -- an unchecked row showed no box at all."""
+        from qtpy import QtGui, QtWidgets
+
+        from uitk.themes.style_sheet import StyleSheet
+
+        for theme in ("light", "dark", "high-contrast"):
+            with self.subTest(theme=theme):
+                host = QtWidgets.QWidget()
+                lay = QtWidgets.QVBoxLayout(host)
+                w = self._widget(choices=self.CHOICES, default=[])
+                lay.addWidget(w)
+                StyleSheet().set(host, theme=theme)
+                self._shown(host)
+                QtWidgets.QApplication.processEvents()
+                img = w.viewport().grab().toImage()
+                rect = w.visualItemRect(w.item(0))
+                ground = QtGui.QColor(img.pixel(rect.right() - 2, rect.center().y()))
+                box = [
+                    QtGui.QColor(img.pixel(x, y))
+                    for x in range(rect.x(), rect.x() + 16)
+                    for y in range(rect.y(), rect.bottom() + 1)
+                ]
+                contrast = max(abs(c.lightness() - ground.lightness()) for c in box)
+                self.assertGreater(contrast, 40, f"no visible box in {theme}")
 
     def test_per_entry_tooltip_from_a_triple(self):
         w = self._widget(choices=[("Audio Event", "audio_event", "Plays clips.")])

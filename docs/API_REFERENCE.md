@@ -99,7 +99,8 @@ INIT_SUFFIX = "_init"
 
 | Method | Purpose |
 |:---|:---|
-| `message_box(string, *buttons, location="topMiddle", timeout=3, background=0.75)` | Themed QMessageBox replacement |
+| `message_box(string, *buttons, location="topMiddle", timeout="auto", background=0.75, default=None) -> str \| None` | Themed QMessageBox replacement. Without buttons, a passive popup that closes itself (`"auto"` times it to its text, 1.5–4 s). With buttons, modal: a Qt standard-button name (`"Yes"`) or any other label (`"Override All"`), answered with the clicked one's name or label; `default` is the button Enter answers |
+| `confirm(question, yes="Yes", no="No") -> bool` | Modal `message_box(question, yes, no) == yes` — the consent callable an install offer takes |
 | `file_dialog(file_types=["*.*"], title="Select files to open", start_dir="/home", filter_description="All Files", allow_multiple=True) -> str \| list` | Static — themed file picker |
 | `dir_dialog(title="Select a directory", start_dir="/home") -> str` | Static — themed directory picker |
 | `save_file_dialog(file_types=["*.*"], title="Save file", start_dir="/home", filter_description="All Files") -> str \| None` | Static — save-destination picker |
@@ -349,7 +350,7 @@ Subclass for DCC integration — override `show`, `default_persistence`, or prov
 
 Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handlers/handler_entry.py](../uitk/handlers/handler_entry.py) · [handlers/external_app_handler.py](../uitk/handlers/external_app_handler.py) · [handlers/editor_handler.py](../uitk/handlers/editor_handler.py). Handler-ecosystem prose (registration, `DEFAULTS`, `sb.handlers.*`): [Architecture](ARCHITECTURE.md).
 
-**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`. Optional, probed by the browser: `save_tags(name, tags)`, `focus(name)` (the row's Focus button) and `launch_code(name, **options) -> str | None` (the row menu's *Copy launch code*).
+**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("ui_browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`. Optional, probed by the browser: `save_tags(name, tags)`, `focus(name)` (the row's Focus button) and `launch_code(name, **options) -> str | None` (the row menu's *Copy launch code*).
 
 **`HandlerEntry`** — the launchable-entry data class every handler yields from `entries()`; `all_tags` and `editable_tags` properties.
 
@@ -640,7 +641,7 @@ When a widget registers on a `MainWindow`, it gains these attributes:
 | `widget.legal_name()` | `str` | Name with illegal chars replaced by `_` |
 | `widget.type` | `type` | `type(widget)` |
 | `widget.derived_type` | `type` | Nearest `QtWidgets` base |
-| `widget.default_signals()` | `str \| None` | Default signal name for this type |
+| `widget.default_signals()` | `str \| None` | Default signal name: the widget's own `state_signal`, else its type's ([Slots §3](SLOTS.md#3-default-signals)) |
 | `widget.tooltip` | `TooltipProxy` | Rich-tooltip DSL + `bind(provider)`; the widget's tooltip is shown through `TooltipPresenter` ([mixins/tooltip_mixin.py](../uitk/widgets/mixins/tooltip_mixin.py)) |
 | `widget.get_slot()` | `callable \| None` | Connected slot method |
 | `widget.init_slot(*a)` | — | Manually run `<objectName>_init` |
@@ -709,7 +710,7 @@ From `default_signals` in [switchboard/slots.py](../uitk/switchboard/slots.py):
 | QToolBox | `currentChanged` |
 | QTreeWidget | `itemClicked` |
 
-Custom UITK widgets add their own signals — see [WIDGETS.md](WIDGETS.md) for each widget's full signal list.
+Custom UITK widgets add their own signals — see [WIDGETS.md](WIDGETS.md) for each widget's full signal list. A widget that declares `state_signal` (with `state_value()` / `set_state_value()`) is wired, persisted and read by those instead — [Slots §3](SLOTS.md#3-default-signals).
 
 ---
 
@@ -734,7 +735,8 @@ The remaining public top-level symbols (`uitk/__init__.py` → `DEFAULT_INCLUDE`
 | `Bootstrap` | [_bootstrap.py](../uitk/_bootstrap.py) — pre-`QApplication` setup for standalone processes; `Bootstrap.configure_high_dpi() -> bool` is the whole surface |
 | `EmbeddedMenuWidget`, `PersistentMenu` | [widgets/embeddedMenu.py](../uitk/widgets/embeddedMenu.py) — host a live `QMenu` as ordinary widget content, sized exactly to it (`content_size`, `fit_to_window`; `PersistentMenu` ignores hide attempts) |
 | `IconManager` | Theme-aware SVG icon loader — `get(name, size, color)`, `set_icon`, `register_icon_dir`, `set_default_color`; usage notes in [Widgets](WIDGETS.md) |
-| `ValueManager` | Static get/set for most Qt widget values, routed by type or signal name ([managers/value_manager.py](../uitk/managers/value_manager.py)); `StateManager.apply` builds on it |
+| `ValueManager` | Static get/set for most Qt widget values, routed by type or signal name ([managers/value_manager.py](../uitk/managers/value_manager.py)); `StateManager.apply` builds on it. A widget's own `state_value()` / `set_state_value()` answer first |
+| `FormRows`, `ModelBinding`, `WindowHeight`, `ColumnConfig` | [Widgets](WIDGETS.md) — § WindowPanel (form rows; widgets bound to an external model), § Universal enhancements (a window following its content), § TableWidget (column config) |
 | `OptionalPackageManager` | Probe for / offer to install an optional package importable in this session — `available(spec)`, `ensure(spec, feature=...)` ([managers/optional_package_manager.py](../uitk/managers/optional_package_manager.py)); bridge panels expose it via `ensure_optional_package` ([Bridge](BRIDGE.md)) |
 | `RecentValuesStore` | Widget-free most-recent-first value history — `record`, `values`, `subscribe`, `prune_invalid` ([managers/recent_values_store.py](../uitk/managers/recent_values_store.py)); backs the `RecentValuesOption` in [Widgets](WIDGETS.md) |
 

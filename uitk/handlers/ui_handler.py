@@ -193,7 +193,7 @@ class UiHandler(BaseHandler):
         other handler callers can launch a bundled editor in one line
         without threading through ``.sb``::
 
-            handler.editors.show("browser")
+            handler.editors.show("ui_browser")
 
         See :class:`uitk.switchboard.editors._EditorRegistry`
         for the available editor names and methods.

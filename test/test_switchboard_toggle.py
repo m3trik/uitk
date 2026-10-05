@@ -945,5 +945,52 @@ class TestValueFrom(_Base):
         )
 
 
+class TestAWidgetThatNamesItsOwnValue(_Base):
+    """A widget may name its own change signal and value (``state_signal`` /
+    ``state_value`` / ``set_state_value``) -- a check list, whose value is its
+    checked SET. The rules read, watch and write it by those, as persistence
+    does. They went by its Qt base class: a ``QListWidget`` has no value
+    reader or writer, and its default signal, ``itemClicked``, never fires for
+    a check made in code.
+    Fixed: 2026-10-04
+    """
+
+    def _check_list(self, name):
+        from uitk.bridge.spec import AttributeSpec, KindFactory
+
+        widget = KindFactory.make_widget(
+            AttributeSpec(
+                key=name,
+                kind="check_list",
+                choices=[("A", "a"), ("B", "b")],
+                default=[],
+            ),
+            self.central,
+        )
+        widget.setObjectName(name)
+        self.layout.addWidget(widget)
+        self.ui.register_widget(widget)
+        return widget
+
+    def test_a_rule_reads_and_watches_it_by_its_own_value_and_signal(self):
+        scripts = self._check_list("lst_scripts")
+        spin = self._add(QtWidgets.QSpinBox, "s_dep")
+        self.sb.enable_when(
+            self.ui, "s_dep", "lst_scripts", lambda checked: "b" in checked
+        )
+        self.assertFalse(spin.isEnabled())
+        scripts.item(1).setCheckState(QtCore.Qt.Checked)  # a check made in code
+        self.assertTrue(spin.isEnabled())
+
+    def test_a_rule_writes_it_by_its_own_value(self):
+        chk = self._add(QtWidgets.QCheckBox, "chk_all", setChecked=False)
+        scripts = self._check_list("lst_scripts")
+        self.sb.value_from(
+            self.ui, "lst_scripts", "chk_all", lambda on: ["a", "b"] if on else []
+        )
+        chk.setChecked(True)
+        self.assertEqual(scripts.state_value(), ["a", "b"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

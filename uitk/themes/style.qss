@@ -793,10 +793,13 @@ QAbstractItemView:disabled {
     background-color: {DISABLED_BACKGROUND};
 }
 
+/* A fixed 1px, not {BORDER_W}: the dark theme's borderless 0px left an
+   unchecked box as a WIDGET_BACKGROUND square on a WIDGET_BACKGROUND list --
+   invisible, so the row read as plain text. */
 QAbstractItemView::indicator {
     width: 12px;
     height: 12px;
-    border: {BORDER_W} solid {BORDER_COLOR};
+    border: 1px solid {INDICATOR_BORDER};
     background-color: {WIDGET_BACKGROUND};
 }
 QAbstractItemView::indicator:checked {

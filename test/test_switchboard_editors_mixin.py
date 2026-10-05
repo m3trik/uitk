@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Tests for ``SwitchboardEditorsMixin`` — the ``sb.editors`` registry.
+"""Tests for ``SwitchboardEditorsMixin`` â€” the ``sb.editors`` registry.
 
 Covers:
 - Editor name registry (``style``, ``shortcut``, ``browser``, ``presets``)
@@ -69,15 +69,48 @@ class EditorsProperty(_Base):
     def test_known_editor_names(self):
         names = set(self.sb.editors.names())
         self.assertEqual(
-            names, {"style", "shortcut", "global_shortcuts", "browser", "presets"}
+            names,
+            {
+                "style_editor",
+                "shortcut_editor",
+                "global_shortcuts",
+                "ui_browser",
+                "preset_editor",
+            },
         )
+
+    def test_each_editor_is_named_for_its_window_title(self):
+        """The launcher lists an editor by name beside the UIs, whose rows read
+        like their headers: the UI Browser was listed as ``browser``."""
+        for name in self.sb.editors.names():
+            with self.subTest(name=name):
+                header = self.sb.editors.get(name)._header.title()
+                self.assertEqual(header.lower().replace(" ", "_"), name)
+
+    def test_a_retired_name_warns_and_reaches_the_same_editor(self):
+        import warnings
+
+        for old, new in (
+            ("style", "style_editor"),
+            ("shortcut", "shortcut_editor"),
+            ("browser", "ui_browser"),
+            ("presets", "preset_editor"),
+        ):
+            with self.subTest(old=old):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    editor = self.sb.editors.get(old)
+                self.assertIs(editor, self.sb.editors.peek(new))
+                self.assertTrue(
+                    any(issubclass(w.category, DeprecationWarning) for w in caught)
+                )
 
 
 class EditorsGet(_Base):
     def test_get_browser_returns_switchboard_browser(self):
         from uitk.widgets.editors.switchboard_browser import SwitchboardBrowser
 
-        editor = self.sb.editors.get("browser")
+        editor = self.sb.editors.get("ui_browser")
         self.assertIsInstance(editor, SwitchboardBrowser)
         # The browser was given our switchboard, not a fresh one
         self.assertIs(editor.sb, self.sb)
@@ -85,22 +118,22 @@ class EditorsGet(_Base):
     def test_get_shortcut_passes_switchboard(self):
         from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
 
-        editor = self.sb.editors.get("shortcut")
+        editor = self.sb.editors.get("shortcut_editor")
         self.assertIsInstance(editor, ShortcutEditor)
         self.assertIsNone(editor._focus)  # full editor, not focused
 
     def test_get_global_shortcuts_is_focused_commands_editor(self):
         # Same ShortcutEditor class, built with the focused-commands flag and
-        # cached separately from the full "shortcut" editor.
+        # cached separately from the full "shortcut_editor" editor.
         from uitk.widgets.editors.shortcut_editor.registry_editor import ShortcutEditor
 
         editor = self.sb.editors.get("global_shortcuts")
         self.assertIsInstance(editor, ShortcutEditor)
         self.assertEqual(editor._focus, "commands")
-        self.assertIsNot(editor, self.sb.editors.get("shortcut"))
+        self.assertIsNot(editor, self.sb.editors.get("shortcut_editor"))
 
     def test_global_shortcuts_combo_stripped_to_commands(self):
-        # Focused mode strips the UI combo to the single locked ⌘ Commands entry
+        # Focused mode strips the UI combo to the single locked âŒ˜ Commands entry
         # (no other UIs, no show-all toggle overlay to orphan) rather than hiding
         # the combo.
         editor = self.sb.editors.get("global_shortcuts")
@@ -109,7 +142,7 @@ class EditorsGet(_Base):
         self.assertEqual(editor.cmb_ui.itemText(0), editor._COMMANDS_LABEL)
 
     def test_global_shortcuts_hides_scope_description_ui_columns(self):
-        # The focused launcher drops Scope, Description, and UI — leaving just
+        # The focused launcher drops Scope, Description, and UI â€” leaving just
         # Action + Shortcut (+ Reset). refresh_ui_list runs the Commands populate,
         # which must NOT re-reveal the UI column in focused mode.
         editor = self.sb.editors.get("global_shortcuts")
@@ -124,13 +157,13 @@ class EditorsGet(_Base):
         # registry must call it without one.
         from uitk.widgets.editors.style_editor import StyleEditor
 
-        editor = self.sb.editors.get("style")
+        editor = self.sb.editors.get("style_editor")
         self.assertIsInstance(editor, StyleEditor)
 
     def test_get_caches_instance(self):
         # Subsequent calls return the same object (no re-instantiation)
-        a = self.sb.editors.get("browser")
-        b = self.sb.editors.get("browser")
+        a = self.sb.editors.get("ui_browser")
+        b = self.sb.editors.get("ui_browser")
         self.assertIs(a, b)
 
     def test_get_unknown_raises(self):
@@ -139,28 +172,28 @@ class EditorsGet(_Base):
         # The error message should list available editor names so the
         # caller can self-correct.
         msg = str(ctx.exception)
-        self.assertIn("style", msg)
-        self.assertIn("shortcut", msg)
-        self.assertIn("browser", msg)
+        self.assertIn("style_editor", msg)
+        self.assertIn("shortcut_editor", msg)
+        self.assertIn("ui_browser", msg)
 
 
 class EditorsAutoRecovery(_Base):
     def test_rebuilds_after_qt_object_destroyed(self):
         # Get a browser, force-delete its underlying Qt object, get again
-        first = self.sb.editors.get("browser")
+        first = self.sb.editors.get("ui_browser")
         first.deleteLater()
         # Process events so deletion completes
         QtWidgets.QApplication.processEvents()
         QtWidgets.QApplication.processEvents()
-        # Probe — accessing should now build a fresh instance, not raise
-        second = self.sb.editors.get("browser")
+        # Probe â€” accessing should now build a fresh instance, not raise
+        second = self.sb.editors.get("ui_browser")
         self.assertIsNotNone(second)
         # And the fresh instance must be alive
         self.assertEqual(second.objectName(), second.objectName())
 
     def test_is_alive_handles_attribute_error(self):
         # Some shiboken builds raise AttributeError instead of RuntimeError
-        # for partially-disposed wrappers — the shared liveness probe (used by
+        # for partially-disposed wrappers â€” the shared liveness probe (used by
         # the editor cache) must treat that as "dead" rather than propagate.
         class _BadlyDisposed:
             def objectName(self):
@@ -188,14 +221,14 @@ class EditorsShortcuts(_Base):
 
 class EditorsShow(_Base):
     def test_show_returns_visible_editor(self):
-        editor = self.sb.editors.show("browser")
+        editor = self.sb.editors.show("ui_browser")
         self.assertTrue(editor.isVisible())
         editor.hide()
 
     def test_show_caches_same_instance(self):
-        a = self.sb.editors.show("browser")
+        a = self.sb.editors.show("ui_browser")
         a.hide()
-        b = self.sb.editors.show("browser")
+        b = self.sb.editors.show("ui_browser")
         self.assertIs(a, b)
         b.hide()
 
@@ -203,7 +236,7 @@ class EditorsShow(_Base):
 class UiHandlerEditorsDelegate(_Base):
     """Verify the ``UiHandler.editors`` delegate.
 
-    Lets shelf scripts launch a bundled editor in one line — equivalent
+    Lets shelf scripts launch a bundled editor in one line â€” equivalent
     to ``handler.sb.editors`` but reads more naturally and avoids the
     caller having to know about ``.sb``.
     """
@@ -229,7 +262,7 @@ class UiHandlerEditorsDelegate(_Base):
         from uitk.handlers.ui_handler import UiHandler
 
         handler = UiHandler(switchboard=self.sb)
-        editor = handler.editors.show("browser")
+        editor = handler.editors.show("ui_browser")
         try:
             self.assertTrue(editor.isVisible())
         finally:
@@ -242,7 +275,7 @@ class PopupContextRecovery(_Base):
     The bug guarded against: ``QMenu`` action slots fire while the menu
     is still the active popup. After the slot returns, the menu's own
     ``hideEvent`` runs and explicitly raises whatever window was active
-    before the menu opened — which buries our just-shown editor. So
+    before the menu opened â€” which buries our just-shown editor. So
     ``WindowPanel.present`` checks :meth:`WindowPanel.is_in_popup_context`
     and schedules a deferred re-raise on the next event-loop tick; the
     registry's ``show`` delegates to it, as do the editor's non-Switchboard
@@ -273,7 +306,7 @@ class PopupContextRecovery(_Base):
 
     def test_popup_context_false_when_the_window_is_the_popup(self):
         # If the window itself is the active popup (e.g. a modal it spawned),
-        # we don't want to defer a self-raise — there's nothing to lose focus to.
+        # we don't want to defer a self-raise â€” there's nothing to lose focus to.
         from unittest.mock import patch
 
         panel = self._panel()
@@ -286,7 +319,7 @@ class PopupContextRecovery(_Base):
 
         Asserting on the *effect* rather than on how many callbacks got
         scheduled: ``show()`` itself schedules incidental ``singleShot`` work
-        (``_fit_to_content``), so a count is noise — the question is whether the
+        (``_fit_to_content``), so a count is noise â€” the question is whether the
         window gets raised a second time after the menu closes.
         """
         from unittest.mock import patch
@@ -330,14 +363,14 @@ class PopupContextRecovery(_Base):
         self.assertEqual(calls, [])
 
     def test_registry_show_delegates_to_present(self):
-        """The registry must not re-derive the presentation — a second copy is
+        """The registry must not re-derive the presentation â€” a second copy is
         how the other three owners drifted."""
         from unittest.mock import patch
 
         sb = self.sb
-        editor = sb.editors.get("style")
+        editor = sb.editors.get("style_editor")
         with patch.object(type(editor), "present", return_value=editor) as present:
-            self.assertIs(sb.editors.show("style"), editor)
+            self.assertIs(sb.editors.show("style_editor"), editor)
         present.assert_called_once_with(raise_window=True)
 
 
@@ -352,31 +385,31 @@ class EditorsAdopt(_Base):
         return calls
 
     def test_an_adopted_editor_is_the_cached_one_and_is_hooked(self):
-        calls = self._counting_hook("style")
+        calls = self._counting_hook("style_editor")
         widget = QtWidgets.QWidget()
-        self.assertTrue(self.sb.editors.adopt("style", widget))
-        self.assertIs(self.sb.editors.peek("style"), widget)
-        self.assertIs(self.sb.editors.get("style"), widget)
+        self.assertTrue(self.sb.editors.adopt("style_editor", widget))
+        self.assertIs(self.sb.editors.peek("style_editor"), widget)
+        self.assertIs(self.sb.editors.get("style_editor"), widget)
         self.assertEqual(calls, [widget])
-        self.assertTrue(self.sb.editors.adopt("style", widget), "idempotent")
+        self.assertTrue(self.sb.editors.adopt("style_editor", widget), "idempotent")
         self.assertEqual(calls, [widget], "re-adopting re-ran the hooks")
 
     def test_adopt_never_replaces_a_live_editor(self):
-        built = self.sb.editors.get("style")
+        built = self.sb.editors.get("style_editor")
         other = QtWidgets.QWidget()
         try:
-            self.assertFalse(self.sb.editors.adopt("style", other))
-            self.assertIs(self.sb.editors.peek("style"), built)
+            self.assertFalse(self.sb.editors.adopt("style_editor", other))
+            self.assertIs(self.sb.editors.peek("style_editor"), built)
         finally:
             other.deleteLater()
 
     def test_a_registry_build_that_adopts_itself_is_hooked_once(self):
         """The browser adopts itself in ``__init__`` -- also when the registry
         is the one building it -- and its hooks still run exactly once."""
-        calls = self._counting_hook("browser")
-        browser = self.sb.editors.get("browser")
+        calls = self._counting_hook("ui_browser")
+        browser = self.sb.editors.get("ui_browser")
         self.assertEqual(calls, [browser])
-        self.assertIs(self.sb.editors.peek("browser"), browser)
+        self.assertIs(self.sb.editors.peek("ui_browser"), browser)
 
     def test_adopt_unknown_raises(self):
         with self.assertRaises(KeyError):
@@ -391,7 +424,7 @@ class ParentResolution(_Base):
         try:
             self.sb.setParent(host)
             # Must not raise
-            editor = self.sb.editors.get("browser")
+            editor = self.sb.editors.get("ui_browser")
             self.assertIsNotNone(editor)
         finally:
             host.deleteLater()

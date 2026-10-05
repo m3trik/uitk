@@ -11,7 +11,10 @@ whether it is, and the tooltip says by what.
 
 One value by default; with ``multi=True`` the popup's rows are toggles that
 stay open, and the value is the tuple of values picked -- a list shows the rows
-matching ANY of them.
+matching ANY of them. With ``exclude=True`` the toggles read the other way, as
+a show list: a row is ticked while its kind is shown, and the value is the
+tuple of values left out -- everything is shown until one is unticked, and a
+kind that appears later is shown too.
 
 The popup is a :class:`~uitk.widgets.context_menu.ContextMenu` built each time
 it opens, from ``choices`` -- a list, or a callable returning one -- so a set
@@ -31,6 +34,9 @@ Typical use (fluent, via the manager, which returns the option)::
         settings_key="filter.status",
     )
     status.value  # () | ("locked",) | ("locked", "builtin")
+
+``ChoiceOption.Section("Tags")`` among the choices is a separator captioned
+with its text.
 """
 
 import json
@@ -43,7 +49,7 @@ from ._options import ButtonOption
 
 #: One popup row, in the ecosystem's choice shapes (``KindFactory``'s): a bare
 #: value (its own label), ``(label, value)``, ``(label, value, tooltip)`` -- or
-#: ``None`` for a separator.
+#: ``None`` for a separator (``ChoiceOption.Section(caption)`` for a captioned one).
 Choice = Union[None, Any, Tuple[str, Any], Tuple[str, Any, str]]
 Choices = Union[Iterable[Choice], Callable[[], Iterable[Choice]]]
 
@@ -66,6 +72,8 @@ class ChoiceOption(ButtonOption):
         multi: Rows are toggles and the popup stays open while they are
             flipped; :attr:`value` is the tuple of values picked, ``()`` when
             not narrowed.
+        exclude: A show list (implies *multi*): a row is ticked while its
+            value is NOT in :attr:`value`, the tuple of values left out.
         on_changed: Connected to :attr:`changed` (receives the new value).
         settings: Optional ``QSettings``-like store (``value`` / ``setValue``)
             persisting the value under *settings_key* -- the caller's own, so a
@@ -89,6 +97,9 @@ class ChoiceOption(ButtonOption):
     #: other rows' text aligned with it).
     _MARK_SIZE = 12
 
+    class Section(str):
+        """A separator among the choices, captioned with its text."""
+
     def __init__(
         self,
         wrapped_widget=None,
@@ -98,6 +109,7 @@ class ChoiceOption(ButtonOption):
         choices: Choices = (),
         default: Any = None,
         multi: bool = False,
+        exclude: bool = False,
         on_changed: Optional[Callable[[Any], None]] = None,
         settings=None,
         settings_key: Optional[str] = None,
@@ -114,11 +126,12 @@ class ChoiceOption(ButtonOption):
         self.label = label
         self._choices = choices
         self._default = default
-        self._multi = multi
+        self._multi = multi or exclude
+        self._exclude = exclude
         self._settings = settings
         self._settings_key = settings_key
         self._active_color = active_color or self.ACTIVE_COLOR
-        self._value = () if multi else default
+        self._value = () if self._multi else default
         if settings is not None and settings_key:
             saved = settings.value(settings_key, None)
             if saved is not None:
@@ -129,7 +142,8 @@ class ChoiceOption(ButtonOption):
     # ------------------------------------------------------------------ value
     @property
     def value(self) -> Any:
-        """The value in effect -- with *multi*, the tuple of values picked."""
+        """The value in effect -- with *multi*, the tuple of values picked
+        (with *exclude*, of the values left out)."""
         return self._value
 
     @property
@@ -217,10 +231,22 @@ class ChoiceOption(ButtonOption):
         self._apply_visuals()
 
     # ---------------------------------------------------------------- choices
-    def choices(self) -> List[Optional[Tuple[str, Any, str]]]:
-        """The current rows as ``(label, value, tooltip)``, ``None`` separators."""
+    def choices(
+        self,
+    ) -> List[Union[None, "ChoiceOption.Section", Tuple[str, Any, str]]]:
+        """The current rows as ``(label, value, tooltip)``; separators as given.
+
+        A separator is ``None``, or a :class:`Section` when captioned.
+        """
         source = self._choices() if callable(self._choices) else self._choices
-        return [None if c is None else self._split(c) for c in source or ()]
+        return [
+            c if c is None or isinstance(c, self.Section) else self._split(c)
+            for c in source or ()
+        ]
+
+    def _rows(self) -> List[Tuple[str, Any, str]]:
+        """The choosable rows, separators left out."""
+        return [c for c in self.choices() if isinstance(c, tuple)]
 
     @staticmethod
     def _split(entry) -> Tuple[str, Any, str]:
@@ -231,25 +257,26 @@ class ChoiceOption(ButtonOption):
 
     def choice_values(self) -> List[Any]:
         """The values currently offered, in popup order."""
-        return [c[1] for c in self.choices() if c is not None]
+        return [c[1] for c in self._rows()]
 
     def text_of(self, value: Any) -> Optional[str]:
         """The popup label of *value*, or ``None`` when it is not offered."""
-        for choice in self.choices():
-            if choice is not None and choice[1] == value:
-                return choice[0]
+        for text, choice, _tip in self._rows():
+            if choice == value:
+                return text
         return None
 
     def is_marked(self, value: Any) -> bool:
         """Whether *value*'s row reads as picked.
 
-        With *multi*, the default's row does while nothing is.
+        With *multi*, the default's row does while nothing is; with
+        *exclude*, a row does while its value is not left out.
         """
         if not self._multi:
             return value == self._value
         if value == self._default:
             return not self._value
-        return value in self._value
+        return (value not in self._value) if self._exclude else value in self._value
 
     # ------------------------------------------------------------------ popup
     def build_menu(self):
@@ -283,8 +310,8 @@ class ChoiceOption(ButtonOption):
                 self.set_value(value, notify=True)
 
         for choice in self.choices():
-            if choice is None:
-                menu.add_separator()
+            if not isinstance(choice, tuple):
+                menu.add_separator(choice or "")
                 continue
             text, value, tip = choice
             row = menu.add(
@@ -316,6 +343,8 @@ class ChoiceOption(ButtonOption):
         self._swap_state_icon(self.icon, self._active_color if self.is_active else None)
         if self._multi and self._value:
             text = ", ".join(self.text_of(v) or str(v) for v in self._value)
+            if self._exclude:
+                text = f"all but {text}"
         else:
             text = self.text_of(self._default if self._multi else self._value)
         self._widget.setToolTip(

@@ -60,9 +60,10 @@ class FieldVisibility:
         Parameters:
             fit: How to re-fit the host after a change. ``None`` -- the usual
                 case -- resolves the window the fields live in and fits it the
-                way that window fits (:meth:`WindowHeight.fit_host`), so a
-                tool gets height management without stating any, and a panel
-                and a popup menu need no different call. Pass a callable only
+                way that window fits (:meth:`WindowHeight.fit_host_later`;
+                a window not on screen is left to its show), so a tool gets
+                height management without stating any, and a panel and a
+                popup menu need no different call. Pass a callable only
                 for a host that fits some other way. Either way it is deferred
                 to the next turn of the event loop, because a container asked
                 to re-measure while it is still hiding children measures the
@@ -288,13 +289,9 @@ class FieldVisibility:
             # correcting it here fights that rather than helping it.
             self._settled = True
             return
-        QtCore.QTimer.singleShot(0, self._fit_now)
-
-    def _fit_now(self) -> None:
-        """Re-measure the host, a turn of the loop after the fields settled."""
         if self.fit is not None:
-            self.fit()
+            QtCore.QTimer.singleShot(0, self.fit)
         else:
             # Any registered field will do: they are all in the window that
             # has to follow them.
-            WindowHeight.fit_host(next(iter(self._widgets.values()), None))
+            WindowHeight.fit_host_later(next(iter(self._widgets.values()), None))

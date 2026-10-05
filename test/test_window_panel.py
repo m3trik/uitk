@@ -90,7 +90,8 @@ class TestResolution(WindowPanelTestCase):
 
     def test_a_typo_that_looks_like_a_class_name_is_logged(self):
         """The label fallthrough is Menu's known typo trap — surfaced here."""
-        with self.assertLogs("uitk.widgets.windowPanel", level=logging.DEBUG) as logs:
+        # The form owns the add() idiom (and its trap) -- FormRows logs it.
+        with self.assertLogs("uitk.widgets.form_rows", level=logging.DEBUG) as logs:
             self._panel().add("PushButtn")
         self.assertTrue(any("PushButtn" in line for line in logs.output))
 

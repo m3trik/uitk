@@ -1057,7 +1057,12 @@ class TreeWidget(
     # -- Column configuration (visibility, reorder, persistence) ----------
 
     def enable_column_config(
-        self, settings=None, settings_key=None, locked=(), reorderable=False
+        self,
+        settings=None,
+        settings_key=None,
+        locked=(),
+        reorderable=False,
+        hidden_by_default=(),
     ):
         """Enable header right-click menu for column visibility and drag reorder.
 
@@ -1075,6 +1080,8 @@ class TreeWidget(
             locked: Logical columns that can't be hidden.
             reorderable: The menu's rows can also be dragged into another
                 column order (see ``ColumnConfig``).
+            hidden_by_default: Logical columns hidden until the user's own
+                layout is saved -- optional columns they turn on from the menu.
         """
         ColumnConfig.attach(
             self,
@@ -1083,6 +1090,7 @@ class TreeWidget(
             locked=locked,
             app="TreeWidget",
             reorderable=reorderable,
+            hidden_by_default=hidden_by_default,
         )
 
     @property

@@ -29,6 +29,27 @@ BLUE = "#339DFF"
 HOT = (1.5, 0.75, 0.1)
 
 
+def _hosted(widget):
+    """*widget* alone in a shown window -- the height a fit settles to is
+    the content's, with nothing else in the window to blur it."""
+    from qtpy import QtWidgets
+
+    host = QtWidgets.QWidget()
+    QtWidgets.QVBoxLayout(host).addWidget(widget)
+    host.show()
+    _turn()
+    return host
+
+
+def _turn():
+    """Run the event loop long enough for a deferred window fit to land."""
+    from qtpy import QtCore
+
+    loop = QtCore.QEventLoop()
+    QtCore.QTimer.singleShot(30, loop.quit)
+    loop.exec_() if hasattr(loop, "exec_") else loop.exec()
+
+
 class TestColorModel(unittest.TestCase):
     """The shared value. Qt-free, so these need no widget."""
 
@@ -253,6 +274,19 @@ class TestColorEditor(QtBaseTestCase):
         self.assertTrue(editor._advanced_box.isHidden())
         editor._disclosure.setChecked(True)
         self.assertFalse(editor._advanced_box.isHidden())
+
+    def test_the_window_follows_the_advanced_section_both_ways(self):
+        """Opening grew the window on its own; closing left the rows' height
+        behind as empty space under the editor."""
+        editor = ColorEditor(color=BLUE)
+        host = self.track_widget(_hosted(editor))
+        closed = host.height()
+        editor._disclosure.setChecked(True)
+        _turn()
+        self.assertGreater(host.height(), closed)
+        editor._disclosure.setChecked(False)
+        _turn()
+        self.assertEqual(host.height(), closed)
 
     def test_an_empty_advanced_list_removes_the_disclosure(self):
         editor = self.track_widget(ColorEditor(color=BLUE, advanced=()))
@@ -590,6 +624,69 @@ class TestColorRampEditor(QtBaseTestCase):
         ramp.editor("Bright").model.set_hsv(v=0.5)
         self.assertLessEqual(max(ramp.decided()[0]), 1.0, "an edit is what was picked")
 
+    # -- one Advanced section across the ends ------------------------------
+
+    def _advanced_ramp(self):
+        from uitk.widgets.editors.color_editor import ColorRampEditor
+
+        return ColorRampEditor(colors=(BLUE, "#000000"), advanced=("rgb",))
+
+    def test_one_disclosure_opens_every_ends_advanced_rows(self):
+        """Live report (2026-10-03): a fold per end, so the ends' sliders
+        opened one column at a time -- half a comparison, two clicks."""
+        from uitk.widgets.separator import Separator
+
+        ramp = self.track_widget(self._advanced_ramp())
+        folds = [s for s in ramp.findChildren(Separator) if s.isCheckable()]
+        self.assertEqual(folds, [ramp._disclosure])
+        rows = [ramp.findChild(ColorEditor, f"advanced_{n}") for n in ("bright", "dim")]
+        self.assertTrue(all(row.isHidden() for row in rows), "closed until asked")
+        ramp._disclosure.setChecked(True)
+        self.assertFalse(any(row.isHidden() for row in rows))
+
+    def test_each_ends_advanced_rows_sit_under_it(self):
+        ramp = self.track_widget(self._advanced_ramp())
+        ramp._disclosure.setChecked(True)
+        ramp.show()
+        ramp.layout().activate()
+        for name in ("bright", "dim"):
+            end = ramp.findChild(ColorEditor, f"editor_{name}")
+            rows = ramp.findChild(ColorEditor, f"advanced_{name}")
+            self.assertEqual(rows.geometry().left(), end.geometry().left(), name)
+            self.assertGreater(rows.y(), ramp._disclosure.y(), name)
+
+    def test_an_advanced_edit_is_its_ends_own(self):
+        """The rows ride that end's model: dragging Dim's red moves Dim alone,
+        and the commit names Dim."""
+        ramp = self.track_widget(self._advanced_ramp())
+        seen = []
+        ramp.stopCommitted.connect(lambda i, c: seen.append(i))
+        slider = ramp.findChild(ColorEditor, "advanced_dim").findChild(
+            GradientSlider, "slider_red"
+        )
+        slider.setSliderDown(True)
+        slider.setSliderPosition(500)
+        slider.setSliderDown(False)
+        self.assertEqual(seen, [1])
+        self.assertNotEqual(ramp.editor("Dim").color.hex, "#000000")
+        self.assertEqual(ramp.editor("Bright").color.hex, BLUE)
+
+    def test_the_window_follows_the_ramps_advanced_section(self):
+        ramp = self._advanced_ramp()
+        host = self.track_widget(_hosted(ramp))
+        closed = host.height()
+        ramp._disclosure.setChecked(True)
+        _turn()
+        self.assertGreater(host.height(), closed)
+        ramp._disclosure.setChecked(False)
+        _turn()
+        self.assertEqual(host.height(), closed)
+
+    def test_an_empty_advanced_list_leaves_no_fold(self):
+        ramp = self._ramp()
+        self.assertFalse(hasattr(ramp, "_disclosure"))
+        self.assertEqual(ramp._advanced_editors, [])
+
 
 class TestRampPreview(QtBaseTestCase):
     """The preview must BE the deliverable's value, not resemble it."""
@@ -878,6 +975,19 @@ class TestComparisonPreview(QtBaseTestCase):
         ramp.set_reference(None)
         self.assertFalse(ramp._before.isVisible())
         self.assertFalse(ramp._after_caption.isVisible())
+
+    def test_the_window_follows_the_comparison_both_ways(self):
+        """Its caption row is height the window has to give back when the
+        reference goes."""
+        ramp = self._ramp()
+        host = self.track_widget(_hosted(ramp))
+        alone = host.height()
+        ramp.set_reference([(1.0, 0.0, 0.0), (0.0, 0.0, 0.0)])
+        _turn()
+        self.assertGreater(host.height(), alone)
+        ramp.set_reference(None)
+        _turn()
+        self.assertEqual(host.height(), alone)
 
     def test_both_halves_run_the_same_cadence(self):
         """A comparison whose halves run at different tempos is showing two

@@ -73,6 +73,11 @@ class ValueManager:
         Returns:
             The current value of the widget, or None if unsupported
         """
+        # A widget whose value no Qt accessor below can express (a check
+        # list's checked set) answers for itself. Distinct names because
+        # ``value`` / ``setValue`` read as numeric to the branches below.
+        if callable(getattr(widget, "state_value", None)):
+            return widget.state_value()
         if hasattr(widget, "value") and callable(widget.value):
             return widget.value()
         elif isinstance(widget, QtWidgets.QAbstractButton):
@@ -118,6 +123,9 @@ class ValueManager:
             widget.blockSignals(True)
 
         try:
+            # The get_value protocol's write half.
+            if callable(getattr(widget, "set_state_value", None)):
+                return widget.set_state_value(value) is not False
             # Handle different widget types with proper value conversion
             if hasattr(widget, "setValue") and callable(widget.setValue):
                 # Numeric widgets (QSpinBox, QDoubleSpinBox, QSlider, etc.).
@@ -244,7 +252,9 @@ class ValueManager:
             QtWidgets.QAbstractSlider,  # slider / dial / scroll bar
             QtWidgets.QGroupBox,  # checkable groups
         )
-        return isinstance(widget, supported_types)
+        return isinstance(widget, supported_types) or callable(
+            getattr(widget, "state_value", None)
+        )
 
     @staticmethod
     def get_value_by_signal(widget, signal_name):

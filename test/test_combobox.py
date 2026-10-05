@@ -462,6 +462,34 @@ class ActivateHostWindowBeforePopup(QtBaseTestCase):
         combo.window = lambda: None
         combo._activate_host_window()  # must not raise
 
+    def test_a_view_replaced_while_activating_is_not_touched(self):
+        """Activating the host runs the host's code, which may swap the popup's
+        view (``setView`` deletes the old one): the popup is set up on the view
+        in place after it, never on the one read before.
+
+        Bug (2026-09-28, Maya): ``showPopup`` read ``view()`` first, activated
+        the host, then attached the overflow arrows to that view --
+        ``RuntimeError: Internal C++ object (QListView) already deleted``.
+        """
+        from uitk.widgets.overflow_indicator import OverflowIndicator
+
+        combo = self._combo_with_fake_window(active=False)
+        combo.addItems(["a", "b"])
+        combo.show()
+        replaced = []
+
+        def activate(_self):
+            replaced.append(QtWidgets.QListView())
+            combo.setView(replaced[-1])
+
+        type(self.fake_window).activateWindow = activate
+        try:
+            combo.showPopup()  # raised before the fix
+            self.assertIs(combo.view(), replaced[0])
+            self.assertIsNotNone(OverflowIndicator.of(replaced[0]))
+        finally:
+            combo.hidePopup()
+
 
 class SetCurrentIndexNegativePreservesBlockState(QtBaseTestCase):
     """``setCurrentIndex(index<0)`` must RESTORE the caller's prior blockSignals

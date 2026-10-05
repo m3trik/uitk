@@ -110,6 +110,9 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             # Borders + shape
             "BORDER_COLOR": "rgb(40,40,40)",
             "BORDER_HOVER": "rgba(255,255,255,110)",
+            # Outline of an item view's check box -- always drawn, whatever
+            # BORDER_W says: the box IS the control, not chrome.
+            "INDICATOR_BORDER": "rgb(40,40,40)",
             "BORDER_W": "1px",
             "RADIUS": "4px",
             # Metrics (layout, themeable)
@@ -159,6 +162,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             # Borders + shape
             "BORDER_COLOR": "rgb(40,40,40)",
             "BORDER_HOVER": "rgba(255,255,255,110)",
+            "INDICATOR_BORDER": "rgb(130,130,130)",
             "BORDER_W": "0px",  # Dark theme defaults borderless for a softer look.
             "RADIUS": "1px",
             # Metrics (layout, themeable)
@@ -214,6 +218,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             # Borders + shape
             "BORDER_COLOR": "rgb(255,255,255)",
             "BORDER_HOVER": "rgb(255,255,0)",
+            "INDICATOR_BORDER": "rgb(255,255,255)",
             "BORDER_W": "1px",
             "RADIUS": "2px",
             # Metrics (layout, themeable)

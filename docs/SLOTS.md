@@ -87,6 +87,25 @@ UITK auto-connects the slot method to the widget's default signal, chosen by bas
 
 Custom UITK widgets inherit these by base type (a `uitk.PushButton` is a `QPushButton`), and add their own signals — e.g. `ExpandableList.on_item_interacted`.
 
+A widget whose value is not its base type's names its own: a `state_signal` class attribute (the name of its change signal) and `state_value()` / `set_state_value(value)` (named apart from `value` / `setValue`, which read as numeric). Its slot is wired to `state_signal`, and window state, presets, the rules (`enable_when`, `text_from`, `value_from`) and `ModelBinding` read, watch and write it by these. The bridge's `check_list` row is one: a `QListWidget` whose value is its checked entries, announced once per change of that set by `checkedChanged(list)` — `itemClicked` carries the clicked row and never fires for a check made in code.
+
+```python
+class TagList(QtWidgets.QListWidget):
+    tagsChanged = QtCore.Signal(list)
+    state_signal = "tagsChanged"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.itemSelectionChanged.connect(lambda: self.tagsChanged.emit(self.state_value()))
+
+    def state_value(self):
+        return [item.text() for item in self.selectedItems()]
+
+    def set_state_value(self, value):
+        for i in range(self.count()):
+            self.item(i).setSelected(self.item(i).text() in value)
+```
+
 ---
 
 ## 4. Parameter injection

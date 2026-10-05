@@ -162,7 +162,7 @@ class TclMaya(MarkingMenu):
         )
 
         # DCC-specific editor wiring: run when the shortcut editors are built.
-        for name in ("shortcut", "global_shortcuts"):
+        for name in ("shortcut_editor", "global_shortcuts"):
             self.sb.editors.add_post_build_hook(
                 name,
                 lambda editor: editor.add_collision_checker(mtk.maya_collision_checker),
@@ -237,7 +237,7 @@ The marking menu's bindings surface in the unified Shortcut Editor via `_registe
 - **`get_route_target(buttons)` / `set_route_target(buttons, menu)`** — gesture-keyed accessors where `buttons` is a sequence of Qt button-flag names (`("LeftButton",)`, `("LeftButton", "RightButton")`; `()` = the key-only default). Activation-key-agnostic: they resolve against the *current* activation key, so they stay correct after `set_activation_key`.
 - **`start_menu_names(short=True)`** — the sorted `#startmenu` UI names the binding combos pick targets from (`short=True` strips the tag).
 
-The focused entry point is **`sb.editors.show("global_shortcuts")`** — the same `ShortcutEditor` built with `focus="commands"` (see `_EditorRegistry._EDITORS` in [switchboard/editors.py](../uitk/switchboard/editors.py)): pinned to the Commands view, cached separately from the full `"shortcut"` editor.
+The focused entry point is **`sb.editors.show("global_shortcuts")`** — the same `ShortcutEditor` built with `focus="commands"` (see `_EditorRegistry._EDITORS` in [switchboard/editors.py](../uitk/switchboard/editors.py)): pinned to the Commands view, cached separately from the full `"shortcut_editor"`.
 
 ---
 

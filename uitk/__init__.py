@@ -44,7 +44,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.6.2"
+__version__ = "1.7.0"
 
 
 DEFAULT_INCLUDE = {
@@ -144,6 +144,7 @@ DEFAULT_INCLUDE = {
     "widgets.optionBox.options.clear": ["ClearOption", "ClearButton"],
     "widgets.optionBox.options.reset": "ResetOption",
     "widgets.optionBox.options.pin_values": "PinValuesOption",
+    "widgets.optionBox.options.recent_values": "RecentValuesOption",
     "widgets.optionBox.options.toggle": "ToggleOption",
     "widgets.optionBox.options.disable": "DisableOption",
     "widgets.optionBox.options.value": "ValueOption",
@@ -180,6 +181,7 @@ DEFAULT_INCLUDE = {
     "widgets.textEditLogHandler": "TextEditLogHandler",
     "widgets.textViewBox": "TextViewBox",
     "widgets.windowPanel": "WindowPanel",
+    "widgets.form_rows": "FormRows",
     "widgets.toolBox": "ToolBox",
     "widgets.treeWidget": "TreeWidget",
     "widgets.widgetComboBox": "WidgetComboBox",
@@ -219,6 +221,7 @@ DEFAULT_INCLUDE = {
     "managers.state_manager": "StateManager",
     "managers.reset_gesture": "ResetGesture",
     "managers.value_manager": "ValueManager",
+    "managers.model_binding": "ModelBinding",
     "themes.style_sheet": "StyleSheet",
 }
 

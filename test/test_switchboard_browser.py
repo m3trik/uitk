@@ -730,7 +730,7 @@ class SwitchboardConstruction(QtBaseTestCase):
             self.assertEqual(
                 sorted(browser._model._names), sorted(browser.sb.editors.names())
             )
-            self.assertIn("browser", browser._model._names)
+            self.assertIn("ui_browser", browser._model._names)
         finally:
             browser.deleteLater()
 
@@ -766,7 +766,7 @@ class DirectBrowserIsTheRegistryBrowser(QtBaseTestCase):
     Regression: the row resolved through ``sb.editors``, which knew only the
     browsers it built. With a directly built browser on screen the row read
     hidden, its Launch opened a SECOND browser, Focus did nothing, and
-    ``sb.editors.show("browser")`` returned another window.
+    ``sb.editors.show("ui_browser")`` returned another window.
     """
 
     def setUp(self):
@@ -797,11 +797,11 @@ class DirectBrowserIsTheRegistryBrowser(QtBaseTestCase):
 
     def test_the_row_and_the_registry_reach_the_direct_browser(self):
         handler = self.sb.handlers.editor
-        self.assertTrue(handler.is_visible("browser"), "the row reads it hidden")
-        self.assertIs(handler.launch("browser"), self.browser)
+        self.assertTrue(handler.is_visible("ui_browser"), "the row reads it hidden")
+        self.assertIs(handler.launch("ui_browser"), self.browser)
         QtWidgets.QApplication.processEvents()
         self.assertEqual(self._browsers(visible=True), [self.browser])
-        self.assertIs(self.sb.editors.show("browser"), self.browser)
+        self.assertIs(self.sb.editors.show("ui_browser"), self.browser)
 
     def test_the_rows_visibility_follows_the_direct_browser(self):
         """The registry's post-build hooks ran on it: the editor handler's
@@ -812,12 +812,12 @@ class DirectBrowserIsTheRegistryBrowser(QtBaseTestCase):
         )
         self.browser.hide()
         QtWidgets.QApplication.processEvents()
-        self.assertIn(("editor", "browser"), seen)
-        self.assertFalse(self.sb.handlers.editor.is_visible("browser"))
+        self.assertIn(("editor", "ui_browser"), seen)
+        self.assertFalse(self.sb.handlers.editor.is_visible("ui_browser"))
 
     def test_a_second_direct_browser_leaves_the_first_in_place(self):
         second = SwitchboardBrowser(switchboard=self.sb)
-        self.assertIs(self.sb.editors.peek("browser"), self.browser)
+        self.assertIs(self.sb.editors.peek("ui_browser"), self.browser)
         self.assertIsNot(second, self.browser)
 
 
@@ -1581,8 +1581,8 @@ class LaunchCodeAction(BrowserBase):
         QtWait.require_clipboard(self)  # the shared OS-resource probe
         clipboard = QtWidgets.QApplication.clipboard()
         clipboard.setText("")
-        self._menu("browser", trigger="Copy launch code")
-        self.assertIn("handler.sb.editors.show('browser')", clipboard.text())
+        self._menu("ui_browser", trigger="Copy launch code")
+        self.assertIn("handler.sb.editors.show('ui_browser')", clipboard.text())
 
     def test_no_action_when_the_handler_offers_no_code(self):
         from unittest import mock
@@ -1594,7 +1594,7 @@ class LaunchCodeAction(BrowserBase):
     def test_open_as_is_offered_only_where_persistence_applies(self):
         """Persistence is the UI handler's; an editor ignores it."""
         self.assertIn("Open as", self._menu("alpha"))
-        editor_texts = self._menu("style")
+        editor_texts = self._menu("style_editor")
         self.assertIn("Copy launch code", editor_texts)
         self.assertNotIn("Open as", editor_texts)
 
@@ -1603,11 +1603,11 @@ class LaunchCodeAction(BrowserBase):
 
         from uitk.handlers.editor_handler import EditorHandler
 
-        self.sb.handlers.editor.launch("style")
+        self.sb.handlers.editor.launch("style_editor")
         with mock.patch.object(EditorHandler, "focus", autospec=True) as focus:
-            self.browser._focus("style")
-        focus.assert_called_once_with(self.sb.handlers.editor, "style")
-        self.sb.handlers.editor.close("style")
+            self.browser._focus("style_editor")
+        focus.assert_called_once_with(self.sb.handlers.editor, "style_editor")
+        self.sb.handlers.editor.close("style_editor")
 
 
 class PersistenceOverride(BrowserBase):

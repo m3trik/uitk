@@ -2,7 +2,7 @@
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide6%20via%20qtpy-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/Tests-5024%20passed-brightgreen.svg)](../test/)
+[![Tests](https://img.shields.io/badge/Tests-5106%20passed-brightgreen.svg)](../test/)
 
 # uitk
 
@@ -189,7 +189,7 @@ Cancellation is cooperative — the slot stops at its next checkpoint (`sb.progr
 ui.style.set(theme="dark", style_class="translucentBgWithBorder")
 ```
 
-Themes (`light`, `dark`) are palette dicts — `WIDGET_BACKGROUND`, `BUTTON_HOVER`, `BORDER_COLOR`, etc. QSS variables are substituted at apply time. Monochrome SVG icons in `uitk/icons/` are auto-colored to match `ICON_COLOR`. `sb.editors.show("style")` opens a live theme editor — tweak any variable at runtime, export/import overrides.
+Themes (`light`, `dark`) are palette dicts — `WIDGET_BACKGROUND`, `BUTTON_HOVER`, `BORDER_COLOR`, etc. QSS variables are substituted at apply time. Monochrome SVG icons in `uitk/icons/` are auto-colored to match `ICON_COLOR`. `sb.editors.show("style_editor")` opens a live theme editor — tweak any variable at runtime, export/import overrides.
 
 ## Hierarchy & tags
 
@@ -285,12 +285,12 @@ One line each — the deep docs are linked below:
 
 - **Timeline sequencer** — `SequencerWidget`, an NLE-style timeline: tracks, draggable clips and keyframes, markers, shot lanes, range/gap overlays, undo/redo, transport controls, audio scrubbing. Powers mayatk's Shot Sequencer.
 - **Compiled UI loading** — `.ui` files compile to hash-stamped `_ui.py` modules (`python -m uitk.compile`, `--check` for CI); stale output recompiles automatically, `precompile_async()` warms a fleet in the background, and compilation uses the running binding's own `uic` so output stays loadable across mixed PySide versions (a venv's PySide6 vs. Maya's bundled one).
-- **Shortcut registry & editor** — slot hotkeys, app-global shortcuts (`GlobalShortcut`), and named commands share one registry; `sb.editors.show("shortcut")` opens a table editor with in-cell key capture, collision checking, and preset import/export.
+- **Shortcut registry & editor** — slot hotkeys, app-global shortcuts (`GlobalShortcut`), and named commands share one registry; `sb.editors.show("shortcut_editor")` opens a table editor with in-cell key capture, collision checking, and preset import/export.
 - **Named presets** — `ui.presets` (`PresetManager`) snapshots widget values into named presets backed by pythontk's `PresetStore`; `make_preset_combo()` returns a ready-wired picker.
 - **Scrubbable tables** — `TableWidget` columns can be drag- or wheel-scrubbed like DCC channel-box cells, with per-cell formatters, action columns, and in-cell shortcut/choice-capture delegates.
 - **Bridge panels** — parameterised script panels that drive external DCC processes: `AttributeSpec`s render as form widgets, values serialize per target language (Python / Lua / JS, or raw CLI strings), and templates, presets, and logging share one engine.
 - **Script console** — `ScriptOutput`, a host-agnostic syntax-highlighted console, plus `TextEditLogHandler` to pipe Python `logging` into any text panel.
-- **External-app launching** — `ExternalAppHandler` registers, installs on demand, and launches external Python tools as subprocesses; `sb.editors.show("browser")` is a searchable, tag-filtered launcher over every handler entry.
+- **External-app launching** — `ExternalAppHandler` registers, installs on demand, and launches external Python tools as subprocesses; `sb.editors.show("ui_browser")` is a searchable, tag-filtered launcher over every handler entry.
 
 ## Deeper documentation
 
