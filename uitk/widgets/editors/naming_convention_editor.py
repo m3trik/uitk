@@ -235,7 +235,14 @@ class NamingConventionEditor:
         """
         from uitk import AffixOption
 
-        rules = {k: v for k, v in data.items() if isinstance(v, (dict, str))}
+        # ``_``-keys are a preset's own blocks (a shipped one's ``_meta``), not
+        # entries -- ``convention.update`` skips them too, so counting them
+        # would overstate what was applied.
+        rules = {
+            k: v
+            for k, v in data.items()
+            if not k.startswith("_") and isinstance(v, (dict, str))
+        }
         self.convention.update(rules)
         for key, field in self.fields():
             rule = self.convention.get(key)
@@ -251,10 +258,13 @@ class NamingConventionEditor:
         Semantic mode: a preset is ``convention.as_dict()``, not a widget
         snapshot, kept in the convention's own store
         (``convention.preset_store()``) so every host editing the same
-        convention shares them.
+        convention shares them. The store's built-in tier (the shipped
+        ``default``, read-only) is listed beside the user's own.
         """
+        store = self.convention.preset_store()
         presets = self.menu.presets
-        presets.preset_dir = str(self.convention.preset_store().user_dir)
+        presets.preset_dir = str(store.user_dir)
+        presets.builtin_dir = store.builtin_dir
         presets.value_provider = self.convention.as_dict
         presets.value_applier = self.apply_preset
         self.menu.add_presets = True

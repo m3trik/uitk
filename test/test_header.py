@@ -24,6 +24,7 @@ app = setup_qt_application()
 from qtpy import QtWidgets, QtCore, QtGui
 
 from uitk.managers.icon_manager import IconManager
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.header import Header
 
 
@@ -695,16 +696,12 @@ class TestHeaderRefreshButton(QtBaseTestCase):
     def test_refresh_button_left_of_menu(self):
         """Should place refresh button to the left of the menu button."""
         header = self.track_widget(Header(config_buttons=["refresh", "menu"]))
-        # Find the layout positions of each button (skip the leading stretch).
-        positions = {}
-        for i in range(header.container_layout.count()):
-            item = header.container_layout.itemAt(i)
-            w = item.widget()
-            if w is header.buttons.get("refresh"):
-                positions["refresh"] = i
-            elif w is header.buttons.get("menu"):
-                positions["menu"] = i
-        self.assertLess(positions["refresh"], positions["menu"])
+        # The layout's widgets in order (the leading stretch is no widget).
+        widgets = _LayoutItems.widgets(header.container_layout)
+        self.assertLess(
+            widgets.index(header.buttons["refresh"]),
+            widgets.index(header.buttons["menu"]),
+        )
 
     def test_trigger_refresh_emits_signal(self):
         """Should emit refresh_requested when trigger_refresh is called."""
@@ -763,14 +760,8 @@ class TestHeaderHelpButton(QtBaseTestCase):
         """Should insert the help button immediately right of the stretch."""
         header = self.track_widget(Header(config_buttons=["menu", "hide"]))
         header.set_help_text("Hi")
-        first_widget_index = None
-        for i in range(header.container_layout.count()):
-            if header.container_layout.itemAt(i).widget() is not None:
-                first_widget_index = i
-                break
         self.assertIs(
-            header.container_layout.itemAt(first_widget_index).widget(),
-            header.buttons["help"],
+            _LayoutItems.widgets(header.container_layout)[0], header.buttons["help"]
         )
 
     def test_config_buttons_can_include_help_explicitly(self):

@@ -17,6 +17,7 @@ is never instantiated alone.
 from qtpy import QtCore, QtWidgets
 
 from uitk.themes.style_sheet import StyleSheet
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.footer import Footer
 from uitk.widgets.header import Header
 
@@ -269,11 +270,9 @@ class _MenuLayoutMixin:
         total_height = 0
         total_width = 0
 
-        for i in range(self._layout.count()):
-            widget = self._layout.itemAt(i).widget()
-            if widget:
-                total_height += widget.sizeHint().height() + self._layout.spacing()
-                total_width = max(total_width, widget.sizeHint().width())
+        for widget in _LayoutItems.widgets(self._layout):
+            total_height += widget.sizeHint().height() + self._layout.spacing()
+            total_width = max(total_width, widget.sizeHint().width())
 
         # Adjust for layout's top and bottom margins
         total_height += (

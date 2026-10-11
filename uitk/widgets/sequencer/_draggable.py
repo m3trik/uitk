@@ -5,6 +5,7 @@
 Provides:
 - :meth:`DraggableItemMixin.snap_time` — unified time-snap helper (Ctrl = per-frame).
 - :meth:`ItemRetirement.retire` — remove a scene item without destroying it mid-event.
+- :class:`HeldGeometryMixin` — layout-derived bounds held until announced (index-safe).
 - :class:`DraggableItemMixin` — template for ``cancel_drag()`` support.
 """
 
@@ -71,6 +72,48 @@ class ItemRetirement:
             return
         cls._drain_scheduled = False
         cls._retired.clear()
+
+
+class HeldGeometryMixin:
+    """Geometry derived from the timeline's layout, HELD between syncs.
+
+    The other half of a safe removal (:class:`ItemRetirement` is the first).
+    QGraphicsScene's BSP index files an item under the rect ``boundingRect``
+    returned when it was indexed, and takes it out under the rect it returns
+    at removal.  An item that derives that rect live from the layout -- the
+    zoom, the track rows, the viewport -- answers a DIFFERENT rect once the
+    layout has moved, so the removal misses the index cells only the old rect
+    covered; after the item is destroyed, the next repaint over them
+    dereferences it (a pure-virtual call in
+    ``QGraphicsItemPrivate::effectiveBoundingRect``).  Reproduced 2026-10-07:
+    a rebuild clears the track rows before retiring the range highlight, and
+    the shot sequencer's first new shot, undone, crashed on the repaint.
+
+    So the geometry is computed once and held: :meth:`sync` announces the
+    change while the held geometry -- the indexed one -- is still what the
+    item answers, then lets it be derived again.  Whatever moves an input
+    (the item's own data, the zoom, the rows, the viewport) calls ``sync``
+    afterwards.  A subclass implements :meth:`_layout_geometry` and reads
+    :meth:`_geometry` everywhere it would have computed it.
+    """
+
+    _held_geometry = None
+
+    def _layout_geometry(self):
+        """What the CURRENT layout gives this item (subclass hook)."""
+        raise NotImplementedError
+
+    def _geometry(self):
+        """The held geometry, derived on first use after a :meth:`sync`."""
+        if self._held_geometry is None:
+            self._held_geometry = self._layout_geometry()
+        return self._held_geometry
+
+    def sync(self) -> None:
+        """Re-derive the geometry, announced to the scene index first."""
+        self.prepareGeometryChange()
+        self._held_geometry = None
+        self.update()
 
 
 class DraggableItemMixin:

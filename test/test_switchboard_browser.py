@@ -1831,5 +1831,89 @@ class PersistenceOverride(BrowserBase):
         )
 
 
+class ShortcutActions(BrowserBase):
+    """The row menu's desktop-launcher actions: offered for an entry whose
+    handler says it can make one (the optional ``can_create_shortcut``), and
+    written through that handler's ``create_shortcut``. Any handler kind can
+    offer them; the UI handler stands in here."""
+
+    _menu = LaunchCodeAction._menu
+
+    def setUp(self):
+        from unittest import mock
+
+        super().setUp()
+        self.created = []
+        self.fail_with = None
+
+        def can(handler, name):
+            if name == "gamma":
+                raise RuntimeError("a broken handler")
+            return name == "alpha"
+
+        def create(handler, name, location):
+            self.cursors.append(self._cursor())
+            if self.fail_with:
+                raise self.fail_with
+            self.created.append((name, location))
+            return f"C:/Desktop/{name}.lnk"
+
+        self.cursors = []
+        self.cursor_before = self._cursor()
+
+        for attr, fn in (("can_create_shortcut", can), ("create_shortcut", create)):
+            patcher = mock.patch.object(UiHandler, attr, new=fn, create=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _labels(self):
+        from uitk.widgets.editors.switchboard_browser.launch import SHORTCUT_ACTIONS
+
+        return [label for _location, label in SHORTCUT_ACTIONS]
+
+    @staticmethod
+    def _cursor():
+        cursor = QtWidgets.QApplication.overrideCursor()
+        return None if cursor is None else cursor.shape()
+
+    def test_offered_where_the_handler_can_make_one(self):
+        texts = self._menu("alpha")
+        for label in self._labels():
+            self.assertIn(label, texts)
+        beta = self._menu("beta")
+        self.assertFalse(set(self._labels()) & set(beta))
+
+    def test_a_broken_handler_offers_none(self):
+        self.assertFalse(set(self._labels()) & set(self._menu("gamma")))
+
+    def test_the_action_writes_it_and_says_where(self):
+        desktop, start_menu = self._labels()
+        self._menu("alpha", trigger=start_menu)
+        self.assertEqual(self.created, [("alpha", "start_menu")])
+        self.assertEqual(
+            self.browser.footer.statusText(),
+            "Shortcut created: C:/Desktop/alpha.lnk",
+        )
+        # Busy while it writes (the import check starts a Python), and the
+        # cursor stack is left as it was found.
+        self.assertEqual(self.cursors, [QtCore.Qt.WaitCursor])
+        self.assertEqual(self._cursor(), self.cursor_before)
+
+    def test_a_refusal_is_shown_not_raised(self):
+        from unittest import mock
+
+        self.fail_with = RuntimeError("alpha does not import from the desktop")
+        shown = []
+        with mock.patch.object(
+            QtWidgets.QMessageBox,
+            "critical",
+            new=lambda *args: shown.append(args[2]),
+        ):
+            self._menu("alpha", trigger=self._labels()[0])
+        self.assertEqual(self.created, [])
+        self.assertEqual(shown, ["alpha: alpha does not import from the desktop"])
+        self.assertEqual(self._cursor(), self.cursor_before)
+
+
 if __name__ == "__main__":
     unittest.main()

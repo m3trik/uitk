@@ -13,7 +13,6 @@ Run standalone: python -m test.test_widgets
 """
 
 import unittest
-from unittest.mock import MagicMock
 
 from conftest import QtBaseTestCase, setup_qt_application
 
@@ -550,8 +549,8 @@ class TestPushButtonEdgeCases(QtBaseTestCase):
         from uitk.widgets.pushButton import PushButton
 
         button = self.track_widget(PushButton())
-        button.setText("按钮 🚀")
-        self.assertEqual(button.text(), "按钮 🚀")
+        button.setText("Café ★ 🚀")
+        self.assertEqual(button.text(), "Café ★ 🚀")
 
     def test_button_with_very_long_text(self):
         """Should handle very long text."""
@@ -641,8 +640,8 @@ class TestLineEditEdgeCases(QtBaseTestCase):
         from uitk.widgets.lineEdit import LineEdit
 
         line_edit = self.track_widget(LineEdit())
-        line_edit.setText("日本語 🔥")
-        self.assertEqual(line_edit.text(), "日本語 🔥")
+        line_edit.setText("Naïve ★ 🔥")
+        self.assertEqual(line_edit.text(), "Naïve ★ 🔥")
 
     def test_lineedit_whitespace_text(self):
         """Should handle whitespace-only text."""

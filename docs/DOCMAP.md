@@ -41,7 +41,7 @@ Every module in `API_INDEX.md` must match exactly one home via longest-prefix ma
 | `handlers/` | [ARCHITECTURE.md](ARCHITECTURE.md) | handler-ecosystem section |
 | `loaders/` | [ARCHITECTURE.md](ARCHITECTURE.md) | §12 UI loading & compilation |
 | `managers/` | [WIDGETS.md](WIDGETS.md) | standalone services (settings/state/values/presets/icons/shortcuts/cursors — § Cursors), split out of `widgets/mixins/` 2026-07; settings/state user-level detail in USER_GUIDE.md |
-| `testing.py` | — | test-only affordance, not part of the runtime API. `TestSandbox.activate()` is the whole surface and its own docstring is the contract; it extends `pythontk.TestSandbox` (browser refusal, throwaway temp root) with the two Qt-side stores. Downstream suites are pointed at it from their conftest/runner, which is where a maintainer looks. |
+| `testing.py` | — | test-only affordance, not part of the runtime API. `TestSandbox.activate()` (for the rest of the process) and `TestSandbox.activated()` (a `with` block that puts every guard back, for a host that outlives the run) are the whole surface, and their docstrings are the contract; it extends `pythontk.TestSandbox` (browser refusal, throwaway temp root) with the two Qt-side stores. Downstream suites are pointed at it from their conftest/runner, which is where a maintainer looks. |
 | `themes/` | [ARCHITECTURE.md](ARCHITECTURE.md) | theming section (`StyleSheet` + `style.qss`) |
 | `switchboard/` | [ARCHITECTURE.md](ARCHITECTURE.md) | slot-contract detail lives in SLOTS.md |
 | `widgets/mainWindow.py` | [ARCHITECTURE.md](ARCHITECTURE.md) | MainWindow section; per-property detail in API_REFERENCE.md |

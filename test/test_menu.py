@@ -28,6 +28,7 @@ app = setup_qt_application()
 from qtpy import QtWidgets, QtCore
 
 from uitk.managers.shortcut_manager import ShortcutManager
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.menu import Menu, MenuConfig, MenuPositioner, ActionButtonManager
 
 
@@ -1453,8 +1454,8 @@ class TestMenuItemEdgeCases(QtBaseTestCase):
     def test_add_unicode_label(self):
         """Should handle unicode text."""
         menu = self.track_widget(Menu())
-        label = menu.add("QLabel", setText="日本語 🍣")
-        self.assertEqual(label.text(), "日本語 🍣")
+        label = menu.add("QLabel", setText="Café ★ 🍣")
+        self.assertEqual(label.text(), "Café ★ 🍣")
 
     def test_add_very_long_text(self):
         """Should handle very long text."""
@@ -1582,8 +1583,8 @@ class TestMenuTitleEdgeCases(QtBaseTestCase):
     def test_title_unicode(self):
         """Should handle unicode title."""
         menu = self.track_widget(Menu(add_header=True))
-        menu.setTitle("メニュー 🎨")
-        self.assertEqual(menu.title(), "メニュー 🎨")
+        menu.setTitle("Résumé ★ 🎨")
+        self.assertEqual(menu.title(), "Résumé ★ 🎨")
 
     def test_title_without_header(self):
         """Should handle title without header."""
@@ -2510,7 +2511,9 @@ class TestMenuClearEmptyPlaceholder(QtBaseTestCase):
         # the stale reference _add_empty_placeholder would early-return.
         menu.show()
         self.assertIsNotNone(menu._empty_placeholder)
-        self.assertIs(menu.gridLayout.itemAt(0).widget(), menu._empty_placeholder)
+        self.assertIs(
+            _LayoutItems.widget_at(menu.gridLayout, 0), menu._empty_placeholder
+        )
         menu.hide()
 
 
@@ -2597,8 +2600,8 @@ class TestMenuAddRow(QtBaseTestCase):
         """The row layout's items as 's' (stretch/spacer) or 'w' (widget), in order."""
         layout = widgets[0].parent().layout()
         return [
-            "s" if layout.itemAt(i).spacerItem() is not None else "w"
-            for i in range(layout.count())
+            "w" if isinstance(e, QtWidgets.QWidget) or e.spacerItem() is None else "s"
+            for e in _LayoutItems.entries(layout)
         ]
 
     def test_legacy_stretch_true_left_packs(self):
@@ -3331,7 +3334,7 @@ class TestMenuActingPins(QtBaseTestCase):
 
         combo = menu.cmb_presets
         layout = combo.option_box.container.layout()
-        save = layout.itemAt(2).widget()  # [combo][refresh][save][menu]
+        save = _LayoutItems.widget_at(layout, 2)  # [combo][refresh][save][menu]
         self.assertTrue(save.toolTip().startswith("Save"), save.toolTip())
         self._click(save)
         line = combo.lineEdit()

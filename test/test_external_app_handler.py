@@ -1073,10 +1073,11 @@ class TestSpawnSnippet(unittest.TestCase):
 
     def test_a_non_ascii_show_kwarg_rides_the_command_line_as_ascii(self):
         """mayapy.exe (the python a Maya host resolves) decodes its command line
-        in the ANSI code page as UTF-8: measured on Maya 2025, "José" arrived as
-        "Jos\\udce9" and "Жук" as "???". The snippet spells values in ASCII
-        escapes, which every interpreter reads back exactly."""
-        title = "Jos\u00e9 \u0416\u0443\u043a"
+        in the ANSI code page as UTF-8: measured on Maya 2025, an accented letter
+        arrived as a lone surrogate ("é" as "\\udce9") and each letter outside the
+        code page as "?". The snippet spells values in ASCII escapes, which every
+        interpreter reads back exactly."""
+        title = "Zo\u00eb \u2605"
         with patch("pythontk.AppLauncher.launch") as launch:
             ExternalAppHandler._spawn(
                 python=sys.executable,
@@ -1116,7 +1117,7 @@ class TestSpawnSnippet(unittest.TestCase):
                 "    def show(self, **kw):\n"
                 f"        json.dump(kw, open({out!r}, 'w', encoding='utf-8'))\n"
             )
-        title = "Jos\u00e9 \u0416\u0443\u043a"
+        title = "Zo\u00eb \u2605"
 
         def run(python, args=None, **kw):
             env = dict(os.environ, PYTHONPATH=where)
@@ -1592,6 +1593,57 @@ class TestSourceCheckoutDiscovery(unittest.TestCase):
             ExternalAppHandler._normalize_dist_name("My_Demo.App"),
             ExternalAppHandler._normalize_dist_name("my-demo-app"),
         )
+
+
+class TestDesktopShortcuts(unittest.TestCase):
+    """An external app's desktop launcher comes from its provider's hub: the
+    top-level package of the app's module, when it declares one (the hub's own
+    tests cover the hub; these pin the handler's routing)."""
+
+    def setUp(self):
+        self.handler = _make_sb().handlers.external_app
+        self.handler.register("panel", module="provider.tools.panel", entry="UI")
+
+    def test_the_hub_is_looked_up_on_the_apps_top_level_package(self):
+        from uitk import ExternalAppHub
+
+        hub = ExternalAppHub("provider")
+        with patch.object(ExternalAppHandler, "_hub_of", return_value=hub) as of:
+            self.assertIs(self.handler.hub_for("panel"), hub)
+        of.assert_called_once_with("provider")
+        self.assertIsNone(self.handler.hub_for("not_registered"))
+
+    def test_a_shortcut_is_offered_only_where_a_hub_runs_the_app(self):
+        from uitk import ExternalAppHub
+
+        with patch.object(ExternalAppHandler, "_hub_of", return_value=None):
+            self.assertFalse(self.handler.can_create_shortcut("panel"))
+        with patch.object(ExternalAppHandler, "_hub_of", return_value=ExternalAppHub("p")):
+            self.assertEqual(
+                self.handler.can_create_shortcut("panel"),
+                sys.platform == "win32" or sys.platform.startswith("linux"),
+            )
+            with patch.object(sys, "platform", "darwin"):
+                self.assertFalse(self.handler.can_create_shortcut("panel"))
+
+    def test_the_shortcut_is_the_hubs_launcher_for_the_app(self):
+        from uitk import ExternalAppHub
+
+        hub = ExternalAppHub("provider")
+        create = patch.object(
+            ExternalAppHub, "create_shortcut", autospec=True, return_value="P.lnk"
+        )
+        with patch.object(ExternalAppHandler, "_hub_of", return_value=hub), create as create:
+            self.assertEqual(
+                self.handler.create_shortcut("panel", "start_menu"), "P.lnk"
+            )
+        create.assert_called_once_with(hub, "start_menu", app="panel")
+
+    def test_an_app_without_a_hub_says_so(self):
+        with patch.object(ExternalAppHandler, "_hub_of", return_value=None):
+            with self.assertRaises(ValueError) as raised:
+                self.handler.create_shortcut("panel")
+        self.assertIn("ExternalAppHub", str(raised.exception))
 
 
 if __name__ == "__main__":

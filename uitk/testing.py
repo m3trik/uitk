@@ -21,6 +21,10 @@ copy is a copy that drifts. Downstream use is one line::
 Call it **before the first ``QSettings`` is constructed** — at import time of a conftest or a test
 runner, not from a fixture — since the redirect works by replacing the ``QSettings`` class.
 
+A host that goes on after the run — the user's own Maya, where mayatk's in-session harness runs a
+suite — takes every guard for the run only: ``with TestSandbox.activated():`` puts them all back on
+the way out, an exception included.
+
 The Qt-free half — refusing real browser launches, routing the process temp dir into one throwaway
 root — is :class:`pythontk.TestSandbox`, which this extends: ``activate()`` runs those guards first
 (so the stores below nest inside that root) and then the two Qt-side redirects. Same name on
@@ -28,6 +32,7 @@ purpose: downstream suites call ONE sandbox and get every guard the stack has.
 """
 
 import os
+from contextlib import ExitStack, contextmanager
 
 import pythontk as ptk
 
@@ -39,13 +44,50 @@ class _TestSandboxInternal:
     _presets_dir = None
 
     @staticmethod
+    def _qsettings_snapshot():
+        """What :meth:`TestSandbox.qsettings` changes, read before it does.
+
+        Returns ``(cls, default_format, {scope: ini_dir})``: the class ``QtCore.QSettings``
+        names, its default format and each scope's IniFormat directory. Qt has no getter for
+        ``setPath``; a ``QSettings`` built for an org that does not exist names the file it
+        would use, and reads and writes nothing.
+        """
+        from qtpy import QtCore
+
+        real = QtCore.QSettings
+        paths = {}
+        for scope in (real.UserScope, real.SystemScope):
+            probe = real(real.IniFormat, scope, "uitk_sandbox_probe", "path")
+            paths[scope] = os.path.dirname(os.path.dirname(probe.fileName()))
+        return real, real.defaultFormat(), paths
+
+    @classmethod
+    def _lift_qsettings(cls, snapshot):
+        """Put back what :meth:`TestSandbox.qsettings` changed, as *snapshot* read it."""
+        from qtpy import QtCore
+
+        real, default_format, paths = snapshot
+        QtCore.QSettings = real
+        real.setDefaultFormat(default_format)
+        for scope, path in paths.items():
+            real.setPath(real.IniFormat, scope, path)
+        cls._qsettings_dir = None
+
+    @classmethod
+    def _lift_presets(cls, previous):
+        """Point the presets root back at *previous* (unset when ``None``)."""
+        cls._restore_env(ptk.UserConfig.CONFIG_ROOT_ENV_VAR, previous)
+        cls._presets_dir = None
+
+    @staticmethod
     def _throwaway_dir(name):
         """A temp dir for the life of this process, swept later if the process never exits.
 
         ``ptk.TempArtifacts(policy="session")`` rather than ``tempfile.mkdtemp`` + an ``atexit``
         ``rmtree``, per the monorepo rule: test runs are hosted inside DCCs and are routinely
-        *killed* rather than exited, and an exit hook cannot run then — only the primitive's
-        age-gated sweep of same-prefix leftovers ever reclaims those.
+        *killed* rather than exited, and an exit hook cannot run then — the primitive's sweep
+        of same-prefix leftovers reclaims those: at once when their owner has exited (a session
+        tag names it), else by age.
 
         ``name`` goes in the PREFIX and the tag is left unique, not the other way round: a fixed
         tag is deterministic and self-overwriting, so two suites running at once (uitk's and
@@ -92,12 +134,20 @@ class TestSandbox(_TestSandboxInternal, ptk.TestSandbox):
             real.setPath(ini, scope, tmp)
         # Load-bearing for the no-arg / QObject-parent constructors the subclass forwards verbatim.
         real.setDefaultFormat(ini)
+        sandbox = cls
 
         class _SandboxedQSettings(real):
-            """Force the NativeFormat (registry-bound) overloads onto temp ini files."""
+            """Force the NativeFormat (registry-bound) overloads onto temp ini files.
+
+            Only while a sandbox stands: once :meth:`activated` lifts it, this constructs as the
+            real class does — a module that bound ``QSettings`` by name inside the block keeps
+            this class, and must reach the real stores again, not an ini file at the real path.
+            """
 
             def __init__(self, *args, **kwargs):
-                if (
+                if sandbox._qsettings_dir is None:
+                    super().__init__(*args, **kwargs)
+                elif (
                     len(args) >= 2
                     and isinstance(args[0], str)
                     and isinstance(args[1], str)
@@ -133,7 +183,9 @@ class TestSandbox(_TestSandboxInternal, ptk.TestSandbox):
         # ``PresetManager.get_presets_root`` IS ``ptk.UserConfig.user_config_root``, so this one
         # redirect moves the GUI and the headless preset stores together.
         cls._presets_dir = cls._throwaway_dir("presets")
-        os.environ[ptk.UserConfig.CONFIG_ROOT_ENV_VAR] = cls._presets_dir
+        # Through the shared ledger, so a detached app launched from here gets
+        # the developer's root back (``ptk.TestSandbox.host_environ``).
+        cls._redirect_env(ptk.UserConfig.CONFIG_ROOT_ENV_VAR, cls._presets_dir)
         return cls._presets_dir
 
     @classmethod
@@ -148,6 +200,27 @@ class TestSandbox(_TestSandboxInternal, ptk.TestSandbox):
         """
         super().activate()
         return cls.qsettings(), cls.presets()
+
+    @classmethod
+    @contextmanager
+    def activated(cls):
+        """Every guard for the ``with`` block only; yields ``(qsettings_dir, presets_dir)``.
+
+        :meth:`activate` for a host that goes on after the run: mayatk's in-session harness runs
+        a suite inside the user's own Maya, which :meth:`activate` would leave constructing its
+        stores into temp files deleted when it exits. On the way out, an exception included, the
+        ``QSettings`` class, its default format and ini paths and the presets root are put back,
+        then pythontk's guards (:meth:`pythontk.TestSandbox.activated`). A guard standing on entry
+        (an :meth:`activate` before the block) stays standing. A store built inside the block
+        keeps its sandbox file: it was a test's.
+        """
+        with super().activated(), ExitStack() as lift:
+            if cls._qsettings_dir is None:
+                lift.callback(cls._lift_qsettings, cls._qsettings_snapshot())
+            if cls._presets_dir is None:
+                previous = os.environ.get(ptk.UserConfig.CONFIG_ROOT_ENV_VAR)
+                lift.callback(cls._lift_presets, previous)
+            yield cls.qsettings(), cls.presets()
 
     @classmethod
     def is_active(cls):

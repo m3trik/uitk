@@ -8,6 +8,7 @@ The string DSL they all carry (``fmt`` / ``kbd`` / ``hl`` / ``wrap`` /
 ``display_ms`` ...) is :class:`pythontk.TooltipFormat`: pure string work, so it
 lives below Qt where a headless engine surface can build its tooltips with it.
 """
+
 import weakref
 
 import pythontk as ptk
@@ -209,6 +210,11 @@ class TooltipPresenter:
         if isinstance(view, QtWidgets.QAbstractItemView) and view.viewport() is obj:
             index = view.indexAt(event.pos())
             text = index.data(QtCore.Qt.ToolTipRole) if index.isValid() else None
+            # A view may compose an item's tooltip at hover time (TreeWidget's
+            # elided-cell text): ``item_tooltip(index, text) -> text``.
+            refine = getattr(view, "item_tooltip", None)
+            if index.isValid() and callable(refine):
+                text = refine(index, text)
             rect = view.visualRect(index)
         elif isinstance(view, QtWidgets.QGraphicsView) and view.viewport() is obj:
             # The topmost item under the pointer that has one, as the scene picks.

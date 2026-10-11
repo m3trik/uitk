@@ -1,9 +1,12 @@
 # !/usr/bin/python
 # coding=utf-8
+import logging
 import warnings
 from qtpy import QtWidgets, QtGui, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.convert import ConvertMixin
+
+logger = logging.getLogger(__name__)
 
 
 class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
@@ -67,8 +70,7 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
         if converted_color and isinstance(converted_color, QtGui.QColor):
             self._color = converted_color
         else:
-            # Log an error or handle the case where conversion fails
-            print(f"Conversion to QColor failed or invalid color: {value}")
+            logger.warning("Not a colour: %r; the swatch shows white.", value)
             self._color = QtGui.QColor(QtCore.Qt.white)  # Default fallback color
 
         self.updateBackgroundColor()

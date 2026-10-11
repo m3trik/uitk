@@ -45,7 +45,7 @@ _DEFAULT_DISABLED_COLOR: str = ptk.Palette.status()["error"][0]  # soft coral
 _DEFAULT_BYPASS_MODIFIER = QtCore.Qt.AltModifier | QtCore.Qt.ControlModifier
 
 
-class ResetOption(ButtonOption, ptk.LoggingMixin):
+class ResetOption(ButtonOption):
     """Reset-to-default button with a modifier-gated *bypass* toggle.
 
     Plain click resets the wrapped widget to its default (persisted); Shift saves

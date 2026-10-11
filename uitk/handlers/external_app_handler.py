@@ -815,6 +815,92 @@ class ExternalAppHandler(BaseHandler):
             app="sb.app" if in_process else None,
         )
 
+    # ── Desktop launchers (optional contract methods) ────────────────────
+
+    #: The ``__main__`` attribute a provider declares its ``ExternalAppHub`` as.
+    HUB_ATTR: str = "HUB"
+
+    def hub_for(self, name: str):
+        """The ``ExternalAppHub`` that opens app *name* standalone, or None.
+
+        Its provider's: the top-level package of the app's module, when that
+        package declares a hub in its ``__main__`` (``python -m <package>``).
+        """
+        cfg = self._apps.get(name)
+        if not cfg or not cfg.get("module"):
+            return None
+        return self._hub_of(cfg["module"].split(".")[0])
+
+    @classmethod
+    def _hub_of(cls, package: str):
+        """The hub *package* declares as :attr:`HUB_ATTR` in its ``__main__``.
+
+        Importing ``<package>.__main__`` runs only its declarations (the
+        program runs under ``if __name__ == "__main__"``). A ``__main__`` whose
+        source never names :attr:`HUB_ATTR` is not imported at all: many run
+        their program unguarded at import, and a browser asks on every
+        external app's row menu, inside a host too. A hub is recognized by its
+        shape, not its class (which lives above this layer), so one declared
+        before a reload of uitk still counts. None when there is no
+        ``__main__``, no hub in it, or it fails to import.
+        """
+        import importlib
+        import importlib.util
+
+        name = f"{package}.__main__"
+        try:
+            module = sys.modules.get(name)
+            if module is None:
+                spec = importlib.util.find_spec(name)
+                if spec is None:
+                    return None
+                get_source = getattr(spec.loader, "get_source", None)
+                source = get_source(name) if callable(get_source) else None
+                if source is not None and not re.search(
+                    rf"\b{re.escape(cls.HUB_ATTR)}\b", source
+                ):
+                    return None
+                module = importlib.import_module(name)
+        # SystemExit too: a provider's program exiting at import declares no hub.
+        except (Exception, SystemExit):  # noqa: BLE001
+            return None
+        hub = getattr(module, cls.HUB_ATTR, None)
+        return hub if callable(getattr(hub, "create_shortcut", None)) else None
+
+    def can_create_shortcut(self, name: str) -> bool:
+        """Whether app *name* can get a desktop launcher here (its provider
+        has a hub, on Windows or Linux)."""
+        if not (sys.platform == "win32" or sys.platform.startswith("linux")):
+            return False
+        return self.hub_for(name) is not None
+
+    def create_shortcut(self, name: str, location: str = "desktop") -> str:
+        """Put a launcher that opens app *name* standalone on the desktop or
+        in the start menu.
+
+        Inside a DCC the launcher runs the DCC's own Python, which has to
+        import the app's package without the host's startup scripts; see
+        ``ExternalAppHub.create_shortcut``, which this delegates to.
+
+        Parameters:
+            name: The registered app's name.
+            location: ``"desktop"`` or ``"start_menu"``.
+
+        Returns:
+            The shortcut file's path.
+
+        Raises:
+            ValueError: The app's package declares no hub.
+            RuntimeError: Its package does not import from the desktop.
+        """
+        hub = self.hub_for(name)
+        if hub is None:
+            raise ValueError(
+                f"{name!r} cannot run standalone: its package declares no "
+                f"ExternalAppHub as HUB in its __main__."
+            )
+        return hub.create_shortcut(location, app=name)
+
     def _unresolvable_message(self, name: Optional[str]) -> str:
         """Say why *name* could not be launched, and what to do about it.
 
@@ -1154,7 +1240,8 @@ class ExternalAppHandler(BaseHandler):
             )
             # ascii(), not repr(): the literal must survive the command line, and
             # mayapy (a Maya host's python) decodes that in the ANSI code page --
-            # "José" arrived as "Jos\udce9", "Жук" as "???" (measured, Maya 2025).
+            # an accented letter arrived as a lone surrogate (é as \udce9) and each
+            # letter outside the code page as "?" (measured, Maya 2025).
             kwargs_src = ", ".join(f"{k}={ascii(v)}" for k, v in sk.items())
             snippet = (
                 f"from {module} import {entry};ui = {entry}();ui.show({kwargs_src})"

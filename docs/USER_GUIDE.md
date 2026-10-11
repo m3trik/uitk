@@ -291,6 +291,8 @@ button.setIcon(IconManager.get("save"))   # theme-colored
 icon = sb.get_icon("save")                # raw registered QIcon (no recoloring)
 ```
 
+`WINDOW_BLUR` (`"on"`/`"off"`; on by default, except in the opaque `high-contrast` theme) blurs the desktop seen through a translucent window background — frosted glass instead of see-through — for every window `style.set` styles and the popups they open (Windows 10+, macOS, and KDE Plasma on X11 while its blur effect is on; elsewhere -- native Wayland, GNOME, other X11 window managers -- the background just stays translucent, see `Bootstrap.blurs()`). It is a theme token like any other: the Style Editor shows it as a check box under *Effects*, and `StyleSheet.set_variable("WINDOW_BLUR", "off", theme="dark")` sets the same persisted override.
+
 Live theme editing:
 ```python
 from uitk.widgets.editors.style_editor import StyleEditor

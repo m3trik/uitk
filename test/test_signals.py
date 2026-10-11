@@ -345,7 +345,7 @@ class TestSignalsEdgeCases(BaseTestCase):
 
     def test_signals_with_unicode_names(self):
         """Should accept unicode signal names."""
-        decorator = Signals("signalÜnicode", "日本語Signal")
+        decorator = Signals("signalÜnicode", "ＷＩＤＥSignal")
         self.assertEqual(len(decorator.signals), 2)
 
     def test_signals_with_whitespace_names(self):

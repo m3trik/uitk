@@ -33,8 +33,8 @@ class AttributeSpec:
         key: Identifier used as the widget's objectName. Required.
         label: Display label. Defaults to *key* if empty.
         kind: One of the registered kinds (``"bool" | "int" | "float" |
-            "str" | "choice" | "check_list" | "path" | "file_list" |
-            "action" | "affix"``) or ``"auto"`` to derive from
+            "str" | "choice" | "check_list" | "path" | "file" | "files" |
+            "file_list" | "action" | "affix"``) or ``"auto"`` to derive from
             ``type(default)``.
             Custom kinds added via :meth:`KindFactory.register_kind` are
             also accepted.
@@ -70,7 +70,7 @@ class AttributeSpec:
             the first spec of a registry (nothing to attach to) and on the first
             spec of a section (a section's opening row is its own).
         placeholder: Grey text shown while a text field is EMPTY, on the
-            line-edit kinds (``"str"``, ``"path"``, ``"file"``). For what
+            line-edit kinds (``"str"``, ``"path"``, ``"file"``, ``"files"``). For what
             happens if it is left that way -- an empty field that prompts on
             use, or one that falls back to a computed default -- which is
             unreadable from the row otherwise: the control looks unset and

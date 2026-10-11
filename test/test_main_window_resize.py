@@ -479,8 +479,8 @@ class TestCollapseShrinksWindowEndToEnd(QtBaseTestCase):
         window_delta = h_before - h_after
         self.assertGreaterEqual(
             window_delta, group_delta - 4,
-            f"Window shrunk too little: windowΔ={window_delta}, "
-            f"groupΔ={group_delta}",
+            f"Window shrunk too little: window_delta={window_delta}, "
+            f"group_delta={group_delta}",
         )
 
     def test_collapse_then_expand_restores_window_height(self):
@@ -573,8 +573,8 @@ class TestCollapseShrinksWindowEndToEnd(QtBaseTestCase):
         window_delta = h_before - win.height()
         self.assertGreaterEqual(
             window_delta, group_delta - 4,
-            f"Pre-stretched window shrunk too little: windowΔ={window_delta}, "
-            f"groupΔ={group_delta}",
+            f"Pre-stretched window shrunk too little: window_delta={window_delta}, "
+            f"group_delta={group_delta}",
         )
 
     def test_collapsing_one_group_does_not_resize_others(self):

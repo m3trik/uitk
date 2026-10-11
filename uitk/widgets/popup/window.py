@@ -7,6 +7,7 @@ from typing import Callable, Optional
 from qtpy import QtCore, QtWidgets
 
 from uitk._bootstrap import Bootstrap
+from uitk.themes.style_sheet import StyleSheet
 
 
 class PopupWindow:
@@ -50,7 +51,8 @@ class PopupWindow:
                 desktop cannot composite). For a popup whose ground is a
                 translucent window background; an opaque surface must NOT set
                 it, or the backing store clears to transparent wherever the
-                fill does not reach.
+                fill does not reach. A translucent popup also blurs what is
+                behind it when its owner's theme has ``WINDOW_BLUR`` on.
 
         Returns:
             QtWidgets.QWidget or None: The popup's owner after the promotion.
@@ -74,6 +76,9 @@ class PopupWindow:
 
         if translucent:
             Bootstrap.set_translucent(widget)
+            # Frosted like the window it pops from: the owner's WINDOW_BLUR,
+            # re-read at each show so a theme change reaches it.
+            Bootstrap.set_blur(widget, StyleSheet.window_blur)
         widget.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
         return parent
 

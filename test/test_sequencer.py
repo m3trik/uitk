@@ -5966,6 +5966,7 @@ class TestFooterCenterSide(BaseTestCase):
         """An expanding spacer left at stretch 0 loses every spare pixel to a
         stretch-1 neighbour -- which parks the widget on the right again."""
         from qtpy import QtWidgets
+        from uitk.widgets._layout_items import _LayoutItems
 
         btn = QtWidgets.QPushButton("x")
         self.footer.add_widget(btn, side="center")
@@ -5974,8 +5975,10 @@ class TestFooterCenterSide(BaseTestCase):
         btn_idx = layout.indexOf(btn)
         after = [
             layout.stretch(i)
-            for i in range(btn_idx + 1, layout.count())
-            if layout.itemAt(i).spacerItem() is not None
+            for i, entry in enumerate(_LayoutItems.entries(layout))
+            if i > btn_idx
+            and not isinstance(entry, QtWidgets.QWidget)
+            and entry.spacerItem() is not None
         ]
         self.assertIn(layout.stretch(stack_idx), after)
         self.assertEqual(layout.stretch(stack_idx), 1)
@@ -9091,3 +9094,422 @@ class TestTangentHandleSelectionDrag(BaseTestCase):
             self.w._key_scale_box,
             "Shift still held: the release hands the modifier back",
         )
+
+
+class TestTheShotBoundOwnsItsEdge(BaseTestCase):
+    """The active shot's bound and a clip edge on it each own one side.
+
+    Reported 2026-10-06: at a gap of zero the end of a shot could not be
+    dragged in.  The rows the user pressed in had a clip on each side of the
+    bound -- this shot's, ending on it, and the neighbour's read-only one
+    starting there -- and neither press reached the bound: the clip took the
+    inner half (a clip resize), and the outer half died, because the
+    highlight deferred to the read-only clip that had already declined it.
+    The outer half is the bound's.  The inner half stays the clip's
+    (2026-10-10: yielding it too left a clip that ends on its shot's end
+    with no end to grab -- "I keep grabbing the shot boundary").
+    """
+
+    def setUp(self):
+        from qtpy import QtCore, QtGui
+
+        self.C, self.G = QtCore, QtGui
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.w.show()
+        self.tl = self.w._timeline
+        own = self.w.add_track("own")
+        nbr = self.w.add_track("nbr")
+        self.own = self.w.add_clip(own, 40, 80)  # ends ON the bound
+        self.mid = self.w.add_clip(nbr, 40, 30)  # ends well inside the shot
+        self.w.add_clip(
+            nbr, 120, 60, locked=True, read_only=True, dimmed=True
+        )  # the next shot's, starting on the bound
+        self.w.set_range_highlight(40, 120)
+        QtWidgets.QApplication.processEvents()
+        self.bounds, self.resized = [], []
+        self.w.range_highlight_changed.connect(lambda a, b: self.bounds.append((a, b)))
+        self.w.clip_resized.connect(lambda *a: self.resized.append(a))
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _row_y(self, cid):
+        item = self.w._clip_items[cid]
+        return item.sceneBoundingRect().center().y()
+
+    def _drag(self, scene_x, scene_y, dx):
+        C, G = self.C, self.G
+        start = self.tl.mapFromScene(C.QPointF(scene_x, scene_y))
+        end = self.tl.mapFromScene(C.QPointF(scene_x + dx, scene_y))
+        for kind, pt, btn, btns in (
+            (C.QEvent.MouseButtonPress, start, C.Qt.LeftButton, C.Qt.LeftButton),
+            (C.QEvent.MouseMove, end, C.Qt.NoButton, C.Qt.LeftButton),
+            (C.QEvent.MouseButtonRelease, end, C.Qt.LeftButton, C.Qt.NoButton),
+        ):
+            ev = G.QMouseEvent(
+                kind,
+                C.QPointF(pt),
+                C.QPointF(self.tl.viewport().mapToGlobal(pt)),
+                btn,
+                btns,
+                C.Qt.NoModifier,
+            )
+            {
+                C.QEvent.MouseButtonPress: self.tl.mousePressEvent,
+                C.QEvent.MouseMove: self.tl.mouseMoveEvent,
+                C.QEvent.MouseButtonRelease: self.tl.mouseReleaseEvent,
+            }[kind](ev)
+
+    def _bound_x(self):
+        return self.tl.time_to_x(120)
+
+    def test_a_press_just_past_the_bound_over_a_read_only_clip_drags_it(self):
+        self._drag(self._bound_x() + 2, self._row_y(self.mid), -40)
+        self.assertEqual(len(self.bounds), 1, "the bound drag never started")
+        self.assertLess(self.bounds[0][1], 120)
+
+    def test_a_press_inside_a_clip_edge_on_the_bound_resizes_the_clip(self):
+        self._drag(self._bound_x() - 2, self._row_y(self.own), -40)
+        self.assertEqual(self.bounds, [], "the bound took the clip's own edge")
+        self.assertEqual(len(self.resized), 1, "the clip end never resized")
+
+    def test_a_press_just_past_a_clip_edge_on_the_bound_drags_the_bound(self):
+        """The same row, the other side of the bound: nothing of the clip is
+        there, so the bound's handle answers."""
+        self._drag(self._bound_x() + 2, self._row_y(self.own), -40)
+        self.assertEqual(len(self.bounds), 1, "the bound drag never started")
+        self.assertEqual(self.resized, [])
+
+    def test_a_clip_edge_off_the_bound_still_resizes_the_clip(self):
+        edge = self.w._clip_items[self.mid].sceneBoundingRect().right() - 2
+        self._drag(edge, self._row_y(self.mid), 30)
+        self.assertEqual(self.bounds, [])
+        self.assertEqual(len(self.resized), 1)
+
+    def test_a_point_clip_on_the_bound_keeps_its_press(self):
+        """A zero-length clip is a key drawn as a mark: it has no edge to share
+        with the bound, and on the bound it is the thing being grabbed."""
+        pt = self.w.add_clip(self.w.add_track("mark"), 120, 0)
+        self.w.set_range_highlight(40, 120)  # reach the new row
+        moved = []
+        self.w.clip_moved.connect(lambda *a: moved.append(a))
+        self._drag(self._bound_x(), self._row_y(pt), -40)
+        self.assertEqual(self.bounds, [], "the bound took the mark's press")
+        self.assertEqual(len(moved), 1)
+
+    def test_a_zero_width_gap_on_the_bound_yields_to_it(self):
+        """At a gap of zero the gap overlay is a strip centred on the seam;
+        it has no width of its own to resize, so the bound is what a press
+        there grabs (measured on the production assembly: the press went to
+        the gap and slid the next shot)."""
+        self.w.add_gap_overlay(120, 120)
+        gaps = []
+        self.w.gap_resized.connect(lambda *a: gaps.append(a))
+        self.w.gap_left_resized.connect(lambda *a: gaps.append(a))
+        self._drag(self._bound_x() + 1, self._row_y(self.mid), -40)
+        self.assertEqual(len(self.bounds), 1, "the bound drag never started")
+        self.assertEqual(gaps, [])
+
+    def test_a_real_gaps_edge_still_answers_as_the_gap(self):
+        self.w.add_gap_overlay(120, 140)
+        gaps = []
+        self.w.gap_left_resized.connect(lambda *a: gaps.append(a))
+        self._drag(self._bound_x() + 2, self._row_y(self.mid), 30)
+        self.assertEqual(self.bounds, [])
+        self.assertEqual(len(gaps), 1)
+
+
+class TestHoverFocusYieldsToTyping(BaseTestCase):
+    """The timeline takes focus on hover so its keys work without a click --
+    never from a field being typed in.
+
+    2026-10-10: the Shot Sequencer's shot dropdown edits its row in place (a
+    cell editor, one header row above the tracks), and the editor closed the
+    moment the pointer crossed into the tracks: hover focus counted as
+    leaving it.  Reported as "I still can't edit the shot data by double
+    clicking the shots combobox" and, before, "unable to edit anything but
+    the first field".
+    """
+
+    def setUp(self):
+        from qtpy.QtTest import QTest
+        from uitk.widgets.comboBox import ComboBox
+
+        self.host = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(self.host)
+        self.cmb = ComboBox(self.host)
+        self.cmb.set_cells([{"key": "name"}, {"key": "end", "kind": "int"}])
+        self.cmb.add_cells({"name": "S0", "end": 50}, 0)
+        self.seq = SequencerWidget(self.host)
+        layout.addWidget(self.cmb)
+        layout.addWidget(self.seq)
+        self.host.resize(600, 400)
+        self.host.show()
+        QTest.qWaitForWindowExposed(self.host)
+        self.host.activateWindow()
+        QTest.qWaitForWindowActive(self.host)
+        self.tl = self.seq._timeline
+
+    def tearDown(self):
+        self.host.close()
+        self.host.deleteLater()
+
+    def _enter_timeline(self):
+        from qtpy import QtCore, QtGui
+
+        local = QtCore.QPointF(10, 10)
+        glob = QtCore.QPointF(self.tl.mapToGlobal(QtCore.QPoint(10, 10)))
+        QtWidgets.QApplication.sendEvent(self.tl, QtGui.QEnterEvent(local, local, glob))
+        QtWidgets.QApplication.processEvents()
+
+    def test_the_cell_editor_survives_the_pointer_crossing_the_timeline(self):
+        self.cmb.begin_cell_edit(0)
+        for _ in range(20):
+            QtWidgets.QApplication.processEvents()
+            if self.cmb.cell_editing:
+                break
+        self.assertTrue(self.cmb.cell_editing, "the editor never opened")
+        self._enter_timeline()
+        self.assertTrue(self.cmb.cell_editing, "hover took the editor's focus")
+        self.assertFalse(self.tl.hasFocus())
+
+    def test_with_nothing_being_typed_hover_focuses_the_timeline(self):
+        self.cmb.setFocus()
+        QtWidgets.QApplication.processEvents()
+        self._enter_timeline()
+        self.assertTrue(self.tl.hasFocus())
+
+    def test_a_read_only_field_does_not_hold_the_focus(self):
+        view = QtWidgets.QLineEdit(self.host)
+        view.setReadOnly(True)
+        view.show()
+        view.setFocus()
+        QtWidgets.QApplication.processEvents()
+        self._enter_timeline()
+        self.assertTrue(self.tl.hasFocus())
+
+
+class TestHiddenPreviewKeys(BaseTestCase):
+    """A curve preview may mark keys ``hidden``: part of the curve, no dot.
+
+    The host's own bookkeeping samples (a shot system's bound pins) shape
+    the curve but are not the animator's keys; drawn, they were the
+    "auto generated border keys" cluttering every bound (2026-10-06).
+    """
+
+    PREVIEW = {
+        "keys": [(0.0, 0.0), (50.0, 1.0), (100.0, 0.0)],
+        "hidden": [False, True, False],
+        "segments": [
+            {
+                "t0": 0.0,
+                "v0": 0.0,
+                "t1": 50.0,
+                "v1": 1.0,
+                "out_type": "linear",
+                "cp1": None,
+                "cp2": None,
+            },
+            {
+                "t0": 50.0,
+                "v0": 1.0,
+                "t1": 100.0,
+                "v1": 0.0,
+                "out_type": "linear",
+                "cp1": None,
+                "cp2": None,
+            },
+        ],
+        "val_min": 0.0,
+        "val_max": 1.0,
+    }
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_a_hidden_key_has_no_dot_and_cannot_be_selected(self):
+        tid = self.w.add_track("obj")
+        self.w.expand_track(
+            tid,
+            sub_row_data=[
+                ("tx", [(0, 100, "tx", "#FF6600", {"curve_preview": self.PREVIEW})])
+            ],
+        )
+        clip = [c for c in self.w.clips() if c.sub_row][0]
+        keys = self.w._clip_items[clip.clip_id]._keyframe_items
+        self.assertEqual([k._time for k in keys], [0.0, 50.0, 100.0])
+        self.assertEqual([k.isVisible() for k in keys], [True, False, True])
+        self.assertFalse(keys[1].flags() & QtWidgets.QGraphicsItem.ItemIsSelectable)
+
+
+class TestClipFrameCount(BaseTestCase):
+    """A clip at rest shows its length in frames where it fits (2026-10-06:
+    "sequences should display the frame count when there is room")."""
+
+    def setUp(self):
+        from qtpy import QtGui
+
+        self.w = SequencerWidget()
+        self.tid = self.w.add_track("obj")
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        self.fm = QtGui.QFontMetrics(font)
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _item(self, **data):
+        cid = self.w.add_clip(self.tid, 10, 40, **data)
+        return self.w._clip_items[cid]
+
+    def test_a_wide_clip_shows_its_length_beside_its_label(self):
+        item = self._item(label_center="tx ty")
+        self.assertEqual(item._frame_count_label(self.fm, 400, "tx ty"), "40f")
+
+    def test_a_narrow_clip_keeps_its_label_and_drops_the_count(self):
+        item = self._item(label_center="tx ty")
+        tight = self.fm.horizontalAdvance("tx ty") + 2
+        self.assertEqual(item._frame_count_label(self.fm, tight, "tx ty"), "")
+
+    def test_a_point_clip_has_no_count(self):
+        cid = self.w.add_clip(self.tid, 10, 0)
+        item = self.w._clip_items[cid]
+        self.assertEqual(item._frame_count_label(self.fm, 400, ""), "")
+
+    def test_a_host_can_turn_it_off(self):
+        item = self._item(show_frame_count=False)
+        self.assertEqual(item._frame_count_label(self.fm, 400, ""), "")
+
+
+class TestItemsHoldTheGeometryTheSceneIndexed(BaseTestCase):
+    """A scene item answers the bounds it was indexed under until it syncs.
+
+    QGraphicsScene's BSP index files an item under the rect ``boundingRect``
+    returned when it was indexed, and takes it out under the rect it returns
+    at removal.  The overlays and markers derived theirs LIVE from the
+    timeline's layout (rows, zoom, viewport), so once the layout had changed
+    a removal missed the cells only the old rect covered; after the retired
+    item was destroyed, the next repaint over them dereferenced it -- a
+    pure-virtual call in ``QGraphicsItemPrivate::effectiveBoundingRect`` that
+    takes the host down.  Reported 2026-10-07 through the shot sequencer:
+    create the first shot, undo it, and the panel crashed on its repaint.
+    """
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        for name in ("a", "b", "c", "d"):
+            tid = self.w.add_track(name)
+            self.w.add_clip(tid, 60, 40)
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _assert_held(self, item, change):
+        """*change* moves the layout under *item*: its bounds hold until
+        ``sync`` -- the moment a change is announced to the scene index --
+        and only then follow."""
+        from qtpy import QtCore
+
+        before = QtCore.QRectF(item.boundingRect())
+        change()
+        self.assertEqual(item.boundingRect(), before, "moved without a sync")
+        item.sync()
+        self.assertNotEqual(item.boundingRect(), before, "the sync never followed")
+
+    def _zoom(self):
+        self.w._timeline._pixels_per_unit *= 2.0  # the bare input, no refresh
+
+    def test_the_range_highlight_holds_through_a_row_change(self):
+        self.w.set_range_highlight(1.0, 101.0)
+        self._assert_held(self.w._range_highlight, self.w._tracks.clear)
+
+    def test_the_range_highlight_holds_through_a_zoom(self):
+        self.w.set_range_highlight(1.0, 101.0)
+        self._assert_held(self.w._range_highlight, self._zoom)
+
+    def test_a_gap_overlay_holds_through_a_zoom(self):
+        self.w.add_gap_overlay(101.0, 120.0)
+        self._assert_held(self.w._gap_overlays[-1], self._zoom)
+
+    def test_a_range_overlay_holds_through_a_zoom(self):
+        self.w.add_range_overlay(130.0, 200.0)
+        self._assert_held(self.w._range_overlays[-1], self._zoom)
+
+    def test_the_snap_guide_holds_through_a_zoom(self):
+        self.w.set_snap_guides([40.0, 80.0])
+        self._assert_held(self.w._snap_guide, self._zoom)
+
+    def test_a_marker_holds_through_a_zoom(self):
+        mid = self.w.add_marker(50.0)
+        self._assert_held(self.w._marker_items[mid], self._zoom)
+
+    def test_own_edits_still_move_them(self):
+        """Their own setters announce the change, so the held bounds follow."""
+        from qtpy import QtCore
+
+        self.w.set_range_highlight(1.0, 101.0)
+        hl = self.w._range_highlight
+        before = QtCore.QRectF(hl.boundingRect())
+        self.w.set_range_highlight(1.0, 201.0)
+        self.assertGreater(hl.boundingRect().width(), before.width())
+        self.w.set_snap_guides([40.0])
+        guide = self.w._snap_guide
+        guide_before = QtCore.QRectF(guide.boundingRect())
+        self.w.set_snap_guides([40.0, 140.0])
+        self.assertGreater(guide.boundingRect().width(), guide_before.width())
+
+    def test_the_new_shot_undo_rebuild_does_not_crash(self):
+        """The calls the shot sequencer made, replayed: a new first shot
+        drawn, then the rebuild that cleared it.  Run in a child process --
+        before the fix it died natively, which would take this suite down."""
+        import os
+        import subprocess
+
+        script = (
+            "import os, sys\n"
+            "from qtpy import QtWidgets\n"
+            "app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])\n"
+            "from uitk.widgets.sequencer._sequencer import SequencerWidget\n"
+            "w = SequencerWidget(); w.resize(900, 400); w.show(); app.processEvents()\n"
+            "w.clear(); tid = w.add_track('ctlB')\n"
+            "w.add_clip(track_id=tid, start=60.0, duration=40.0)\n"
+            "w.set_playhead(1.0); w.set_active_range(1.0, 120.0); w.frame_shot()\n"
+            "app.processEvents()\n"
+            "with w.bulk_updates():\n"
+            "    w.clear(keep_range_highlight=True); tid = w.add_track('ctlB')\n"
+            "    w.add_clip(track_id=tid, start=60.0, duration=40.0)\n"
+            "    w.set_playhead(1.0); w.set_active_range(1.0, 101.0)\n"
+            "    w.set_range_highlight(1.0, 101.0)\n"
+            "    w.set_shot_blocks([{'id': 0, 'name': 'S', 'start': 1.0,"
+            " 'end': 101.0, 'active': True}])\n"
+            "    w.add_gap_overlay(101.0, 101.0, tail=True)\n"
+            "    w.add_gap_overlay(1.0, 1.0, head=True)\n"
+            "app.processEvents()\n"
+            "w.clear(); w._timeline._scene.update()\n"
+            "for _ in range(5): app.processEvents()\n"
+            "print('survived', flush=True)\n"
+            "os._exit(0)\n"
+        )
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+        env["PYTHONPATH"] = os.pathsep.join(
+            p for p in (str(PACKAGE_ROOT), env.get("PYTHONPATH", "")) if p
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertIn("survived", proc.stdout, proc.stderr[-2000:])

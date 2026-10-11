@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import logging
 import re
 import time
 from contextlib import contextmanager, nullcontext
@@ -13,6 +14,8 @@ from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.overflow_indicator import OverflowIndicator
+
+logger = logging.getLogger(__name__)
 
 
 class CustomStyle(QtWidgets.QProxyStyle):
@@ -888,7 +891,9 @@ class ComboBox(
                 index = fallback_index
                 if index is None:
                     index = -1 if self.has_header else 0
-                print(f"ComboBox: '{i}' not found. Defaulting to index {index}.")
+                logger.warning(
+                    "ComboBox: %r not found. Defaulting to index %s.", i, index
+                )
 
             self.setCurrentIndex(index)
 

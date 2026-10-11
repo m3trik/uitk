@@ -1249,8 +1249,8 @@ class TestMainWindowEdgeCases(QtBaseTestCase):
         """Should handle unicode name."""
         from uitk.widgets.mainWindow import MainWindow
 
-        window = self.track_widget(MainWindow("ウィンドウ", self.sb))
-        self.assertEqual(window.objectName(), "ウィンドウ")
+        window = self.track_widget(MainWindow("Café ★ 🚀", self.sb))
+        self.assertEqual(window.objectName(), "Café ★ 🚀")
 
     def test_special_chars_in_name(self):
         """Should handle special characters in name."""

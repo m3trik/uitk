@@ -181,5 +181,132 @@ class TestContextMenuAboutToShow(_EditAsCase):
         table.menu.hide()
 
 
+class TestDragEditBatch(_EditAsCase):
+    """A drag down editable cells fills them all from one edit -- as ONE edit.
+
+    Repro (mayatk Channels): drag down three Value cells, type 2.5, Enter.  All
+    three were set, but each cell's ``cellChanged`` reached the host on its
+    own, so one Undo reverted one cell.  The commit and its fill are bracketed
+    by ``editBatchStarted`` / ``editBatchFinished`` so a host can make the burst
+    one step.
+    """
+
+    def drag_edit(self):
+        from uitk.widgets.tableWidget import TableWidget
+
+        table = self.track_widget(TableWidget())
+        table.add([["a", "1"], ["b", "1"], ["c", "1"]], headers=["Name", "Value"])
+        for row in range(3):
+            item = table.item(row, 1)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+        table.resize(300, 200)
+        table.show()
+        QtWidgets.QApplication.processEvents()
+
+        events = []
+        table.cellChanged.connect(lambda r, c: events.append(("changed", r)))
+        table.editBatchStarted.connect(lambda: events.append("started"))
+        table.editBatchFinished.connect(lambda: events.append("finished"))
+
+        viewport = table.viewport()
+        center = [
+            table.visualRect(table.model().index(r, 1)).center() for r in range(3)
+        ]
+        QTest.mousePress(
+            viewport, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, center[0]
+        )
+        for point in center[1:]:
+            QTest.mouseMove(viewport, point)
+        QTest.mouseRelease(
+            viewport, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, center[2]
+        )
+        QtWidgets.QApplication.processEvents()
+        editor = table.active_editor()
+        self.assertIsInstance(editor, QtWidgets.QLineEdit, "the drag opened no editor")
+        editor.setText("2.5")
+        return table, editor, events
+
+    def test_the_fill_lands_between_one_start_and_one_finish(self):
+        table, editor, events = self.drag_edit()
+        QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual([table.item(r, 1).text() for r in range(3)], ["2.5"] * 3)
+        self.assertEqual(events[0], "started", events)
+        self.assertEqual(events[-1], "finished", events)
+        self.assertEqual(
+            sorted(e[1] for e in events[1:-1]), [0, 1, 2], "every write in the bracket"
+        )
+        self.assertEqual(events.count("started"), 1, events)
+
+    def test_escape_fills_nothing_and_opens_no_batch(self):
+        table, editor, events = self.drag_edit()
+        QTest.keyClick(editor, QtCore.Qt.Key_Escape)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual([table.item(r, 1).text() for r in range(3)], ["1"] * 3)
+        self.assertEqual(events, [])
+
+    def test_a_drag_that_opened_no_editor_leaves_no_fill_behind(self):
+        """Dragging down a read-only column is how rows get selected (the
+        Channels Name column).  It opened no editor, yet left the drag's cells
+        armed: the next ordinary edit of a Value cell wrote its text into
+        those Name cells."""
+        from uitk.widgets.tableWidget import TableWidget
+
+        table = self.track_widget(TableWidget())
+        table.add([["a", "1"], ["b", "1"], ["c", "1"]], headers=["Name", "Value"])
+        for row in range(3):
+            name = table.item(row, 0)
+            name.setFlags(name.flags() & ~QtCore.Qt.ItemIsEditable)
+            value = table.item(row, 1)
+            value.setFlags(value.flags() | QtCore.Qt.ItemIsEditable)
+        table.resize(300, 200)
+        table.show()
+        QtWidgets.QApplication.processEvents()
+        events = []
+        table.editBatchStarted.connect(lambda: events.append("started"))
+
+        viewport = table.viewport()
+        names = [table.visualRect(table.model().index(r, 0)).center() for r in range(3)]
+        QTest.mousePress(viewport, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, names[0])
+        for point in names[1:]:
+            QTest.mouseMove(viewport, point)
+        QTest.mouseRelease(
+            viewport, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, names[2]
+        )
+        QtWidgets.QApplication.processEvents()
+
+        table.setCurrentCell(0, 1)
+        table.editItem(table.item(0, 1))
+        editor = table.active_editor()
+        editor.setText("7")
+        QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual([table.item(r, 0).text() for r in range(3)], ["a", "b", "c"])
+        self.assertEqual([table.item(r, 1).text() for r in range(3)], ["7", "1", "1"])
+        self.assertEqual(events, [])
+
+    def test_a_host_that_rebuilds_on_every_write_still_gets_the_whole_fill(self):
+        """blendertk's Channels rebuilds the table from the scene on each
+        ``cellChanged`` -- with the editor still open, mid-fill."""
+        table, editor, events = self.drag_edit()
+        scene = {0: "1", 1: "1", 2: "1"}
+
+        def rebuild(row, col):
+            scene[row] = table.item(row, col).text()
+            table.blockSignals(True)
+            table.clear()
+            table.add([[n, scene[r]] for r, n in enumerate("abc")])
+            for r in range(3):
+                item = table.item(r, 1)
+                item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+            table.blockSignals(False)
+
+        table.cellChanged.connect(rebuild)
+        QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(scene, {0: "2.5", 1: "2.5", 2: "2.5"})
+        self.assertEqual((events.count("started"), events.count("finished")), (1, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

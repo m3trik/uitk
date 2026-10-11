@@ -37,6 +37,26 @@ def _has_button(flags, button) -> bool:
     return bool(int(flags) & int(button))
 
 
+class TestMessageBoxBlur(QtBaseTestCase):
+    """The toast's host is fully transparent -- its chrome is the inset,
+    rounded label -- so a window blur would frost a rectangle around it."""
+
+    def test_the_toast_never_blurs_even_when_the_theme_does(self):
+        from uitk.themes.style_sheet import StyleSheet
+
+        base = StyleSheet.themes["dark"]["WINDOW_BLUR"]
+        self.addCleanup(StyleSheet.themes["dark"].__setitem__, "WINDOW_BLUR", base)
+        StyleSheet.themes["dark"]["WINDOW_BLUR"] = "on"
+        calls = []
+        with patch(
+            "uitk.themes.style_sheet.Bootstrap.set_blur",
+            side_effect=lambda w, on=True: calls.append((w, on)),
+        ):
+            box = self.track_widget(MessageBox(theme="dark"))
+        self.assertIn((box, False), calls)
+        self.assertNotIn((box, True), calls)
+
+
 class TestMessageBoxStandardButtons(QtBaseTestCase):
     """setStandardButtons must resolve multi-word names, case-insensitively."""
 

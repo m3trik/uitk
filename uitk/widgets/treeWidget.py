@@ -1,7 +1,10 @@
 # !/usr/bin/python
 # coding=utf-8
+import html
 from qtpy import QtWidgets, QtGui, QtCore
 from typing import Optional, Callable, List, Union, Any, Dict
+
+import pythontk as ptk
 
 # From this package:
 from uitk.widgets.mixins.item_format import ItemFormatMixin
@@ -9,6 +12,7 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.overflow_indicator import OverflowIndicator
+from uitk.widgets.row_tags import RowTags
 from uitk.managers.icon_manager import IconManager
 from uitk.switchboard import Signals
 from uitk.widgets.column_config import ColumnConfig
@@ -626,6 +630,9 @@ class TreeWidget(
         # Column stretch support
         self._stretch_column = None
 
+        # Full cell text in a cut-short cell's tooltip (``elided_tooltips``).
+        self._elided_tooltips = False
+
         # Header action bar (lazy — created on first access)
         self._header_actions = None
 
@@ -651,6 +658,59 @@ class TreeWidget(
     def selection_style(self, value: str):
         self._selection_style = value
         self.viewport().update()
+
+    # -- elided-cell tooltips -----------------------------------------------
+
+    @property
+    def elided_tooltips(self) -> bool:
+        """Show a cell's full text in its tooltip while the cell shows it cut
+        short (elided, or past its first line). Off by default.
+
+        The cell's own tooltip, if any, follows the text -- unless it already
+        holds it. Composed at hover time (:meth:`item_tooltip`), so it follows
+        column resizes with nothing stored on the items. Turning it on hands
+        the tree to ``TooltipPresenter`` (a registered widget already is), the
+        one path that asks :meth:`item_tooltip`.
+        """
+        return self._elided_tooltips
+
+    @elided_tooltips.setter
+    def elided_tooltips(self, value: bool) -> None:
+        self._elided_tooltips = bool(value)
+        if self._elided_tooltips:
+            TooltipPresenter.manage(self)
+
+    def is_elided(self, index) -> bool:
+        """Whether the cell at *index* shows its text cut short: wider than its
+        text area, or more than one line."""
+        text = index.data(QtCore.Qt.DisplayRole)
+        if not isinstance(text, str) or not text.strip():
+            return False
+        if "\n" in text.strip():
+            return True
+        option = QtWidgets.QStyleOptionViewItem()
+        self.initViewItemOption(option)
+        option.rect = self.visualRect(index)
+        self.itemDelegateForIndex(index).initStyleOption(option, index)
+        style = self.style()
+        area = style.subElementRect(QtWidgets.QStyle.SE_ItemViewItemText, option, self)
+        margin = style.pixelMetric(QtWidgets.QStyle.PM_FocusFrameHMargin, None, self)
+        return option.fontMetrics.horizontalAdvance(text) > area.width() - 2 * (
+            margin + 1
+        )
+
+    def item_tooltip(self, index, text: Optional[str]) -> Optional[str]:
+        """The tooltip of the cell at *index*: its own *text*, led by the
+        cell's full text when :attr:`elided_tooltips` is on and the cell shows
+        it cut short. ``TooltipPresenter`` calls this at hover time."""
+        if not self._elided_tooltips or not self.is_elided(index):
+            return text
+        full = index.data(QtCore.Qt.DisplayRole).strip()
+        if not text or full in text:
+            return text or full
+        if ptk.TooltipFormat.is_rich(text):
+            return f"{html.escape(full)}<br><br>{text}"
+        return f"{full}\n\n{text}"
 
     # -- header action bar --------------------------------------------------
 
@@ -1116,6 +1176,40 @@ class TreeWidget(
         config = ColumnConfig.of(self)
         if config is not None:
             config.restore()
+
+    # -- Row colour tags ---------------------------------------------------
+
+    def enable_row_tags(
+        self, settings=None, settings_key=None, defaults=None, inherit=True
+    ):
+        """Show per-row colour tags as a strip down the left edge.
+
+        The shared :class:`~uitk.widgets.row_tags.RowTags` --
+        ``TableWidget.enable_row_tags`` is the same option: tag rows with
+        ``set_tag``, offer the quick-pick swatches with ``add_to_menu``, and
+        hear the user's picks on ``assigned``.
+
+        Parameters:
+            settings: A SettingsManager the palette is saved in.  If *None*, a
+                SettingsManager (``org="uitk"``, ``app="TreeWidget"``) is
+                created automatically.
+            settings_key: The palette's branch.  Defaults to the widget's
+                ``objectName()`` or ``"TreeWidget"``.
+            defaults: ``{slot: colour}`` in order; ``Palette.tags()`` if *None*.
+            inherit: A row with no tag shows its nearest tagged ancestor's
+                colour, fainter.
+
+        Returns:
+            The view's :class:`~uitk.widgets.row_tags.RowTags`.
+        """
+        return RowTags.attach(
+            self,
+            settings=settings,
+            settings_key=settings_key or self.objectName() or "TreeWidget",
+            app="TreeWidget",
+            defaults=defaults,
+            inherit=inherit,
+        )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

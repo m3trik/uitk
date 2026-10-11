@@ -4,7 +4,9 @@
 rows are built from :class:`~uitk.bridge.attribute_spec.AttributeSpec` by the
 kind-handler registry in :mod:`uitk.bridge.spec` (shared with the DCC bridges).
 """
+
 from qtpy import QtWidgets, QtCore
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.menu import Menu
 
 # Import the spec factory + dataclass directly; importing the module also
@@ -119,8 +121,8 @@ class AttributeWindow(Menu):
                 # Increment the counter when an attribute is added
                 added_attribute_count += 1
         if added_attribute_count == 0:  # Check if no attributes were added
-            print(
-                "Warning: No attributes added to the AttributeWindow. Check attribute types and fetching logic."
+            self.logger.warning(
+                "No attributes added to the AttributeWindow. Check attribute types and fetching logic."
             )
 
     def clear_ui_elements(self):
@@ -171,7 +173,7 @@ class AttributeWindow(Menu):
         try:
             setattr(self.obj, name, value)
         except Exception as e:
-            print(f"Error setting attribute '{name}': {e}")
+            self.logger.error(f"Error setting attribute '{name}': {e}", exc_info=True)
 
     @staticmethod
     def is_valid_attribute(attr_name):
@@ -387,23 +389,19 @@ class AttributeWindow(Menu):
                 QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
             )
 
-        row = 0
-        while self.gridLayout.itemAtPosition(row, 0) is not None:
-            row += 1
+        row = _LayoutItems.first_free_row(self.gridLayout, 0)
 
         self.labels.append(label)
-        if isinstance(widget, QtWidgets.QLayout):
-            for i in range(widget.count()):
-                self.widgets.append(widget.itemAt(i).widget())
-        else:
-            self.widgets.append(widget)
-
         self.gridLayout.addWidget(label, row, 0)
         if isinstance(widget, QtWidgets.QLayout):
             layout_widget = QtWidgets.QWidget()
+            # Installed first: its widgets then sit on the host, where
+            # _LayoutItems reads them.
             layout_widget.setLayout(widget)
+            self.widgets.extend(_LayoutItems.widgets(widget))
             self.gridLayout.addWidget(layout_widget, row, 1)
         else:
+            self.widgets.append(widget)
             self.gridLayout.addWidget(widget, row, 1)
 
         self.gridLayout.setColumnStretch(0, 1)

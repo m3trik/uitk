@@ -7,7 +7,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
-  - methods: configure_platform, positions_windows, composites, set_translucent, screen_backdrop, fades_windows, configure_high_dpi
+  - methods: configure_platform, positions_windows, composites, set_translucent, blurs, set_blur, screen_backdrop, fades_windows, configure_high_dpi, detach_console, capture_output, report_uncaught, set_app_id
 
 ### `bridge/attribute_spec.py` — The Qt-free half of the parameter-panel contract: :class:`AttributeSpec`.
 - `class AttributeSpec`
@@ -75,7 +75,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `handlers/external_app_handler.py` — Register, install-on-demand, and launch external Python apps as subprocesses.
 - `class ExternalAppHandler(BaseHandler)`
-  - methods: discover, add_provider, register, is_registered, unregister, entries, save_tags, close, is_visible, launch_code, launch
+  - methods: discover, add_provider, register, is_registered, unregister, entries, save_tags, close, is_visible, launch_code, hub_for, can_create_shortcut, create_shortcut, launch
 
 ### `handlers/handler_entry.py` — Unified launchable-entry data class shared by all Switchboard handlers.
 - `class HandlerEntry`
@@ -132,7 +132,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 ### `managers/preset_manager.py`
 - constants: PRESETS_ROOT_ENV_VAR
 - `class PresetManager(_PresetWidgetScope, _PresetRootMigration, pythontk.LoggingMixin)`
-  - methods: from_widgets, setup, preset_dir, on_change, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, is_read_only, is_locked, key, notify, delete, rename, exists, read, refresh_combo, make_preset_combo, wire_combo, get_presets_root, scope, exclude, include, QStandardPaths_writableLocation, QStandardPaths_genericConfigLocation
+  - methods: from_widgets, setup, preset_dir, builtin_dir, on_change, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, is_read_only, is_locked, key, notify, delete, rename, exists, read, refresh_combo, make_preset_combo, wire_combo, get_presets_root, scope, exclude, include, QStandardPaths_writableLocation, QStandardPaths_genericConfigLocation
 
 ### `managers/recent_values_store.py` — Widget-free *recent values* model — the shared source of truth for value history.
 - `class RecentValueEntry`
@@ -242,11 +242,11 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `testing.py` — Test isolation for every suite in the ecosystem — keep test runs off live user state.
 - `class TestSandbox(_TestSandboxInternal, pythontk.TestSandbox)`
-  - methods: qsettings, presets, activate, is_active
+  - methods: qsettings, presets, activate, activated, is_active
 
 ### `themes/style_sheet.py`
 - `class StyleSheet(QtCore.QObject, pythontk.LoggingMixin)`
-  - methods: repolish_tree, theme_changed, get_icon_color, set_theme, set_theme_overrides, apply_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, get_variables, export_overrides, import_overrides, reset_overrides, set
+  - methods: repolish_tree, theme_changed, get_icon_color, resolve_variable, window_blur, set_theme, set_theme_overrides, apply_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, is_on, get_variables, export_overrides, import_overrides, reset_overrides, set
 
 ### `widgets/attribute_window.py` — Dynamic attribute editor -- :class:`AttributeWindow`, a ``Menu`` popup whose
 - `class AttributeWindow(Menu)`
@@ -358,19 +358,23 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: get_ui, convert_to_legal_name, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut
 
 ### `widgets/editors/style_editor.py`
-- constants: BUILTIN_THEMES_DIR, BASIC_TOKENS, LENGTH_TOKENS, ROW_H, CELL_EDITOR_H
+- constants: BUILTIN_THEMES_DIR, BASIC_TOKENS, LENGTH_TOKENS, SWITCH_TOKENS, ROW_H, CELL_EDITOR_H
 - `class StyleEditor(EditorPanel)`
-  - methods: theme, set_tier, export_preset_data, import_preset_data, populate, on_color_changed, on_length_changed, reset_variable, reset_all, refresh_row
+  - methods: theme, set_tier, export_preset_data, import_preset_data, populate, on_color_changed, on_length_changed, on_switch_changed, reset_variable, reset_all, refresh_row
 
 ### `widgets/editors/switchboard_browser/_switchboard_browser.py` — The browser panel: search, tag chips, row actions, and the header menu.
 - `class SwitchboardBrowser(_LaunchMixin, EditorPanel)`
   - methods: hidden_uis, hidden_tags, set_search_scope, set_entry_filter, hide_inherited_tags, showEvent, launch_options
 
+### `widgets/editors/switchboard_browser/external_app_hub.py` — A provider's external apps as a program of their own: one app, or all of them.
+- `class ExternalAppHub(_ExternalAppHubInternal)`
+  - methods: of, data_dir, log_file, run, open, create_shortcut
+
 ### `widgets/editors/switchboard_browser/filtering.py` — Which rows the browser lists: the show modes, the search scopes, the proxy.
 - constants: SHOW_VISIBLE, SHOW_HIDDEN, SHOW_ALL, SCOPE_NAME, SCOPE_TAGS, SCOPE_BOTH, SCOPES, SCOPE_ICONS
 
 ### `widgets/editors/switchboard_browser/launch.py` — How the browser launches an entry: the options, the window persistence, the handler calls.
-- constants: PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT, PERSISTENCE_CONTEXT, PERSISTENCE_DEFAULT, PERSISTENCE_CHOICES
+- constants: PERSISTENCE_STICKY, PERSISTENCE_TRANSIENT, PERSISTENCE_CONTEXT, PERSISTENCE_DEFAULT, PERSISTENCE_CHOICES, SHORTCUT_ACTIONS
 - `class LaunchOptions`
 
 ### `widgets/editors/switchboard_browser/model.py` — The browser's table model: one row per handler-exposed entry, nothing loaded.
@@ -552,7 +556,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class QObjectABCMeta(type(QtCore.QObject), ABCMeta)`
 - `class BaseOption(QtCore.QObject, ABC)`
   - methods: is_compatible, widget, create_widget, setup_widget, on_wrap, sibling_options, restore_default, save_default, clear_saved_default, refresh, set_wrapped_widget
-- `class ButtonOption(BaseOption)`
+- `class ButtonOption(BaseOption, pythontk.LoggingMixin)`
   - methods: create_widget, setup_widget, block_next_click, set_checked
 - `class GatingMixin`
 
@@ -615,7 +619,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: store, create_widget, record, add_recent_value, set_wrapped_widget, recent_values, clear_recent_values
 
 ### `widgets/optionBox/options/reset.py` — Reset option for OptionBox — one-click reset-to-default, with a modifier-gated
-- `class ResetOption(ButtonOption, pythontk.LoggingMixin)`
+- `class ResetOption(ButtonOption)`
   - methods: is_bypassed, reset, save_as_default, set_bypassed, setup_widget
 
 ### `widgets/optionBox/options/toggle.py` — Toggle option for OptionBox — a persisted binary on/off button.
@@ -657,6 +661,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class Region(QtWidgets.QWidget, AttributesMixin, ConvertMixin)`
   - methods: visible_on_mouse_over, setVisibleOnMouseOver, hide_top_level_children, show_top_level_children, enterEvent, leaveEvent, hideEvent, childEvent
 
+### `widgets/row_tags.py` — A slim colour strip down an item view's left edge: one colour tag per row.
+- `class RowTags(QtWidgets.QWidget)`
+  - methods: attach, of, configure, detach, view, settings, slots, colors, color, qcolor, set_color, reset_colors, edit_color, tag, auto_tag, shown_tag, set_tag, selected_rows, menu_row, add_to_menu, eventFilter, paintEvent
+
 ### `widgets/scriptOutput.py` — Host-agnostic script-output console widget.
 - constants: PARAGRAPH_BREAK_RE, COLOR_COMMENT, COLOR_WARNING, COLOR_ERROR, COLOR_RESULT, COLOR_INFO
 - `class ScriptHighlightRule`
@@ -680,7 +688,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class PatternSpec`
   - methods: brush
 - `class ClipData`
-  - methods: end
+  - methods: end, key_hidden, shown_key_times
 - `class TrackData`
 - `class MarkerData`
 - `class MenuUtils`
@@ -696,6 +704,8 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 ### `widgets/sequencer/_draggable.py` — Shared drag infrastructure for sequencer graphics items.
 - `class ItemRetirement`
   - methods: retire
+- `class HeldGeometryMixin`
+  - methods: sync
 - `class DraggableItemMixin`
   - methods: snap_time, sceneEvent, cancel_drag
 
@@ -708,16 +718,16 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: lo, hi, side, set_span, shape, boundingRect, paint, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent
 
 ### `widgets/sequencer/_markers.py` — MarkerItem — named marker on the timeline with drag and context menu.
-- `class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`
-  - methods: marker_data, boundingRect, shape, sync, paint, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, mouseDoubleClickEvent, contextMenuEvent
+- `class MarkerItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)`
+  - methods: marker_data, boundingRect, shape, paint, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, mouseDoubleClickEvent, contextMenuEvent
 
 ### `widgets/sequencer/_overlays.py` — Range-related overlay items: static ranges, gap hatching, and highlights.
-- `class RangeHighlightItem(DraggableItemMixin, QtWidgets.QGraphicsItem)`
-  - methods: start, end, set_range, color, opacity_value, sync, boundingRect, paint, zone_at, begin_edge_drag, hoverMoveEvent, mousePressEvent, mouseMoveEvent, update_edge_drag, finish_edge_drag, mouseReleaseEvent
+- `class RangeHighlightItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)`
+  - methods: start, end, set_range, color, opacity_value, boundingRect, paint, zone_at, begin_edge_drag, hoverMoveEvent, mousePressEvent, mouseMoveEvent, update_edge_drag, finish_edge_drag, mouseReleaseEvent
 
 ### `widgets/sequencer/_playhead.py` — PlayheadItem — vertical playhead line with frame-number badge.
-- `class PlayheadItem(QtWidgets.QGraphicsItem)`
-  - methods: time, boundingRect, sync, paint
+- `class PlayheadItem(HeldGeometryMixin, QtWidgets.QGraphicsItem)`
+  - methods: time, boundingRect, paint
 
 ### `widgets/sequencer/_ruler.py` — Ruler item for the timeline header area.
 - `class RulerItem(QtWidgets.QGraphicsItem)`
@@ -768,7 +778,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class TableSelection`
   - methods: get, item, text
 - `class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`
-  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, set_sorted_cell, edit_cell_as, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, setLeftClickSelectOnly, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, enable_column_config, restore_column_state, resizeEvent, stretch_column_to_fill, compute_autofit_size, max_autofit_size, fit_window_to_contents, get_selected_data, get_selection, register_menu_action, unregister_menu_action
+  - methods: set_scrub_columns, add_scrub_column, remove_scrub_column, is_scrubbing, set_wheel_scrub_columns, add_wheel_scrub_column, remove_wheel_scrub_column, set_single_click_edit_columns, add_single_click_edit_column, remove_single_click_edit_column, set_cell_widget_click_columns, add_cell_widget_click_column, remove_cell_widget_click_column, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, wheelEvent, eventFilter, active_editor, refresh_active_editor, set_sorted_cell, edit_cell_as, commitData, closeEditor, selectionCommand, set_column_selectable, set_selection_validator, set_column_click_action, set_left_click_select_only, setLeftClickSelectOnly, set_selection_mode, item_data, set_item_data, add, selected_node, selected_label, selected_nodes, selected_labels, selected_rows, clear_all, set_stretch_column, enable_column_config, restore_column_state, enable_row_tags, resizeEvent, stretch_column_to_fill, compute_autofit_size, max_autofit_size, fit_window_to_contents, get_selected_data, get_selection, register_menu_action, unregister_menu_action
 
 ### `widgets/table_actions.py` — Reusable action-column management for :class:`TableWidget`.
 - `class TableActions`
@@ -798,7 +808,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class TreeFormatMixin(ItemFormatMixin)`
   - methods: set_item_formatter, set_column_formatter, clear_formatters, apply_formatting, ensure_valid_color, set_action_color, action_color_formatter, make_color_map_formatter
 - `class TreeWidget(QtWidgets.QTreeWidget, MenuMixin, AttributesMixin, TreeFormatMixin, HierarchyIconMixin)`
-  - methods: selection_style, header_actions, setChildRowColor, setParentRowColor, getSelectionStyle, setSelectionStyle, getCtrlToggle, setCtrlToggle, set_column_tint, clear_column_tints, set_selection_mode, ctrl_toggle, mousePressEvent, mouseReleaseEvent, create_item, item_data, set_item_data, find_item_by_text, find_item_by_data, add, selected_item, selected_items, selected_data, selected_data_list, selected_text, selected_text_list, select_items_by_data, select_items_by_text, set_stretch_column, enable_column_config, restore_column_state, resizeEvent, showEvent, stretch_column_to_fill, expand_all_items, collapse_all_items, get_all_items, remove_item, set_item_icon, set_item_type_icon, refresh_item_icons
+  - methods: selection_style, elided_tooltips, is_elided, item_tooltip, header_actions, setChildRowColor, setParentRowColor, getSelectionStyle, setSelectionStyle, getCtrlToggle, setCtrlToggle, set_column_tint, clear_column_tints, set_selection_mode, ctrl_toggle, mousePressEvent, mouseReleaseEvent, create_item, item_data, set_item_data, find_item_by_text, find_item_by_data, add, selected_item, selected_items, selected_data, selected_data_list, selected_text, selected_text_list, select_items_by_data, select_items_by_text, set_stretch_column, enable_column_config, restore_column_state, enable_row_tags, resizeEvent, showEvent, stretch_column_to_fill, expand_all_items, collapse_all_items, get_all_items, remove_item, set_item_icon, set_item_type_icon, refresh_item_icons
 
 ### `widgets/widgetComboBox.py`
 - `class WidgetComboBox(ComboBox)`

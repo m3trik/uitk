@@ -82,5 +82,41 @@ class TestQSettingsSandbox(BaseTestCase):
         self._assert_sandboxed(sm.settings)
 
 
+class TestEveryStoreBuildingModuleImportsTheConftest(BaseTestCase):
+    """A direct run (``python test_x.py``) loads no conftest of its own accord.
+
+    The runner and pytest import it before any module, but a module run
+    directly is sandboxed only by its own ``import conftest``: one that built
+    a ``Switchboard`` without it wrote the developer's live store.
+    """
+
+    #: Constructions that reach a per-user store.
+    BUILDS = ("Switchboard(", "SettingsManager(", "QSettings(", "MainWindow(")
+
+    def test_each_imports_it(self):
+        """At module level, or in each ``setUp`` before its build (as
+        ``test_ui_handler`` does)."""
+        import ast
+        from pathlib import Path
+
+        missing = []
+        for path in sorted(Path(__file__).parent.glob("test_*.py")):
+            source = path.read_text(encoding="utf-8")
+            if not any(build in source for build in self.BUILDS):
+                continue
+            imports = [
+                node
+                for node in ast.walk(ast.parse(source))
+                if (isinstance(node, ast.ImportFrom) and node.module == "conftest")
+                or (
+                    isinstance(node, ast.Import)
+                    and any(alias.name == "conftest" for alias in node.names)
+                )
+            ]
+            if not imports:
+                missing.append(path.name)
+        self.assertEqual(missing, [])
+
+
 if __name__ == "__main__":
     unittest.main()

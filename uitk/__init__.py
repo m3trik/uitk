@@ -44,7 +44,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.7.0"
+__version__ = "1.7.1"
 
 
 DEFAULT_INCLUDE = {
@@ -113,6 +113,7 @@ DEFAULT_INCLUDE = {
     # Affix-field rows in a Menu editing any ptk.NamingConvention-shaped store.
     "widgets.editors.naming_convention_editor": "NamingConventionEditor",
     "widgets.editors.preset_editor": "PresetEditor",
+    "widgets.editors.switchboard_browser.external_app_hub": "ExternalAppHub",
     # Qt-free: what a host's hotkey-collision checker returns to ShortcutEditor.
     "widgets.editors.shortcut_editor.collision_conflict": "CollisionConflict",
     "widgets.comboBox": "ComboBox",
@@ -123,6 +124,8 @@ DEFAULT_INCLUDE = {
     "widgets.context_menu": ["ContextMenu", "MenuRow"],
     # A view header's show / hide / reorder menu (TableWidget / TreeWidget option).
     "widgets.column_config": "ColumnConfig",
+    # Per-row colour tags, a strip down a view's left edge (TableWidget / TreeWidget option).
+    "widgets.row_tags": "RowTags",
     "widgets.header": "Header",
     "widgets.footer": ["Footer", "FooterStatusController"],
     "widgets.formPanel": "FormPanel",

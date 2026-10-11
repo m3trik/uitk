@@ -2,6 +2,7 @@
 # coding=utf-8
 from qtpy import QtWidgets, QtCore
 from uitk.widgets.mixins.attributes import AttributesMixin
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.managers.field_visibility import FieldVisibility
 from uitk.managers.window_height import WindowHeight
 from uitk.managers.settings_manager import SettingsManager
@@ -216,11 +217,7 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
         if not self.layout():
             return
 
-        for i in range(self.layout().count()):
-            item = self.layout().itemAt(i)
-            w = item.widget() if item else None
-            if not w:
-                continue
+        for w in _LayoutItems.widgets(self.layout()):
             if visible and FieldVisibility.is_hidden_field(w):
                 continue
             w.setVisible(visible)
@@ -228,14 +225,8 @@ class CollapsableGroup(QtWidgets.QGroupBox, AttributesMixin):
             # (e.g. OptionBoxContainer) are also made visible so that
             # widgets wrapped after a collapse aren't left hidden.
             if visible and w.layout():
-                for j in range(w.layout().count()):
-                    child_item = w.layout().itemAt(j)
-                    child = child_item.widget() if child_item else None
-                    if (
-                        child
-                        and child.isHidden()
-                        and not FieldVisibility.is_hidden_field(child)
-                    ):
+                for child in _LayoutItems.widgets(w.layout()):
+                    if child.isHidden() and not FieldVisibility.is_hidden_field(child):
                         child.setVisible(True)
 
     def setLayout(self, layout):

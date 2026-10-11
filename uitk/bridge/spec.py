@@ -383,12 +383,14 @@ class _KindFactoryInternal(object):
     def _build_browse_row(spec, parent, mode):
         """A line edit carrying option-box CLEAR and BROWSE icon buttons.
 
-        The two path-ish kinds differ only in what the dialog picks, so they
-        are one row: ``path`` browses for a directory, ``file`` for a file
-        filtered by ``spec.choices``. Both used to hand-roll a ``QLineEdit``
-        beside a ``"..."`` push button and drive ``QFileDialog`` themselves,
-        which is the option box's whole job -- and the copies had already
-        drifted, only one of them anchoring the dialog on the current value.
+        The path-ish kinds differ only in what the dialog picks, so they are
+        one row: ``path`` browses for a directory, ``file`` for a file
+        filtered by ``spec.choices``, ``files`` for several (the pick, joined
+        by :attr:`FILES_SEPARATOR`, replaces the field). The first two used
+        to hand-roll a ``QLineEdit`` beside a ``"..."`` push button and drive
+        ``QFileDialog`` themselves, which is the option box's whole job --
+        and the copies had already drifted, only one of them anchoring the
+        dialog on the current value.
 
         The plugins bring what a private copy does not: the clear button
         hides itself while the field is empty, so a row cannot offer to clear
@@ -406,7 +408,10 @@ class _KindFactoryInternal(object):
         from uitk.widgets.lineEdit import LineEdit
 
         edit = LineEdit()
-        edit.setText("" if spec.default is None else str(spec.default))
+        default = spec.default
+        if isinstance(default, (list, tuple)):
+            default = _KindFactoryInternal.FILES_SEPARATOR.join(map(str, default))
+        edit.setText("" if default is None else str(default))
         # Name the inner edit (mirrors make_widget's container objectName ==
         # spec.key) so preset capture keys it: consumers that snapshot the
         # value-bearing child rather than the container (e.g. the DCC bridges
@@ -420,9 +425,21 @@ class _KindFactoryInternal(object):
             edit.setPlaceholderText(spec.placeholder)
 
         directory = mode == "directory"
+        several = mode == "files"
         patterns = [str(c) for c in (spec.choices or [])]
         edit.option_box.enable_clear()
         edit.option_box.browse(
+            # A multi-select writes its FIRST pick to the field (the option's
+            # rule for any widget); this row holds the whole pick.
+            callback=(
+                (
+                    lambda paths: edit.setText(
+                        _KindFactoryInternal.FILES_SEPARATOR.join(paths)
+                    )
+                )
+                if several
+                else None
+            ),
             file_types=(
                 None
                 if directory
@@ -435,9 +452,19 @@ class _KindFactoryInternal(object):
             # The dialog is titled with the row it belongs to; two open file
             # dialogs from one panel are otherwise indistinguishable.
             title=spec.display_label
-            or ("Select directory" if directory else "Select file"),
+            or (
+                "Select directory"
+                if directory
+                else ("Select files" if several else "Select file")
+            ),
             mode=mode,
-            tooltip="Browse for a folder" if directory else "Browse for a file",
+            tooltip=(
+                "Browse for a folder"
+                if directory
+                else (
+                    "Browse for one or more files" if several else "Browse for a file"
+                )
+            ),
         )
 
         container = edit.option_box.container
@@ -457,6 +484,48 @@ class _KindFactoryInternal(object):
     def _connect_file(widget, callback):
         widget._line_edit.textChanged.connect(
             lambda *_: callback(_KindFactoryInternal._read_file(widget))
+        )
+
+    # ---- files: the file row, holding several -------------------------------
+    #
+    # The ``file`` row whose browse picks SEVERAL files, read as a
+    # ``list[str]``. One line edit rather than ``file_list``'s list widget:
+    # the paths stay typable and pasteable, the row keeps the clear and browse
+    # icons and the placeholder, and a row that usually holds one file stays
+    # one line tall.
+
+    #: Between two paths in a ``files`` row: ``;`` is no path character in
+    #: practice (Windows' own PATH separator), and the space after it keeps a
+    #: field of several paths readable. Read back on ``;`` alone.
+    FILES_SEPARATOR = "; "
+
+    @staticmethod
+    def _build_files(spec, parent):
+        """A line edit that browses for several FILES, filtered by
+        *spec.choices* as the ``file`` kind is; the pick replaces the field.
+        """
+        return _KindFactoryInternal._build_browse_row(spec, parent, "files")
+
+    @staticmethod
+    def _read_files(widget) -> List[str]:
+        return [
+            part.strip() for part in widget._line_edit.text().split(";") if part.strip()
+        ]
+
+    @staticmethod
+    def _write_files(widget, value) -> None:
+        if value is None:
+            value = []
+        if isinstance(value, str):
+            value = [value] if value else []
+        widget._line_edit.setText(
+            _KindFactoryInternal.FILES_SEPARATOR.join(str(v) for v in value)
+        )
+
+    @staticmethod
+    def _connect_files(widget, callback):
+        widget._line_edit.textChanged.connect(
+            lambda *_: callback(_KindFactoryInternal._read_files(widget))
         )
 
     @staticmethod
@@ -1291,6 +1360,15 @@ KindFactory.register_kind(
         _KindFactoryInternal._read_file,
         _KindFactoryInternal._write_file,
         connect=_KindFactoryInternal._connect_file,
+    ),
+)
+KindFactory.register_kind(
+    "files",
+    KindHandler(
+        _KindFactoryInternal._build_files,
+        _KindFactoryInternal._read_files,
+        _KindFactoryInternal._write_files,
+        connect=_KindFactoryInternal._connect_files,
     ),
 )
 KindFactory.register_kind(

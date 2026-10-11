@@ -17,13 +17,13 @@ from uitk.widgets.sequencer._data import (
     MenuUtils,
 )
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
-from uitk.widgets.sequencer._draggable import DraggableItemMixin
+from uitk.widgets.sequencer._draggable import DraggableItemMixin, HeldGeometryMixin
 from uitk.managers.cursor_manager import CursorManager
 
 _MARKER_TRI_SIZE = 8  # size of the triangle pennant in pixels
 
 
-class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
+class MarkerItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem):
     """A named marker on the timeline: triangle at the ruler + dashed line."""
 
     def __init__(self, marker_data: MarkerData, timeline: "TimelineView"):
@@ -49,27 +49,30 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     # -- geometry -----------------------------------------------------------
 
-    def boundingRect(self) -> QtCore.QRectF:
+    def _layout_geometry(self) -> tuple:
+        """``(x, bounds)``: the marker's scene x at the current zoom, and the
+        rect it paints in."""
         x = self._timeline.time_to_x(self._data.time)
         # The note label paints to the right of the head glyph — the
         # rect must cover it or drags leave stale label pixels behind
         # (paint() draws up to 8 chars at 7pt; 48px covers that).
         note_pad = 48 if self._data.note else 0
-        return QtCore.QRectF(
+        bounds = QtCore.QRectF(
             x - _MARKER_TRI_SIZE,
             0,
             _MARKER_TRI_SIZE * 2 + note_pad,
             10000,
         )
+        return x, bounds
+
+    def boundingRect(self) -> QtCore.QRectF:
+        return self._geometry()[1]
 
     def shape(self) -> QtGui.QPainterPath:
-        x = self._timeline.time_to_x(self._data.time)
+        x = self._geometry()[0]
         path = QtGui.QPainterPath()
         path.addRect(x - _MARKER_TRI_SIZE, 0, _MARKER_TRI_SIZE * 2, _RULER_HEIGHT)
         return path
-
-    def sync(self):
-        self.prepareGeometryChange()
 
     # -- painting -----------------------------------------------------------
 
@@ -81,7 +84,7 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
 
     def paint(self, painter: QtGui.QPainter, option, widget=None):
         color = QtGui.QColor(self._data.color)
-        x = self._timeline.time_to_x(self._data.time)
+        x = self._geometry()[0]
         style = self._data.style
 
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
@@ -373,7 +376,7 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         if new_note != self._data.note:
             self._data.note = new_note
             self.setToolTip(new_note)
-            self.update()
+            self.sync()  # the note label widens the rect
             widget.marker_changed.emit(self._data.marker_id)
 
         try:
@@ -383,7 +386,6 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         if time_edit.text() != shown_time and abs(new_time - self._data.time) > 1e-6:
             self._data.time = max(0.0, new_time)
             self.sync()
-            self.update()
             widget.marker_moved.emit(self._data.marker_id, self._data.time)
 
         if chosen == color_action:
@@ -414,7 +416,6 @@ class MarkerItem(DraggableItemMixin, QtWidgets.QGraphicsItem):
         elif chosen is not None and chosen.parent() == style_menu:
             self._data.style = chosen.data()
             self.sync()
-            self.update()
             widget.marker_changed.emit(self._data.marker_id)
         elif chosen is not None and chosen.parent() == ls_menu:
             self._data.line_style = chosen.data()

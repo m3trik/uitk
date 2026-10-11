@@ -24,6 +24,7 @@ from qtpy import QtWidgets, QtCore
 from pathlib import Path
 
 from uitk.widgets.optionBox._optionBox import OptionBox, OptionBoxContainer
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.optionBox.options.reset import ResetOption
 from uitk.widgets.optionBox.options.pin_values import PinValuesOption
 from uitk.widgets.optionBox.options.browse import BrowseOption
@@ -602,6 +603,99 @@ class TestOptionBoxLayoutSeating(QtBaseTestCase):
         self.assertEqual(OptionBox._row_height(fresh), fresh.sizeHint().height())
 
 
+class TestWrapKeepsLoaderBuiltWrappers(QtBaseTestCase):
+    """Wrapping a QUiLoader-built field must leave its Python wrapper valid.
+
+    The container is a child of the field's parent and the field moves under
+    the container, so in shiboken's ownership tree the parent's wrapper reaches
+    the field's. A loader-built parent nothing in Python holds (here an unnamed
+    group box, which PySide attaches to no attribute) has a wrapper only the
+    wrap held; PySide 6.10 invalidates every loader-built wrapper below a
+    wrapper it releases, so the field read "Internal C++ object (QSpinBox)
+    already deleted" straight after the wrap while the spin box lived on
+    (blendertk's lightmap_baker ``spn_samples_init``, read lazily).
+    """
+
+    UI = b"""<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Panel</class>
+ <widget class="QWidget" name="Panel">
+  <layout class="QVBoxLayout">
+   <item>
+    <widget class="QGroupBox">
+     <layout class="QHBoxLayout">
+      <item>
+       <widget class="QSpinBox" name="spn_samples"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+</ui>"""
+
+    def _loaded_spin_box(self):
+        from qtpy.QtUiTools import QUiLoader
+
+        buf = QtCore.QBuffer()
+        buf.setData(self.UI)
+        buf.open(QtCore.QIODevice.ReadOnly)
+        panel = self.track_widget(QUiLoader().load(buf))
+        return panel, panel.findChild(QtWidgets.QSpinBox, "spn_samples")
+
+    def _assert_alive(self, panel, spin):
+        import gc
+        from qtpy import shiboken
+
+        gc.collect()
+        self.assertTrue(shiboken.isValid(spin), "the field's wrapper was invalidated")
+        self.assertEqual(spin.value(), 0)
+        self.assertIs(panel.findChild(QtWidgets.QSpinBox, "spn_samples"), spin)
+
+    def test_wrapping_a_loader_built_field_keeps_its_wrapper(self):
+        from uitk.widgets.optionBox.options.clear import ClearOption
+
+        panel, spin = self._loaded_spin_box()
+        OptionBox(options=[ClearOption(spin)]).wrap(spin)
+        self._assert_alive(panel, spin)
+
+    def test_a_toggle_hung_off_a_loader_built_field_keeps_its_wrapper(self):
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
+
+        panel, spin = self._loaded_spin_box()
+        OptionBoxManager(spin).set_toggle(settings_key=False, icon="eye")
+        self._assert_alive(panel, spin)
+
+    def test_removing_the_option_box_keeps_the_fields_wrapper(self):
+        """``remove`` puts the field back under the same parent and deletes the
+        container: the parent's wrapper must outlive the container too."""
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
+
+        panel, spin = self._loaded_spin_box()
+        mgr = OptionBoxManager(spin)
+        mgr.set_toggle(settings_key=False, icon="eye")
+        mgr.remove()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self._assert_alive(panel, spin)
+
+    def test_a_python_owned_parent_still_dies_with_its_last_reference(self):
+        """Only a Qt-built parent's wrapper is held: one Python owns would
+        otherwise keep its whole window alive for good."""
+        import gc
+        import weakref
+        from uitk.widgets.optionBox.options.clear import ClearOption
+
+        window = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(window)
+        field = QtWidgets.QLineEdit()
+        row.addWidget(field)
+        OptionBox(options=[ClearOption(field)]).wrap(field)
+        gone = weakref.ref(window)
+        del window, row, field
+        gc.collect()
+        self.assertIsNone(gone(), "the wrap kept a Python-owned window alive")
+
+
 class TestPinValuesOptionCreation(QtBaseTestCase):
     """Tests for PinValuesOption creation and initialization."""
 
@@ -1152,9 +1246,9 @@ class TestOptionBoxDisabledState(QtBaseTestCase):
         ob = OptionBox(options=[pin])
         container = self.track_widget(ob.wrap(widget))
         buttons = [
-            container.layout().itemAt(i).widget()
-            for i in range(1, container.layout().count())
+            w for w in _LayoutItems.widgets(container.layout()) if w is not widget
         ]
+        self.assertTrue(buttons, "the wrap built no option button")
         return widget, container, buttons
 
     def test_buttons_enabled_by_default(self):
@@ -1198,9 +1292,9 @@ class TestOptionBoxDisabledState(QtBaseTestCase):
         ob = OptionBox(options=[pin])
         container = self.track_widget(ob.wrap(widget))
         buttons = [
-            container.layout().itemAt(i).widget()
-            for i in range(1, container.layout().count())
+            w for w in _LayoutItems.widgets(container.layout()) if w is not widget
         ]
+        self.assertTrue(buttons, "the wrap built no option button")
         for btn in buttons:
             self.assertFalse(btn.isEnabled(), "Button should be disabled at wrap time")
 
@@ -3735,6 +3829,28 @@ class TestHostNamespacedOptionPersistence(QtBaseTestCase):
             wrapped_widget=self._panel("blender"), settings_key=key
         )
         self.assertNotIn("C:/out/maya", [str(v) for v in blender.store.values])
+
+
+class TestActionOptionHandlerErrors(QtBaseTestCase):
+    """A raising action handler is logged with its traceback, never only
+    ``print``-ed as ``ActionOption handler error: <message>`` -- a line with no
+    file to fix, on stdout, outside the logger every host routes."""
+
+    def test_a_raising_handler_is_logged_with_its_traceback(self):
+        from uitk.widgets.optionBox.options.action import ActionOption
+
+        def handler():
+            raise ValueError("handler failed")
+
+        opt = ActionOption(wrapped_widget=None, callback=handler)
+        button = self.track_widget(opt.widget)  # built + click wired
+
+        with self.assertLogs(ActionOption.logger, level="ERROR") as captured:
+            button.click()
+
+        (record,) = captured.records
+        self.assertIn("handler failed", record.getMessage())
+        self.assertIs(record.exc_info[0], ValueError)
 
 
 # -----------------------------------------------------------------------------

@@ -104,6 +104,7 @@ SHORTCUT_EDITOR_EXPORTS = (
 # Promoted from a module to a subpackage (2026-09-26); the names the module
 # published stay importable from the same path.
 SWITCHBOARD_BROWSER_EXPORTS = (
+    "ExternalAppHub",
     "LaunchOptions",
     "PERSISTENCE_CHOICES",
     "PERSISTENCE_CONTEXT",
@@ -139,6 +140,7 @@ LAZY_SUBMODULES = {
         "uitk.widgets.editors.switchboard_browser.filtering",
         "uitk.widgets.editors.switchboard_browser.launch",
         "uitk.widgets.editors.switchboard_browser.row_delegate",
+        "uitk.widgets.editors.switchboard_browser.external_app_hub",
     ),
     "uitk.widgets.sequencer": (
         "uitk.widgets.sequencer._sequencer",

@@ -272,6 +272,49 @@ class TestSlotConstructorReentrancy(_DynamicInitBase):
 
 
 # ---------------------------------------------------------------------------
+# A raising ``*_init`` is logged with its traceback
+# ---------------------------------------------------------------------------
+
+
+class TestInitErrorKeepsItsTraceback(_DynamicInitBase):
+    """A ``<name>_init`` that raises is logged and skipped -- one broken
+    widget must not stop the panel building -- and the record carries the
+    exception: the message alone (``Error in init method: 'NoneType' object
+    has no attribute ...``) names no file or line to fix.
+    """
+
+    def test_raising_init_is_logged_with_its_traceback(self):
+        class Dyn:
+            def __init__(self_slot, switchboard):
+                self_slot.sb = switchboard
+                self_slot.ui = switchboard.loaded_ui.dyn
+
+            def tb000_init(self_slot, widget):
+                raise ValueError("broken init")
+
+        # The class logger, captured before the Switchboard exists, so an
+        # init that runs during construction is captured too.
+        with self.assertLogs(Switchboard.logger, level="ERROR") as captured:
+            self._make_sb(Dyn)
+            self.ui.register_children()
+            self._drain()
+
+        records = [
+            r for r in captured.records if "Error in init method" in r.getMessage()
+        ]
+        self.assertEqual(len(records), 1, [r.getMessage() for r in captured.records])
+        exc_info = records[0].exc_info
+        self.assertTrue(
+            exc_info and exc_info[0] is ValueError,
+            f"init error logged without its exception: exc_info={exc_info!r}",
+        )
+        # The failure stays local: the widget is still marked initialized
+        # and its siblings still initialize.
+        self.assertTrue(self.ui.tb000.is_initialized)
+        self.assertTrue(self.ui.tb001.is_initialized)
+
+
+# ---------------------------------------------------------------------------
 # refresh_on_show / is_initialized gating
 # ---------------------------------------------------------------------------
 

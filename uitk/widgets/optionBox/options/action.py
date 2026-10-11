@@ -192,8 +192,8 @@ class ActionOption(PersistedOption, ButtonOption):
         if callable(h):
             try:
                 h()
-            except Exception as e:  # pragma: no cover - defensive
-                print(f"ActionOption handler error: {e}")
+            except Exception as e:
+                self.logger.error(f"ActionOption handler error: {e}", exc_info=True)
         else:
             # Heuristic method lookup order
             for attr in ("show", "execute", "run", "trigger"):
@@ -203,8 +203,10 @@ class ActionOption(PersistedOption, ButtonOption):
             else:
                 try:
                     h()
-                except Exception:  # pragma: no cover
-                    print(f"Warning: ActionOption handler {h} not invokable")
+                except Exception:
+                    self.logger.warning(
+                        f"ActionOption handler {h!r} is not invokable", exc_info=True
+                    )
 
 
 class MenuOption(ActionOption):

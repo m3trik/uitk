@@ -196,7 +196,7 @@ class BaseOption(QtCore.QObject, ABC, metaclass=QObjectABCMeta):
         self.wrapped_widget = widget
 
 
-class ButtonOption(BaseOption):
+class ButtonOption(BaseOption, ptk.LoggingMixin):
     """Base class for button-based options.
 
     Provides common functionality for options that are displayed as buttons.
@@ -278,8 +278,8 @@ class ButtonOption(BaseOption):
 
         # Double-check text is actually empty
         if button.text():
-            print(
-                f"WARNING: OptionButton still has text after clearing: '{button.text()}' (len={len(button.text())})"
+            self.logger.warning(
+                f"OptionButton still has text after clearing: '{button.text()}' (len={len(button.text())})"
             )
             # Force clear using QPushButton's setText directly
             QtWidgets.QPushButton.setText(button, "")
@@ -408,7 +408,9 @@ class ButtonOption(BaseOption):
             elif hasattr(widget, "setChecked"):
                 widget.setChecked(bool(value))
         except Exception as e:
-            print(f"{type(self).__name__}: Error setting value: {e}")
+            self.logger.error(
+                f"{type(self).__name__}: Error setting value: {e}", exc_info=True
+            )
 
 
 class GatingMixin:

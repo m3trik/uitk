@@ -1245,7 +1245,9 @@ class ColorEditorPopup(QtWidgets.QDialog):
         return self.editor.qcolor()
 
     @classmethod
-    def get_color(cls, initial=None, parent=None, title="Colour", **editor_kwargs):
+    def get_color(
+        cls, initial=None, parent=None, title="Colour", pos=None, **editor_kwargs
+    ):
         """Open on *initial* and answer the chosen ``QColor``, or ``None``.
 
         A drop-in for ``QColorDialog.getColor``, so a call site swaps one line.
@@ -1255,9 +1257,15 @@ class ColorEditorPopup(QtWidgets.QDialog):
         is nothing to write -- Escape, or a close on the opening colour -- so a
         caller that writes on an answer leaves the value, and whatever writing
         it would dirty, alone.
+
+        Parameters:
+            pos: Where the popup opens, in global coordinates (the cursor, for a
+                pick made from a menu); ``None`` opens it under *parent*.
         """
         popup = cls(color=initial, parent=parent, title=title, **editor_kwargs)
-        if parent is not None:
+        if pos is not None:
+            popup.move(pos)
+        elif parent is not None:
             popup.move(parent.mapToGlobal(parent.rect().bottomLeft()))
         popup.exec_() if hasattr(popup, "exec_") else popup.exec()
         chosen = None if popup.color == popup._initial else popup.qcolor()

@@ -410,6 +410,20 @@ class PresetManager(_PresetWidgetScope, _PresetRootMigration, ptk.LoggingMixin):
         else:
             self._preset_dir = None
 
+    @property
+    def builtin_dir(self) -> Optional[Path]:
+        """The shipped, read-only preset tier, or ``None`` when there is none.
+
+        Can be set to a ``str`` or ``Path`` (``~`` / env expanded) or ``None``
+        after construction -- the lazy ``menu.presets`` counterpart of the
+        constructor's *builtin_dir*.
+        """
+        return self._builtin_dir
+
+    @builtin_dir.setter
+    def builtin_dir(self, value) -> None:
+        self._builtin_dir = self._resolve_builtin_dir(value)
+
     def on_change(self, callback) -> None:
         """Register a callback invoked when presets are modified.
 

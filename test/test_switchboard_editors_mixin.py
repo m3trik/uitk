@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Tests for ``SwitchboardEditorsMixin`` â€” the ``sb.editors`` registry.
+"""Tests for ``SwitchboardEditorsMixin`` — the ``sb.editors`` registry.
 
 Covers:
 - Editor name registry (``style``, ``shortcut``, ``browser``, ``presets``)
@@ -133,7 +133,7 @@ class EditorsGet(_Base):
         self.assertIsNot(editor, self.sb.editors.get("shortcut_editor"))
 
     def test_global_shortcuts_combo_stripped_to_commands(self):
-        # Focused mode strips the UI combo to the single locked âŒ˜ Commands entry
+        # Focused mode strips the UI combo to the single locked ⌘ Commands entry
         # (no other UIs, no show-all toggle overlay to orphan) rather than hiding
         # the combo.
         editor = self.sb.editors.get("global_shortcuts")
@@ -142,7 +142,7 @@ class EditorsGet(_Base):
         self.assertEqual(editor.cmb_ui.itemText(0), editor._COMMANDS_LABEL)
 
     def test_global_shortcuts_hides_scope_description_ui_columns(self):
-        # The focused launcher drops Scope, Description, and UI â€” leaving just
+        # The focused launcher drops Scope, Description, and UI — leaving just
         # Action + Shortcut (+ Reset). refresh_ui_list runs the Commands populate,
         # which must NOT re-reveal the UI column in focused mode.
         editor = self.sb.editors.get("global_shortcuts")
@@ -185,7 +185,7 @@ class EditorsAutoRecovery(_Base):
         # Process events so deletion completes
         QtWidgets.QApplication.processEvents()
         QtWidgets.QApplication.processEvents()
-        # Probe â€” accessing should now build a fresh instance, not raise
+        # Probe — accessing should now build a fresh instance, not raise
         second = self.sb.editors.get("ui_browser")
         self.assertIsNotNone(second)
         # And the fresh instance must be alive
@@ -193,7 +193,7 @@ class EditorsAutoRecovery(_Base):
 
     def test_is_alive_handles_attribute_error(self):
         # Some shiboken builds raise AttributeError instead of RuntimeError
-        # for partially-disposed wrappers â€” the shared liveness probe (used by
+        # for partially-disposed wrappers — the shared liveness probe (used by
         # the editor cache) must treat that as "dead" rather than propagate.
         class _BadlyDisposed:
             def objectName(self):
@@ -236,7 +236,7 @@ class EditorsShow(_Base):
 class UiHandlerEditorsDelegate(_Base):
     """Verify the ``UiHandler.editors`` delegate.
 
-    Lets shelf scripts launch a bundled editor in one line â€” equivalent
+    Lets shelf scripts launch a bundled editor in one line — equivalent
     to ``handler.sb.editors`` but reads more naturally and avoids the
     caller having to know about ``.sb``.
     """
@@ -275,7 +275,7 @@ class PopupContextRecovery(_Base):
     The bug guarded against: ``QMenu`` action slots fire while the menu
     is still the active popup. After the slot returns, the menu's own
     ``hideEvent`` runs and explicitly raises whatever window was active
-    before the menu opened â€” which buries our just-shown editor. So
+    before the menu opened — which buries our just-shown editor. So
     ``WindowPanel.present`` checks :meth:`WindowPanel.is_in_popup_context`
     and schedules a deferred re-raise on the next event-loop tick; the
     registry's ``show`` delegates to it, as do the editor's non-Switchboard
@@ -306,7 +306,7 @@ class PopupContextRecovery(_Base):
 
     def test_popup_context_false_when_the_window_is_the_popup(self):
         # If the window itself is the active popup (e.g. a modal it spawned),
-        # we don't want to defer a self-raise â€” there's nothing to lose focus to.
+        # we don't want to defer a self-raise — there's nothing to lose focus to.
         from unittest.mock import patch
 
         panel = self._panel()
@@ -319,7 +319,7 @@ class PopupContextRecovery(_Base):
 
         Asserting on the *effect* rather than on how many callbacks got
         scheduled: ``show()`` itself schedules incidental ``singleShot`` work
-        (``_fit_to_content``), so a count is noise â€” the question is whether the
+        (``_fit_to_content``), so a count is noise — the question is whether the
         window gets raised a second time after the menu closes.
         """
         from unittest.mock import patch
@@ -363,7 +363,7 @@ class PopupContextRecovery(_Base):
         self.assertEqual(calls, [])
 
     def test_registry_show_delegates_to_present(self):
-        """The registry must not re-derive the presentation â€” a second copy is
+        """The registry must not re-derive the presentation — a second copy is
         how the other three owners drifted."""
         from unittest.mock import patch
 

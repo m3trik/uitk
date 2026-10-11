@@ -300,7 +300,10 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
             if hasattr(self.ui.txt000, "anchorClicked"):
                 self.ui.txt000.anchorClicked.connect(self._on_log_link_clicked)
         except Exception as e:  # noqa: BLE001
-            print(f"[{self.LOG_TAG}] log panel wiring failed (ignored): {e}")
+            self.sb.logger.warning(
+                f"[{self.LOG_TAG}] log panel wiring failed (ignored): {e}",
+                exc_info=True,
+            )
 
         self._show_startup_info()
         self._show_docs_link()

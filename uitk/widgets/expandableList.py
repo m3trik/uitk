@@ -3,6 +3,7 @@
 import inspect
 import logging
 from qtpy import QtWidgets, QtCore, QtGui
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.popup.dismissal import OutsideClickDismissal
 from uitk.widgets.popup.placement import PopupPlacement
@@ -495,12 +496,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         its own item -- the row keeps its button behaviour, and consuming its
         release is exactly what stops ``clicked`` from ever firing.
         """
-        slots = []
-        for i in range(self._layout.count()):
-            w = self._layout.itemAt(i).widget()
-            if w is not None:
-                slots.append(w)
-        return slots
+        return _LayoutItems.widgets(self._layout)
 
     def _row_widgets(self):
         """This list's own rows in layout order, wrapped rows unwrapped."""
@@ -648,9 +644,8 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # rebuilds the list while a menu is open.
         self._force_hide_all()
 
-        # Process widgets in reverse order to avoid index errors
-        for i in reversed(range(self._layout.count())):
-            slot = self._layout.itemAt(i).widget()
+        # Last item first.
+        for slot in reversed(_LayoutItems.widgets(self._layout)):
             widget = self._unwrap_item(slot)
             if widget:
                 # Recursively clear, then destroy, the reparented sublist widget.
@@ -1012,11 +1007,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
             lay = pending.pop()
             if lay.indexOf(self) != -1:
                 return True
-            for i in range(lay.count()):
-                item = lay.itemAt(i)
-                nested = item.layout() if item is not None else None
-                if nested is not None:
-                    pending.append(nested)
+            pending.extend(_LayoutItems.layouts(lay))
         return False
 
     def _find_host_with(self, attr, start=None):
@@ -1581,11 +1572,9 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         total_height = 0
         total_width = 0
 
-        for i in range(self._layout.count()):
-            widget = self._layout.itemAt(i).widget()
-            if widget:
-                total_height += widget.sizeHint().height() + self._layout.spacing()
-                total_width = max(total_width, widget.sizeHint().width())
+        for widget in _LayoutItems.widgets(self._layout):
+            total_height += widget.sizeHint().height() + self._layout.spacing()
+            total_width = max(total_width, widget.sizeHint().width())
 
         # Adjust for layout's top and bottom margins
         total_height += (

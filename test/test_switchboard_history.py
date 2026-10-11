@@ -13,6 +13,7 @@ Covers:
 
 Run standalone: python -m test.test_switchboard_history
 """
+
 import gc
 import unittest
 import weakref
@@ -61,7 +62,8 @@ class TestHistory(unittest.TestCase):
         h.add(objs)
         self.assertEqual([o.n for o in h.view(inc="foo")], ["foo"])  # exact
         self.assertEqual(
-            [o.n for o in h.view(inc="foo*")], ["foo", "foobar"]  # prefix
+            [o.n for o in h.view(inc="foo*")],
+            ["foo", "foobar"],  # prefix
         )
 
     def test_get_out_of_range_contract(self):
@@ -107,9 +109,7 @@ class TestSwitchboardNavigation(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        self.sb = Switchboard(
-            ui_source=self.example_module, slot_source=ExampleSlots
-        )
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
 
     def tearDown(self):
         # show_prev_ui() shows a real window; close any loaded UI so a leaked
@@ -206,7 +206,7 @@ class TestSwitchboardNavigation(QtBaseTestCase):
         self.assertEqual(len(calls), 1)
         self.assertIs(self.sb._last_slot_wrapper, wrapper)
 
-        ret = self.sb.repeat_last()
+        self.sb.repeat_last()
         self.assertEqual(len(calls), 2)
         self.assertIs(calls[1], w)  # widget context preserved
         # The repeat must not overwrite the captured wrapper with itself.
@@ -237,15 +237,43 @@ class TestSwitchboardNavigation(QtBaseTestCase):
         self.assertIsNone(self.sb.repeat_last())
 
     def test_repeat_last_survives_dead_widget(self):
-        class RaisingWrapper:
-            _last_invocation_args = ()
-            _last_invocation_kwargs = {}
+        import shiboken6
 
-            def _invoke(self, *args, **kwargs):
-                raise RuntimeError("dead C++ widget")
+        calls = []
 
-        self.sb._last_slot_wrapper = RaisingWrapper()
+        def myslot(widget=None):
+            calls.append(widget)
+
+        w = QtWidgets.QPushButton()
+        w.setObjectName("b000")
+        wrapper = SlotWrapper(myslot, w, self.sb)
+        wrapper()
+        shiboken6.delete(w)  # the slot's UI was torn down since it ran
+
         self.assertIsNone(self.sb.repeat_last())  # fails soft, no crash
+        self.assertEqual(len(calls), 1)  # the dead widget's slot never re-ran
+        self.assertFalse(self.sb._suppress_slot_capture)  # flag reset
+
+    def test_repeat_last_surfaces_the_slots_own_runtime_error(self):
+        # Regression: the dead-widget guard was an ``except RuntimeError``
+        # around the whole repeat, and maya.cmds raises RuntimeError for
+        # nearly every failure -- so a repeated slot that failed said nothing,
+        # not even in the Script Editor.
+        calls = []
+
+        def myslot(widget=None):
+            calls.append(widget)
+            if len(calls) > 1:
+                raise RuntimeError("No object matches name: pCube1")
+
+        w = self.track_widget(QtWidgets.QPushButton())
+        w.setObjectName("b000")
+        wrapper = SlotWrapper(myslot, w, self.sb)
+        wrapper()
+
+        with self.assertRaisesRegex(RuntimeError, "No object matches name"):
+            self.sb.repeat_last()
+        self.assertEqual(len(calls), 2)
         self.assertFalse(self.sb._suppress_slot_capture)  # flag reset
 
     def test_show_prev_ui_skips_stale_entry(self):
@@ -308,9 +336,7 @@ class TestSlotHistoryRegression(QtBaseTestCase):
 
     def setUp(self):
         super().setUp()
-        self.sb = Switchboard(
-            ui_source=self.example_module, slot_source=ExampleSlots
-        )
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
 
     def test_dedup_keeps_recent(self):
         def a():
@@ -329,7 +355,10 @@ class TestSlotHistoryRegression(QtBaseTestCase):
     def test_length_trims_without_add(self):
         slots = []
         for i in range(8):
-            f = (lambda: None)
+
+            def f():
+                return None
+
             f.__name__ = f"s{i}"
             slots.append(f)
             self.sb.slot_history(add=f, allow_duplicates=True)

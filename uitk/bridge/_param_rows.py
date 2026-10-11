@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from qtpy import QtCore, QtWidgets
 
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.separator import Separator
 from uitk.managers.field_visibility import FieldVisibility
 
@@ -34,7 +35,7 @@ class _ParamRowsMixin(object):
     # Kinds whose widgets are composite (line edit + button, list +
     # buttons, ...) or list-shaped, and must NOT have their parent row
     # clamped to 19px because they are taller than one input line.
-    TALL_KINDS: Tuple[str, ...] = ("path", "file", "file_list", "check_list")
+    TALL_KINDS: Tuple[str, ...] = ("path", "file", "files", "file_list", "check_list")
 
     # ------------------ Supersessions ---------------------------------
     # ``(trigger key, governed keys, reason)`` triples: while *trigger* reads
@@ -360,9 +361,9 @@ class _ParamRowsMixin(object):
             return
         others = {r for k, r in self._param_rows.items() if k != key}
         layout = row.layout()
-        for i in range(layout.count() if layout is not None else 0):
-            child = layout.itemAt(i).widget()
-            if child is not None and child not in others:
+        children = _LayoutItems.widgets(layout) if layout is not None else []
+        for child in children:
+            if child not in others:
                 child.setEnabled(enabled)
         row.setToolTip("" if enabled else reason)
 
