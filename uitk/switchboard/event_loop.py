@@ -1,6 +1,5 @@
 # !/usr/bin/python
 # coding=utf-8
-import traceback
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
@@ -88,9 +87,9 @@ class SwitchboardEventLoopMixin:
                 func(*args, **kwargs)
             except Exception as e:
                 self.logger.error(
-                    f"[defer_with_timer] Exception in deferred call to {func.__name__}: {e}"
+                    f"[defer_with_timer] Exception in deferred call to {func.__name__}: {e}",
+                    exc_info=True,
                 )
-                self.logger.debug(traceback.format_exc())
                 if args and "ms" not in kwargs and isinstance(args[0], int):
                     raise TypeError(
                         "[defer_with_timer] Did you mean to pass ms as a keyword argument?"

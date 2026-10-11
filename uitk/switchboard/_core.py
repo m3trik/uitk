@@ -1281,11 +1281,22 @@ class Switchboard(
         would raise ``TypeError``. The live ``SlotWrapper`` snapshots its last
         invocation's args/kwargs; this replays them through the normal dispatch
         path (wait cursor, timeout, history). Returns the slot's return value,
-        or ``None`` if no slot has run yet.
+        or ``None`` if no slot has run yet or its widget has since been
+        deleted. The slot's own exceptions propagate, as on its first run.
         """
         wrapper = self._last_slot_wrapper
         if wrapper is None:
             self.logger.debug("[repeat_last] No slot to repeat")
+            return None
+        # The slot's widget/UI was torn down since it last ran (dead C++
+        # wrapper): repeating is undefined, so fail soft. Probed up front, not
+        # by catching RuntimeError around the call: maya.cmds raises
+        # RuntimeError for nearly every failure, so that catch also swallowed
+        # the slot's own errors, and a slot that never touches its widget
+        # re-ran against the dead one.
+        widget = getattr(wrapper, "widget", None)
+        if widget is not None and not self._widget_is_alive(widget):
+            self.logger.debug("[repeat_last] last slot's widget is gone")
             return None
         # Replay with the exact args/kwargs the slot last ran with (incl. any
         # signal payload such as a list slot's required ``item``). Calling the
@@ -1297,12 +1308,6 @@ class Switchboard(
         self._suppress_slot_capture = True
         try:
             return wrapper._invoke(*args, **kwargs)
-        except RuntimeError:
-            # The slot's widget/UI was torn down since it last ran (dead C++
-            # wrapper). Repeating is undefined — fail soft rather than crash a
-            # shortcut/command handler.
-            self.logger.debug("[repeat_last] last slot's widget is gone")
-            return None
         finally:
             self._suppress_slot_capture = False
 

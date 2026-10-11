@@ -333,6 +333,8 @@ Handlers extend UITK without subclassing `Switchboard`. Three touchpoints:
 
 Every launchable handler may render `launch_code(name, **options)` — Python that relaunches an entry in a fresh session (plain interpreter or DCC shelf) — the UI Browser's *Copy launch code*. See [API_REFERENCE.md](API_REFERENCE.md#uitkuihandler).
 
+`ExternalAppHandler` ([handlers/external_app_handler.py](../uitk/handlers/external_app_handler.py)) launches the apps provider packages advertise under the `uitk.external_apps[.in_process]` entry points. `ExternalAppHub` ([widgets/editors/switchboard_browser/external_app_hub.py](../uitk/widgets/editors/switchboard_browser/external_app_hub.py)) is the same handler with no host: a provider that declares one as `HUB` in its `__main__` runs as a program (`python -m <package> [app]`, or its gui-script), and the browser's external-app rows offer *Create desktop shortcut* / *Add to Start menu* through it (`can_create_shortcut` / `create_shortcut`, optional contract methods any handler may implement), inside a DCC too, where the launcher runs the DCC's own Python. See [API_REFERENCE.md](API_REFERENCE.md#uitkexternalapphub).
+
 `MarkingMenu` registers itself as `sb.handlers.marking_menu`. See [MARKING_MENU.md](MARKING_MENU.md).
 
 ### Custom handler example
@@ -566,7 +568,7 @@ uitk/
 ├── handlers/
 │   ├── ui_handler.py          # UiHandler (sb.handlers.ui)
 │   ├── base_handler.py        # shared lifecycle for handler subclasses
-│   ├── external_app_handler.py
+│   ├── external_app_handler.py  # ExternalAppHandler (sb.handlers.external_app)
 │   ├── editor_handler.py      # EditorHandler (sb.handlers.editor)
 │   └── handler_entry.py
 │

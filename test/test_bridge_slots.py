@@ -582,7 +582,7 @@ class TestBrowseRowUsesTheOptionBox(BaseTestCase):
     than a text button that reads as a third value.
     """
 
-    KINDS = ("path", "file")
+    KINDS = ("path", "file", "files")
 
     def _row(self, **kwargs):
         widget = KindFactory.make_widget(AttributeSpec(key="src", **kwargs))
@@ -617,9 +617,37 @@ class TestBrowseRowUsesTheOptionBox(BaseTestCase):
         # it will ask for a folder or a file.
         folder = self._buttons(self._row(kind="path"))["BrowseOption"]
         chooser = self._buttons(self._row(kind="file"))["BrowseOption"]
+        several = self._buttons(self._row(kind="files"))["BrowseOption"]
         self.assertIn("folder", folder.toolTip().lower())
         self.assertIn("file", chooser.toolTip().lower())
-        self.assertNotEqual(folder.toolTip(), chooser.toolTip())
+        self.assertIn("files", several.toolTip().lower())
+        self.assertEqual(
+            len({folder.toolTip(), chooser.toolTip(), several.toolTip()}), 3
+        )
+
+    def test_a_files_row_holds_the_whole_pick(self):
+        """A multi-select writes only its FIRST path to a plain field; the
+        ``files`` row is the whole pick, read back as a list -- and typed
+        paths, a single one, or none read the same way."""
+        from unittest.mock import patch
+
+        row = self._row(kind="files", choices=["*.glb"])
+        picked = ["C:/assets/room.glb", "C:/assets/props.glb"]
+        with patch.object(
+            QtWidgets.QFileDialog, "getOpenFileNames", return_value=(picked, "")
+        ) as dialog:
+            self._buttons(row)["BrowseOption"].click()
+        self.assertIn("*.glb", dialog.call_args.args[3])
+        self.assertEqual(
+            row._line_edit.text(), "C:/assets/room.glb; C:/assets/props.glb"
+        )
+        self.assertEqual(KindFactory.read_value(row), picked)
+        row._line_edit.setText(" C:/a.glb ;;C:/b.glb; ")
+        self.assertEqual(KindFactory.read_value(row), ["C:/a.glb", "C:/b.glb"])
+        KindFactory.set_value(row, "C:/one.glb")
+        self.assertEqual(KindFactory.read_value(row), ["C:/one.glb"])
+        KindFactory.set_value(row, [])
+        self.assertEqual(KindFactory.read_value(row), [])
 
     def test_clear_appears_only_when_there_is_something_to_clear(self):
         row = self._row(kind="file")
@@ -670,7 +698,7 @@ class TestPlaceholderExplainsAnEmptyField(BaseTestCase):
     ask about.
     """
 
-    CASES = (("str", False), ("path", True), ("file", True))
+    CASES = (("str", False), ("path", True), ("file", True), ("files", True))
 
     def test_the_placeholder_reaches_the_editable_field(self):
         for kind, composite in self.CASES:
@@ -754,6 +782,7 @@ class TestKindWidgetPresetRoundTrip(BaseTestCase):
     CASES = (
         ("render_output", dict(kind="path"), "C:/renders/hero.png"),
         ("source_file", dict(kind="file"), "C:/assets/hero.glb"),
+        ("source_files", dict(kind="files"), ["C:/a/room.glb", "C:/a/props.glb"]),
         ("scripts", dict(kind="check_list", choices=["a", "b", "c"]), ["a", "c"]),
         ("meshes", dict(kind="file_list"), ["C:/m/a.fbx", "C:/m/b.fbx"]),
         ("scale", dict(kind="float", default=1.0), 2.5),
@@ -791,6 +820,7 @@ class TestKindWidgetPresetRoundTrip(BaseTestCase):
         empties = {
             "path": "",
             "file": "",
+            "files": [],
             "check_list": [],
             "file_list": [],
             "float": 0.0,
@@ -2374,6 +2404,8 @@ class TestLiveParamsStayOutOfPresets(BaseTestCase):
     }
 
     def _slots(self, semantic=False):
+        from uitk.widgets._layout_items import _LayoutItems
+
         tmp = self.tmp = Path(tempfile.mkdtemp(prefix="bridge_live_params_"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         specs = self.SPECS
@@ -2405,7 +2437,7 @@ class TestLiveParamsStayOutOfPresets(BaseTestCase):
             (),
             {
                 "grp_process": group,
-                "b000": group.layout().itemAt(0).widget(),
+                "b000": _LayoutItems.widget_at(group.layout(), 0),
                 "cmb000": templates,
             },
         )()

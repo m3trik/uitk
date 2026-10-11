@@ -85,8 +85,10 @@ class TestValueOption(QtBaseTestCase):
         sld.option_box.add_toggle(icon="eye", initial=False, settings_key=False)
         self.track_widget(sld.option_box.container)
 
+        from uitk.widgets._layout_items import _LayoutItems
+
         layout = sld.option_box.container.layout()
-        widgets = [layout.itemAt(i).widget() for i in range(layout.count())]
+        widgets = _LayoutItems.widgets(layout)
         field = sld.option_box.find_option(ValueOption).widget
         button = sld.option_box.find_option(ToggleOption).widget
         self.assertLess(widgets.index(field), widgets.index(button))

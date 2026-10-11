@@ -10,6 +10,7 @@ list pinned closed windows in memory with strong refs — defeating the weakref
 design of ``loaded_ui``. This unifies the append/cap/dedup/filter mechanics in
 one place and lets the UI history hold weak refs so a closed UI is freed.
 """
+
 import weakref
 import pythontk as ptk
 

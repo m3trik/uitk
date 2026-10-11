@@ -22,10 +22,9 @@ from uitk.widgets.sequencer._data import (
 )
 from uitk.widgets.sequencer._clip import ClipItem
 from uitk.widgets.sequencer._keyframe import KeyframeItem, TangentHandleItem
+from uitk.widgets.sequencer._draggable import HeldGeometryMixin
 from uitk.widgets.sequencer._overlays import (
     _GapOverlayItem,
-    _SnapGuideItem,
-    _StaticRangeOverlay,
     RangeHighlightItem,
 )
 from uitk.widgets.sequencer._ruler import RulerItem
@@ -565,8 +564,38 @@ class TimelineView(QtWidgets.QGraphicsView):
             return
         super().keyReleaseEvent(event)
 
+    #: Widgets a user types into: hover never takes focus from one.
+    _TYPING_WIDGETS = (
+        QtWidgets.QLineEdit,
+        QtWidgets.QAbstractSpinBox,
+        QtWidgets.QTextEdit,
+        QtWidgets.QPlainTextEdit,
+    )
+
+    def _typing_in_window(self) -> bool:
+        """Whether the focus is in a field of this window that takes typing.
+
+        A read-only text view takes none; an editable combo box does.
+        """
+        fw = QtWidgets.QApplication.focusWidget()
+        if fw is None or fw is self or fw.window() is not self.window():
+            return False
+        if isinstance(fw, QtWidgets.QComboBox):
+            return fw.isEditable()
+        if not isinstance(fw, self._TYPING_WIDGETS):
+            return False
+        read_only = getattr(fw, "isReadOnly", None)
+        return not (callable(read_only) and read_only())
+
     def enterEvent(self, event):
-        self.setFocus(QtCore.Qt.MouseFocusReason)
+        # Hover takes focus so the timeline's keys work without a click -- but
+        # never from a field being typed in.  The shot dropdown's cell editor
+        # lies one header row above the tracks, and it closed the moment the
+        # pointer crossed into them on the way to its next field (2026-10-10:
+        # "I still can't edit the shot data by double clicking the shots
+        # combobox"; 2026-10-06: "unable to edit anything but the first field").
+        if not self._typing_in_window():
+            self.setFocus(QtCore.Qt.MouseFocusReason)
         # Qt delivers no KeyPress for a modifier already down when the
         # pointer arrives, and no KeyRelease once focus has gone -- so the
         # live state is read here rather than inferred from the last event.
@@ -1245,17 +1274,11 @@ class TimelineView(QtWidgets.QGraphicsView):
         for item in self._scene.items():
             if isinstance(item, ClipItem):
                 item._sync_geometry()
-            elif isinstance(item, MarkerItem):
+            elif isinstance(item, HeldGeometryMixin):
+                # Markers, overlays, the range highlight and the playhead:
+                # bounds re-derived from the new layout, announced first.
                 item.sync()
-            elif isinstance(item, RangeHighlightItem):
-                item.sync()
-            elif isinstance(
-                item, (_StaticRangeOverlay, _GapOverlayItem, _SnapGuideItem)
-            ):
-                item.prepareGeometryChange()
-                item.update()
         self._sync_ruler_pos()
-        self._scene.playhead.sync()
         # The Shift scale box brackets key dots that just moved under it.
         self.parent_sequencer.refresh_key_scale_box()
         self._update_scene_rect()

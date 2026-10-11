@@ -5,6 +5,7 @@
 from typing import Optional, Tuple, Union
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.managers.cursor_manager import CursorManager
+from uitk.widgets._layout_items import _LayoutItems
 
 # Qt's QWIDGETSIZE_MAX — the sentinel for "no maximum" on a widget dimension.
 QWIDGETSIZE_MAX = 16777215
@@ -324,13 +325,19 @@ class SizeGripMixin:
         # a flat (visible - 1) * spacing over-counts every such gap, and the
         # surplus becomes dead space the window can be stretched into.
         prev_empty = True  # nothing precedes the first item
-        for i in range(layout.count()):
-            item = layout.itemAt(i)
-            if item is None:
-                continue
-            item_empty = item.isEmpty()
-            spacer = item.spacerItem()
-            if spacer is not None:
+        for entry in _LayoutItems.entries(layout):
+            item_empty = _LayoutItems.is_empty(entry)
+            if isinstance(entry, QtWidgets.QWidget):
+                if item_empty:  # hidden (and not retaining size)
+                    prev_empty = True
+                    continue
+                iw, ih = SizeGripMixin._widget_content_max(entry)
+                a, b = (iw, ih) if horiz else (ih, iw)
+            elif isinstance(entry, QtWidgets.QLayout):
+                iw, ih = SizeGripMixin._layout_content_max(entry)
+                a, b = (iw, ih) if horiz else (ih, iw)
+            elif entry.spacerItem() is not None:
+                spacer = entry.spacerItem()
                 sp = spacer.sizePolicy()
                 along_policy = sp.horizontalPolicy() if horiz else sp.verticalPolicy()
                 if SizeGripMixin._policy_grows(along_policy):
@@ -339,15 +346,6 @@ class SizeGripMixin:
                     hint = spacer.sizeHint()
                     a = hint.width() if horiz else hint.height()
                 b = QWIDGETSIZE_MAX  # spacers never constrain across
-            elif item.layout() is not None:
-                iw, ih = SizeGripMixin._layout_content_max(item.layout())
-                a, b = (iw, ih) if horiz else (ih, iw)
-            elif item.widget() is not None:
-                if item_empty:  # hidden (and not retaining size)
-                    prev_empty = True
-                    continue
-                iw, ih = SizeGripMixin._widget_content_max(item.widget())
-                a, b = (iw, ih) if horiz else (ih, iw)
             else:
                 prev_empty = item_empty
                 continue

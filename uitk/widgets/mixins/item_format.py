@@ -12,10 +12,14 @@ reading it off a tree hit a ``KeyError``). Each subclass keeps only what its
 item model makes different: how an item is addressed (row/col vs item/col) and
 how its roles are set.
 """
+
+import logging
 from contextlib import contextmanager
 from typing import Callable, Tuple
 
 from uitk.widgets.mixins.convert import ConvertMixin
+
+logger = logging.getLogger(__name__)
 
 
 class ItemFormatMixin(ConvertMixin):
@@ -59,8 +63,11 @@ class ItemFormatMixin(ConvertMixin):
         try:
             return self.to_qobject(cached, "QColor")
         except Exception:
-            print(
-                f"[WARNING] Invalid {color_type} color: {color!r}, and fallback {cached!r} failed. Using None."
+            logger.warning(
+                "Invalid %s color: %r, and fallback %r failed. Using None.",
+                color_type,
+                color,
+                cached,
             )
             return None
 

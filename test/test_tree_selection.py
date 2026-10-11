@@ -67,6 +67,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         press = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonPress,
             QtCore.QPointF(pos),
+            QtCore.QPointF(pos),  # global
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoModifier,
@@ -74,6 +75,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         release = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonRelease,
             QtCore.QPointF(pos),
+            QtCore.QPointF(pos),  # global
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoModifier,
@@ -88,6 +90,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         ctrl_press = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonPress,
             QtCore.QPointF(pos),
+            QtCore.QPointF(pos),  # global
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.ControlModifier,
@@ -95,6 +98,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         ctrl_release = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonRelease,
             QtCore.QPointF(pos),
+            QtCore.QPointF(pos),  # global
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.ControlModifier,
@@ -124,6 +128,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         ctrl_press = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonPress,
             QtCore.QPointF(pos),
+            QtCore.QPointF(pos),  # global
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.ControlModifier,
@@ -131,6 +136,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         ctrl_release = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonRelease,
             QtCore.QPointF(pos),
+            QtCore.QPointF(pos),  # global
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.ControlModifier,
@@ -164,6 +170,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         right_press = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonPress,
             QtCore.QPointF(pos),
+            QtCore.QPointF(pos),  # global
             QtCore.Qt.RightButton,
             QtCore.Qt.RightButton,
             QtCore.Qt.NoModifier,
@@ -185,6 +192,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         press = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonPress,
             QtCore.QPointF(pos),
+            QtCore.QPointF(pos),  # global
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoModifier,
@@ -192,6 +200,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         release = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonRelease,
             QtCore.QPointF(pos),
+            QtCore.QPointF(pos),  # global
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.NoModifier,
@@ -222,6 +231,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         ctrl_press = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonPress,
             QtCore.QPointF(pos1),
+            QtCore.QPointF(pos1),  # global
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.ControlModifier,
@@ -229,6 +239,7 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         ctrl_release = QtGui.QMouseEvent(
             QtCore.QEvent.MouseButtonRelease,
             QtCore.QPointF(pos1),
+            QtCore.QPointF(pos1),  # global
             QtCore.Qt.LeftButton,
             QtCore.Qt.LeftButton,
             QtCore.Qt.ControlModifier,

@@ -350,7 +350,7 @@ Subclass for DCC integration — override `show`, `default_persistence`, or prov
 
 Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handlers/handler_entry.py](../uitk/handlers/handler_entry.py) · [handlers/external_app_handler.py](../uitk/handlers/external_app_handler.py) · [handlers/editor_handler.py](../uitk/handlers/editor_handler.py). Handler-ecosystem prose (registration, `DEFAULTS`, `sb.handlers.*`): [Architecture](ARCHITECTURE.md).
 
-**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("ui_browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`. Optional, probed by the browser: `save_tags(name, tags)`, `focus(name)` (the row's Focus button) and `launch_code(name, **options) -> str | None` (the row menu's *Copy launch code*).
+**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("ui_browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`. Optional, probed by the browser: `save_tags(name, tags)`, `focus(name)` (the row's Focus button), `launch_code(name, **options) -> str | None` (the row menu's *Copy launch code*) and the pair `can_create_shortcut(name) -> bool` / `create_shortcut(name, location) -> str` (the row menu's *Create desktop shortcut* / *Add to Start menu*, offered when the first says True).
 
 **`HandlerEntry`** — the launchable-entry data class every handler yields from `entries()`; `all_tags` and `editable_tags` properties.
 
@@ -365,8 +365,47 @@ Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handler
 | `launch(name=None, *, module=None, entry=None, install_spec=None, python=None, show_kwargs=None, mode=None, show=True)` | Launch a registered app, or an ad-hoc app from kwargs |
 | `entries()` / `close(name)` / `is_visible(name)` / `save_tags(name, tags)` | Launchable contract + tag persistence |
 | `launch_code(name, **options) -> str \| None` | A fresh `Switchboard` + this handler, the app's registration spelled out, then `launch(name)` — install-on-demand and process isolation survive the copy |
+| `hub_for(name)` / `can_create_shortcut(name)` / `create_shortcut(name, location="desktop") -> str` | The app's provider hub (the top-level package of its module, when its `__main__` declares an `ExternalAppHub`), and a desktop launcher that opens the app standalone through it; see [`uitk.ExternalAppHub`](#uitkexternalapphub) |
 
 **`EditorHandler`** — the bundled editors (`sb.editors`: `browser`, `style`, `shortcut`, `global_shortcuts`, `presets`) as launcher rows of kind `editor`, named by their registry key; the UI Browser lists itself. Every `Switchboard` registers one as `sb.handlers.editor`; `Switchboard(handlers={"editor": None})` opts out. Its `launch_code` stands the `"ui"` handler up (`bootstrap_code`, with every registered source for an editor that lists the registry) and calls `sb.editors.show(name)`.
+
+---
+
+## `uitk.ExternalAppHub`
+
+Source: [widgets/editors/switchboard_browser/external_app_hub.py](../uitk/widgets/editors/switchboard_browser/external_app_hub.py). A provider package's external apps as a program of their own: the `ExternalAppHandler` with no host. The provider declares one, as `HUB`, in its `__main__`:
+
+```python
+# mypkg/__main__.py
+from uitk import ExternalAppHub
+
+HUB = ExternalAppHub("mypkg", title="My Tools", icon=ICON_PATH, app_id="me.mytools")
+
+if __name__ == "__main__":
+    raise SystemExit(HUB.run())
+```
+
+and, for a console-free command, a gui-script: `[project.gui-scripts] mypkg = "mypkg.__main__:HUB.run"`. `python -m mypkg` opens the UI Browser listing every external app (the provider's own included when it is a source checkout on `PYTHONPATH`); `python -m mypkg <app>` opens one app; `--shortcut desktop|start_menu` writes a launcher and exits. The process quits once none of its windows shows (uitk windows hide rather than close, so Qt's own last-window rule would never fire).
+
+| Member | Purpose |
+|:---|:---|
+| `ExternalAppHub(package, title=None, icon=None, app_id=None)` | Plain values; `title` defaults to *package*, `icon` to uitk's grid icon, `app_id` (the Windows taskbar identity) to `uitk.<package>` |
+| `of(package)` (classmethod) | The hub *package* declares as `HUB` in its `__main__`, or `None`: how a host's browser finds a provider's hub |
+| `run(argv=None) -> int` | The program: process setup (below), then the browser or one app, then the event loop |
+| `open(sb, app=None)` | Show one app, or the browser, on a caller's switchboard; returns the window |
+| `create_shortcut(location="desktop", app=None, python=None) -> str` | A desktop / Start-menu (Linux: applications-menu) launcher running `<python> -m <package> [app]`, named *title* (one app's: *title* plus the app's name, so "Converter" never replaces another program's shortcut) |
+| `data_dir` / `log_file` | `<user config root>/<package>` (`ptk.UserConfig`): the rendered `.ico` and the log |
+
+**Process setup**: `run` calls four `Bootstrap` helpers, usable by any standalone uitk program:
+
+| `Bootstrap.` | What it does |
+|:---|:---|
+| `detach_console() -> bool` | Windows: when this process is its console's only client (a shortcut into `mayapy` or Blender's `python.exe`, which have no `pythonw`), `FreeConsole` closes the console; a console a terminal shares is left alone |
+| `capture_output(log_file, force=False) -> str \| None` | When `sys.stdout` / `sys.stderr` are `None` (`pythonw`) or *force* (just detached): output, logging and native faults (`faulthandler`) go to *log_file*, the previous run's kept as `.1`. Call it before any Switchboard exists: pythontk's `LoggingMixin` handlers capture `sys.stderr` when they are built |
+| `report_uncaught(title, log_file=None)` | A `sys.excepthook` that still runs the previous one, then shows the error in a message box: once per distinct error, GUI thread only |
+| `set_app_id(app_id) -> bool` | Windows: the process's AppUserModelID, so the taskbar shows the app's icon and groups its windows under the shortcut stamped with the same id |
+
+**Shortcuts**: `create_shortcut` first imports the package in the target interpreter with the environment a desktop launch gets (on Windows, `PYTHONPATH` from the saved user environment). A package that only a host's startup put on `sys.path` (`userSetup.py`, `Maya.env`) is refused with the import error, and nothing is written. The default interpreter is `ptk.AppLauncher.windowless_python()`: `pythonw` where it exists, inside a DCC the DCC's own Python. The file is written by `ptk.AppLauncher.create_shortcut` (a Unicode `IShellLinkW` `.lnk` stamped with the app id; a freedesktop `.desktop` on Linux). One app's launcher takes the id `<app_id>.<app>`, so it groups apart from the hub's.
 
 ---
 
@@ -732,11 +771,11 @@ The remaining public top-level symbols (`uitk/__init__.py` → `DEFAULT_INCLUDE`
 | `RuntimeLoader`, `CompiledLoader`, `UiCompiler`, `PrecompileJob` | [Architecture](ARCHITECTURE.md) § UI loading & compilation |
 | `DesignerPlugin`, `DesignerWidget` | [Widgets § Using the widgets in Qt Designer](WIDGETS.md) |
 | `AttributeSpec`, `KindHandler`, `KindFactory` | [Bridge](BRIDGE.md) — the kind-handler registry |
-| `Bootstrap` | [_bootstrap.py](../uitk/_bootstrap.py) — pre-`QApplication` setup for standalone processes; `Bootstrap.configure_high_dpi() -> bool` is the whole surface |
+| `Bootstrap` | [_bootstrap.py](../uitk/_bootstrap.py) — setup for standalone processes (`configure_platform`, `configure_high_dpi`, before the `QApplication`) and the window-system capabilities widgets branch on (`composites`, `set_translucent`, ...); the desktop-launch helpers (`detach_console`, `capture_output`, `report_uncaught`, `set_app_id`) are tabled under [`uitk.ExternalAppHub`](#uitkexternalapphub) |
 | `EmbeddedMenuWidget`, `PersistentMenu` | [widgets/embeddedMenu.py](../uitk/widgets/embeddedMenu.py) — host a live `QMenu` as ordinary widget content, sized exactly to it (`content_size`, `fit_to_window`; `PersistentMenu` ignores hide attempts) |
 | `IconManager` | Theme-aware SVG icon loader — `get(name, size, color)`, `set_icon`, `register_icon_dir`, `set_default_color`; usage notes in [Widgets](WIDGETS.md) |
 | `ValueManager` | Static get/set for most Qt widget values, routed by type or signal name ([managers/value_manager.py](../uitk/managers/value_manager.py)); `StateManager.apply` builds on it. A widget's own `state_value()` / `set_state_value()` answer first |
-| `FormRows`, `ModelBinding`, `WindowHeight`, `ColumnConfig` | [Widgets](WIDGETS.md) — § WindowPanel (form rows; widgets bound to an external model), § Universal enhancements (a window following its content), § TableWidget (column config) |
+| `FormRows`, `ModelBinding`, `WindowHeight`, `ColumnConfig`, `RowTags` | [Widgets](WIDGETS.md) — § WindowPanel (form rows; widgets bound to an external model), § Universal enhancements (a window following its content), § TableWidget (column config, row tags) |
 | `OptionalPackageManager` | Probe for / offer to install an optional package importable in this session — `available(spec)`, `ensure(spec, feature=...)` ([managers/optional_package_manager.py](../uitk/managers/optional_package_manager.py)); bridge panels expose it via `ensure_optional_package` ([Bridge](BRIDGE.md)) |
 | `RecentValuesStore` | Widget-free most-recent-first value history — `record`, `values`, `subscribe`, `prune_invalid` ([managers/recent_values_store.py](../uitk/managers/recent_values_store.py)); backs the `RecentValuesOption` in [Widgets](WIDGETS.md) |
 

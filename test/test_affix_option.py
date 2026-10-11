@@ -29,6 +29,7 @@ from uitk.widgets.optionBox.options.affix import (
     BUILTIN_AFFIX_MODES,
 )
 from uitk.widgets.optionBox.options.clear import ClearOption
+from uitk.widgets._layout_items import _LayoutItems
 
 
 def _icon_name(widget):
@@ -240,7 +241,7 @@ class TestAffixOptionManager(QtBaseTestCase):
         self.track_widget(le.option_box.container)
 
         layout = le.option_box.container.layout()
-        widgets = [layout.itemAt(i).widget() for i in range(layout.count())]
+        widgets = _LayoutItems.widgets(layout)
         picker = le.option_box.find_option(AffixOption).widget
         button = le.option_box.find_option(ToggleOption).widget
         self.assertLess(widgets.index(picker), widgets.index(button))
@@ -253,7 +254,7 @@ class TestAffixOptionManager(QtBaseTestCase):
         self.track_widget(le.option_box.container)
 
         layout = le.option_box.container.layout()
-        widgets = [layout.itemAt(i).widget() for i in range(layout.count())]
+        widgets = _LayoutItems.widgets(layout)
         clear = le.option_box.find_option(ClearOption).widget
         picker = le.option_box.find_option(AffixOption).widget
         self.assertLess(widgets.index(clear), widgets.index(picker))

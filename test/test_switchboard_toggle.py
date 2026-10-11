@@ -992,5 +992,22 @@ class TestAWidgetThatNamesItsOwnValue(_Base):
         self.assertEqual(scripts.state_value(), ["a", "b"])
 
 
+class TestConnectMulti(_Base):
+    def test_a_widget_that_fails_is_reported_with_its_traceback_not_raised(self):
+        # Regression: the report named the slot loop's variable, unbound when
+        # the failure came before that loop -- so the report itself raised
+        # NameError out of connect_multi instead of logging the real error.
+        class Failing:
+            def __getattr__(self, name):
+                raise RuntimeError(f"cannot read {name!r}")
+
+        with self.assertLogs(self.sb.logger, level="ERROR") as captured:
+            self.sb.connect_multi(self.ui, [Failing()], "toggled", lambda: None)
+
+        (record,) = captured.records
+        self.assertIn("cannot read 'toggled'", record.getMessage())
+        self.assertIs(record.exc_info[0], RuntimeError)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

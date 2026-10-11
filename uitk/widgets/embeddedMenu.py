@@ -11,6 +11,8 @@ location.
 """
 from qtpy import QtWidgets, QtCore
 
+from uitk.widgets._layout_items import _LayoutItems
+
 
 class PersistentMenu(QtWidgets.QMenu):
     """A QMenu that ignores attempts to hide it (e.g. from interaction), suitable for embedding."""
@@ -84,9 +86,8 @@ class EmbeddedMenuWidget(QtWidgets.QWidget):
         if not layout:
             return 0
         total = 0
-        for i in range(layout.count()):
-            w = layout.itemAt(i).widget()
-            if w and w is not self.menu:
+        for w in _LayoutItems.widgets(layout):
+            if w is not self.menu:
                 hint = w.sizeHint()
                 if hint.isValid() and hint.height() > 0:
                     total += hint.height()
@@ -168,9 +169,8 @@ class EmbeddedMenuWidget(QtWidgets.QWidget):
         layout = self.layout()
         if not layout:
             return
-        for i in range(layout.count()):
-            w = layout.itemAt(i).widget()
-            if w and w is not self.menu:
+        for w in _LayoutItems.widgets(layout):
+            if w is not self.menu:
                 w.raise_()
 
     def showEvent(self, event):

@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Dict, Optional, Union
 
 from qtpy import QtWidgets, QtCore
 from uitk._bootstrap import Bootstrap
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
 from uitk.widgets.form_rows import FormRows
@@ -563,10 +564,8 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         so controls in a single row pack tightly. Call once at the end
         of the subclass constructor after the rows have been added.
         """
-        for i in range(self._body_layout.count()):
-            sublayout = self._body_layout.itemAt(i).layout()
-            if sublayout is not None:
-                sublayout.setSpacing(spacing)
+        for sublayout in _LayoutItems.layouts(self._body_layout):
+            sublayout.setSpacing(spacing)
 
     @staticmethod
     def icon_button(

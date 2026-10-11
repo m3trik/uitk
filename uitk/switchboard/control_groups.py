@@ -182,7 +182,7 @@ class SwitchboardControlGroupsMixin:
                     )
                     return
             except Exception as e:
-                self.logger.error(f"Failed to connect toggle: {e}")
+                self.logger.error(f"Failed to connect toggle: {e}", exc_info=True)
                 return
             if apply_now:
                 toggle_callback(self._read_signal_value(trigger_widget, signal))
@@ -252,8 +252,12 @@ class SwitchboardControlGroupsMixin:
                         signal.connect(slot)
 
                 except Exception as e:
+                    # ``slots``, not the loop's ``slot``: a failure before the
+                    # slot loop (the getattr) would leave it unbound, and the
+                    # report itself would raise NameError out of the method.
                     self.logger.error(
-                        f"Failed to connect signal '{signal_name}' on '{widget}' to '{slot}': {e}"
+                        f"Failed to connect signal '{signal_name}' on '{widget}' to {slots}: {e}",
+                        exc_info=True,
                     )
 
     def add_reset_buttons(

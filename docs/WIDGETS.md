@@ -357,7 +357,7 @@ def tree_nodes(self, item, column):
 
 `create_item(text, data=None, parent=None)` returns the `QTreeWidgetItem` (a list of strings fills columns). `add(data, headers=None, clear=True, parent=None)` bulk-loads dicts/lists as hierarchy (dict keys become parents, values children).
 
-Methods: `add`, `create_item`, `set_item_type_icon`, `set_item_data`, `set_action_color`, `expand_all_items`, `collapse_all_items`, `set_selection_mode`, `enable_column_config` / `restore_column_state` (see [column config](#column-config)).
+Methods: `add`, `create_item`, `set_item_type_icon`, `set_item_data`, `set_action_color`, `expand_all_items`, `collapse_all_items`, `set_selection_mode`, `enable_column_config` / `restore_column_state` (see [column config](#column-config)), `enable_row_tags` (see [row tags](#row-tags)).
 
 ## TableWidget
 
@@ -408,6 +408,20 @@ ColumnConfig.of(table).visibility_changed.connect(
 `movable=False` keeps the header's order fixed -- for a header whose click sorts, since Qt turns any press on a movable header into a potential drag. `reorderable=True` moves reordering into the menu instead: its rows are a list that stays up, where a click shows or hides a column and a drag moves it (the press-move-release is the list's own, no `QDrag`).
 
 A column's width behaviour stays with the column wherever it goes. One that takes the spare width (`QHeaderView.Stretch`) goes on taking it; a fixed or content-sized one moved last stays that size. A view that fills with `stretchLastSection` -- which stretches a *position* -- has that fill handed to the column holding it (it becomes `Stretch`) before its first move, hide or restore. While every `Stretch` column is hidden, the last one showing fills instead of a gap opening at the right edge, and gets its own width back when one returns. A view with no stretching column, or one sizing a column itself (`set_stretch_column`), is left as it is.
+
+### Row tags
+
+`TreeWidget` and `TableWidget` share a second option, `enable_row_tags(settings=None, settings_key=None, defaults=None)` (the tree adds `inherit=True`): a colour tag per row, shown as a slim strip down the view's left edge, set from a row of quick-pick swatches in the context menu. The option is `RowTags` ([row_tags.py](../uitk/widgets/row_tags.py)), which attaches the same way to any plain `QTreeView` / `QTableView`:
+
+```python
+tags = tree.enable_row_tags(settings=settings, settings_key="row_tags")
+tags.set_tag([item_a, item_b], "tag3")          # the user's layer; None clears
+tags.set_tag(section_items, "tag1", auto=True)  # a host's automatic layer, shown under it
+tags.add_to_menu(menu, rows=None)               # QMenu or uitk Menu; None = the selection at the pick
+tags.assigned.connect(lambda rows, slot: self._save(rows, slot))  # user picks only
+```
+
+A tag is a palette *slot* (`tag1`..`tag8`, `ptk.Palette.tags()` unless `defaults` names others), never a colour: a right-click on a swatch recolours that slot, so every row holding it follows, and the palette is saved under the `settings_key` branch (`colors`). A tree row with no tag of its own shows its nearest tagged ancestor's colour, fainter. Tags are kept beside the model, never in it, keyed by persistent index: a tag follows its row through sorts and moves and is dropped with it, writing one fires no `dataChanged` / `itemChanged` (a host's edit handling never hears it), and no empty table cell gains an item. The host keeps tags across reloads (`assigned` fires only on the user's picks, never on `set_tag`). The strip is an overlay above the viewport rather than a delegate, so it survives a host swapping delegates.
 
 ## Menu
 

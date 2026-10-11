@@ -519,7 +519,9 @@ class SlotWrapper:
             try:
                 provider.end(token, cancelled=was_cancelled, rollback=rollback)
             except Exception as e:
-                self.sb.logger.error(f"Cancel provider failed to close cleanly: {e}")
+                self.sb.logger.error(
+                    f"Cancel provider failed to close cleanly: {e}", exc_info=True
+                )
             if was_cancelled:
                 self.sb.logger.warning(f"'{label}' cancelled by user ({scope.reason}).")
                 self._report_cancelled(label)
@@ -871,8 +873,10 @@ class SwitchboardSlotsMixin:
                     f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Init method executed"
                 )
             except Exception as e:
+                # exc_info: the message alone names no file or line to fix.
                 self.logger.error(
-                    f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Error in init method: {e}"
+                    f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Error in init method: {e}",
+                    exc_info=True,
                 )
         else:
             self.logger.debug(
@@ -883,7 +887,8 @@ class SwitchboardSlotsMixin:
             widget.connect_slot()
         except Exception as e:
             self.logger.error(
-                f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Error connecting slot: {e}"
+                f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Error connecting slot: {e}",
+                exc_info=True,
             )
 
         # Mark widget as initialized
@@ -899,7 +904,8 @@ class SwitchboardSlotsMixin:
             )
         except Exception as e:
             self.logger.error(
-                f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Error registering children: {e}"
+                f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Error registering children: {e}",
+                exc_info=True,
             )
 
         self.logger.debug(
@@ -943,7 +949,8 @@ class SwitchboardSlotsMixin:
             )
         except Exception as e:
             self.logger.error(
-                f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] Error restoring state: {e}"
+                f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] Error restoring state: {e}",
+                exc_info=True,
             )
 
     def _revive_deferred_widget(
@@ -1043,7 +1050,8 @@ class SwitchboardSlotsMixin:
                     self._perform_slot_init(ui, widget)
                 except Exception as e:
                     self.logger.error(
-                        f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed slot init: {e}"
+                        f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed slot init: {e}",
+                        exc_info=True,
                     )
 
             # Phase 2: Run state initialization for ALL widgets
@@ -1053,7 +1061,8 @@ class SwitchboardSlotsMixin:
                     self._perform_state_init(ui, widget)
                 except Exception as e:
                     self.logger.error(
-                        f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed state init: {e}"
+                        f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed state init: {e}",
+                        exc_info=True,
                     )
 
         # Clear the deferred widgets from the placeholder
@@ -1337,7 +1346,8 @@ class SwitchboardSlotsMixin:
                 )
             except Exception as e:
                 self.logger.error(
-                    f"[connect_slot] [{ui_name}.{widget_name}] Error connecting to signal '{signal_name}': {e}"
+                    f"[connect_slot] [{ui_name}.{widget_name}] Error connecting to signal '{signal_name}': {e}",
+                    exc_info=True,
                 )
 
     def _create_slot_wrapper(self, slot, widget):

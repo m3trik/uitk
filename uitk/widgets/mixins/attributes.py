@@ -114,7 +114,7 @@ class AttributesMixin:
             self.setWindowFlags(current_flags)
 
         except Exception as e:
-            print(f"[AttributeMixin] Set_flags failed: {e}")
+            logger.error(f"[AttributeMixin] Set_flags failed: {e}", exc_info=True)
 
     def set_legal_attribute(self, obj, name, value, also_set_original=False):
         """If the original name contains illegal characters, this method sets an attribute using
@@ -162,7 +162,7 @@ class AttributesMixin:
         if signal and isinstance(signal, QtCore.Signal):
             signal.connect(callback)
         else:
-            print(f"Error: {obj} has no signal named {signal_name}")
+            logger.warning(f"{obj} has no signal named {signal_name}; not connected.")
 
     def _set_attribute_or_call_method(self, obj, attr, value):
         """Set an attribute or call a method on the object."""

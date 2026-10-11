@@ -37,6 +37,24 @@ from uitk.managers.preset_manager import (  # noqa: E402
 from uitk.managers._preset_migration import _PresetRootMigration  # noqa: E402
 
 
+def _delete_wired(combo):
+    """Delete *combo* together with the option-box container ``wire_combo`` built.
+
+    The wire reparents the combo into a parentless container that it shows, so
+    deleting only the combo strands that container, toolbar and all, as a live
+    top-level window for the rest of the process. Left to interpreter exit,
+    dozens of them faulted the run there (Qt re-activating windows while
+    Python tore them down in arbitrary order).
+    """
+    from qtpy import QtCore
+
+    try:
+        combo.window().deleteLater()
+    except RuntimeError:  # already gone
+        return
+    QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+
+
 class TestPresetsRootResolution(BaseTestCase):
     """``get_presets_root`` and ``_resolve_preset_dir`` semantics."""
 
@@ -928,7 +946,7 @@ class TestLegacyMigration(BaseTestCase):
         )
 
 
-class TestSetupComboIdempotent(BaseTestCase):
+class TestSetupComboIdempotent(QtBaseTestCase):
     """Repeat ``setup()`` on a Menu parent wires ONE preset combo.
 
     ``setup()`` is also the re-configuration path (widgets, dirs); its
@@ -966,7 +984,7 @@ class TestSetupComboIdempotent(BaseTestCase):
 
     def tearDown(self):
         for w in self.menu.added:
-            w.deleteLater()
+            _delete_wired(w)
         shutil.rmtree(self._tmp, ignore_errors=True)
         super().tearDown()
 
@@ -980,7 +998,7 @@ class TestSetupComboIdempotent(BaseTestCase):
         from uitk.widgets.comboBox import ComboBox
 
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)
         self.mgr.setup(preset_dir=str(self._tmp))
         self.assertEqual(
@@ -1149,7 +1167,7 @@ class TestUncoveredKeyWarning(BaseTestCase):
         )
 
 
-class TestBuiltinTier(BaseTestCase):
+class TestBuiltinTier(QtBaseTestCase):
     """Built-in (shipped) presets layered under user presets via PresetStore.
 
     Uses standalone (``from_widgets``) mode with real Qt widgets so no
@@ -1233,7 +1251,7 @@ class TestBuiltinTier(BaseTestCase):
 
         self.mgr.save("custom")  # a user preset to contrast with the built-in
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)
         return combo
 
@@ -1328,7 +1346,7 @@ class TestBuiltinTier(BaseTestCase):
         self.mgr.save("studio")  # user preset shadowing the built-in "studio"
         self.assertEqual(self.mgr.source("studio"), "user", "precondition: shadowed")
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)
         model = combo.model()
         item = next(
@@ -1356,11 +1374,14 @@ class TestBuiltinTier(BaseTestCase):
         """The option-box toolbar buttons wrapping *combo*, in layout order.
 
         Index 0 of the container layout is the combo; 1.. are the option
-        widgets (Refresh, Save, ⋯-menu).
+        widgets (Refresh, Save, ⋯-menu). Read through ``_LayoutItems``: an
+        ``itemAt`` here would leave item wrappers behind (see
+        :class:`TestComboLeavesNoStaleLayoutItems`).
         """
-        container = combo.option_box.container
-        layout = container.layout()
-        return [layout.itemAt(i).widget() for i in range(1, layout.count())]
+        from uitk.widgets._layout_items import _LayoutItems
+
+        layout = combo.option_box.container.layout()
+        return [w for w in _LayoutItems.widgets(layout) if w is not combo]
 
     def test_wire_combo_toolbar_is_refresh_save_menu(self):
         combo = self._wire_combo()
@@ -1384,7 +1405,7 @@ class TestBuiltinTier(BaseTestCase):
         from uitk.widgets.comboBox import ComboBox
 
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.assertGreaterEqual(
             combo.maximumHeight(), 16777215, "combo starts unbounded"
         )
@@ -1400,7 +1421,7 @@ class TestBuiltinTier(BaseTestCase):
         from uitk.widgets.comboBox import ComboBox
 
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         combo.setMaximumHeight(19)
         self.mgr.wire_combo(combo)
         self.assertEqual(combo.maximumHeight(), 19, "explicit max height clobbered")
@@ -1455,7 +1476,7 @@ class TestBuiltinTier(BaseTestCase):
         self.mgr.save("custom")  # captures chk=True, spn=42
 
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)
         self._pick(combo, "custom")  # user pick loads -> spn 42
         self.assertEqual(self.spn.value(), 42)
@@ -1472,7 +1493,7 @@ class TestBuiltinTier(BaseTestCase):
         from uitk.widgets.comboBox import ComboBox
 
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)  # combo: ["studio"] (built-in only)
         self.assertEqual(combo.findText("manual"), -1)
 
@@ -1495,7 +1516,7 @@ class TestBuiltinTier(BaseTestCase):
 
         self.mgr.save("custom")  # a user preset on disk
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)
         self._pick(combo, "custom")  # active -> custom
         self.assertGreaterEqual(combo.findText("custom"), 0)
@@ -1557,7 +1578,7 @@ class TestBuiltinTier(BaseTestCase):
 
         self.mgr.save("draft (v2)")
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)
         self._pick(combo, "draft _v2_")
         self.spn.setValue(13)
@@ -1628,7 +1649,7 @@ class TestBuiltinTier(BaseTestCase):
             builtin_dir=str(self.builtin),
         )
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         mgr2.wire_combo(combo)
 
         self.assertEqual(combo.currentText(), "studio")  # selection restored
@@ -1642,7 +1663,7 @@ class TestBuiltinTier(BaseTestCase):
         from uitk.widgets.comboBox import ComboBox
 
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)
         self._pick(combo, "studio")  # load -> spn 5
         self.assertFalse(self.mgr.is_modified())
@@ -1662,7 +1683,7 @@ class TestBuiltinTier(BaseTestCase):
 
         self.mgr.save("draft")  # a user preset to make active
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)
         self._pick(combo, "draft")
         self.spn.setValue(13)
@@ -1679,7 +1700,7 @@ class TestBuiltinTier(BaseTestCase):
         from uitk.widgets.comboBox import ComboBox
 
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)
         self._pick(combo, "studio")  # active -> studio
         self.spn.setValue(7)
@@ -1695,7 +1716,7 @@ class TestBuiltinTier(BaseTestCase):
         from uitk.widgets.comboBox import ComboBox
 
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)  # nothing loaded -> no active preset
         self.assertEqual(combo.currentIndex(), -1)
         self.assertEqual(combo.placeholderText(), "Presets…")
@@ -1705,7 +1726,7 @@ class TestBuiltinTier(BaseTestCase):
 
         self.mgr.save("draft")
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         self.mgr.wire_combo(combo)
         self._pick(combo, "draft")
         self.assertEqual(self.mgr.active_preset, "draft")
@@ -1715,7 +1736,7 @@ class TestBuiltinTier(BaseTestCase):
         self.assertEqual(combo.currentIndex(), -1)
 
 
-class TestSemanticPresetMode(BaseTestCase):
+class TestSemanticPresetMode(QtBaseTestCase):
     """``value_provider`` / ``value_applier`` mode: presets keyed by semantic
     name (not widget ``objectName``), shared with a headless CLI's PresetStore.
 
@@ -1829,8 +1850,9 @@ class TestSemanticPresetMode(BaseTestCase):
     @staticmethod
     def _refresh_button(combo):
         """The Refresh button (first option-box toolbar button)."""
-        layout = combo.option_box.container.layout()
-        return layout.itemAt(1).widget()
+        from uitk.widgets._layout_items import _LayoutItems
+
+        return _LayoutItems.widget_at(combo.option_box.container.layout(), 1)
 
     def test_semantic_active_persists_across_managers(self):
         mgr, state = self._shared_state_mgr()
@@ -1888,7 +1910,7 @@ class TestSemanticPresetMode(BaseTestCase):
 
         mgr, state = self._shared_state_mgr()
         combo = ComboBox()
-        self.addCleanup(combo.deleteLater)
+        self.addCleanup(_delete_wired, combo)
         mgr.wire_combo(combo)
         idx = combo.findText("specular")
         combo.setCurrentIndex(idx)
@@ -2380,7 +2402,7 @@ class TestLoadPersistsSessionState(BaseTestCase):
         self.assertIn("Re-save the preset", msg)
 
 
-class TestLockedPresetsInCombo(BaseTestCase):
+class TestLockedPresetsInCombo(QtBaseTestCase):
     """A preset locked in the Preset Editor, seen from its panel's selector.
 
     Drives the real combo (toolbar buttons, the ⋯-menu provider, inline commit,
@@ -2411,7 +2433,7 @@ class TestLockedPresetsInCombo(BaseTestCase):
         self.mgr.save("a")
         self.mgr.save("b")
         self.combo = ComboBox()
-        self.addCleanup(self.combo.deleteLater)
+        self.addCleanup(_delete_wired, self.combo)
         self.mgr.wire_combo(self.combo)
         self.lib = ptk.PresetLibrary()
 
@@ -2484,7 +2506,7 @@ class TestLockedPresetsInCombo(BaseTestCase):
         self.assertNotEqual(self.combo.findText("c"), -1)
 
 
-class TestHiddenPresetsInCombo(BaseTestCase):
+class TestHiddenPresetsInCombo(QtBaseTestCase):
     """A preset hidden in the Preset Editor, seen from its panel's selector.
 
     Hidden means gone from the dropdown, not from disk -- built-ins included --
@@ -2523,7 +2545,7 @@ class TestHiddenPresetsInCombo(BaseTestCase):
         self.mgr.save("a")
         self.mgr.save("b")
         self.combo = ComboBox()
-        self.addCleanup(self.combo.deleteLater)
+        self.addCleanup(_delete_wired, self.combo)
         self.mgr.wire_combo(self.combo)
         self.lib = ptk.PresetLibrary()
 
@@ -2572,6 +2594,86 @@ class TestHiddenPresetsInCombo(BaseTestCase):
         self.assertIn("The shipped default.", self.tip("stock"))
         self.assertIn("built-in", self.tip("stock"))
         self.assertEqual(self.tip("b"), "")
+
+
+class TestComboLeavesNoStaleLayoutItems(QtBaseTestCase):
+    """Deleting a wired preset combo leaves no layout-item wrapper registered.
+
+    PySide's ``QLayout.itemAt`` parents the item it returns to the layout's
+    wrapper, so the item's wrapper outlives the item: when the combo is
+    deleted, Qt deletes the option box's ``QWidgetItem`` for it natively and
+    shiboken keeps the wrapper registered at the freed address. The next C++
+    object allocated there resolves to that ``QWidgetItem``. Here that was the
+    next wired combo's own children, handed to ``CustomStyle.pixelMetric`` as
+    its ``widget`` (a native fault when passed on: the intermittent exit 139
+    in ``TestLockedPresetsInCombo``'s setUp), and its style, handed to
+    ``StyleSheet.repolish_tree`` (``AttributeError: 'QWidgetItem' object has no
+    attribute 'unpolish'``).
+    """
+
+    def setUp(self):
+        super().setUp()
+        from qtpy import QtWidgets
+
+        root = Path(__file__).parent / "temp_tests" / f"stale_{self._testMethodName}"
+        shutil.rmtree(root, ignore_errors=True)
+        root.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        patcher = mock.patch.dict(os.environ, {PRESETS_ROOT_ENV_VAR: str(root)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.chk = self.track_widget(QtWidgets.QCheckBox())
+        self.chk.setObjectName("chk_a")
+        self.mgr = PresetManager.from_widgets(
+            preset_dir="uitk_test/stale_items", widgets=[self.chk]
+        )
+        self.mgr.save("a")
+
+    @staticmethod
+    def _item_wrappers():
+        """Every registered wrapper of a layout item that is not a layout."""
+        from qtpy import QtWidgets, shiboken
+
+        return [
+            w
+            for w in shiboken.getAllValidWrappers()
+            if isinstance(w, QtWidgets.QLayoutItem)
+            and not isinstance(w, QtWidgets.QLayout)
+        ]
+
+    def test_deleting_the_combo_leaves_no_item_wrapper_at_a_freed_address(self):
+        from qtpy import QtCore, shiboken
+        from uitk.widgets.comboBox import ComboBox
+
+        before = self._item_wrappers()  # held, so no id below can be reused
+        known = {id(w) for w in before}
+        combo = ComboBox()
+        container = self.track_widget(self.mgr.wire_combo(combo))
+        # Every path the option box walks its own layout on: the wrap itself,
+        # an enabled-state sync, and a show.
+        combo.setEnabled(False)
+        combo.setEnabled(True)
+        container.hide()
+        container.show()
+        combo.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+
+        layout = container.layout()
+        live = set()
+        for i in range(layout.count()):
+            item = layout.itemAt(i)  # itemAt on purpose: the live items' addresses
+            live.add(shiboken.getCppPointer(item)[0])
+        stale = [
+            type(w).__name__
+            for w in self._item_wrappers()
+            if id(w) not in known and shiboken.getCppPointer(w)[0] not in live
+        ]
+        self.assertEqual(
+            stale,
+            [],
+            "a layout item's wrapper is still registered after Qt deleted the "
+            "item; the next object allocated at that address resolves to it",
+        )
 
 
 if __name__ == "__main__":

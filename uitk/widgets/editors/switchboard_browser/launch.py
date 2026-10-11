@@ -4,10 +4,13 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from qtpy import QtWidgets
+
+from uitk.managers.cursor_manager import CursorManager
 
 
 # ── Launch options (per-launch, not persisted per-UI) ─────────────────────────
@@ -32,6 +35,16 @@ PERSISTENCE_CHOICES = (
     (PERSISTENCE_CONTEXT, "Default (context)"),
     (PERSISTENCE_STICKY, "Stay open (sticky)"),
     (PERSISTENCE_TRANSIENT, "Auto-hide (transient)"),
+)
+
+# Ordered (location, label) for the row actions that put a standalone launcher
+# for an entry on the desktop (``create_shortcut`` on its handler).
+SHORTCUT_ACTIONS = (
+    ("desktop", "Create desktop shortcut"),
+    (
+        "start_menu",
+        "Add to Start menu" if sys.platform == "win32" else "Add to applications menu",
+    ),
 )
 
 
@@ -278,6 +291,47 @@ class _LaunchMixin:
                 exc_info=True,
             )
             return None
+
+    def _can_create_shortcut(self, name: str) -> bool:
+        """Whether *name*'s handler offers a desktop launcher for it (the
+        optional ``can_create_shortcut``). A broken handler offers none."""
+        entry = self._model.entry_for_name(name)
+        can = getattr(entry.handler, "can_create_shortcut", None) if entry else None
+        if not callable(can):
+            return False
+        try:
+            return bool(can(name))
+        except Exception:
+            self.sb.logger.warning(
+                f"[SwitchboardBrowser] can_create_shortcut failed for {name!r}",
+                exc_info=True,
+            )
+            return False
+
+    def _create_shortcut(self, name: str, location: str) -> Optional[str]:
+        """Have *name*'s handler write a launcher at *location* (see
+        :meth:`_write_shortcut`). Returns the path."""
+        entry = self._model.entry_for_name(name)
+        create = getattr(entry.handler, "create_shortcut", None) if entry else None
+        if not callable(create):
+            return None
+        return self._write_shortcut(lambda: create(name, location), name)
+
+    def _write_shortcut(self, write: Callable[[], str], label: str) -> Optional[str]:
+        """Run *write* (it returns the shortcut's path); say where in the
+        footer, or why not in a message box headed by *label*.
+
+        Writing one first checks the program imports from the desktop, which
+        starts its Python: a second or two, longer for a DCC's.
+        """
+        try:
+            with CursorManager.busy():
+                path = write()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "No shortcut created", f"{label}: {e}")
+            return None
+        self.footer.setStatusText(f"Shortcut created: {path}", "success")
+        return path
 
     def _copy_launch_code(self, name: str, code: str) -> None:
         """Put *code* on the clipboard and confirm in the footer."""

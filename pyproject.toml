@@ -80,5 +80,7 @@ order = [
     "themes",
     "managers",
     "handlers",
+    # Qt-only layout reads every part may use (the stale-wrapper guard).
+    "widgets/_layout_items",
     "loaders",
 ]

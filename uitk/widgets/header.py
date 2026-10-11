@@ -4,6 +4,7 @@ import os
 import re
 import pythontk as ptk
 from qtpy import QtWidgets, QtCore, QtGui, QtSvg
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.widgets.mixins.text import RichText, TextOverlay
@@ -490,8 +491,7 @@ class Header(
         self.setFont(label_font)
 
         # Iterate through the widgets in the layout and update the font size for the buttons
-        for i in range(self.container_layout.count()):
-            widget = self.container_layout.itemAt(i).widget()
+        for widget in _LayoutItems.widgets(self.container_layout):
             if isinstance(widget, QtWidgets.QPushButton):
                 button_font = widget.font()
                 button_font.setPointSizeF(button_font_size)
@@ -909,10 +909,9 @@ class Header(
             return
 
         def recursive_set_vis(layout):
-            for i in range(layout.count()):
-                item = layout.itemAt(i)
-                if item.widget():
-                    widget = item.widget()
+            for entry in _LayoutItems.entries(layout):
+                if isinstance(entry, QtWidgets.QWidget):
+                    widget = entry
                     if widget is not self:
                         if not visible:
                             # Only hide what isn't already hidden
@@ -924,8 +923,8 @@ class Header(
                             if widget.property("header_hidden_state"):
                                 widget.show()
                                 widget.setProperty("header_hidden_state", None)
-                elif item.layout():
-                    recursive_set_vis(item.layout())
+                elif isinstance(entry, QtWidgets.QLayout):
+                    recursive_set_vis(entry)
 
         recursive_set_vis(parent.layout())
 

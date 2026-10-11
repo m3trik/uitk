@@ -9,12 +9,13 @@ from typing import TYPE_CHECKING
 from qtpy import QtWidgets, QtGui, QtCore
 
 from uitk.widgets.sequencer._data import _RULER_HEIGHT
+from uitk.widgets.sequencer._draggable import HeldGeometryMixin
 
 if TYPE_CHECKING:
     from uitk.widgets.sequencer._timeline import TimelineView
 
 
-class PlayheadItem(QtWidgets.QGraphicsItem):
+class PlayheadItem(HeldGeometryMixin, QtWidgets.QGraphicsItem):
     """A vertical line with a frame-number badge at the ruler."""
 
     _COLOR = QtGui.QColor("#E8E84A")
@@ -36,7 +37,6 @@ class PlayheadItem(QtWidgets.QGraphicsItem):
 
     @time.setter
     def time(self, value: float):
-        self.prepareGeometryChange()  # mark OLD rect before data changes
         # Not floored at 0: the timeline reaches before the origin whenever a
         # shot does, and a playhead pinned at 0 would misreport the frame the
         # consumer actually sits on.
@@ -44,7 +44,7 @@ class PlayheadItem(QtWidgets.QGraphicsItem):
         t = self._time
         self._label = str(int(t)) if t == int(t) else f"{t:.1f}"
         self._update_badge_width()
-        self.update()
+        self.sync()
 
     def _update_badge_width(self):
         fm = QtGui.QFontMetrics(QtGui.QFont("", 8))
@@ -67,17 +67,18 @@ class PlayheadItem(QtWidgets.QGraphicsItem):
         """
         return self._badge_width / 2.0 + 2
 
-    def boundingRect(self) -> QtCore.QRectF:
+    def _layout_geometry(self) -> tuple:
+        """``(x, bounds)``: the line's scene x at the current zoom, and the
+        rect the line and its badge paint in."""
         x = self._timeline.time_to_x(self._time)
         hw = self._badge_width / 2.0 + 2
-        return QtCore.QRectF(x - hw, 0, hw * 2, 10000)
+        return x, QtCore.QRectF(x - hw, 0, hw * 2, 10000)
 
-    def sync(self):
-        self.prepareGeometryChange()
-        self.update()
+    def boundingRect(self) -> QtCore.QRectF:
+        return self._geometry()[1]
 
     def paint(self, painter: QtGui.QPainter, option, widget=None):
-        x = self._timeline.time_to_x(self._time)
+        x = self._geometry()[0]
         color = self._COLOR
         bh = self._BADGE_HEIGHT
         bw = self._badge_width

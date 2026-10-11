@@ -72,6 +72,7 @@ def _convention(**entries):
         def preset_store():
             class Store:
                 user_dir = os.path.join(PRESETS_SANDBOX_DIR, "convention_presets")
+                builtin_dir = os.path.join(PRESETS_SANDBOX_DIR, "convention_shipped")
 
             return Store
 
@@ -87,13 +88,14 @@ class TestNamingConventionEditor(QtBaseTestCase):
         self.menu = self.track_widget(Menu())
 
     def _label_beside(self, field):
+        from uitk.widgets._layout_items import _LayoutItems
+
         grid = self.menu.gridLayout
-        for i in range(grid.count()):
-            held = grid.itemAt(i).widget()
-            if held is not None and (held is field or held.isAncestorOf(field)):
-                row, col = grid.getItemPosition(i)[:2]
+        for held in _LayoutItems.widgets(grid):
+            if held is field or held.isAncestorOf(field):
+                row, col = grid.getItemPosition(grid.indexOf(held))[:2]
                 self.assertEqual(col, 0, "the field sits in the first column")
-                return grid.itemAtPosition(row, 1).widget()
+                return _LayoutItems.widget_at_position(grid, row, 1)
         self.fail("field not in the grid")
 
     def test_default_rows_come_from_the_convention(self):
@@ -198,6 +200,24 @@ class TestNamingConventionEditor(QtBaseTestCase):
             os.path.normpath(str(presets.preset_dir)),
             os.path.normpath(os.path.join(PRESETS_SANDBOX_DIR, "convention_presets")),
         )
+
+    def test_presets_list_the_conventions_shipped_tier(self):
+        """The store's built-in presets (the shipped ``default``) reach the
+        combo: the user tier alone left no way back to the shipped table."""
+        NamingConventionEditor(self.menu, convention=self.conv).build()
+        self.assertEqual(
+            os.path.normpath(str(self.menu.presets.builtin_dir)),
+            os.path.normpath(os.path.join(PRESETS_SANDBOX_DIR, "convention_shipped")),
+        )
+
+    def test_apply_preset_skips_a_presets_own_blocks(self):
+        """A shipped preset carries ``_meta`` beside its entries."""
+        editor = NamingConventionEditor(
+            self.menu, convention=self.conv, presets=False
+        ).build()
+        n = editor.apply_preset({"_meta": {"description": "x"}, "mesh": "_M"})
+        self.assertEqual(n, 1)
+        self.assertNotIn("_meta", self.conv.keys())
 
     def test_apply_preset_writes_the_convention_and_shows_it(self):
         editor = NamingConventionEditor(

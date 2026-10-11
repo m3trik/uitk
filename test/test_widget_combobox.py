@@ -14,6 +14,8 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore
 
+from uitk.widgets._layout_items import _LayoutItems
+
 
 class TestWidgetComboBoxAdd(QtBaseTestCase):
     """Tests for WidgetComboBox.add() method."""
@@ -262,8 +264,7 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
         last = combo._model.rowCount() - 1
         container = combo._row_containers.get(last)
         inner = container.property("_embedded_widget")
-        lay = inner.layout()
-        return [lay.itemAt(i).widget() for i in range(lay.count())]
+        return _LayoutItems.widgets(inner.layout())
 
     def test_action_columns_grid_row_major(self):
         """``action_columns = 2`` packs actions row-major into a 2-col grid."""
@@ -280,8 +281,8 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
         lay = combo._row_containers.get(last).property("_embedded_widget").layout()
         self.assertIsInstance(lay, QW.QGridLayout)
         pos = {
-            lay.itemAt(i).widget().text(): lay.getItemPosition(i)[:2]
-            for i in range(lay.count())
+            w.text(): lay.getItemPosition(lay.indexOf(w))[:2]
+            for w in _LayoutItems.widgets(lay)
         }
         self.assertEqual(pos["A"], (0, 0))
         self.assertEqual(pos["B"], (0, 1))
@@ -797,10 +798,10 @@ class TestWidgetComboBoxRowLabels(QtBaseTestCase):
         combo = self._combo_with(field)
 
         layout = combo._row_containers[0].layout()
-        label = layout.itemAt(0).widget()
+        label = _LayoutItems.widget_at(layout, 0)
         self.assertIsInstance(label, QtWidgets.QLabel)
         self.assertEqual(label.text(), "Max size (MB)")
-        self.assertIs(layout.itemAt(layout.count() - 1).widget(), field)
+        self.assertIs(_LayoutItems.widget_at(layout, layout.count() - 1), field)
 
     def test_label_does_not_disturb_widget_tracking(self):
         """`_widget_items` / `_embedded_widget` must still resolve to the real
@@ -935,8 +936,8 @@ class TestWidgetComboBoxRowLabels(QtBaseTestCase):
         field.setToolTip("Fail the export above this size.")
         combo = self._combo_with(field)
 
-        label = combo._row_containers[0].layout().itemAt(0).widget()
-        # Assert the type too: without the caption, itemAt(0) is the field
+        label = _LayoutItems.widget_at(combo._row_containers[0].layout(), 0)
+        # Assert the type too: without the caption, index 0 is the field
         # itself and the tooltip check would pass vacuously.
         self.assertIsInstance(label, QtWidgets.QLabel)
         self.assertEqual(label.toolTip(), "Fail the export above this size.")

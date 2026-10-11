@@ -20,7 +20,8 @@ every module then errors at collection) next to a ``sitecustomize.py`` of::
     native_trace.install()
 
 Then run the suite as usual. The report is appended to the path in
-``UITK_NATIVE_TRACE`` (default ``native_trace.txt``).
+``UITK_NATIVE_TRACE`` (default ``temp_tests/native_trace.txt`` beside this
+module, whatever the working directory).
 
 Reading the result: frames below ``ntdll!KiUserExceptionDispatcher`` are the
 real fault site; everything above it is this handler's own stack. Module names
@@ -99,7 +100,13 @@ class MODULEINFO(ctypes.Structure):
 
 _frames = (ctypes.c_void_p * MAX_FRAMES)()
 _sym_buf = SYMBOL_INFO()
-_out_path = os.environ.get("UITK_NATIVE_TRACE", "native_trace.txt")
+# Beside this module, never the working directory: armed through
+# sitecustomize, it runs in whatever process inherits the PYTHONPATH (a
+# downstream suite, a DCC), and a dump in that cwd is a stray file in
+# another repo (CODE_STANDARD section 10).
+_out_path = os.environ.get("UITK_NATIVE_TRACE") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "temp_tests", "native_trace.txt"
+)
 _handler_ref = None
 _modules = []  # (base, size, name), sorted -- the no-PDB fallback
 
@@ -220,6 +227,8 @@ def install():
     global _handler_ref
     if _handler_ref is not None:
         return
+    # Made now, not in the handler: a faulting process should only append.
+    os.makedirs(os.path.dirname(os.path.abspath(_out_path)), exist_ok=True)
     _snapshot_modules()
     try:
         dbghelp.SymSetOptions(0x00000004 | 0x00000200)  # UNDNAME | DEFERRED_LOADS

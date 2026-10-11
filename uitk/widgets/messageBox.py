@@ -180,7 +180,10 @@ class MessageBox(QtWidgets.QMessageBox, AttributesMixin):
             from uitk.themes.style_sheet import StyleSheet
         except Exception:  # noqa: BLE001 — style engine optional at this layer.
             return
-        StyleSheet(self).set(theme=self._theme)
+        # Never blurred: the host is fully transparent and the visible chrome
+        # is the inset, rounded label (see style.qss), so a window blur would
+        # frost a rectangle around the toast.
+        StyleSheet(self).set(theme=self._theme, WINDOW_BLUR="off")
 
     def setStandardButtons(self, *buttons):
         """Set the box's buttons; none given means no buttons.

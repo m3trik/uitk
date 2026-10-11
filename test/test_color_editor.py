@@ -446,6 +446,26 @@ class TestColorEditor(QtBaseTestCase):
         self.assertIsNotNone(picked)
         self.assertNotEqual(picked.name().upper(), BLUE)
 
+    def test_get_color_opens_at_pos_when_given(self):
+        """A pick made from a menu opens at the cursor, not under the view
+        the menu came from (which may be a screen away)."""
+        from unittest import mock
+
+        from qtpy import QtCore, QtWidgets
+
+        host = self.track_widget(QtWidgets.QWidget())
+        seen = {}
+
+        def run(popup):
+            seen["pos"] = popup.pos()
+            return 0
+
+        with mock.patch.object(ColorEditorPopup, "exec_", run, create=True):
+            ColorEditorPopup.get_color(
+                BLUE, parent=host, pos=QtCore.QPoint(321, 123), advanced=()
+            )
+        self.assertEqual(seen["pos"], QtCore.QPoint(321, 123))
+
     def test_get_color_leaves_no_popup_behind(self):
         """A popup parented to the caller outlives the pick, hidden, one per
         call -- unless it is deleted."""

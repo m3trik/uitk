@@ -10,13 +10,17 @@ or any widget module.
 
 import os
 import sys
+from typing import Callable, Union
 
 from qtpy import QtCore, QtGui, QtWidgets
 
+from uitk._window_blur import _WindowBlur
+
 
 class Bootstrap:
-    """Standalone-process bootstrap helpers (pre-``QApplication`` setup), and
-    the window-system capabilities uitk's widgets branch on.
+    """Standalone-process bootstrap helpers (pre-``QApplication`` setup, and
+    the console / output / error / taskbar setup of a program started from the
+    desktop), and the window-system capabilities uitk's widgets branch on.
 
     Class-only surface so callers use ``Bootstrap.configure_high_dpi()``;
     the module stays Switchboard-free (see the module docstring).
@@ -85,6 +89,41 @@ class Bootstrap:
         return on
 
     @staticmethod
+    def blurs() -> bool:
+        """Whether :meth:`set_blur` can blur what shows through a translucent
+        window here: Windows 10+, KDE Plasma on X11 while its blur effect is
+        on, and macOS. Elsewhere (native Wayland, other X11 window managers)
+        it is a no-op."""
+        return _WindowBlur.available()
+
+    @staticmethod
+    def set_blur(
+        widget: QtWidgets.QWidget,
+        on: Union[bool, Callable[[QtWidgets.QWidget], bool]] = True,
+    ) -> bool:
+        """Blur the desktop seen through a translucent TOP-LEVEL window.
+
+        The window's own pixels composite over the blurred backdrop, so a
+        translucent background color becomes a frosted tint. Shows only
+        where the window is translucent (see :meth:`set_translucent`); an
+        opaque window covers its blur. Declarative, like the attribute it
+        complements: set once, it survives hide/show and the native-window
+        recreation a ``setWindowFlags`` causes (re-applied on each show),
+        and it waits for a window not yet created.
+
+        Parameters:
+            widget: The window (a child widget is never touched).
+            on: True/False, or a ``(widget) -> bool`` resolver read at every
+                show -- for a window whose setting can change while it is
+                hidden (a popup following its owner's theme).
+
+        Returns:
+            Whether the window is set to blur -- from its first show, if it has
+            no native window yet (False where :meth:`blurs` is False).
+        """
+        return _WindowBlur.set(widget, on)
+
+    @staticmethod
     def screen_backdrop(widget) -> "QtGui.QPixmap | None":
         """What a full-screen overlay should paint behind itself, or None.
 
@@ -149,3 +188,169 @@ class Bootstrap:
             set_policy(policy_enum.PassThrough)
 
         return True
+
+    # ── A standalone process started from the desktop ────────────────────
+
+    @staticmethod
+    def detach_console() -> bool:
+        """Close the console a desktop shortcut opened beside this GUI process.
+
+        A shortcut to a console interpreter opens a console window with the
+        program. DCC Pythons have no windowless twin (``mayapy``, Blender's
+        ``python.exe``; see ``ptk.AppLauncher.windowless_python``), so a
+        shortcut into one does exactly that. When this process is its
+        console's only client -- nothing started it from a terminal -- it
+        detaches (``FreeConsole``) and the console closes: the process then
+        runs as it would under ``pythonw``. A console shared with a terminal is
+        left alone. Pass the result to :meth:`capture_output`, whose streams
+        would otherwise write into the closed console.
+
+        Returns:
+            ``True`` when it detached (Windows only).
+        """
+        if sys.platform != "win32":
+            return False
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        console = ctypes.WINFUNCTYPE(ctypes.c_void_p)(("GetConsoleWindow", kernel32))
+        if not console():
+            return False
+        clients = (ctypes.c_uint32 * 2)()
+        if kernel32.GetConsoleProcessList(clients, 2) != 1:
+            return False  # a terminal (or a launcher) shares it: not ours
+        return bool(kernel32.FreeConsole())
+
+    @staticmethod
+    def capture_output(log_file: str, force: bool = False) -> "str | None":
+        """Send this process's output to *log_file* when nothing would show it.
+
+        Under ``pythonw`` (a pip gui-script, a shortcut to ``pythonw.exe``)
+        ``sys.stdout`` and ``sys.stderr`` are ``None``, so every traceback, log
+        record and warning vanishes; a process that just detached from its
+        console (*force*, from :meth:`detach_console`) writes to handles that
+        lead nowhere. Here they go to *log_file* instead: UTF-8,
+        line-buffered, the previous run's log kept as ``<log_file>.1``, with a
+        native fault (a Qt access violation) dumped there too
+        (``faulthandler``). A process with live streams (a console, a pipe, a
+        Linux session journal) is left alone unless *force* is set.
+
+        Call it before anything builds a logger: pythontk's ``LoggingMixin``
+        handlers capture ``sys.stderr`` when they are created, so one built
+        while it was ``None`` stays silent for good. Loggers come with a
+        Switchboard or a handler, not with ``import uitk``.
+
+        Parameters:
+            log_file: The log's path; its folder is created.
+            force: Redirect even though the streams exist.
+
+        Returns:
+            *log_file* when output now goes there, else ``None`` -- also when the
+            log cannot be written (an unwritable folder): the program runs on
+            without one rather than dying before its first window.
+        """
+        if not force and sys.stdout is not None and sys.stderr is not None:
+            return None
+        mode = "w"
+        if os.path.exists(log_file):
+            try:
+                os.replace(log_file, log_file + ".1")
+            except OSError:
+                mode = "a"  # another instance holds it open (Windows): share it
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
+            stream = open(
+                log_file, mode, encoding="utf-8", errors="backslashreplace", buffering=1
+            )
+        except OSError:
+            if force:  # the detached console's handles lead nowhere: drop them
+                sys.stdout = sys.stderr = None
+            return None
+        sys.stdout = sys.stderr = stream
+        import faulthandler
+
+        faulthandler.enable(stream)
+        return log_file
+
+    @staticmethod
+    def report_uncaught(title: str, log_file: "str | None" = None) -> None:
+        """Show an uncaught error in a message box, not only in a log.
+
+        Started from the desktop, a GUI process's traceback lands in a log
+        (:meth:`capture_output`) or the session journal, where nobody looks:
+        to its user the click simply did nothing. This installs a
+        ``sys.excepthook`` that still runs the previous one (so the traceback
+        is written as before), then shows the error once per distinct error,
+        never a second box while one is open, and only on the GUI thread of a
+        running ``QApplication``. Installing it twice keeps one.
+
+        Parameters:
+            title: The message box's title (the application's name).
+            log_file: Named in the box as where the full log is.
+        """
+        previous = sys.excepthook
+        if getattr(previous, "_uitk_reports_uncaught", False):
+            return
+        shown, state = set(), {"open": False}
+
+        def hook(exc_type, value, tb):
+            previous(exc_type, value, tb)
+            import threading
+            import traceback
+
+            app = QtWidgets.QApplication.instance()
+            key = (exc_type, str(value))
+            if (
+                app is None
+                or state["open"]
+                or key in shown
+                or threading.current_thread() is not threading.main_thread()
+            ):
+                return
+            shown.add(key)
+            box = QtWidgets.QMessageBox(
+                QtWidgets.QMessageBox.Critical,
+                title,
+                f"{exc_type.__name__}: {value}",
+            )
+            if log_file:
+                box.setInformativeText(f"The full log is in:\n{log_file}")
+            box.setDetailedText(
+                "".join(traceback.format_exception(exc_type, value, tb))
+            )
+            state["open"] = True
+            try:
+                box.exec_()
+            finally:
+                state["open"] = False
+
+        hook._uitk_reports_uncaught = True
+        sys.excepthook = hook
+
+    @staticmethod
+    def set_app_id(app_id: str) -> bool:
+        """Give this process its own identity on the Windows taskbar.
+
+        A Python program's windows otherwise belong to the interpreter: the
+        taskbar shows its icon, groups them with every other Python program,
+        and pinning one pins the bare interpreter. With an explicit
+        AppUserModelID they show the application's window icon
+        (``QApplication.setWindowIcon``), and a shortcut stamped with the same
+        id (``ptk.AppLauncher.create_shortcut(app_id=...)``) is what the
+        taskbar pins and relaunches. Call it before the first window shows.
+
+        Parameters:
+            app_id: A dotted id, ``Company.Product[.SubProduct]``.
+
+        Returns:
+            ``True`` when set (Windows only).
+        """
+        if sys.platform != "win32":
+            return False
+        import ctypes
+
+        try:
+            set_id = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID
+        except AttributeError:
+            return False
+        return set_id(ctypes.c_wchar_p(app_id)) == 0

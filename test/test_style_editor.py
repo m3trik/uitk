@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
 """Tests for StyleEditor theme-preset management and StyleSheet export/import."""
+
 import json
 import os
 import shutil
@@ -463,9 +464,7 @@ class TestStyleEditorTheming(_PresetRootSandboxCase):
         self.editor.load_preset("light")
         light_swatch = self._cell_for("WIDGET_BACKGROUND").findChild(ColorSwatch)
         self.assertIsNot(dark_swatch, light_swatch)
-        self.assertEqual(
-            StyleSheet._widget_configs[self.editor]["theme"], "light"
-        )
+        self.assertEqual(StyleSheet._widget_configs[self.editor]["theme"], "light")
         # WIDGET_BACKGROUND is intentionally different per theme
         self.assertNotEqual(
             StyleSheet.get_variable("WIDGET_BACKGROUND", theme="light"),
@@ -571,7 +570,7 @@ class TestStyleEditorTheming(_PresetRootSandboxCase):
     # Cell geometry ------------------------------------------------------
 
     def test_value_cells_not_clipped_by_row(self):
-        """No swatch / spinbox extends past its table row (the cropped-swatch
+        """No swatch / spinbox / check box extends past its table row (the cropped-swatch
         bug: QSS item padding shrank the cell-widget rect below the editors'
         fixed height, clipping their bottom edge)."""
         self.editor.set_tier("All")
@@ -585,7 +584,11 @@ class TestStyleEditorTheming(_PresetRootSandboxCase):
             cell = table.cellWidget(row, 1)
             if cell is None:
                 continue
-            child = cell.findChild(ColorSwatch) or cell.findChild(QtWidgets.QSpinBox)
+            child = (
+                cell.findChild(ColorSwatch)
+                or cell.findChild(QtWidgets.QSpinBox)
+                or cell.findChild(QtWidgets.QCheckBox)
+            )
             if child is None:
                 continue
             name = table.item(row, 0).text()
@@ -601,6 +604,32 @@ class TestStyleEditorTheming(_PresetRootSandboxCase):
             )
             checked += 1
         self.assertGreater(checked, 0)
+
+    def test_switch_token_renders_as_check_box(self):
+        """WINDOW_BLUR is a switch: a check box (no swatch) mirroring the token,
+        under its own divider after the sizes."""
+        self.editor.set_tier("Basic")
+        cell = self._cell_for("WINDOW_BLUR")
+        self.assertIsNotNone(cell)
+        self.assertIsNone(cell.findChild(ColorSwatch))
+        check = cell.findChild(QtWidgets.QCheckBox)
+        self.assertIsNotNone(check)
+        self.assertEqual(
+            check.isChecked(),
+            StyleSheet.is_on(StyleSheet.get_variable("WINDOW_BLUR", self.editor.theme)),
+        )
+
+    def test_switch_writes_on_off_and_reset_restores_it(self):
+        self.editor.set_tier("All")
+        check = self._cell_for("WINDOW_BLUR").findChild(QtWidgets.QCheckBox)
+        base = check.isChecked()
+        check.setChecked(not base)
+        self.assertEqual(
+            StyleSheet.get_variable("WINDOW_BLUR", theme=self.editor.theme),
+            "off" if base else "on",
+        )
+        self.editor.reset_variable("WINDOW_BLUR")
+        self.assertEqual(check.isChecked(), base)
 
     # Value-change handlers --------------------------------------------
 

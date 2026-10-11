@@ -13,6 +13,7 @@ from uitk.widgets.mixins.item_format import ItemFormatMixin
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.column_config import ColumnConfig
+from uitk.widgets.row_tags import RowTags
 from uitk.widgets.table_actions import TableActions
 from uitk.widgets.overflow_indicator import OverflowIndicator
 from uitk.managers.cursor_manager import CursorManager
@@ -653,6 +654,13 @@ class TableWidget(
         int, int, int, object
     )  # (row, col, steps, modifiers)
 
+    # One user edit that writes several cells: a drag edit's commit and its
+    # fill of every other drag-selected cell.  Each cell's ``cellChanged``
+    # fires in between, so a host can make the burst one step (one undo
+    # chunk, one refresh) instead of one per cell.
+    editBatchStarted = QtCore.Signal()
+    editBatchFinished = QtCore.Signal()
+
     def __init__(
         self,
         parent=None,
@@ -696,8 +704,9 @@ class TableWidget(
         self._drag_is_action = False  # True when dragging over an action column
         # Latched over the release that ends a drag — see mouseReleaseEvent.
         self._suppress_click_action = False
+        # A drag edit's fill: the cells, and the editor they belong to.
         self._drag_selected_indexes = None
-        self._drag_edit_column = None
+        self._drag_editor = None
 
         # Middle-mouse scrub-edit state.  ``_scrub_columns`` is the
         # opt-in set of columns where MMB-drag scrubs the cell value;
@@ -1096,15 +1105,21 @@ class TableWidget(
         else:
             # Editable column — open editor on release cell, propagate on commit
             index = self.indexAt(event.pos())
-            if index.isValid():
-                col = index.column()
-                self._drag_edit_column = col
-                self._drag_selected_indexes = [
-                    idx for idx in self.selectedIndexes() if idx.column() == col
+            item = self.item(index.row(), index.column()) if index.isValid() else None
+            if item and (item.flags() & QtCore.Qt.ItemIsEditable):
+                selected = [
+                    idx
+                    for idx in self.selectedIndexes()
+                    if idx.column() == index.column()
                 ]
-                item = self.item(index.row(), col)
-                if item and (item.flags() & QtCore.Qt.ItemIsEditable):
-                    self.editItem(item)
+                self.editItem(item)
+                # Armed only for the editor this opened: a drag down a
+                # read-only column (selecting rows) opens none, and its cells
+                # must not be filled by a later, ordinary edit.
+                editor = self.indexWidget(index)
+                if editor is not None:
+                    self._drag_selected_indexes = selected
+                    self._drag_editor = editor
 
     def wheelEvent(self, event):
         """Consume wheel events on wheel-scrub columns; emit signal.
@@ -1351,42 +1366,66 @@ class TableWidget(
         self._edit_as_pending = None
         return self.state() == QtWidgets.QAbstractItemView.EditingState
 
-    def closeEditor(self, editor, hint):
-        """Propagate committed value to all drag-selected cells."""
-        super().closeEditor(editor, hint)
+    def commitData(self, editor):
+        """Commit *editor*; a drag edit then fills every drag-selected cell.
 
-        if (
-            self._drag_selected_indexes is not None
-            and hint != QtWidgets.QAbstractItemDelegate.EndEditHint.RevertModelCache
-        ):
-            self._propagate_drag_edit()
-
-        # Always clear drag-edit state when editor closes
-        self._drag_selected_indexes = None
-        self._drag_edit_column = None
-
-    def _propagate_drag_edit(self):
-        """Copy the just-edited cell's value to every other drag-selected
-        cell in the same column."""
-        current = self.currentIndex()
-        if not current.isValid():
+        The commit and the fill are one user edit, so they run between
+        ``editBatchStarted`` and ``editBatchFinished``.  Filling here rather
+        than on close leaves a reverted edit (Esc) unfilled: Qt commits only
+        an accepted one.
+        """
+        if self._drag_selected_indexes is None or editor is not self._drag_editor:
+            super().commitData(editor)
             return
+        # Plain cells, read before the commit: a host that rebuilds the table
+        # on ``cellChanged`` (blendertk's Channels) leaves the current index
+        # and the stored indexes stale after the first write.
+        current = self.currentIndex()
+        source = (current.row(), current.column())
+        targets = [
+            (i.row(), i.column())
+            for i in self._drag_selected_indexes
+            if i.row() != current.row()
+        ]
+        self.editBatchStarted.emit()
+        try:
+            super().commitData(editor)
+            if current.isValid():
+                self._propagate_drag_edit(source, targets)
+        finally:
+            # One fill per drag edit: the editor's focus-out after Enter
+            # commits again.
+            self._drag_selected_indexes = self._drag_editor = None
+            self.editBatchFinished.emit()
 
-        edited_item = self.item(current.row(), current.column())
+    def closeEditor(self, editor, hint):
+        """End a drag edit, committed or reverted."""
+        super().closeEditor(editor, hint)
+        self._drag_selected_indexes = self._drag_editor = None
+
+    def _propagate_drag_edit(self, source, targets):
+        """Copy the edited cell's value to every other drag-selected cell.
+
+        Parameters:
+            source (tuple[int, int]): The edited cell's ``(row, column)``.
+            targets (list[tuple[int, int]]): The cells to fill.  Cells, not
+                items: each write may make the host rebuild the table.
+        """
+        edited_item = self.item(*source)
         if not edited_item:
             return
 
         new_text = edited_item.text()
         new_data = edited_item.data(QtCore.Qt.UserRole)
 
-        for index in self._drag_selected_indexes:
-            if index.row() == current.row():
-                continue
-            target = self.item(index.row(), index.column())
+        for row, col in targets:
+            target = self.item(row, col)
             if target:
                 target.setText(new_text)
                 if new_data is not None:
-                    target.setData(QtCore.Qt.UserRole, new_data)
+                    target = self.item(row, col)  # rebuilt on the text write?
+                    if target:
+                        target.setData(QtCore.Qt.UserRole, new_data)
 
         self.apply_formatting()
 
@@ -1697,6 +1736,36 @@ class TableWidget(
         config = ColumnConfig.of(self)
         if config is not None:
             config.restore()
+
+    # -- Row colour tags ---------------------------------------------------
+
+    def enable_row_tags(self, settings=None, settings_key=None, defaults=None):
+        """Show per-row colour tags as a strip down the left edge.
+
+        The shared :class:`~uitk.widgets.row_tags.RowTags`, as
+        ``TreeWidget.enable_row_tags``: tag rows with ``set_tag``, offer the
+        quick-pick swatches with ``add_to_menu`` (a uitk ``Menu`` keeps the
+        row and tags the selection at the moment of the pick), and hear the
+        user's picks on ``assigned``.
+
+        Parameters:
+            settings: A SettingsManager the palette is saved in.  If *None*, a
+                SettingsManager (``org="uitk"``, ``app="TableWidget"``) is
+                created automatically.
+            settings_key: The palette's branch.  Defaults to the widget's
+                ``objectName()`` or ``"TableWidget"``.
+            defaults: ``{slot: colour}`` in order; ``Palette.tags()`` if *None*.
+
+        Returns:
+            The view's :class:`~uitk.widgets.row_tags.RowTags`.
+        """
+        return RowTags.attach(
+            self,
+            settings=settings,
+            settings_key=settings_key or self.objectName() or "TableWidget",
+            app="TableWidget",
+            defaults=defaults,
+        )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

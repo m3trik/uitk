@@ -58,6 +58,26 @@ class ClipData:
     def end(self) -> float:
         return self.start + self.duration
 
+    def key_hidden(self, index: int) -> bool:
+        """Whether the curve preview's key *index* is drawn without a dot.
+
+        A host marks a key ``hidden`` (``curve_preview["hidden"]``, one bool
+        per key) when it shapes the curve but is not a key the user works
+        with -- its own bookkeeping samples.  Such a key has no dot, is not
+        selectable, and is neither a navigation stop nor a snap target.
+        """
+        hidden = (self.data.get("curve_preview") or {}).get("hidden") or ()
+        return index < len(hidden) and bool(hidden[index])
+
+    def shown_key_times(self) -> List[float]:
+        """The curve preview's key times that are drawn as dots."""
+        keys = (self.data.get("curve_preview") or {}).get("keys") or ()
+        return [
+            float(entry[0] if isinstance(entry, (list, tuple)) else entry)
+            for i, entry in enumerate(keys)
+            if not self.key_hidden(i)
+        ]
+
 
 @dataclass
 class TrackData:

@@ -201,15 +201,17 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
 
         # (Re)position all items and hide bounding keys that fall
         # outside the clip's time range (build_curve_preview includes
-        # one extra key on each side for curve continuity).
+        # one extra key on each side for curve continuity), and the keys
+        # the host marks hidden (ClipData.key_hidden).
         start = self._data.start
         end = start + self._data.duration
         eps = 0.5
-        for ki in self._keyframe_items:
+        for idx, ki in enumerate(self._keyframe_items):
             ki._reposition()
-            in_range = (start - eps) <= ki._time <= (end + eps)
-            ki.setVisible(in_range)
-            ki.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, in_range)
+            shown = (start - eps) <= ki._time <= (end + eps)
+            shown = shown and not self._data.key_hidden(idx)
+            ki.setVisible(shown)
+            ki.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, shown)
         self._sync_tangent_handles()
 
     def _sync_tangent_handles(self):
@@ -444,12 +446,13 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         if waveform and rect.width() > 4:
             self._paint_waveform(painter, rect, waveform, color)
 
-        # Label — center label (abbreviated attrs) always shown;
-        # edge frame numbers only appear during drag operations.
+        # Label — center label (abbreviated attrs) always shown, the clip's
+        # length in frames beside it where both fit; edge frame numbers only
+        # appear during drag operations.
         lbl_center = self._data.data.get("label_center", "")
         w = rect.width()
         dragging = self._drag_mode is not None
-        has_label = lbl_center or dragging or self._data.label
+        has_label = lbl_center or dragging or self._data.label or self._counts_frames
         if has_label:
             painter.setPen(fg)
             font = painter.font()
@@ -494,6 +497,32 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                     lbl_right,
                 )
 
+            # At rest, the length in frames sits right-aligned wherever it
+            # fits beside the label (_frame_count_label).
+            if not dragging:
+                # Clear of the lock glyph a locked clip draws at its right.
+                lock_room = (
+                    self._LOCK_GLYPH_ROOM
+                    if self._data.locked and not self._data.data.get("read_only")
+                    else 0
+                )
+                count = self._frame_count_label(
+                    fm, tw - lock_room, lbl_center or self._data.label
+                )
+                if count:
+                    count_w = fm.horizontalAdvance(count)
+                    right_used = count_w + pad + lock_room
+                    painter.drawText(
+                        QtCore.QRectF(
+                            text_rect.right() - lock_room - count_w,
+                            text_rect.top(),
+                            count_w,
+                            text_rect.height(),
+                        ),
+                        QtCore.Qt.AlignVCenter | QtCore.Qt.AlignRight,
+                        count,
+                    )
+
             # Center label — during drag show frame count, otherwise
             # show abbreviated attribute names.
             center_text = lbl_center
@@ -518,7 +547,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                     )
             elif not lbl_center and not dragging and w > 30 and self._data.label:
                 painter.drawText(
-                    text_rect,
+                    text_rect.adjusted(0, 0, -right_used, 0),
                     QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft,
                     self._data.label,
                 )
@@ -537,6 +566,35 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         if selected:
             self._paint_selection_outline(painter, rect)
 
+    #: Room the lock glyph takes at a locked clip's right edge
+    #: (:meth:`_paint_lock_icon`); the frame count sits clear of it.
+    _LOCK_GLYPH_ROOM = 12
+
+    @property
+    def _counts_frames(self) -> bool:
+        """Whether this clip shows its length at rest: a span (a point clip
+        has none), unless the host turned it off (``show_frame_count``)."""
+        return self._data.duration >= 1.0 and self._data.data.get(
+            "show_frame_count", True
+        )
+
+    def _frame_count_label(self, fm, width: float, label: str = "") -> str:
+        """The clip's length in frames (``"40f"``) where it fits, else ``""``.
+
+        *width* is the text room inside the clip and *label* what it already
+        shows; the count goes beside the label only where both fit whole --
+        the label says what the clip IS and never gets elided to make room
+        for how long it is (2026-10-06: "sequences should display the frame
+        count when there is room").
+        """
+        if not self._counts_frames:
+            return ""
+        text = f"{round(self._data.duration)}f"
+        need = fm.horizontalAdvance(text)
+        if label:
+            need += fm.horizontalAdvance(label) + 8  # a gap between the two
+        return text if need <= width else ""
+
     def _paint_lock_icon(self, painter, rect, fg=None):
         """Draw a small lock glyph at the right edge of the clip."""
         if fg is None:
@@ -544,7 +602,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         # Position at top-right
-        ix = rect.right() - 12
+        ix = rect.right() - self._LOCK_GLYPH_ROOM
         iy = rect.top() + 3
         painter.setPen(QtGui.QPen(fg, 1.2))
         painter.setBrush(QtCore.Qt.NoBrush)
@@ -825,6 +883,13 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
 
     # -- drag interaction ---------------------------------------------------
     def mousePressEvent(self, event):
+        # A press inside the clip is the clip's, even on an edge that sits on
+        # the active shot's bound: the bound keeps the pixels OUTSIDE the clip
+        # (the range highlight's handle reaches past its edge) and the shot
+        # lane's band.  Yielding the clip's own edge pixels to the bound
+        # (2026-10-06, for a bound that could not be grabbed at a gap of zero)
+        # left a clip that ends on its shot's end with no end of its own to
+        # take (2026-10-10: "I keep grabbing the shot boundary").
         if event.button() == QtCore.Qt.LeftButton:
             self._press_modifiers = event.modifiers()
             self._press_selection(event.modifiers())

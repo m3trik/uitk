@@ -24,6 +24,10 @@ launch code* can hand out a shelf button for the browser itself.
   :class:`LaunchOptions`, the window-persistence vocabulary
   (``PERSISTENCE_*``) and the launch / focus / close path through each
   entry's handler.
+* :mod:`~uitk.widgets.editors.switchboard_browser.external_app_hub` —
+  :class:`ExternalAppHub`, the browser as a program: a provider package's
+  external apps run standalone (``python -m <package> [app]``), with desktop
+  shortcuts.
 
 The names resolve lazily (``pythontk``'s ``lazy_exports``, CODE_STANDARD
 section 4), so ``import uitk`` does not load the panel.
@@ -54,5 +58,6 @@ lazy_exports(
             "PERSISTENCE_DEFAULT",
             "PERSISTENCE_CHOICES",
         ),
+        "external_app_hub": "ExternalAppHub",
     },
 )

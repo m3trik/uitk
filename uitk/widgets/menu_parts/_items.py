@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 from qtpy import QtCore, QtWidgets
 
 from uitk.managers.shortcut_manager import ShortcutManager
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.separator import Separator
 
 # Widget type cache for faster widget creation
@@ -199,9 +200,7 @@ class _MenuItemsMixin:
         Returns:
             list: A list of all QWidget items in the list, filtered by type if specified.
         """
-        items = [
-            self.gridLayout.itemAt(i).widget() for i in range(self.gridLayout.count())
-        ]
+        items = _LayoutItems.widgets(self.gridLayout)
 
         if types is not None:
             # Ensure types is a list for easier processing
@@ -402,14 +401,12 @@ class _MenuItemsMixin:
         item_count = self.gridLayout.count()
         self.logger.debug(f"Menu.clear: Clearing {item_count} items")
 
-        # We're going backwards to avoid index errors.
-        for i in reversed(range(self.gridLayout.count())):
-            widget = self.gridLayout.itemAt(i).widget()
-            if widget:
-                self._remove_item_event_filter(widget)
-                self.gridLayout.removeWidget(widget)
-                widget.setParent(None)
-                widget.deleteLater()
+        # Last item first.
+        for widget in reversed(_LayoutItems.widgets(self.gridLayout)):
+            self._remove_item_event_filter(widget)
+            self.gridLayout.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
 
         # Reset the widget_data dictionary
         self.widget_data = {}
@@ -519,9 +516,7 @@ class _MenuItemsMixin:
             widget.item_data = lambda i=widget: self.get_item_data(i)
 
             if row is None:
-                row = 0
-                while self.gridLayout.itemAtPosition(row, col) is not None:
-                    row += 1
+                row = _LayoutItems.first_free_row(self.gridLayout, col)
 
             if colSpan is None:
                 colSpan = self.gridLayout.columnCount() or 1
@@ -810,9 +805,7 @@ class _MenuItemsMixin:
             widget = button
 
         if row is None:
-            row = 0
-            while self.gridLayout.itemAtPosition(row, col):
-                row += 1
+            row = _LayoutItems.first_free_row(self.gridLayout, col)
         if colSpan is None:
             colSpan = self.gridLayout.columnCount() or 1
 

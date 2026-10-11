@@ -5,6 +5,7 @@
 from qtpy import QtWidgets, QtCore
 
 from uitk.managers.field_visibility import FieldVisibility
+from uitk.widgets._layout_items import _LayoutItems
 from .options.action import MenuOption, ActionOption
 from .options.browse import BrowseOption
 from .options.clear import ClearOption
@@ -315,7 +316,7 @@ class OptionBoxContainer(QtWidgets.QWidget):
         layout = self.layout()
         if not layout or not layout.count():
             return
-        wrapped = layout.itemAt(0).widget()
+        wrapped = _LayoutItems.widget_at(layout, 0)
         mgr = getattr(wrapped, "_option_box_manager", None)
         get_options = getattr(mgr, "get_options", None)
         if not callable(get_options):
@@ -340,7 +341,7 @@ class OptionBoxContainer(QtWidgets.QWidget):
         layout = self.layout()
         if not layout or layout.count() < 2:
             return
-        wrapped = layout.itemAt(0).widget()
+        wrapped = _LayoutItems.widget_at(layout, 0)
         if not wrapped:
             return
         enabled = wrapped.isEnabled() and self.isEnabled()
@@ -349,9 +350,8 @@ class OptionBoxContainer(QtWidgets.QWidget):
             self.setProperty("wrappedEnabled", prop_val)
             self.style().unpolish(self)
             self.style().polish(self)
-        for i in range(1, layout.count()):
-            btn = layout.itemAt(i).widget()
-            if not btn:
+        for btn in _LayoutItems.widgets(layout):
+            if btn is wrapped:
                 continue
             # An option may opt out of cascade-disabling — e.g. the
             # ResetOption's bypass toggle, which greys out the wrapped widget
@@ -796,6 +796,8 @@ class OptionBox:
         try:
             # Create container
             container = OptionBoxContainer(parent)
+            if parent is not None:
+                self._hold_parent_wrapper(wrapped_widget, parent)
             if frameless:
                 container.setProperty("class", "frameless")
                 # Apply direct inline style for frameless - no selector needed
@@ -916,6 +918,38 @@ class OptionBox:
                 suppress_root.setUpdatesEnabled(prev_updates)
 
         return container
+
+    @staticmethod
+    def _hold_parent_wrapper(widget, parent) -> None:
+        """Keep *parent*'s Python wrapper alive for as long as *widget* lives.
+
+        The container is built as a child of *parent* and the wrapped widget
+        moves under it, so in shiboken's ownership tree *parent*'s wrapper
+        reaches the wrapped widget's. When Qt built *parent* (a QUiLoader
+        panel's group box) and nothing in Python holds it, its wrapper is a
+        temporary only ``wrap`` held, and releasing it makes PySide 6.10
+        invalidate every Qt-built wrapper below it -- the wrapped widget's
+        included -- though the C++ widgets live on: "Internal C++ object
+        (QSpinBox) already deleted" straight after the wrap. A connection the
+        wrapped widget owns holds the wrapper instead, out of the garbage
+        collector's reach: on the widget, not the container, because the
+        widget stays below *parent* when ``OptionBoxManager.remove`` puts it
+        back and deletes the container. A re-wrap adds one more such hold,
+        released with the rest when the widget dies.
+
+        A Python-built parent is left alone: its wrapper already lives as long
+        as it does, and one Python owns must stay free to die with its last
+        reference.
+
+        Parameters:
+            widget: The widget being wrapped.
+            parent: Its parent.
+        """
+        from qtpy import shiboken
+
+        if shiboken.createdByPython(parent) or shiboken.ownedByPython(parent):
+            return
+        widget.destroyed.connect(lambda *_args, _parent=parent: None)
 
     # Border-trim fragments that collapse the seam between the wrapped widget
     # and its option buttons. Appended idempotently (see _append_style_once):

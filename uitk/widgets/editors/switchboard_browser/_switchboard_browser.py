@@ -40,6 +40,7 @@ from .launch import (
     PERSISTENCE_CONTEXT,
     PERSISTENCE_STICKY,
     PERSISTENCE_TRANSIENT,
+    SHORTCUT_ACTIONS,
     _LaunchMixin,
 )
 from .model import SwitchboardBrowserModel
@@ -1094,6 +1095,14 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
             copy_act.triggered.connect(
                 lambda _=False, n=name, c=code: self._copy_launch_code(n, c)
             )
+        # A desktop launcher that opens the entry standalone, from its handler
+        # (an external app whose package runs as a program, even in a DCC).
+        if self._can_create_shortcut(name):
+            for location, label in SHORTCUT_ACTIONS:
+                act = menu.addAction(label)
+                act.triggered.connect(
+                    lambda _=False, n=name, loc=location: self._create_shortcut(n, loc)
+                )
         if not menu.isEmpty():
             menu.addSeparator()
 

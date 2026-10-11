@@ -1,8 +1,8 @@
 # !/usr/bin/python
 # coding=utf-8
 import unittest
-from unittest.mock import MagicMock
-from qtpy import QtWidgets, QtGui
+from unittest.mock import MagicMock, patch
+from qtpy import QtCore, QtWidgets, QtGui
 from conftest import QtBaseTestCase, setup_qt_application
 from uitk.themes.style_sheet import StyleSheet
 
@@ -516,6 +516,76 @@ class TestStyleSheetPublicApi(QtBaseTestCase):
             self.assertEqual(StyleSheet.get_icon_color(widget), "#123456")
         finally:
             StyleSheet.reset_overrides()
+
+
+class TestWindowBlur(QtBaseTestCase):
+    """``WINDOW_BLUR``: a switch token the engine hands to ``Bootstrap.set_blur``
+    for the windows it styles."""
+
+    def setUp(self):
+        super().setUp()
+        self.calls = []
+        patcher = patch(
+            "uitk.themes.style_sheet.Bootstrap.set_blur",
+            side_effect=lambda w, on=True: self.calls.append((w, on)) or on,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        StyleSheet.reset_overrides()
+        super().tearDown()
+
+    def test_uitk_ships_it_on_where_the_window_is_translucent(self):
+        """On in the translucent themes (frosted menus by default); off in
+        high-contrast, whose surfaces are opaque."""
+        shipped = {
+            theme: StyleSheet.is_on(StyleSheet.themes[theme]["WINDOW_BLUR"])
+            for theme in ("light", "dark", "high-contrast")
+        }
+        self.assertEqual(shipped, {"light": True, "dark": True, "high-contrast": False})
+        for theme, tokens in StyleSheet.themes.items():  # and every other theme
+            self.assertEqual(
+                StyleSheet.is_on(tokens["WINDOW_BLUR"]),
+                theme != "high-contrast",
+                theme,
+            )
+
+    def test_a_styled_window_follows_the_token(self):
+        window = self.track_widget(QtWidgets.QWidget())
+        StyleSheet().set(window, theme="dark")
+        self.assertEqual(self.calls[-1], (window, True))
+        StyleSheet.set_variable("WINDOW_BLUR", "off", theme="dark")
+        self.assertEqual(self.calls[-1], (window, False))
+
+    def test_a_child_widget_is_left_alone(self):
+        parent = self.track_widget(QtWidgets.QWidget())
+        child = QtWidgets.QWidget(parent)
+        StyleSheet().set(child, theme="dark")
+        self.assertNotIn(child, [w for w, _ in self.calls])
+
+    def test_a_popup_window_resolves_its_owners_setting(self):
+        """A translucent popup (``PopupWindow.promote``) is never registered
+        itself; it follows the WINDOW_BLUR of the window it pops from."""
+        from uitk.widgets.popup.window import PopupWindow
+
+        owner = self.track_widget(QtWidgets.QWidget())
+        StyleSheet().set(owner, theme="dark")
+        popup = QtWidgets.QWidget(owner)
+        PopupWindow.promote(
+            popup, QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint, translucent=True
+        )
+        resolver = self.calls[-1][1]
+        self.assertIs(self.calls[-1][0], popup)
+        self.assertTrue(resolver(popup))
+        StyleSheet.set_variable("WINDOW_BLUR", "off", theme="dark")
+        self.assertFalse(resolver(popup))
+
+    def test_is_on(self):
+        for value in ("on", "ON", " true", "yes", "1"):
+            self.assertTrue(StyleSheet.is_on(value), value)
+        for value in ("off", "", None, "0", "rgb(0,0,0)"):
+            self.assertFalse(StyleSheet.is_on(value), value)
 
 
 if __name__ == "__main__":

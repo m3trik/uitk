@@ -32,6 +32,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from uitk.switchboard.dialogs import SwitchboardDialogsMixin
 from uitk.managers.cursor_manager import CursorManager
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.formPanel import FormPanel
 
 
@@ -210,8 +211,8 @@ class TestFormPanelMessage(FormPanelTestCase):
         label = panel._message_label
         self.assertFalse(label.isHidden())
         self.assertEqual(label.text(), "Relocating 3 texture(s).")
-        self.assertIs(panel.body_layout.itemAt(0).widget(), label)
-        self.assertIs(panel.body_layout.itemAt(1).widget(), panel._rows_host)
+        self.assertIs(_LayoutItems.widget_at(panel.body_layout, 0), label)
+        self.assertIs(_LayoutItems.widget_at(panel.body_layout, 1), panel._rows_host)
 
     def test_a_message_is_not_a_field_caption(self):
         """It takes the caption's PLATE through its own selector, not the
@@ -272,7 +273,7 @@ class TestFormPanelLayout(FormPanelTestCase):
             cells = [item.widget()]
         else:
             cell = item.layout()
-            cells = [cell.itemAt(i).widget() for i in range(cell.count())]
+            cells = _LayoutItems.widgets(cell)
         out = []
         for widget in cells:
             if isinstance(widget, OptionBoxContainer):
@@ -364,7 +365,7 @@ class TestFormPanelInlineFields(FormPanelTestCase):
         self.assertEqual(form.rowCount(), 2, "the inline field took a row of its own")
         cell = form.itemAt(0, QtWidgets.QFormLayout.FieldRole).layout()
         self.assertEqual(
-            [cell.itemAt(i).widget() for i in range(cell.count())],
+            _LayoutItems.widgets(cell),
             [panel.editor("mode"), panel.editor("dry_run")],
         )
 

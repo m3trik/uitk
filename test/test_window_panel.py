@@ -22,6 +22,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets
 
+from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.windowPanel import WindowPanel
 
@@ -43,8 +44,7 @@ class WindowPanelTestCase(QtBaseTestCase):
         item = panel.rows_layout.itemAt(row, QtWidgets.QFormLayout.FieldRole)
         if item.widget() is not None:
             return [item.widget()]
-        cell = item.layout()
-        return [cell.itemAt(i).widget() for i in range(cell.count())]
+        return _LayoutItems.widgets(item.layout())
 
 
 class TestResolution(WindowPanelTestCase):
@@ -209,7 +209,7 @@ class TestRows(WindowPanelTestCase):
         """Deterministic placement: content a subclass appends (an output
         pane) lands BELOW the rows however late the first add arrives."""
         panel = self._panel()
-        self.assertIs(panel.body_layout.itemAt(0).widget(), panel._rows_host)
+        self.assertIs(_LayoutItems.widget_at(panel.body_layout, 0), panel._rows_host)
 
 
 class TestHints(WindowPanelTestCase):
@@ -259,7 +259,7 @@ class TestClearRows(WindowPanelTestCase):
         panel.body_layout.addWidget(extra)
         panel.add("QLineEdit")
         panel.clear_rows()
-        self.assertIs(panel.body_layout.itemAt(1).widget(), extra)
+        self.assertIs(_LayoutItems.widget_at(panel.body_layout, 1), extra)
 
 
 if __name__ == "__main__":

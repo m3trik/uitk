@@ -6,6 +6,7 @@ import importlib.resources
 from typing import Union
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
+from uitk._bootstrap import Bootstrap
 from uitk.managers.settings_manager import SettingsManager
 
 _logger = logging.getLogger(__name__)
@@ -135,6 +136,11 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "ICON_COLOR": "rgb(220,220,220)",
             "LINK_COLOR": "rgb(130,170,210)",
             "LINK_VISITED_COLOR": "rgb(160,150,190)",
+            # Blur the desktop seen through a translucent WINDOW_BACKGROUND
+            # ("on"/"off"): frosted glass rather than see-through. Top-level
+            # windows (and the popup menus they open) only, where the desktop
+            # can blur (Bootstrap.blurs).
+            "WINDOW_BLUR": "on",
         },
         "dark": {
             # Surfaces
@@ -185,6 +191,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "ICON_COLOR": "rgb(220,220,220)",
             "LINK_COLOR": "rgb(130,170,210)",
             "LINK_VISITED_COLOR": "rgb(160,150,190)",
+            "WINDOW_BLUR": "on",
         },
         # Accessibility default: WCAG-minded high-contrast dark. Opaque
         # surfaces (no translucency — it degrades legibility over busy
@@ -241,6 +248,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "ICON_COLOR": "rgb(255,255,255)",
             "LINK_COLOR": "rgb(77,166,255)",
             "LINK_VISITED_COLOR": "rgb(204,153,255)",
+            "WINDOW_BLUR": "off",  # opaque surfaces: nothing shows through to blur
         },
     }
 
@@ -397,21 +405,39 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         Returns:
             Hex color string for icons (e.g., "#ffffff")
         """
-        if widget is not None:
-            # Walk up the widget hierarchy to find a themed ancestor
-            w = widget
-            while w is not None:
-                if w in cls._widget_themes:
-                    theme_name = cls._widget_themes[w]
-                    # Resolve through get_variable so global/widget ICON_COLOR
-                    # overrides win over the base theme value (icons created
-                    # after an override must pick it up, not the un-overridden
-                    # default).
-                    return cls.get_variable("ICON_COLOR", theme_name, w) or "#888888"
-                w = w.parent() if hasattr(w, "parent") else None
+        # Resolved through get_variable so global/widget ICON_COLOR overrides
+        # win over the base theme value (icons created after an override must
+        # pick it up, not the un-overridden default).
+        return cls.resolve_variable("ICON_COLOR", widget, "#888888")
 
-        # Default fallback
-        return "#888888"
+    @classmethod
+    def resolve_variable(
+        cls, name: str, widget: QtWidgets.QWidget = None, default: str = ""
+    ) -> str:
+        """*name* as *widget* wears it: resolved for the theme of *widget* or
+        its nearest themed ancestor -- an unregistered child, or a popup
+        window, inherits its owner's theme through the stylesheet cascade.
+
+        Parameters:
+            name: Variable name.
+            widget: Where to start the walk up the parent chain.
+            default: Returned when no ancestor is themed or the value is empty.
+
+        Returns:
+            The resolved value (overrides included), or *default*.
+        """
+        w = widget
+        while w is not None:
+            if w in cls._widget_themes:
+                return cls.get_variable(name, cls._widget_themes[w], w) or default
+            w = w.parent() if hasattr(w, "parent") else None
+        return default
+
+    @classmethod
+    def window_blur(cls, widget: QtWidgets.QWidget) -> bool:
+        """Whether *widget*'s ``WINDOW_BLUR`` is on, through its theme or its
+        owner's -- the resolver a popup window hands ``Bootstrap.set_blur``."""
+        return cls.is_on(cls.resolve_variable("WINDOW_BLUR", widget))
 
     @classmethod
     def _stamp_theme(cls, theme: str, widget: QtWidgets.QWidget = None):
@@ -703,6 +729,12 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         m = re.match(r"\s*(-?\d+)", cls.get_variable(name, theme, widget) or "")
         return int(m.group(1)) if m else default
 
+    @staticmethod
+    def is_on(value) -> bool:
+        """Parse a switch token (e.g. ``WINDOW_BLUR``): ``"on"``/``"true"``/
+        ``"yes"``/``"1"`` are on, anything else (``"off"``, unset) is off."""
+        return str(value or "").strip().lower() in ("on", "true", "yes", "1")
+
     @classmethod
     def get_variables(cls, theme: str = "light") -> list[str]:
         """Get list of available theme variables."""
@@ -901,6 +933,8 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
                 f"Applying QSS to widget '{widget.objectName()}':\n---BEGIN QSS---\n{qss_final}\n---END QSS---"
             )
             widget.setStyleSheet(qss_final)
+            if widget.isWindow():
+                Bootstrap.set_blur(widget, self.is_on(theme_vars.get("WINDOW_BLUR")))
             self.logger.info(
                 f"Applied QSS style to widget: {widget.objectName()} (theme='{theme}', class='{style_class}')"
             )

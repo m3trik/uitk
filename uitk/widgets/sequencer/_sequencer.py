@@ -189,7 +189,7 @@ class AttributeColorDialog(ColorMappingDialog):
 #: part of (:class:`~uitk.widgets.sequencer._keyframe.TangentHandleItem`).
 _GESTURE_DEFS = (
     ("Shot bounds", "Drag", "Move the bound; neighbours ripple (keys stay)"),
-    ("Shot bounds", "Ctrl+Drag", "Move the bound only; nothing else moves"),
+    ("Shot bounds", "Ctrl+Drag", "Move the bound only; a neighbour's gives way"),
     ("Shot bounds", "Shift+Drag", "Retime keys into the new span"),
     ("Shot bounds", "Drag band", "Move the shot (keys ride)"),
     ("Gaps", "Drag edge", "Slide the shot beyond it (gap changes)"),
@@ -757,7 +757,24 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             text_color=text_color,
         )
         self._refresh_extent()
+        self._sync_row_bound_items()
         return tid
+
+    def _sync_row_bound_items(self) -> None:
+        """Re-derive the overlays whose height follows the track rows.
+
+        They hold their geometry until told (``HeldGeometryMixin``), and a
+        new row is a layout change no ``_refresh_all`` follows.  A handful of
+        items, so cheap inside a bulk rebuild too.
+        """
+        for item in (
+            self._range_highlight,
+            self._snap_guide,
+            *self._range_overlays,
+            *self._gap_overlays,
+        ):
+            if item is not None:
+                item.sync()
 
     def _refresh_extent(self) -> None:
         """Recompute the scrollable extent unless a bulk rebuild is running.
@@ -1381,10 +1398,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             # without the latter, next/prev-key navigation skips every
             # visible key dot and only lands on clip boundaries.
             if cd.sub_row and cd.track_id in self._expanded_tracks:
-                kf = cd.data.get("keyframe_times")
-                if not kf:
-                    preview = cd.data.get("curve_preview") or {}
-                    kf = preview.get("keys") or []
+                kf = cd.data.get("keyframe_times") or cd.shown_key_times()
                 for entry in kf:
                     times.add(entry[0] if isinstance(entry, (list, tuple)) else entry)
         return sorted(times)
@@ -1601,10 +1615,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         yield round(cd.start, 3)
         if cd.duration > 0:
             yield round(cd.end, 3)
-        preview = cd.data.get("curve_preview") or {}
-        for entry in preview.get("keys") or ():
-            t = entry[0] if isinstance(entry, (list, tuple)) else entry
-            yield round(float(t), 3)
+        for t in cd.shown_key_times():
+            yield round(t, 3)
 
     def nearest_alignment(
         self, time: float, candidates, tolerance: Optional[float] = None

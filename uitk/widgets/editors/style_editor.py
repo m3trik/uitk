@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from qtpy import QtWidgets, QtCore
+from uitk._bootstrap import Bootstrap
 from uitk.widgets.colorSwatch import ColorSwatch
 from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.editors.editor_panel import EditorPanel
@@ -37,6 +38,8 @@ BASIC_TOKENS = frozenset(
         # Structural
         "BORDER_COLOR",
         "RADIUS",
+        # Effects
+        "WINDOW_BLUR",
     }
 )
 
@@ -51,6 +54,9 @@ LENGTH_TOKENS = {
     "COMBOBOX_ITEM_HEIGHT": (0, 64),
     "TEXT_INSET": (0, 16),
 }
+
+# On/off tokens (see ``StyleSheet.is_on``), rendered as a check box.
+SWITCH_TOKENS = frozenset({"WINDOW_BLUR"})
 
 # Fixed 22px table rows (matches the UI Browser). The QSS QTableWidget::item
 # rule reserves a 1px (BORDER_W) border, and the grid another 1px, so the
@@ -83,11 +89,12 @@ class StyleEditor(EditorPanel):
     restore gap (see ``PresetManager``); an app wanting the saved theme
     at startup applies it from its own entry point.
 
-    Two value types are handled: color tokens get a :class:`ColorSwatch`;
+    Three value types are handled: color tokens get a :class:`ColorSwatch`;
     length tokens (see ``LENGTH_TOKENS``) get a ``QSpinBox`` with a ``" px"``
-    suffix, clamped to each token's pixel range. The Basic/All tier combo
+    suffix, clamped to each token's pixel range; switch tokens (see
+    ``SWITCH_TOKENS``) get a check box. The Basic/All tier combo
     lives in the header's ⋯-menu ("Show:") and filters the table to either
-    the 12 most-edited tokens or every token.
+    the most-edited tokens (``BASIC_TOKENS``) or every token.
     """
 
     def __init__(self, parent=None):
@@ -241,8 +248,8 @@ class StyleEditor(EditorPanel):
     def populate(self):
         """Populate the table with variables for the current theme + tier.
 
-        Color tokens render first, then a section divider, then length
-        tokens. ``setRowCount(0)`` + ``clearSpans()`` resets any prior
+        Color tokens render first, then a section divider and the length
+        tokens, then another and the switch tokens. ``setRowCount(0)`` + ``clearSpans()`` resets any prior
         spans before re-rendering.
         """
         self.table.setRowCount(0)
@@ -256,10 +263,17 @@ class StyleEditor(EditorPanel):
         else:
             visible = list(all_vars)
 
-        colors = sorted(v for v in visible if v not in LENGTH_TOKENS)
+        colors = sorted(
+            v for v in visible if v not in LENGTH_TOKENS and v not in SWITCH_TOKENS
+        )
         lengths = sorted(v for v in visible if v in LENGTH_TOKENS)
+        switches = sorted(v for v in visible if v in SWITCH_TOKENS)
 
-        total_rows = len(colors) + (1 + len(lengths) if lengths else 0)
+        total_rows = (
+            len(colors)
+            + (1 + len(lengths) if lengths else 0)
+            + (1 + len(switches) if switches else 0)
+        )
         self.table.setRowCount(total_rows)
         colors_word = "color" if len(colors) == 1 else "colors"
         sizes_word = "size" if len(lengths) == 1 else "sizes"
@@ -277,6 +291,12 @@ class StyleEditor(EditorPanel):
             row += 1
             for var_name in lengths:
                 self._add_length_row(row, var_name, current_theme)
+                row += 1
+        if switches:
+            self._add_section_header(row, "— Effects —")
+            row += 1
+            for var_name in switches:
+                self._add_switch_row(row, var_name, current_theme)
                 row += 1
 
     def _add_color_row(self, row, var_name, theme):
@@ -313,6 +333,26 @@ class StyleEditor(EditorPanel):
 
         spin.valueChanged.connect(
             lambda v, name=var_name: self.on_length_changed(name, v)
+        )
+
+        self._add_reset_button(row, var_name)
+
+    def _add_switch_row(self, row, var_name, theme):
+        name_item = QtWidgets.QTableWidgetItem(var_name)
+        name_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
+        self.table.setItem(row, 0, name_item)
+
+        check = QtWidgets.QCheckBox()
+        check.setFixedHeight(CELL_EDITOR_H)
+        check.setChecked(StyleSheet.is_on(StyleSheet.get_variable(var_name, theme)))
+        if var_name == "WINDOW_BLUR" and not Bootstrap.blurs():
+            check.setToolTip(
+                "This desktop offers no window blur (Windows, macOS and KDE Plasma do)."
+            )
+        self.table.setCellWidget(row, 1, self._centered_cell(check))
+
+        check.toggled.connect(
+            lambda on, name=var_name: self.on_switch_changed(name, on)
         )
 
         self._add_reset_button(row, var_name)
@@ -372,6 +412,13 @@ class StyleEditor(EditorPanel):
         self._preset_mgr.refresh_modified_state()
         self.footer.setStatusText(f"{name} → {value}px")
 
+    def on_switch_changed(self, name, on):
+        """Handle a switch token's check box."""
+        value = "on" if on else "off"
+        StyleSheet.set_variable(name, value, theme=self._theme)
+        self._preset_mgr.refresh_modified_state()
+        self.footer.setStatusText(f"{name} → {value}")
+
     def reset_variable(self, name):
         """Reset a single variable."""
         StyleSheet.set_variable(name, None, theme=self._theme)
@@ -408,6 +455,13 @@ class StyleEditor(EditorPanel):
             swatch.blockSignals(True)
             swatch.color = val
             swatch.blockSignals(False)
+            return
+
+        check = container.findChild(QtWidgets.QCheckBox)
+        if check:
+            check.blockSignals(True)
+            check.setChecked(StyleSheet.is_on(val))
+            check.blockSignals(False)
             return
 
         spin = container.findChild(QtWidgets.QSpinBox)

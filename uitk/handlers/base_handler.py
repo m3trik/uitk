@@ -347,6 +347,10 @@ class LaunchableHandlerProtocol(Protocol):
       button, with its dependencies re-established; *options* are the
       launch options ``launch`` would get. ``None`` when no importable
       spelling exists. Backs the browser's *Copy launch code* row action.
+    * ``can_create_shortcut(name) -> bool`` / ``create_shortcut(name,
+      location) -> str`` — a desktop or start-menu launcher that opens the
+      entry standalone (*location*: ``"desktop"`` / ``"start_menu"``). Back
+      the browser's shortcut row actions, offered when the first says True.
     """
 
     def entries(self) -> Iterable["HandlerEntry"]: ...

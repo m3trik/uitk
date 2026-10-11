@@ -17,6 +17,7 @@ asserted in a comment:
 """
 import unittest
 
+import conftest  # noqa: F401  (sandboxes the stores a direct run would reach)
 from qtpy import QtWidgets
 
 import uitk
