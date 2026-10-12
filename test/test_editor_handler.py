@@ -64,6 +64,15 @@ class EditorRows(_Base):
             self.assertIs(entry.handler, self.handler)
             self.assertFalse(entry.editable_tags)
 
+    def test_every_bundled_editor_says_what_it_does(self):
+        """The launcher's Description column: one short sentence each."""
+        rows = [e for e in self.sb.iter_handler_entries() if e.kind == "editor"]
+        self.assertTrue(rows)
+        for entry in rows:
+            with self.subTest(editor=entry.name):
+                self.assertTrue(entry.description.endswith("."))
+                self.assertLessEqual(len(entry.description), 80)
+
     def test_the_ui_browser_lists_itself(self):
         browser = self.sb.editors.get("ui_browser")
         self.assertIn("ui_browser", browser._model._names)
@@ -191,6 +200,36 @@ class EditorLaunchCode(_Base):
         self.assertIn("alpha", names)
         self.assertIn("ui_browser", names)
         self.assertEqual(loops, 1)
+
+
+class DismissWithoutHeader(unittest.TestCase):
+    """``BaseHandler._dismiss`` (every handler's ``close``) on a window with
+    no header: unpinned first, since a pinned ``MainWindow`` vetoes a bare
+    ``hide()`` -- the browser's Close did nothing to a dragged window."""
+
+    class _PinnedWindow:
+        """Vetoes ``hide`` while pinned, as a ``MainWindow`` does."""
+
+        def __init__(self):
+            self.pinned, self.visible = True, True
+
+        def isVisible(self):
+            return self.visible
+
+        def set_pinned(self, on):
+            self.pinned = on
+
+        def hide(self):
+            if not self.pinned:
+                self.visible = False
+
+    def test_a_pinned_window_without_a_header_is_unpinned_and_hidden(self):
+        from uitk.handlers.base_handler import BaseHandler
+
+        window = self._PinnedWindow()
+        BaseHandler._dismiss(window)
+        self.assertFalse(window.pinned)
+        self.assertFalse(window.visible)
 
 
 if __name__ == "__main__":

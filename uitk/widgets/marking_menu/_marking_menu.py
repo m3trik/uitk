@@ -380,7 +380,9 @@ class MarkingMenu(
                 only reflects events Qt itself has seen. ``None`` (the Qt
                 shortcut path) falls back to the Qt query.
         """
-        if self._retired:
+        if self._retired or self._defer_past_warm_up(
+            self._on_activation_press, buttons
+        ):
             return
         if buttons is None:
             buttons = QtWidgets.QApplication.mouseButtons()
@@ -483,7 +485,7 @@ class MarkingMenu(
 
     def _on_activation_release(self):
         """Handle the global shortcut release event."""
-        if self._retired:
+        if self._retired or self._defer_past_warm_up(self._on_activation_release):
             return
         if self._input_logging_on:
             self.logger.debug(

@@ -4,7 +4,7 @@ import unittest
 import os
 import sys
 from types import ModuleType
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from conftest import QtBaseTestCase
 from uitk.switchboard import Switchboard

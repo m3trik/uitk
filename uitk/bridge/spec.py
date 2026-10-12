@@ -140,6 +140,19 @@ class _CheckList(QtWidgets.QListWidget):
             self.blockSignals(blocked)
         self._emit_if_changed()
 
+    def minimumSizeHint(self) -> QtCore.QSize:
+        """Wide enough for the longest label, its scroll bar beside it: a
+        list's own hint is a fixed guess, so a layout squeezing the row
+        clipped every label."""
+        hint = super().minimumSizeHint()
+        width = (
+            self.sizeHintForColumn(0)
+            + 2 * (self.spacing() + self.frameWidth())  # spacing rings each row
+            + self.verticalScrollBar().sizeHint().width()
+            + 4  # the elide margin a style keeps from the edge
+        )
+        return QtCore.QSize(max(hint.width(), width), hint.height())
+
     def state_value(self) -> List[Any]:
         return _KindFactoryInternal._read_check_list(self)
 

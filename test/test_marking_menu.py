@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 from qtpy import QtWidgets, QtCore, QtGui, QtTest
 
-from conftest import QtBaseTestCase
+from conftest import QtBaseTestCase, write_ui_file
 from uitk.widgets.marking_menu._resolver import MenuResolver
 from uitk.widgets.marking_menu._marking_menu import MarkingMenu
 from uitk.widgets.marking_menu.overlay import Overlay
@@ -534,26 +534,6 @@ class TestNavButtonMenuResolution(QtBaseTestCase):
 # ── Hosting claim (hosts_ui) — consumed by UiHandler.launch ──────────────────
 
 
-def _write_ui_file(path, name, tags_csv=None):
-    """Minimal QMainWindow .ui file (mirrors test_switchboard_browser)."""
-    tag_block = ""
-    if tags_csv is not None:
-        tag_block = (
-            f'<property name="uitk_tags" stdset="0">'
-            f"<string>{tags_csv}</string></property>"
-        )
-    content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<ui version="4.0">
- <class>QtUi</class>
- <widget class="QMainWindow" name="{name}">
-  {tag_block}
- </widget>
-</ui>
-"""
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-
 class TestMarkingMenuHostsUi(QtBaseTestCase):
     """``MarkingMenu.hosts_ui`` — the hosting claim ``UiHandler.launch`` consults.
 
@@ -578,12 +558,12 @@ class TestMarkingMenuHostsUi(QtBaseTestCase):
 
         self.tmp = tempfile.TemporaryDirectory()
         d = self.tmp.name
-        _write_ui_file(os.path.join(d, "tool.ui"), "tool")
-        _write_ui_file(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
-        _write_ui_file(os.path.join(d, "edit#submenu.ui"), "edit_submenu")
+        write_ui_file(os.path.join(d, "tool.ui"), "tool")
+        write_ui_file(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
+        write_ui_file(os.path.join(d, "edit#submenu.ui"), "edit_submenu")
         # XML-tag-only page: no name tag, but show() would still dispatch it
         # as stacked once loaded (live tags include the XML tags).
-        _write_ui_file(os.path.join(d, "oddmenu.ui"), "oddmenu", tags_csv="submenu")
+        write_ui_file(os.path.join(d, "oddmenu.ui"), "oddmenu", tags_csv="submenu")
         self.sb = Switchboard(ui_source=d, log_level="WARNING")
         self.host = types.SimpleNamespace(sb=self.sb)
 
@@ -650,9 +630,9 @@ class TestMarkingMenuBrowserEntryFilter(QtBaseTestCase):
 
         self.tmp = tempfile.TemporaryDirectory()
         d = self.tmp.name
-        _write_ui_file(os.path.join(d, "tool.ui"), "tool")
-        _write_ui_file(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
-        _write_ui_file(os.path.join(d, "uv#submenu.ui"), "uv_submenu")
+        write_ui_file(os.path.join(d, "tool.ui"), "tool")
+        write_ui_file(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
+        write_ui_file(os.path.join(d, "uv#submenu.ui"), "uv_submenu")
         # Editor rows opted out: these cases pin the filter over registered UIs.
         self.sb = Switchboard(
             ui_source=d, log_level="WARNING", handlers={"editor": None}

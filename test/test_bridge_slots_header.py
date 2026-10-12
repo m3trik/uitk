@@ -9,6 +9,7 @@ hooks -- :attr:`HEADER_MENU_ITEMS` (or :meth:`header_menu_items`) and
 :attr:`HELP_SPEC` (or :meth:`help_spec`). These tests pin that mechanism with a
 fake header so a regression can't silently drop a menu item or the help button.
 """
+
 import unittest
 
 from uitk.bridge import BridgeSlotsBase
@@ -55,9 +56,11 @@ class _FakeHeader:
     def __init__(self):
         self.menu = _FakeMenu()
         self.help_text = None
+        self.help_url = None
 
-    def set_help_text(self, text):
+    def set_help_text(self, text, url=None):
         self.help_text = text
+        self.help_url = url
 
 
 def _labels(header):
@@ -142,6 +145,22 @@ class CustomHeaderMenuTest(unittest.TestCase):
         self.assertIn("Title", header.help_text)
         header.menu._buttons["btn_x"].clicked.emit()
         self.assertEqual(slot.fired, ["x"])
+        self.assertEqual(header.help_url, "", "no DOCS_URL: no link")
+
+    def test_the_docs_url_ends_the_help(self):
+        """The panel's docs link reaches the header's help card, with or
+        without a help spec."""
+        url = "https://example.com/docs/bridge.md"
+        for spec in ({"title": "Title"}, None):
+
+            class _Docs(BridgeSlotsBase):
+                DOCS_URL = url
+                HELP_SPEC = spec
+
+            header = _FakeHeader()
+            _Docs.__new__(_Docs).header_init(header)
+            self.assertEqual(header.help_url, url, spec)
+            self.assertEqual(bool(header.help_text), bool(spec), spec)
 
     def test_dynamic_items_via_method_override(self):
         class _Dynamic(BridgeSlotsBase):
@@ -149,7 +168,12 @@ class CustomHeaderMenuTest(unittest.TestCase):
 
             def header_menu_items(self):
                 return (
-                    ("Cancel Run", "btn_cancel", f"Kill {self.ENGINE_LABEL}.", "cancel_run"),
+                    (
+                        "Cancel Run",
+                        "btn_cancel",
+                        f"Kill {self.ENGINE_LABEL}.",
+                        "cancel_run",
+                    ),
                     ("Clear Log", "btn_clear_log", "Clear the log.", "clear_log"),
                 )
 
@@ -164,7 +188,8 @@ class CustomHeaderMenuTest(unittest.TestCase):
         slot.header_init(header)
         self.assertEqual(_labels(header), ["Cancel Run", "Clear Log"])
         cancel_tip = next(
-            kw["setToolTip"] for _t, kw in header.menu.adds
+            kw["setToolTip"]
+            for _t, kw in header.menu.adds
             if kw.get("setObjectName") == "btn_cancel"
         )
         self.assertEqual(cancel_tip, "Kill Metashape.")

@@ -13,6 +13,7 @@ Covers:
 """
 
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -32,6 +33,10 @@ SAMPLE_UI = """<?xml version="1.0" encoding="UTF-8"?>
   </property>
   <property name="windowTitle">
    <string>Sample</string>
+  </property>
+  <property name="accessibleDescription">
+   <string>  Sample the
+   things, &amp; more.  </string>
   </property>
   <widget class="QWidget" name="central_widget">
    <layout class="QVBoxLayout" name="layout"/>
@@ -89,6 +94,17 @@ class ExtractMetadata(BaseTestCase):
     def test_uitk_tags_extracted_and_sorted(self):
         meta = compile_mod.extract_metadata(self.ui)
         self.assertEqual(meta["uitk_tags"], ["alpha", "beta", "gamma"])
+
+    def test_description_is_the_roots_accessible_description_on_one_line(self):
+        """The launcher's Description column reads it without loading the UI."""
+        meta = compile_mod.extract_metadata(self.ui)
+        self.assertEqual(meta["description"], "Sample the things, & more.")
+
+    def test_no_description_yields_empty_string(self):
+        ui = self.ui.with_name("nodesc.ui")
+        description = r'  <property name="accessibleDescription">.*?</property>\n'
+        ui.write_text(re.sub(description, "", SAMPLE_UI, flags=re.S), encoding="utf-8")
+        self.assertEqual(compile_mod.extract_metadata(ui)["description"], "")
 
     def test_no_tags_yields_empty_list(self):
         ui = self.ui.with_name("notags.ui")

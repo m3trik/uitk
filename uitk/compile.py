@@ -381,7 +381,11 @@ class UiCompiler(_UiCompilerInternal):
                 "form_class":     "MyForm",                  # <class> root element
                 "customwidgets":  [(class_name, header), ...],
                 "uitk_tags":      ["alpha", "beta"],         # sorted list
+                "description":    "What the UI does.",       # "" when unset
             }
+
+        ``description`` is the root widget's ``accessibleDescription`` on one
+        line: the launcher's Description column, read without loading the UI.
         """
         tree = ET.parse(str(ui_path))
         root = tree.getroot()
@@ -406,19 +410,23 @@ class UiCompiler(_UiCompilerInternal):
                 )
 
         tags = set()
+        description = ""
         if widget_el is not None:
             for prop in widget_el.findall("property"):
-                if prop.get("name") == "uitk_tags":
-                    s = prop.find("string")
-                    if s is not None and s.text:
-                        tags.update(t.strip() for t in s.text.split(",") if t.strip())
-                    break
+                name = prop.get("name")
+                s = prop.find("string")
+                text = s.text if s is not None and s.text else ""
+                if name == "uitk_tags":
+                    tags.update(t.strip() for t in text.split(",") if t.strip())
+                elif name == "accessibleDescription":
+                    description = " ".join(text.split())
 
         return {
             "base_class": base_class,
             "form_class": form_class,
             "customwidgets": customwidgets,
             "uitk_tags": sorted(tags),
+            "description": description,
         }
 
     @staticmethod

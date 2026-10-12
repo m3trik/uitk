@@ -21,11 +21,11 @@ from conftest import QtBaseTestCase, setup_qt_application
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
 
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets, QtCore, QtGui, QtTest
 
 from uitk.managers.icon_manager import IconManager
 from uitk.widgets._layout_items import _LayoutItems
-from uitk.widgets.header import Header
+from uitk.widgets.header import Header, _DragRescaleGuard
 
 
 def _enter_event():
@@ -115,9 +115,25 @@ class TestHeaderButtons(QtBaseTestCase):
 
     def test_config_buttons_adds_multiple_buttons(self):
         """Should add multiple buttons when configured."""
-        header = self.track_widget(Header(config_buttons=["pin", "hide"]))
+        header = self.track_widget(Header(config_buttons=["menu", "pin"]))
+        self.assertIn("menu", header.buttons)
         self.assertIn("pin", header.buttons)
-        self.assertIn("hide", header.buttons)
+
+    def test_a_header_carries_one_dismissal_button(self):
+        """Pin and hide both dismiss the window: asked for both, a header keeps
+        the first named, wherever they sit and however they are passed."""
+        for asked, kept, dropped in (
+            (("refresh", "menu", "collapse", "pin", "hide"), "pin", "hide"),
+            (("hide", "menu", "pin"), "hide", "pin"),
+        ):
+            header = self.track_widget(Header(config_buttons=list(asked)))
+            self.assertIn(kept, header.buttons, asked)
+            self.assertNotIn(dropped, header.buttons, asked)
+            self.assertEqual(
+                list(header.buttons), [b for b in asked if b != dropped], asked
+            )
+            header.setConfigButtons(" ".join(asked))  # the Designer path too
+            self.assertNotIn(dropped, header.buttons, asked)
 
     def test_config_buttons_ignores_unknown(self):
         """Should ignore unknown button names."""
@@ -394,6 +410,135 @@ class TestHeaderPinClickHides(QtBaseTestCase):
         self.assertEqual(button.property("pinHides"), True)
         QtWidgets.QApplication.sendEvent(button, _enter_event())
         self.assertEqual(self._icon_name(button), "close")
+
+
+class _PinnedWindow(QtWidgets.QWidget):
+    """The pin surface ``MainWindow`` offers its header: a pin with a change
+    signal, and a ``hide()`` the pin vetoes."""
+
+    on_pinned_changed = QtCore.Signal(bool)
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.FramelessWindowHint)
+        self._pinned = False
+
+    @property
+    def pinned(self):
+        return self._pinned
+
+    def set_pinned(self, value):
+        self._pinned = bool(value)
+        self.on_pinned_changed.emit(self._pinned)
+
+    def setVisible(self, visible):
+        if not visible and self._pinned:
+            return
+        super().setVisible(visible)
+
+
+class TestHeaderWindowPin(QtBaseTestCase):
+    """A header and its window agree on the pin, and the hide button always
+    hides: a ``.ui`` header (laid out, never ``attach_to``-ed) was never told
+    of a pin set on its window, so its hide skipped the unpin and the window
+    vetoed the hide -- "the hide button will not hide the opened ui"."""
+
+    def _window(self, buttons=("hide",)):
+        window = self.track_widget(_PinnedWindow())
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(parent=window, config_buttons=list(buttons))
+        layout.addWidget(header)
+        window.show()
+        QtWidgets.QApplication.processEvents()
+        return window, header
+
+    def test_a_laid_out_header_follows_its_windows_pin(self):
+        window, header = self._window(buttons=("pin",))
+        window.set_pinned(True)
+        self.assertTrue(header.pinned)
+        window.set_pinned(False)
+        self.assertFalse(header.pinned)
+
+    def test_hide_dismisses_a_window_pinned_behind_the_headers_back(self):
+        window, header = self._window()
+        window._pinned = True  # set with no signal: any desync at all
+        header.buttons["hide"].click()
+        self.assertFalse(window.pinned)
+        self.assertFalse(window.isVisible())
+
+
+class TestHeaderDrag(QtBaseTestCase):
+    @staticmethod
+    def _mouse(kind, x, y, button=QtCore.Qt.NoButton):
+        return QtGui.QMouseEvent(
+            kind,
+            QtCore.QPointF(x, y),
+            QtCore.QPointF(x, y),
+            button,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+
+    def _drag(self, window, header):
+        """Press and move far enough to start a drag."""
+        window.resize(400, 300)
+        QtWidgets.QApplication.processEvents()
+        header.mousePressEvent(
+            self._mouse(QtCore.QEvent.MouseButtonPress, 0, 0, QtCore.Qt.LeftButton)
+        )
+        header.mouseMoveEvent(self._mouse(QtCore.QEvent.MouseMove, 20, 20))
+
+    @staticmethod
+    def _rescale(window, size):
+        """What the window system does as a dragged window crosses to a screen
+        of another scale: a spontaneous resize, through the window's QWindow
+        (a plain ``resize()`` is the app's own). Settles the guard's undo."""
+        window.windowHandle().resize(size)
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents()
+
+    def _release(self, header):
+        header.mouseReleaseEvent(
+            self._mouse(QtCore.QEvent.MouseButtonRelease, 40, 40, QtCore.Qt.LeftButton)
+        )
+
+    def test_a_drag_undoes_the_window_systems_rescale(self):
+        """Between monitors of different scale, Qt's logical coordinates have
+        a gap; while the drag's ``move()`` steps crossed it the window flipped
+        between the screens and was rescaled each time (x1.25 a step at
+        100%/125%), so it grew on every drag. Undone during the drag, and for
+        a rescale landing just after the release."""
+        window, header = _pin_header(self, show=True)
+        self._drag(window, header)
+        self._rescale(window, QtCore.QSize(500, 375))
+        self.assertEqual(window.size(), QtCore.QSize(400, 300))
+        self._release(header)
+        self._rescale(window, QtCore.QSize(320, 240))
+        self.assertEqual(window.size(), QtCore.QSize(400, 300))
+
+    def test_after_the_drag_the_window_system_sizes_it_again(self):
+        window, header = _pin_header(self, show=True)
+        self._drag(window, header)
+        self._release(header)
+        QtTest.QTest.qWait(_DragRescaleGuard.GRACE_MS + 100)
+        self._rescale(window, QtCore.QSize(500, 375))
+        self.assertEqual(window.size(), QtCore.QSize(500, 375))
+
+    def test_the_apps_own_resize_mid_drag_is_kept(self):
+        window, header = _pin_header(self, show=True)
+        self._drag(window, header)
+        window.resize(400, 450)
+        self._rescale(window, QtCore.QSize(500, 560))
+        self._release(header)
+        self.assertEqual(window.size(), QtCore.QSize(400, 450))
+
+    def test_a_maximized_window_is_left_to_the_window_system(self):
+        window, header = _pin_header(self, show=True)
+        self._drag(window, header)
+        window.windowState = lambda: QtCore.Qt.WindowMaximized
+        self._rescale(window, QtCore.QSize(500, 375))
+        self._release(header)
+        self.assertEqual(window.size(), QtCore.QSize(500, 375))
 
 
 class TestHeaderPinClickDefault(QtBaseTestCase):
@@ -734,20 +879,22 @@ class TestHeaderHelpButton(QtBaseTestCase):
         header.set_help_text("Hello world")
         self.assertIn("help", header.buttons)
 
-    def test_set_help_text_sets_tooltip(self):
-        """Should set the help button's tooltip to the supplied text."""
+    def test_the_help_button_carries_no_tooltip_text(self):
+        """The card is the help's one presentation: a Qt tooltip of the same
+        text could run off the screen (it can neither scroll nor be capped)."""
         header = self.track_widget(Header(config_buttons=["menu", "hide"]))
         header.set_help_text("Hello world")
-        self.assertEqual(header.buttons["help"].toolTip(), "Hello world")
+        self.assertEqual(header.buttons["help"].toolTip(), "")
+        self.assertEqual(header.help_text(), "Hello world")
 
     def test_set_help_text_updates_existing_button(self):
-        """Should update the tooltip without creating a second button."""
+        """Should update the help without creating a second button."""
         header = self.track_widget(Header(config_buttons=["menu", "hide"]))
         header.set_help_text("First")
         first_button = header.buttons["help"]
         header.set_help_text("Second")
         self.assertIs(header.buttons["help"], first_button)
-        self.assertEqual(first_button.toolTip(), "Second")
+        self.assertEqual(header.help_text(), "Second")
 
     def test_help_text_accessor(self):
         """help_text() should return the current help button tooltip."""
@@ -784,47 +931,120 @@ class TestHeaderHelpButton(QtBaseTestCase):
         header.set_help_text("Help me")
         header.config_buttons("refresh", "menu", "hide")
         self.assertIn("help", header.buttons)
-        self.assertEqual(header.buttons["help"].toolTip(), "Help me")
         self.assertEqual(header.help_text(), "Help me")
+        header.buttons["help"].click()  # the rebuilt button still shows it
+        self.assertTrue(header._help_card.isVisible())
+        header._help_card.hide()
 
-    def test_show_help_invokes_qtooltip(self):
-        """Clicking the help button should call QToolTip.showText with the help text."""
-        header = self.track_widget(Header(config_buttons=["menu"]))
-        header.set_help_text("Sample help")
-        captured = []
-        original = QtWidgets.QToolTip.showText
+    def _shown_header(self, text, url=None):
+        # Frameless: beside an OS title bar the header hides itself.
+        window = self.track_widget(QtWidgets.QWidget())
+        window.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        layout = QtWidgets.QVBoxLayout(window)
+        header = Header(config_buttons=["menu", "hide"])
+        layout.addWidget(header)
+        header.set_help_text(text, url=url)
+        window.resize(300, 100)
+        window.show()
+        app.processEvents()
+        return header
 
-        def _capture(*args, **kwargs):
-            captured.append(args)
-            return original(*args, **kwargs)
+    def test_clicking_help_shows_the_card_under_the_button(self):
+        header = self._shown_header("Sample help")
+        button = header.buttons["help"]
+        button.click()
+        card = header._help_card
+        self.assertTrue(card.isVisible())
+        self.assertIn("Sample help", card.toPlainText())
+        below = button.mapToGlobal(QtCore.QPoint(0, button.height()))
+        self.assertEqual(card.geometry().top(), below.y())
+        card.hide()
 
-        with patch.object(QtWidgets.QToolTip, "showText", side_effect=_capture):
-            header.buttons["help"].click()
-        self.assertEqual(len(captured), 1)
-        # showText signature: (pos: QPoint, text: str, w: QWidget, ...)
-        self.assertEqual(captured[0][1], "Sample help")
-        self.assertIs(captured[0][2], header.buttons["help"])
+    def test_hovering_help_shows_the_card(self):
+        """The button's tooltip event is the card's, not Qt's tooltip."""
+        header = self._shown_header("Sample help")
+        button = header.buttons["help"]
+        event = QtGui.QHelpEvent(
+            QtCore.QEvent.ToolTip,
+            QtCore.QPoint(2, 2),
+            button.mapToGlobal(QtCore.QPoint(2, 2)),
+        )
+        with patch.object(QtWidgets.QToolTip, "showText") as qt_tip:
+            QtWidgets.QApplication.sendEvent(button, event)
+        self.assertTrue(header._help_card.isVisible())
+        qt_tip.assert_not_called()
+        header._help_card.hide()
 
-    def test_long_help_pops_wrapped(self):
-        """The ``?`` popup is a direct ``showText`` call, so it goes through the
-        presenter explicitly -- a paragraph of help must not pop screen-wide."""
+    def test_long_help_scrolls_inside_a_share_of_the_screen(self):
+        """However long the help, the card never fills the screen's height."""
+        header = self._shown_header("<b>Help</b>" + "<p>A line of help.</p>" * 400)
+        header.show_help()
+        card = header._help_card
+        avail = header.buttons["help"].screen().availableGeometry()
+        self.assertLessEqual(
+            card.height(), int(avail.height() * Header.HELP_MAX_SCREEN_SHARE)
+        )
+        self.assertGreater(card.verticalScrollBar().maximum(), 0, "it scrolls")
+        self.assertTrue(avail.contains(card.geometry()), "on the screen")
+        card.hide()
+
+    def test_short_help_fits_its_text(self):
+        header = self._shown_header("Short help.")
+        header.show_help()
+        card = header._help_card
+        self.assertEqual(card.verticalScrollBar().maximum(), 0, "no scrolling")
+        self.assertLess(card.width(), 300, "as wide as its text, not the screen")
+        card.hide()
+
+    def test_long_help_lays_out_as_a_tooltip_does(self):
+        """Hover and click read alike: the card breaks lines as wrap() does."""
         from pythontk import TooltipFormat
 
         header = self.track_widget(Header(config_buttons=["menu"]))
         long_help = " ".join(["Select the objects to export, then press Run."] * 4)
         header.set_help_text(long_help)
-        captured = []
-        original = QtWidgets.QToolTip.showText
+        html = header.help_html()
+        self.assertEqual(html, TooltipFormat.wrap(long_help, rich=True))
+        self.assertIn("<br>", html, "broken at the tooltip's width")
 
-        def _capture(*args, **kwargs):
-            captured.append(args)
-            return original(*args, **kwargs)
+    def test_the_card_links_the_full_documentation(self):
+        url = "https://example.com/docs/tool.md"
+        header = self._shown_header("Short help.", url=url)
+        self.assertEqual(header.help_url(), url)
+        self.assertIn(f"href='{url}'", header.help_html())
+        header.show_help()
+        card = header._help_card
+        self.assertTrue(card.openExternalLinks())
+        self.assertIn("Full documentation", card.toPlainText())
+        header.set_help_text("Other help.")  # url None: the link stays
+        self.assertEqual(header.help_url(), url)
+        header.set_help_text("Other help.", url="")
+        self.assertNotIn("href", header.help_html())
+        card.hide()
 
-        with patch.object(QtWidgets.QToolTip, "showText", side_effect=_capture):
-            header.buttons["help"].click()
-        QtWidgets.QToolTip.hideText()
-        self.assertEqual(captured[-1][1], TooltipFormat.wrap(long_help))
-        self.assertEqual(captured[-1][-1], TooltipFormat.display_ms(long_help))
+    def test_the_card_hides_once_the_pointer_has_left(self):
+        header = self._shown_header("Sample help")
+        header.show_help()
+        card = header._help_card
+        inside = card.geometry().center()
+        away = card.geometry().bottomRight() + QtCore.QPoint(200, 200)
+        with patch.object(QtGui.QCursor, "pos", return_value=inside):
+            for _ in range(card.LEAVE_SAMPLES + 1):
+                card._check_pointer()
+        self.assertTrue(card.isVisible(), "over the card")
+        with patch.object(QtGui.QCursor, "pos", return_value=away):
+            card._check_pointer()
+            self.assertTrue(card.isVisible(), "a grace to cross the gap")
+            for _ in range(card.LEAVE_SAMPLES):
+                card._check_pointer()
+        self.assertFalse(card.isVisible())
+
+    def test_hiding_the_window_hides_the_card(self):
+        header = self._shown_header("Sample help")
+        header.show_help()
+        self.assertTrue(header.isVisible())
+        header.window().hide()
+        self.assertFalse(header._help_card.isVisible())
 
     def test_header_buttons_are_managed(self):
         """Header buttons are built in code and never registered, so the header
@@ -1170,9 +1390,7 @@ class TestHeaderWindowActions(QtBaseTestCase):
         itself on focus loss leaves nothing to interact with.
         Added: 2026-07-29
         """
-        _, header, _ = self._make_header_window(
-            buttons=("collapse", "minimize", "pin", "hide")
-        )
+        _, header, _ = self._make_header_window(buttons=("collapse", "minimize", "pin"))
         self.assertFalse(header.pinned)
         header.toggle_collapse()
         app.processEvents()
@@ -1186,9 +1404,7 @@ class TestHeaderWindowActions(QtBaseTestCase):
         collapse auto-pin is a programmatic state change and must still pin.
         Added: 2026-07-29
         """
-        _, header, _ = self._make_header_window(
-            buttons=("collapse", "minimize", "pin", "hide")
-        )
+        _, header, _ = self._make_header_window(buttons=("collapse", "minimize", "pin"))
         header.pin_on_drag_only = True
         header.toggle_collapse()
         app.processEvents()
@@ -1204,9 +1420,7 @@ class TestHeaderWindowActions(QtBaseTestCase):
 
     def test_toggle_collapse_expand_leaves_pin_state(self):
         """Expanding must not unpin — the user may have pinned deliberately."""
-        _, header, _ = self._make_header_window(
-            buttons=("collapse", "minimize", "pin", "hide")
-        )
+        _, header, _ = self._make_header_window(buttons=("collapse", "minimize", "pin"))
         header.toggle_collapse()
         app.processEvents()
         header.toggle_collapse()
@@ -1244,7 +1458,7 @@ class TestHeaderWindowActions(QtBaseTestCase):
 
     def test_hide_window_hides_parent(self):
         """Should hide parent window."""
-        window, header, _ = self._make_header_window(buttons=("pin", "hide"))
+        window, header, _ = self._make_header_window(buttons=("hide",))
         header.hide_window()
         self.assertFalse(window.isVisible())
 
@@ -1474,15 +1688,15 @@ class TestHeaderConfigButtonsMethod(QtBaseTestCase):
     def test_config_buttons_accepts_list(self):
         """Should accept list of button names."""
         header = self.track_widget(Header())
-        header.config_buttons(["pin", "hide"])
-        self.assertIn("pin", header.buttons)
+        header.config_buttons(["menu", "hide"])
+        self.assertIn("menu", header.buttons)
         self.assertIn("hide", header.buttons)
 
     def test_config_buttons_accepts_args(self):
         """Should accept button names as args."""
         header = self.track_widget(Header())
-        header.config_buttons("pin", "hide")
-        self.assertIn("pin", header.buttons)
+        header.config_buttons("menu", "hide")
+        self.assertIn("menu", header.buttons)
         self.assertIn("hide", header.buttons)
 
     def test_config_buttons_clears_existing(self):
@@ -1856,6 +2070,47 @@ class TestHeaderDragCursor(QtBaseTestCase):
             header, QtGui.QHoverEvent(QtCore.QEvent.HoverMove, local, glob, local)
         )
         self.assertFalse(header.underMouse())
+
+
+class TestNoContextSingleShot(unittest.TestCase):
+    """No uitk module calls ``QTimer.singleShot(ms, context, callable)``.
+
+    PySide 6.5.3 -- Maya 2025's -- has no such overload: the call raises
+    ``TypeError``, so a header drag's release threw and left its rescale
+    guard attached, and the UI Browser's first show threw inside its
+    theming. CI runs a newer PySide that has it, so only this scan sees it.
+    A deferral bound to an object's life is a child ``QTimer(owner)`` with
+    ``setSingleShot(True)`` -- or ``singleShot(ms, receiver, "slot()")``.
+    Lives here beside the drag guard it broke; it covers every module.
+    """
+
+    @staticmethod
+    def _offenders(root):
+        import ast
+
+        offenders = []
+        for path in sorted(root.rglob("*.py")):
+            if "temp_tests" in path.parts:
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "singleShot"
+                    and len(node.args) >= 3
+                    and not (
+                        isinstance(node.args[2], ast.Constant)
+                        and isinstance(node.args[2].value, str)
+                    )
+                ):
+                    offenders.append(f"{path.relative_to(root)}:{node.lineno}")
+        return offenders
+
+    def test_no_uitk_module_calls_the_context_overload(self):
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent / "uitk"
+        self.assertEqual(self._offenders(root), [], self.__doc__.split("\n")[0])
 
 
 # -----------------------------------------------------------------------------

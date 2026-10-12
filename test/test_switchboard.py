@@ -2667,6 +2667,62 @@ class TestDialogsYieldToBusyCursor(QtBaseTestCase):
         finally:
             dlg.close()
 
+    def test_preview_dialog_renders_live_and_routes_its_actions(self):
+        """``preview_dialog``: a non-modal viewer whose text follows its option
+        rows, its buttons calling the caller's actions without closing it."""
+        sb = Switchboard()
+        calls = []
+        dlg = sb.preview_dialog(
+            lambda values: f"as {values['fmt']}",
+            [
+                {
+                    "key": "fmt",
+                    "kind": "choice",
+                    "default": "csv",
+                    "choices": (("CSV", "csv"), ("JSON", "json")),
+                }
+            ],
+            actions={"Copy": lambda box: calls.append(box.preview_values["fmt"])},
+            title="Export",
+        )
+        try:
+            self.assertEqual(dlg.text_edit.toPlainText(), "as csv")
+            fmt = dlg.preview_widgets["fmt"]
+            fmt.setCurrentIndex(fmt.findData("json"))
+            self.assertEqual(dlg.text_edit.toPlainText(), "as json")
+            copy = next(b for b in dlg.button_box.buttons() if b.text() == "Copy")
+            copy.click()
+            self.assertEqual(calls, ["json"])
+            self.assertTrue(dlg.isVisible())
+        finally:
+            dlg.close()
+
+    def test_preview_dialog_runs_an_action_named_in_any_case(self):
+        """Bug: an action was validated case-insensitively against the
+        buttons but looked up by the exact name a click reports (the
+        canonical ``"Copy"``), so ``{"copy": ...}`` got its button and never
+        ran.
+        Fixed: 2026-10-12"""
+        sb = Switchboard()
+        calls = []
+        dlg = sb.preview_dialog(
+            lambda values: "text", actions={"copy": lambda box: calls.append(True)}
+        )
+        try:
+            copy = next(b for b in dlg.button_box.buttons() if b.text() == "Copy")
+            copy.click()
+            self.assertEqual(calls, [True])
+        finally:
+            dlg.close()
+
+    def test_preview_dialog_refuses_an_action_no_button_carries(self):
+        """An action named for no :attr:`TextViewBox.BUTTONS` entry would get
+        no button and never run -- said at once, not left to be found."""
+        sb = Switchboard()
+        with self.assertRaises(ValueError) as caught:
+            sb.preview_dialog(lambda values: "", actions={"Export": print})
+        self.assertIn("'Export'", str(caught.exception))
+
     def test_data_view_dialog_empty_data_is_a_message_not_a_viewer(self):
         """Nothing to show -- an empty container, or a store whose carriers are
         all empty -- says so in a message box instead of opening a blank viewer."""

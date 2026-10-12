@@ -141,6 +141,10 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             # windows (and the popup menus they open) only, where the desktop
             # can blur (Bootstrap.blurs).
             "WINDOW_BLUR": "on",
+            # WINDOW_BACKGROUND's alpha, in percent, while the blur is on:
+            # under 100% shows more of the frosted desktop. The blur itself
+            # has no strength to set; unblurred, the fill keeps its alpha.
+            "WINDOW_BLUR_OPACITY": "60%",
         },
         "dark": {
             # Surfaces
@@ -192,6 +196,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "LINK_COLOR": "rgb(130,170,210)",
             "LINK_VISITED_COLOR": "rgb(160,150,190)",
             "WINDOW_BLUR": "on",
+            "WINDOW_BLUR_OPACITY": "60%",
         },
         # Accessibility default: WCAG-minded high-contrast dark. Opaque
         # surfaces (no translucency — it degrades legibility over busy
@@ -249,6 +254,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "LINK_COLOR": "rgb(77,166,255)",
             "LINK_VISITED_COLOR": "rgb(204,153,255)",
             "WINDOW_BLUR": "off",  # opaque surfaces: nothing shows through to blur
+            "WINDOW_BLUR_OPACITY": "100%",
         },
     }
 
@@ -267,14 +273,15 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
     _derived_token_suffixes = ("_TINT",)
     # Derived tokens with explicit (non-suffix) names — kept separate because
     # their names share suffixes (``_BACKGROUND``) with real exposed tokens.
-    _derived_token_names = ("DISABLED_CHECKED_BACKGROUND",)
+    # ``WINDOW_FILL`` is WINDOW_BACKGROUND as a window paints it: thinned to
+    # WINDOW_BLUR_OPACITY while the desktop behind it blurs.
+    _derived_token_names = ("DISABLED_CHECKED_BACKGROUND", "WINDOW_FILL")
     # Disabled-but-checked background: the disabled background nudged a little
     # toward the checked accent, so a checked toggle that's been disabled reads
     # as *disabled with a hint of checked* rather than fully active.
     _disabled_checked_mix = 0.22
-    _color_pat = re.compile(
-        r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)|"
-        r"#([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?"
+    _rgb_pat = re.compile(
+        r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)"
     )
 
     @classmethod
@@ -293,11 +300,65 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         """Subtly lighten ``color_str`` by mixing toward white.
 
         ``mix`` is the white-blend ratio (0.0 = unchanged, 1.0 = white).
-        Preserves the input format (``rgb``/``rgba``/``#hex``/``#hexa``)
-        and the alpha channel. Returns ``color_str`` unchanged if the
-        format isn't recognized.
+        Preserves the input format (``rgb``/``rgba``, else ``#rrggbb``/
+        ``#aarrggbb``) and the alpha channel. Returns ``color_str``
+        unchanged if the format isn't recognized.
         """
         return cls._blend(color_str, "rgb(255,255,255)", mix)
+
+    @classmethod
+    def _parse_color(cls, s: str):
+        """``(r, g, b, alpha, fmt)`` for a color as Qt reads it, or None.
+
+        ``rgb()``/``rgba()`` is ``fmt="rgb"`` with its own alpha text; any
+        other form Qt names -- ``#rgb``, ``#rrggbb``, ``#aarrggbb`` (alpha
+        FIRST, as Qt reads it), a color name -- is ``fmt="hex"`` with its
+        alpha as two hex digits. ``alpha`` is None when the color has none
+        (opaque).
+        """
+        s = s.strip()
+        m = cls._rgb_pat.fullmatch(s)
+        if m:
+            return int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4), "rgb"
+        color = QtGui.QColor(s)
+        if not color.isValid():
+            return None
+        a = color.alpha()
+        return (
+            color.red(),
+            color.green(),
+            color.blue(),
+            (None if a == 255 else f"{a:02x}"),
+            "hex",
+        )
+
+    @staticmethod
+    def _alpha(color) -> float:
+        """The 0-255 alpha of a :meth:`_parse_color` result, as Qt reads it:
+        an ``rgba()`` alpha that is a decimal or at most 1 is a fraction
+        (``0.5`` paints 127, ``1`` opaque), any other integer 0-255, and a
+        color without alpha is opaque."""
+        alpha, fmt = color[3], color[4]
+        if alpha is None:
+            return 255.0
+        if fmt == "hex":
+            return float(int(alpha, 16))
+        a = float(alpha)
+        return a * 255 if "." in alpha or a <= 1 else a
+
+    @classmethod
+    def _scale_alpha(cls, color_str: str, factor: float) -> str:
+        """``color_str`` with its alpha (:meth:`_alpha`) multiplied by
+        ``factor``, as ``rgba()`` -- alpha 1 written as a fraction, which Qt
+        would read as opaque. Returns ``color_str`` unchanged if it can't be
+        parsed.
+        """
+        color = cls._parse_color(color_str)
+        if not color:
+            return color_str
+        r, g, b = color[:3]
+        n = max(0, min(255, round(cls._alpha(color) * factor)))
+        return f"rgba({r},{g},{b},{'0.004' if n == 1 else n})"
 
     @classmethod
     def _blend(cls, base_str: str, accent_str: str, mix: float = 0.5) -> str:
@@ -306,23 +367,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         Linear RGB interpolation; the result keeps ``base``'s format and alpha.
         Returns ``base_str`` unchanged if either color can't be parsed.
         """
-
-        def parse(s: str):
-            m = cls._color_pat.fullmatch(s.strip())
-            if not m:
-                return None
-            if m.group(1) is not None:
-                return (
-                    int(m.group(1)),
-                    int(m.group(2)),
-                    int(m.group(3)),
-                    m.group(4),
-                    "rgb",
-                )
-            h6, ha = m.group(5), m.group(6)
-            return int(h6[0:2], 16), int(h6[2:4], 16), int(h6[4:6], 16), ha, "hex"
-
-        base, accent = parse(base_str), parse(accent_str)
+        base, accent = cls._parse_color(base_str), cls._parse_color(accent_str)
         if not base or not accent:
             return base_str
         r = round(base[0] + (accent[0] - base[0]) * mix)
@@ -334,7 +379,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
                 if base[3] is not None
                 else f"rgb({r},{g},{b})"
             )
-        return f"#{r:02x}{g:02x}{b:02x}{base[3] or ''}"
+        return f"#{base[3] or ''}{r:02x}{g:02x}{b:02x}"
 
     @classmethod
     def _derive_internal_vars(cls, theme_vars: dict) -> None:
@@ -342,9 +387,11 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
 
         Called right before QSS template assembly so the derived values always
         track the resolved sources (base + global overrides + widget overrides
-        + kwargs): the ``<NAME>_TINT`` hover companions, and
+        + kwargs): the ``<NAME>_TINT`` hover companions,
         ``DISABLED_CHECKED_BACKGROUND`` (disabled bg nudged toward the checked
-        accent — see :attr:`_disabled_checked_mix`).
+        accent — see :attr:`_disabled_checked_mix`), and ``WINDOW_FILL``
+        (WINDOW_BACKGROUND at WINDOW_BLUR_OPACITY of its alpha while the
+        theme blurs on a desktop that can; as authored otherwise).
         """
         for name in cls._tint_sources:
             base = theme_vars.get(name)
@@ -356,6 +403,12 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             theme_vars["DISABLED_CHECKED_BACKGROUND"] = cls._blend(
                 disabled, checked, cls._disabled_checked_mix
             )
+        fill = theme_vars.get("WINDOW_BACKGROUND")
+        if fill is not None:
+            if cls.is_on(theme_vars.get("WINDOW_BLUR")) and Bootstrap.blurs():
+                opacity = cls.percent(theme_vars.get("WINDOW_BLUR_OPACITY"))
+                fill = cls._scale_alpha(fill, opacity / 100)
+            theme_vars["WINDOW_FILL"] = fill
 
     _qss_cache: dict[str, str] = {}
     # Parsed-template cache: cache_key -> [literal, TOKEN, literal, TOKEN, ...].
@@ -734,6 +787,13 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
         """Parse a switch token (e.g. ``WINDOW_BLUR``): ``"on"``/``"true"``/
         ``"yes"``/``"1"`` are on, anything else (``"off"``, unset) is off."""
         return str(value or "").strip().lower() in ("on", "true", "yes", "1")
+
+    @staticmethod
+    def percent(value, default: float = 100.0) -> float:
+        """Parse a percent token (e.g. ``WINDOW_BLUR_OPACITY``) to its leading
+        number: ``"80%"`` -> ``80.0``; *default* when it has none."""
+        m = re.match(r"\s*(\d+(?:\.\d+)?)", str(value or ""))
+        return float(m.group(1)) if m else default
 
     @classmethod
     def get_variables(cls, theme: str = "light") -> list[str]:

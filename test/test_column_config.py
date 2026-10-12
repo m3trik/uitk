@@ -206,6 +206,16 @@ class ColumnConfigTest(_ColumnCase):
         self.assertFalse(ColumnConfig.of(view).set_hidden(0, True))
         self.assertEqual(self.hidden(view), [])
 
+    def test_an_unlabelled_column_is_named_by_its_header_tooltip(self):
+        """An icon-button column carries no header text; its row in the menu
+        reads the header's tooltip rather than a blank or ``Column <n>``."""
+        view = self.make(QtWidgets.QTableWidget)
+        item = QtWidgets.QTableWidgetItem("")
+        item.setToolTip("Close")
+        view.setHorizontalHeaderItem(3, item)
+        ColumnConfig.attach(view, settings=self.settings)
+        self.assertEqual(list(self.pick(view)), ["Name", "Type", "Value", "Close"])
+
     def test_dismissing_the_menu_changes_nothing(self):
         view = self.make(QtWidgets.QTableWidget)
         ColumnConfig.attach(view, settings=self.settings)
@@ -375,6 +385,28 @@ class ColumnFillTest(_ColumnCase):
         widths = self.widths(view)
         self.assertEqual(widths["Notes"], 60, "back to its own width")
         self.assertGreater(widths["Type"], 300)
+
+    def test_a_fixed_column_last_never_takes_the_fill(self):
+        """Every filling column hidden, the fill goes to the last shown column
+        that sizes freely -- never a fixed one (an icon-button column) that
+        happens to be last -- and comes back when a filling column returns."""
+        H = self.H
+        view, header = self.fill_table([H.Interactive, H.Stretch, H.Fixed, H.Fixed])
+        config = ColumnConfig.attach(view, settings=self.settings)
+        config.set_hidden(1, True)
+        widths = self.widths(view)
+        self.assertEqual((widths["Value"], widths["Notes"]), (60, 60), "fixed stay")
+        self.assertEqual(
+            sum(widths.values()) - widths["Type"],
+            view.viewport().width(),
+            "no gap at the right",
+        )
+        self.assertGreater(widths["Name"], 300)
+        config.set_hidden(1, False)
+        widths = self.widths(view)
+        self.assertEqual(widths["Name"], 60, "back to its own width")
+        self.assertGreater(widths["Type"], 300)
+        self.assertEqual(header.sectionResizeMode(0), H.Interactive)
 
     def test_a_view_that_never_filled_is_left_as_it_is(self):
         view, header = self.fill_table([self.H.Interactive] * 4)

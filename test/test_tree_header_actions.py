@@ -4,7 +4,7 @@
 
 import unittest
 from conftest import QtBaseTestCase
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets
 
 from uitk.widgets.treeWidget import TreeWidget, _HeaderActionBar
 

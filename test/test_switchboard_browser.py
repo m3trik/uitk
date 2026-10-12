@@ -17,8 +17,9 @@ Covers:
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from conftest import QtBaseTestCase, QtWait, setup_qt_application
+from conftest import QtBaseTestCase, QtWait, setup_qt_application, write_ui_file
 
 app = setup_qt_application()
 
@@ -41,23 +42,9 @@ from uitk.widgets.editors.switchboard_browser import (
 )
 
 
-def _write_ui(path, name, tags_csv=None):
-    tag_block = ""
-    if tags_csv is not None:
-        tag_block = (
-            f'<property name="uitk_tags" stdset="0">'
-            f"<string>{tags_csv}</string></property>"
-        )
-    content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<ui version="4.0">
- <class>{name.capitalize()}</class>
- <widget class="QMainWindow" name="{name}">
-  {tag_block}
- </widget>
-</ui>
-"""
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
+ALPHA_DESCRIPTION = (
+    "Pose and key the alpha rig, with a long tail that a narrow column elides."
+)
 
 
 class BrowserBase(QtBaseTestCase):
@@ -67,9 +54,14 @@ class BrowserBase(QtBaseTestCase):
         super().setUp()
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = self.tmp.name
-        _write_ui(os.path.join(self.dir, "alpha.ui"), "alpha", "anim,rig")
-        _write_ui(os.path.join(self.dir, "beta.ui"), "beta", "anim")
-        _write_ui(os.path.join(self.dir, "gamma.ui"), "gamma", "")
+        write_ui_file(
+            os.path.join(self.dir, "alpha.ui"),
+            "alpha",
+            "anim,rig",
+            description=ALPHA_DESCRIPTION,
+        )
+        write_ui_file(os.path.join(self.dir, "beta.ui"), "beta", "anim")
+        write_ui_file(os.path.join(self.dir, "gamma.ui"), "gamma", "")
         # Fresh settings namespace per test to avoid cross-test pollution.
         # ``clear()`` removes the keys so first-time defaults take effect on
         # the next read (setting them to None would store None and override
@@ -252,7 +244,7 @@ class HideSystem(BrowserBase):
 class LiveSignalUpdates(BrowserBase):
     def test_on_ui_registered_inserts_row(self):
         with tempfile.TemporaryDirectory() as d2:
-            _write_ui(os.path.join(d2, "delta.ui"), "delta", "new_tag")
+            write_ui_file(os.path.join(d2, "delta.ui"), "delta", "new_tag")
             self.sb.register(ui_location=d2)
         self.assertIn("delta", self.browser._model._names)
 
@@ -420,11 +412,11 @@ class DoubleClickLaunch(BrowserBase):
 
 
 class TableLayout(BrowserBase):
-    def test_model_has_four_columns(self):
+    def test_model_has_five_columns(self):
         self.assertEqual(
             self.browser._model.columnCount(), SwitchboardBrowserModel.COLUMN_COUNT
         )
-        self.assertEqual(self.browser._model.columnCount(), 4)
+        self.assertEqual(self.browser._model.columnCount(), 5)
 
     def test_tags_column_is_editable(self):
         idx = self.browser._model.index(0, SwitchboardBrowserModel.COL_TAGS)
@@ -710,7 +702,7 @@ class SwitchboardConstruction(QtBaseTestCase):
 
     def test_uses_provided_switchboard(self):
         with tempfile.TemporaryDirectory() as d:
-            _write_ui(os.path.join(d, "alpha.ui"), "alpha")
+            write_ui_file(os.path.join(d, "alpha.ui"), "alpha")
             sb = Switchboard(ui_source=d, log_level="WARNING")
             sb.settings.branch("ui_browser").clear()
             browser = SwitchboardBrowser(switchboard=sb)
@@ -738,7 +730,7 @@ class SwitchboardConstruction(QtBaseTestCase):
         # ``ui_source`` (and any other Switchboard kwarg) flows through
         # to the auto-created instance.
         with tempfile.TemporaryDirectory() as d:
-            _write_ui(os.path.join(d, "beta.ui"), "beta")
+            write_ui_file(os.path.join(d, "beta.ui"), "beta")
             browser = SwitchboardBrowser(ui_source=d, log_level="WARNING")
             try:
                 browser.sb.settings.branch("ui_browser").clear()
@@ -1266,10 +1258,10 @@ class EntryFilterStructural(QtBaseTestCase):
         super().setUp()
         self.tmp = tempfile.TemporaryDirectory()
         d = self.tmp.name
-        _write_ui(os.path.join(d, "alpha.ui"), "alpha", "anim")
-        _write_ui(os.path.join(d, "delta.ui"), "delta", "")
-        _write_ui(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
-        _write_ui(os.path.join(d, "uv#submenu.ui"), "uv_submenu")
+        write_ui_file(os.path.join(d, "alpha.ui"), "alpha", "anim")
+        write_ui_file(os.path.join(d, "delta.ui"), "delta", "")
+        write_ui_file(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
+        write_ui_file(os.path.join(d, "uv#submenu.ui"), "uv_submenu")
         # Editor rows opted out: the filter cases count registered UIs.
         self.sb = Switchboard(
             ui_source=d, log_level="WARNING", handlers={"editor": None}
@@ -1366,10 +1358,18 @@ class EntryFilterStructural(QtBaseTestCase):
         browser = self._make_browser()
         proxy = browser._proxy
         self.assertGreater(proxy.rowCount(), 0, "need at least one visible row")
+        # Close is offered only on an open window's row: open the first one.
+        ui = getattr(self.sb.loaded_ui, proxy.index(0, 0).data())
+        ui.show()
+        self.addCleanup(ui.hide)
+        for _ in range(5):  # the row rebuild is deferred
+            QtWidgets.QApplication.processEvents()
 
         # Baseline: the first visible row carries action + close buttons.
         action_idx = proxy.index(0, SwitchboardBrowserModel.COL_ACTION)
         self.assertIsNotNone(browser._view.indexWidget(action_idx))
+        close_idx = proxy.index(0, SwitchboardBrowserModel.COL_CLOSE)
+        self.assertIsNotNone(browser._view.indexWidget(close_idx))
 
         # Coarse registry change → beginResetModel/endResetModel. This is
         # what an entries-changed signal drives (handler add/remove).
@@ -1386,6 +1386,287 @@ class EntryFilterStructural(QtBaseTestCase):
             browser._view.indexWidget(close_idx),
             "close button missing after a model reset",
         )
+
+
+class RowButtons(BrowserBase):
+    """Close sits left of Launch and shows only on an open window's row;
+    Launch keeps its icon and, while the window is open, tints it the theme's
+    checked color over an unchanged ground. A refresh updates the buttons in
+    place, so a press is never cut off by a rebuild."""
+
+    M = SwitchboardBrowserModel
+
+    def _button(self, name, column):
+        model = self.browser._model
+        row = model._names.index(name)
+        proxy = self.browser._proxy.mapFromSource(model.index(row, column))
+        container = self.browser._view.indexWidget(proxy)
+        return container.findChild(QtWidgets.QPushButton) if container else None
+
+    def _settle(self):
+        for _ in range(5):
+            QtWidgets.QApplication.processEvents()
+
+    def _open(self, name):
+        ui = getattr(self.sb.loaded_ui, name)
+        ui.show()
+        self.addCleanup(ui.hide)
+        self._settle()
+        return ui
+
+    def test_close_sits_left_of_launch(self):
+        self.assertEqual(self.M.COL_CLOSE + 1, self.M.COL_ACTION)
+
+    def test_an_open_window_tints_its_launch_icon_and_keeps_the_ground(self):
+        from uitk.managers.icon_manager import IconManager
+
+        launch = self._button("alpha", self.M.COL_ACTION)
+        self.assertFalse(launch.isCheckable(), "state is the glyph, not a check")
+        info = IconManager.registered_info(launch)
+        self.assertEqual((info["name"], info["color"]), ("open_external", None))
+
+        self._open("alpha")
+        launch = self._button("alpha", self.M.COL_ACTION)
+        info = IconManager.registered_info(launch)
+        self.assertEqual(info["name"], "open_external")
+        checked = IconManager._normalize_color(
+            self.browser.style.resolve_variable("BUTTON_CHECKED", launch)
+        )
+        self.assertEqual(info["color"], checked, "the theme's checked color")
+        self.assertFalse(launch.isChecked())
+
+        focused = []
+        self.browser._focus = focused.append
+        launch.click()
+        self.assertEqual(focused, ["alpha"], "an open window's click focuses it")
+
+    def test_a_theme_change_retints_an_open_windows_launch(self):
+        """A tinted icon is pinned, so the theme's icon sweep passes it by;
+        the browser re-tints it on its own style change."""
+        from uitk.managers.icon_manager import IconManager
+        from uitk.themes.style_sheet import StyleSheet
+
+        self._open("alpha")
+        for theme in ("dark", "high-contrast"):
+            StyleSheet().set(self.browser, theme=theme)
+            self._settle()
+            launch = self._button("alpha", self.M.COL_ACTION)
+            self.assertEqual(
+                IconManager.registered_info(launch)["color"],
+                IconManager._normalize_color(
+                    StyleSheet.themes[theme]["BUTTON_CHECKED"]
+                ),
+                theme,
+            )
+
+    def test_a_new_launch_button_has_its_icon_without_a_checked_color(self):
+        """A theme without BUTTON_CHECKED leaves an open row's Launch untinted,
+        not blank."""
+        from uitk.managers.icon_manager import IconManager
+
+        self._open("alpha")
+        model = self.browser._model
+        proxy = self.browser._proxy.mapFromSource(
+            model.index(model._names.index("alpha"), self.M.COL_ACTION)
+        )
+        self.browser._view.setIndexWidget(proxy, None)  # a row that needs a new one
+        with patch.object(self.browser.style, "resolve_variable", return_value=None):
+            self.browser._refresh_row_widgets()
+        info = IconManager.registered_info(self._button("alpha", self.M.COL_ACTION))
+        self.assertEqual((info or {}).get("name"), "open_external")
+
+    def test_close_is_offered_only_on_an_open_windows_row(self):
+        col = self.M.COL_CLOSE
+        self.assertFalse(self._button("alpha", col).isVisibleTo(self.browser))
+
+        ui = self._open("alpha")
+        close = self._button("alpha", col)
+        self.assertTrue(close.isVisibleTo(self.browser))
+        close.click()
+        self._settle()
+        self.assertFalse(ui.isVisible())
+        self.assertFalse(self._button("alpha", col).isVisibleTo(self.browser))
+
+    def test_a_refresh_updates_the_buttons_in_place(self):
+        """Another window opening or closing never replaces a row's buttons
+        (a press on one that a rebuild deleted would never click)."""
+        before = {
+            (n, c): self._button(n, c)
+            for n in ("alpha", "beta")
+            for c in (self.M.COL_ACTION, self.M.COL_CLOSE)
+        }
+        ui = self._open("beta")
+        ui.hide()
+        self._settle()
+        self.browser._do_full_refresh()
+        for (name, column), button in before.items():
+            self.assertIs(self._button(name, column), button, (name, column))
+
+
+class ChipStrip(BrowserBase):
+    """The clickable tag strip auto-hides: it shows while the search row or
+    the strip is hovered, or while a tag filter is on, and never when it has
+    no tags to offer."""
+
+    def _strip(self):
+        return self.browser._chip_scroll
+
+    def _search_row(self):
+        return self.browser._search.parentWidget()  # the option-box container
+
+    def _hover(self, widget, inside=True):
+        kind = QtCore.QEvent.Enter if inside else QtCore.QEvent.Leave
+        QtWidgets.QApplication.sendEvent(widget, QtCore.QEvent(kind))
+        QtWidgets.QApplication.processEvents()
+
+    def _outlast_the_hide_delay(self):
+        from qtpy.QtTest import QTest
+
+        QTest.qWait(self.browser.CHIP_HIDE_DELAY_MS + 150)
+
+    def test_the_strip_shows_while_the_search_row_is_hovered(self):
+        self.assertFalse(self._strip().isVisible(), "hidden until wanted")
+        self._hover(self._search_row())
+        self.assertTrue(self._strip().isVisible())
+        self._hover(self._search_row(), inside=False)
+        self._hover(self._strip())  # moving down onto the chips keeps it
+        self._outlast_the_hide_delay()
+        self.assertTrue(self._strip().isVisible())
+        self._hover(self._strip(), inside=False)
+        self._outlast_the_hide_delay()
+        self.assertFalse(self._strip().isVisible())
+
+    def test_an_active_tag_filter_keeps_the_strip_shown(self):
+        self._hover(self._search_row())
+        self.browser._chip_buttons["anim"].setChecked(True)
+        self._hover(self._search_row(), inside=False)
+        self._outlast_the_hide_delay()
+        QtWidgets.QApplication.processEvents()
+        self.assertTrue(self._strip().isVisible(), "an active filter stays shown")
+
+    def test_a_strip_with_no_tags_never_shows(self):
+        self.browser._search.setText("gamma")  # the one untagged UI
+        self.browser._apply_filter()
+        for _ in range(5):
+            QtWidgets.QApplication.processEvents()
+        self.assertEqual(self.browser._chip_buttons, {})
+        self._hover(self._search_row())
+        self.assertFalse(self._strip().isVisible())
+
+
+class HeaderColumns(BrowserBase):
+    """The header's right-click menu shows and hides columns (ColumnConfig),
+    and the Description column reads the entry's description."""
+
+    M = SwitchboardBrowserModel
+
+    def config(self, browser=None):
+        from uitk.widgets.column_config import ColumnConfig
+
+        return ColumnConfig.of((browser or self.browser)._view)
+
+    def hidden(self, browser=None):
+        header = (browser or self.browser)._view.horizontalHeader()
+        return [c for c in range(header.count()) if header.isSectionHidden(c)]
+
+    def test_the_menu_names_every_column_and_name_cannot_be_hidden(self):
+        config = self.config()
+        self.assertIsNotNone(config, "the header has a column menu")
+        self.assertEqual(
+            config.labels(), ["Name", "Tags", "Description", "Close", "Launch"]
+        )
+        self.assertFalse(config.set_hidden(self.M.COL_NAME, True))
+
+    def test_description_starts_hidden_and_a_choice_is_kept(self):
+        self.assertEqual(self.hidden(), [self.M.COL_DESC])
+        config = self.config()
+        config.set_hidden(self.M.COL_DESC, False)
+        config.set_hidden(self.M.COL_TAGS, True)
+        again = self.track_widget(SwitchboardBrowser(self.sb))
+        self.assertEqual(self.hidden(again), [self.M.COL_TAGS])
+
+    def test_a_browser_can_default_other_columns_under_its_own_layout(self):
+        """The hub's browser hides Tags and shows Description by default; its
+        layout is kept apart, so the main browser's choices never reach it."""
+        self.config().set_hidden(self.M.COL_CLOSE, True)  # the main browser's
+        hub = self.track_widget(
+            SwitchboardBrowser(self.sb, hidden_by_default=["tags"], layout_key="hub")
+        )
+        self.assertEqual(self.hidden(hub), [self.M.COL_TAGS])
+
+    def test_one_column_can_be_named_alone_and_a_typo_names_the_choices(self):
+        hub = self.track_widget(
+            SwitchboardBrowser(self.sb, hidden_by_default="Tags", layout_key="one")
+        )
+        self.assertEqual(self.hidden(hub), [self.M.COL_TAGS])
+        with self.assertRaises(ValueError) as caught:
+            SwitchboardBrowser(self.sb, hidden_by_default=["tag"], layout_key="typo")
+        self.assertIn("'tag'", str(caught.exception))
+        self.assertIn("description", str(caught.exception))
+
+    def test_a_column_can_be_its_index_and_none_hides_none(self):
+        resolve = SwitchboardBrowser._column_indices
+        self.assertEqual(resolve([self.M.COL_TAGS, "Description"]), [1, 2])
+        self.assertEqual(resolve(self.M.COL_TAGS), [self.M.COL_TAGS])
+        self.assertEqual(resolve(None), [])
+        for bad in ([self.M.COLUMN_COUNT], [-1], [True], [1.0], 1.0, object()):
+            with self.assertRaises(ValueError, msg=bad):
+                resolve(bad)
+        # A one-pass iterable is read once: a bad name in it is still named.
+        with self.assertRaises(ValueError):
+            resolve(c for c in ("tags", "nope"))
+
+    def test_the_description_cell_shows_it_and_its_tooltip_shows_it_all(self):
+        model = self.browser._model
+        row = model._names.index("alpha")
+        cell = model.index(row, self.M.COL_DESC)
+        self.assertEqual(cell.data(), ALPHA_DESCRIPTION)
+        self.assertEqual(cell.data(QtCore.Qt.ToolTipRole), ALPHA_DESCRIPTION)
+        bare = model.index(model._names.index("gamma"), self.M.COL_DESC)
+        self.assertIsNone(bare.data(QtCore.Qt.ToolTipRole), "no empty tooltip")
+
+    def test_with_tags_and_description_hidden_the_name_takes_the_width(self):
+        self.config().set_hidden(self.M.COL_TAGS, True)
+        QtWidgets.QApplication.processEvents()
+        view = self.browser._view
+        header = view.horizontalHeader()
+        self.assertEqual(header.sectionSize(self.M.COL_ACTION), 22)
+        self.assertEqual(header.sectionSize(self.M.COL_CLOSE), 22)
+        self.assertEqual(
+            header.sectionSize(self.M.COL_NAME), view.viewport().width() - 44
+        )
+
+
+class WindowSize(BrowserBase):
+    """The browser comes back at the size it was closed at, in a new session
+    too (its geometry is persisted, like the other editors' windows)."""
+
+    def _reopen(self, **kwargs):
+        again = self.track_widget(SwitchboardBrowser(self.sb, **kwargs))
+        again.show()
+        QtWidgets.QApplication.processEvents()
+        return again
+
+    def test_a_resized_browser_comes_back_at_its_size(self):
+        self.browser.resize(611, 433)
+        QtWidgets.QApplication.processEvents()
+        self.browser.hide()  # the close path saves
+        self.assertEqual(self._reopen().size(), QtCore.QSize(611, 433))
+
+    def test_a_first_show_keeps_the_size_it_was_given(self):
+        """Nothing saved: no fit to content shrinks it (BrowserBase sized it)."""
+        self.assertEqual(self.browser.size(), QtCore.QSize(500, 300))
+
+    def test_a_browser_with_its_own_layout_keeps_its_own_size(self):
+        hub = self._reopen(layout_key="hub")
+        hub.resize(377, 288)
+        QtWidgets.QApplication.processEvents()
+        hub.hide()
+        self.browser.resize(611, 433)
+        QtWidgets.QApplication.processEvents()
+        self.browser.hide()
+        self.assertEqual(self._reopen(layout_key="hub").size(), QtCore.QSize(377, 288))
+        self.assertEqual(self._reopen().size(), QtCore.QSize(611, 433))
 
 
 class DuplicateNameCollisionRendersOneRow(BrowserBase):

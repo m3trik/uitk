@@ -708,6 +708,24 @@ class ShortcutManager:
         self.gestures.setdefault(group, []).append((keys, description))
         self.add_info_entry(f"{keys} ({group})", description)
 
+    def remove_gesture_group(self, group: str) -> bool:
+        """Drop every gesture of *group* and its read-only shortcut-editor rows.
+
+        For a widget whose surface changes under the same manager (a
+        sequencer switching editors): the legend then shows only the
+        gestures that still apply.
+
+        Returns:
+            True when the group existed.
+        """
+        rows = self.gestures.pop(group, None)
+        if rows is None:
+            return False
+        for keys, _description in rows:
+            self.shortcuts.pop(f"{keys} ({group})", None)
+        self._notify_change()
+        return True
+
     def overlay(
         self, host: QtWidgets.QWidget, anchor: str = "bottom-right", max_keys: int = 4
     ):

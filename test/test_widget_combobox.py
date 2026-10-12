@@ -573,7 +573,7 @@ class TestWidgetComboBoxOverflowArrows(QtBaseTestCase):
 
 
 class TestWidgetComboBoxArrowAffordance(QtBaseTestCase):
-    """The optional dropdown affordance: off by default, opt-in triangle,
+    """The optional dropdown affordance: off by default, opt-in chevron,
     custom icon override, and alpha."""
 
     def test_arrow_off_by_default(self):
@@ -619,7 +619,7 @@ class TestWidgetComboBoxArrowAffordance(QtBaseTestCase):
         self.assertEqual(combo.arrow_alpha, 0.5)
 
     def test_paint_paths_do_not_crash(self):
-        """Every affordance path (none / triangle / icon / alpha) paints
+        """Every affordance path (none / chevron / icon / alpha) paints
         without error offscreen."""
         from uitk.widgets.widgetComboBox import WidgetComboBox
         from qtpy import QtGui, QtCore
@@ -635,8 +635,11 @@ class TestWidgetComboBoxArrowAffordance(QtBaseTestCase):
 
         _render()  # default: nothing
         combo.arrow_direction = "down"
-        _render()  # triangle
-        combo.arrow_icon = QtGui.QIcon()  # null icon → falls back to triangle cleanly
+        _render()  # chevron
+        for direction in ("up", "left", "right"):
+            combo.arrow_direction = direction
+            _render()
+        combo.arrow_icon = QtGui.QIcon()  # null icon → falls back to chevron cleanly
         _render()
         # A real (non-null) icon exercises the drawPixmap path.
         pm = QtGui.QPixmap(16, 16)
@@ -645,6 +648,46 @@ class TestWidgetComboBoxArrowAffordance(QtBaseTestCase):
         _render()
         combo.arrow_alpha = 0.3
         _render()
+
+    def test_the_affordance_is_an_open_chevron_not_a_filled_triangle(self):
+        """The opt-in glyph is a thin open stroke: between its arms stays the
+        combo's own background.
+
+        It was a solid triangle, which read heavy beside the label
+        (2026-10-12): its flat top edge painted the very pixel a chevron
+        leaves open.
+        """
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from qtpy import QtGui, QtCore
+
+        combo = self.track_widget(WidgetComboBox())
+        combo.add(["Alpha"])
+        combo.resize(160, 28)
+
+        def _render():
+            pm = QtGui.QPixmap(combo.size())
+            pm.fill(QtCore.Qt.black)
+            combo.render(pm)
+            return pm.toImage()
+
+        bare = _render()
+        combo.arrow_direction = "down"
+        drawn = _render()
+        changed = [
+            (x, y)
+            for y in range(bare.height())
+            for x in range(bare.width())
+            if bare.pixel(x, y) != drawn.pixel(x, y)
+        ]
+        self.assertTrue(changed, "no affordance was painted")
+        xs = [x for x, _ in changed]
+        ys = [y for _, y in changed]
+        left, right, top = min(xs), max(xs), min(ys)
+        self.assertGreater(right - left, 4, "the glyph is too small to judge")
+        # Straight below the arm tips, at the glyph's top row: a filled
+        # triangle's base covers it; a chevron's arms are out at the sides.
+        centre = ((left + right) // 2, top)
+        self.assertNotIn(centre, changed)
 
     def test_arrow_follows_the_whole_painted_label(self):
         """The arrow sits after what the label PAINTS -- prefix included.

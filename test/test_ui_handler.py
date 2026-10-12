@@ -26,6 +26,7 @@ import tempfile
 import types
 import unittest
 
+from conftest import write_ui_file
 from uitk.handlers.ui_handler import UiHandler
 
 
@@ -159,26 +160,6 @@ class TestUiHandlerLaunchDelegation(unittest.TestCase):
         self.assertIsNone(self.handler.hosting_handler("plain_tool"))
 
 
-def _write_ui(path, name, tags_csv=None):
-    """Minimal QMainWindow .ui file (mirrors test_switchboard_browser)."""
-    tag_block = ""
-    if tags_csv is not None:
-        tag_block = (
-            f'<property name="uitk_tags" stdset="0">'
-            f"<string>{tags_csv}</string></property>"
-        )
-    content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<ui version="4.0">
- <class>QtUi</class>
- <widget class="QMainWindow" name="{name}">
-  {tag_block}
- </widget>
-</ui>
-"""
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-
 class TestLaunchDelegationIntegration(unittest.TestCase):
     """End-to-end over a real Switchboard: a registered ``*#startmenu`` .ui
     launched through the real UiHandler is delegated to the hosting handler
@@ -194,8 +175,8 @@ class TestLaunchDelegationIntegration(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         d = self.tmp.name
-        _write_ui(os.path.join(d, "tool.ui"), "tool")
-        _write_ui(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
+        write_ui_file(os.path.join(d, "tool.ui"), "tool")
+        write_ui_file(os.path.join(d, "cameras#startmenu.ui"), "cameras_startmenu")
         from uitk.switchboard import Switchboard
 
         self.sb = Switchboard(ui_source=d, log_level="WARNING")
@@ -226,6 +207,42 @@ class TestLaunchDelegationIntegration(unittest.TestCase):
             self.assertEqual(self.host.shown, [])
         finally:
             ui.deleteLater()
+
+
+class TestUiEntryDescription(unittest.TestCase):
+    """A .ui entry's description is its root's ``accessibleDescription``,
+    read from the file -- listing the entry never loads the UI."""
+
+    @classmethod
+    def setUpClass(cls):
+        from conftest import setup_qt_application
+
+        cls.app = setup_qt_application()
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.tmp.name
+        write_ui_file(
+            os.path.join(d, "tool.ui"), "tool", description="Do the tool's thing."
+        )
+        write_ui_file(os.path.join(d, "bare.ui"), "bare")
+        from uitk.switchboard import Switchboard
+
+        self.sb = Switchboard(ui_source=d, log_level="WARNING")
+
+    def tearDown(self):
+        from qtpy import QtCore, QtWidgets
+
+        self.sb.deleteLater()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        self.tmp.cleanup()
+
+    def test_entries_carry_the_files_description(self):
+        entries = {e.name: e for e in self.sb.handlers.ui.entries()}
+        self.assertEqual(entries["tool"].description, "Do the tool's thing.")
+        self.assertEqual(entries["bare"].description, "")
+        self.assertIsNone(self.sb.loaded_ui.peek("tool"), "listing never loads")
 
 
 class _CanonicalInitStub:
@@ -265,7 +282,7 @@ class TestLaunchCanonicalWindowInit(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        _write_ui(os.path.join(self.tmp.name, "tool.ui"), "tool")
+        write_ui_file(os.path.join(self.tmp.name, "tool.ui"), "tool")
         from uitk.switchboard import Switchboard
 
         self.sb = Switchboard(ui_source=self.tmp.name, log_level="WARNING")
@@ -324,7 +341,7 @@ class TestPinClickMode(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        _write_ui(os.path.join(self.tmp.name, "tool.ui"), "tool")
+        write_ui_file(os.path.join(self.tmp.name, "tool.ui"), "tool")
         from uitk.switchboard import Switchboard
 
         self.sb = Switchboard(ui_source=self.tmp.name, log_level="WARNING")
@@ -438,7 +455,7 @@ class TestUiHandlerPinOnTap(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        _write_ui(os.path.join(self.tmp.name, "tool.ui"), "tool")
+        write_ui_file(os.path.join(self.tmp.name, "tool.ui"), "tool")
         from uitk.switchboard import Switchboard
 
         self.sb = Switchboard(ui_source=self.tmp.name, log_level="WARNING")
@@ -1243,7 +1260,7 @@ class TestLaunchPersistenceWiring(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        _write_ui(os.path.join(self.tmp.name, "tool.ui"), "tool")
+        write_ui_file(os.path.join(self.tmp.name, "tool.ui"), "tool")
         from uitk.switchboard import Switchboard
 
         self.sb = Switchboard(ui_source=self.tmp.name, log_level="WARNING")
@@ -1394,11 +1411,11 @@ class TestLaunchCode(unittest.TestCase):
         for filename, text in files.items():
             with open(os.path.join(self.pkg, filename), "w", encoding="utf-8") as f:
                 f.write(text)
-        _write_ui(os.path.join(self.pkg, "ui", "alpha.ui"), "alpha")
-        _write_ui(os.path.join(self.pkg, "extra", "beta.ui"), "beta")
+        write_ui_file(os.path.join(self.pkg, "ui", "alpha.ui"), "alpha")
+        write_ui_file(os.path.join(self.pkg, "extra", "beta.ui"), "beta")
         self.loose = os.path.join(self.root, "loose")
         os.makedirs(self.loose)
-        _write_ui(os.path.join(self.loose, "gamma.ui"), "gamma")
+        write_ui_file(os.path.join(self.loose, "gamma.ui"), "gamma")
         sys.path.insert(0, self.root)
         self.sbs = []
 

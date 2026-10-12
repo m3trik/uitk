@@ -13,6 +13,9 @@
   <property name="windowTitle">
    <string>UITK Example</string>
   </property>
+  <property name="accessibleDescription">
+   <string>Browse UITK modules and classes, and read their help and source in a live console.</string>
+  </property>
   <widget class="QWidget" name="central_widget">
    <layout class="QVBoxLayout" name="main_layout">
     <property name="spacing">

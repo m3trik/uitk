@@ -3,7 +3,7 @@
 """Tests for TreeWidget column configuration (visibility, reorder, persistence)."""
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from conftest import QtBaseTestCase
 from qtpy import QtWidgets, QtCore
 
@@ -119,7 +119,6 @@ class TestTreeColumnConfig(QtBaseTestCase):
         tree.enable_column_config()
 
         actions = []
-        original_exec = QtWidgets.QMenu.exec_
 
         def capture_menu(menu_self, _pos):
             nonlocal actions

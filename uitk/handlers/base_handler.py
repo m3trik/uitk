@@ -206,6 +206,53 @@ class BaseHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         widget.installEventFilter(filt)
         widget._uitk_external_visibility_wired = True
 
+    @staticmethod
+    def _ui_header(ui, attr: str = "config_buttons"):
+        """Resolve a UI's header widget exposing *attr*, or None.
+
+        ``ui.header`` may not be registered yet (``register_children`` runs later
+        in ``showEvent``), so fall back to ``findChild`` by objectName. *attr* is
+        the capability the caller needs (e.g. ``config_buttons`` for chrome,
+        ``hide_window`` for dismissal) — a header lacking it resolves to None.
+        """
+        from qtpy import QtWidgets
+
+        header = getattr(ui, "header", None)
+        if header is not None and hasattr(header, attr):
+            return header
+        header = (
+            ui.findChild(QtWidgets.QWidget, "header")
+            if hasattr(ui, "findChild")
+            else None
+        )
+        if header is not None and hasattr(header, attr):
+            return header
+        return None
+
+    @classmethod
+    def _dismiss(cls, widget) -> None:
+        """Hide *widget* as its own hide button would: through its header's
+        ``hide_window`` (which unpins it and resets collapse / minimize), else
+        unpinned, then hidden.
+
+        A bare ``hide()`` is not enough: a pinned ``MainWindow`` vetoes it,
+        and dragging a window's header pins it -- the browser's Close did
+        nothing to a window whose header had been dragged.
+        """
+        header = cls._ui_header(widget, attr="hide_window")
+        if header is not None:
+            try:
+                header.hide_window()
+            except Exception:  # noqa: BLE001 -- a broken header: hide directly
+                pass
+        is_visible = getattr(widget, "isVisible", None)
+        if is_visible is not None and not is_visible():
+            return
+        if getattr(widget, "pinned", False) and hasattr(widget, "set_pinned"):
+            widget.set_pinned(False)
+        if callable(getattr(widget, "hide", None)):  # any app object with one
+            widget.hide()
+
     # ── Standalone launch code (the optional ``launch_code`` method) ────
 
     @staticmethod

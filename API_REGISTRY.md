@@ -148,6 +148,8 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/sequencer/_data.py`](#widgets--sequencer--_data) — Data models and shared constants for the sequencer widget.
 - [`widgets/sequencer/_drag_tooltip.py`](#widgets--sequencer--_drag_tooltip) — Floating scene-text that tracks the cursor during timeline drags.
 - [`widgets/sequencer/_draggable.py`](#widgets--sequencer--_draggable) — Shared drag infrastructure for sequencer graphics items.
+- [`widgets/sequencer/_editor.py`](#widgets--sequencer--_editor) — Editors: what the sequencer's content area shows -- the seam a view plugs into.
+- [`widgets/sequencer/_graph_editor.py`](#widgets--sequencer--_graph_editor) — The graph editor: animation curves in value space, edited like Maya's.
 - [`widgets/sequencer/_keyframe.py`](#widgets--sequencer--_keyframe) — The interactive items of an expanded attribute sub-row.
 - [`widgets/sequencer/_markers.py`](#widgets--sequencer--_markers) — MarkerItem — named marker on the timeline with drag and context menu.
 - [`widgets/sequencer/_overlays.py`](#widgets--sequencer--_overlays) — Range-related overlay items: static ranges, gap hatching, and highlights.
@@ -294,7 +296,7 @@ Kind-handler registry for parameterised forms (the Qt half of the contract).
 - [`FLOAT_MIN`](uitk/uitk/bridge/spec.py#L48) — constant
 - [`FLOAT_MAX`](uitk/uitk/bridge/spec.py#L49) — constant
 - **[`class KindHandler`](uitk/uitk/bridge/spec.py#L58)** — Bundle of callables that build / read / write a widget kind.
-- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L1105)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
+- **[`class KindFactory(_KindFactoryInternal)`](uitk/uitk/bridge/spec.py#L1118)** — Build / read / write Qt widgets by ``kind``, backed by the registry.
   - `KindFactory.infer_kind(value: Any) -> str` *(static)* — Map a Python value to one of the built-in kinds.
   - `KindFactory.register_kind(name: str, handler: KindHandler) -> None` *(static)* — Register a new kind (or override an existing one).
   - `KindFactory.get_handler(kind: str) -> KindHandler` *(static)* — Return the handler for *kind* (raises KeyError if unregistered).
@@ -361,19 +363,19 @@ Publish uitk widgets to Qt Designer's widget box.
 
 Event handling utilities for Qt applications.
 
-- **[`class EventFactoryFilter(QtCore.QObject)`](uitk/uitk/events.py#L50)** — Efficient dynamic event filter with lazy handler resolution and scoped widget control.
+- **[`class EventFactoryFilter(QtCore.QObject)`](uitk/uitk/events.py#L54)** — Efficient dynamic event filter with lazy handler resolution and scoped widget control.
   - `EventFactoryFilter.install(self, widgets: QtCore.QObject | Iterable[QtCore.QObject])` — Install this event filter on one or more widgets.
   - `EventFactoryFilter.uninstall(self, widgets: QtCore.QObject | Iterable[QtCore.QObject])` — Uninstall this event filter from one or more widgets.
   - `EventFactoryFilter.is_installed(self, widget: QtCore.QObject) -> bool` — Return whether a widget is being tracked (only valid if propagate_to_children=False).
   - `EventFactoryFilter.eventFilter(self, widget: QtCore.QObject, event: QtCore.QEvent) -> bool` — Event filter method that processes events and calls the appropriate handler.
-- **[`class MouseTracking(QtCore.QObject, pythontk.LoggingMixin)`](uitk/uitk/events.py#L169)** — MouseTracking is a QObject subclass that provides mouse enter and leave events for QWidget child wi…
+- **[`class MouseTracking(QtCore.QObject, pythontk.LoggingMixin)`](uitk/uitk/events.py#L177)** — MouseTracking is a QObject subclass that provides mouse enter and leave events for QWidget child wi…
   - `MouseTracking.should_capture_mouse(self, widget)` — Checks if a widget should capture the mouse.
   - `MouseTracking.register_external_widgets(self, widgets)` — Register widgets that should receive synthesized Enter/Leave events
   - `MouseTracking.update_child_widgets(self)` — Updates the set of child widgets of the parent.
   - `MouseTracking.track(self)` — Drive enter/leave + grab handoff for whatever's under the cursor.
   - `MouseTracking.is_widget_valid(widget)` *(static)* — Return True if the Qt widget and its C++ object still exist.
   - `MouseTracking.eventFilter(self, widget, event)` — Filter mouse move and release events.
-- **[`class TreeDragReparentFilter(QtCore.QObject)`](uitk/uitk/events.py#L667)** — Drag-to-reparent on a ``QTreeWidget``, reported as one batch of moves.
+- **[`class TreeDragReparentFilter(QtCore.QObject)`](uitk/uitk/events.py#L694)** — Drag-to-reparent on a ``QTreeWidget``, reported as one batch of moves.
   - `TreeDragReparentFilter.install(self, tree: QtWidgets.QTreeWidget) -> None` — Install on *tree*'s viewport (drags, drops) and on *tree* itself.
   - `TreeDragReparentFilter.eventFilter(self, obj, event)`
 
@@ -400,7 +402,7 @@ Common infrastructure for Switchboard handlers.
 - **[`class BaseHandler(pythontk.SingletonMixin, pythontk.LoggingMixin)`](uitk/uitk/handlers/base_handler.py#L109)** — Common base for Switchboard handlers.
   - `BaseHandler.instance(cls, switchboard: 'Switchboard' = None, **kwargs)` *(class)*
   - `BaseHandler.config(self)` *(property)*
-- **[`class LaunchableHandlerProtocol(Protocol)`](uitk/uitk/handlers/base_handler.py#L331)** — Structural type for handlers that participate in the launcher surface.
+- **[`class LaunchableHandlerProtocol(Protocol)`](uitk/uitk/handlers/base_handler.py#L378)** — Structural type for handlers that participate in the launcher surface.
   - `LaunchableHandlerProtocol.entries(self) -> Iterable['HandlerEntry']`
   - `LaunchableHandlerProtocol.launch(self, name: str, **options)`
   - `LaunchableHandlerProtocol.close(self, name: str) -> None`
@@ -427,7 +429,7 @@ Register, install-on-demand, and launch external Python apps as subprocesses.
 - **[`class ExternalAppHandler(BaseHandler)`](uitk/uitk/handlers/external_app_handler.py#L40)** — Switchboard handler for launching external Python apps.
   - `ExternalAppHandler.discover(self, groups: Optional[Iterable[str]] = None) -> int` — Auto-register every app advertised under a uitk entry-point group.
   - `ExternalAppHandler.add_provider(self, install_spec: str, *, probe_module: Optional[str] = None, group: Optional[str] = None, python: Optional[str] = None) -> None` — Register a provider package that ships discoverable apps.
-  - `ExternalAppHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None) -> None` — Pre-register an app so it can be launched by name.
+  - `ExternalAppHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None, description: Optional[str] = None) -> None` — Pre-register an app so it can be launched by name.
   - `ExternalAppHandler.is_registered(self, name: str) -> bool`
   - `ExternalAppHandler.unregister(self, name: str) -> None` — Remove an app.
   - `ExternalAppHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per registered app.
@@ -445,7 +447,7 @@ Register, install-on-demand, and launch external Python apps as subprocesses.
 
 Unified launchable-entry data class shared by all Switchboard handlers.
 
-- **[`class HandlerEntry`](uitk/uitk/handlers/handler_entry.py#L24)** — One launchable item exposed by a Switchboard handler.
+- **[`class HandlerEntry`](uitk/uitk/handlers/handler_entry.py#L26)** — One launchable item exposed by a Switchboard handler.
   - `HandlerEntry.all_tags(self) -> FrozenSet[str]` *(property)*
   - `HandlerEntry.editable_tags(self) -> bool` *(property)*
 
@@ -471,7 +473,7 @@ Unified launchable-entry data class shared by all Switchboard handlers.
   - `UiHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per .ui registered with the Switchboard.
   - `UiHandler.hosting_handler(self, name: str)` — Return the registered handler that claims windowing ownership of *name*.
   - `UiHandler.launch(self, name: str, **options)` — Launch the named UI applying the browser's per-launch style options.
-  - `UiHandler.close(self, name: str) -> None` — Hide the named UI via its header (matches the in-window hide button).
+  - `UiHandler.close(self, name: str) -> None` — Hide the named UI as its own hide button would (:meth:`_dismiss`).
   - `UiHandler.is_visible(self, name: str) -> bool`
   - `UiHandler.focus(self, name: str) -> None` — Raise the named, already-loaded UI.
   - `UiHandler.launch_code(self, name: str, **options) -> Optional[str]` — Python that launches UI *name* standalone.
@@ -780,6 +782,7 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
   - `ShortcutManager.add_global_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence], on_press: Callable = None, on_release: Callable = None, description: str = '') -> GlobalShortcut` — Add a global shortcut (robust press/release detection).
   - `ShortcutManager.add_info_entry(self, key_label: str, description: str) -> None` — Register a display-only entry (e.g.
   - `ShortcutManager.add_gesture(self, group: str, keys: str, description: str) -> None` — Register a display-only mouse gesture under *group*.
+  - `ShortcutManager.remove_gesture_group(self, group: str) -> bool` — Drop every gesture of *group* and its read-only shortcut-editor rows.
   - `ShortcutManager.overlay(self, host: QtWidgets.QWidget, anchor: str = 'bottom-right', max_keys: int = 4)` — A :class:`~uitk.widgets.shortcut_overlay.ShortcutOverlay` for this
   - `ShortcutManager.remove_shortcut(self, key_sequence: Union[str, QtGui.QKeySequence]) -> bool` — Remove a specific shortcut
   - `ShortcutManager.clear_all(self) -> None` — Remove all shortcuts
@@ -897,6 +900,7 @@ How a window follows the height of what it is holding.
   - `SwitchboardDialogsMixin.confirm(self, question, yes='Yes', no='No') -> bool` — Ask *question* in a modal :meth:`message_box` and answer True when
   - `SwitchboardDialogsMixin.message_box(self, string, *buttons, location='topMiddle', timeout='auto', background=0.75, default=None)` — Spawns a message box with the given text and optionally sets buttons.
   - `SwitchboardDialogsMixin.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None, link_handler=None)` — Spawn a scrollable text-viewer window with optional buttons.
+  - `SwitchboardDialogsMixin.preview_dialog(self, render: Callable[[dict], str], specs=(), *, values: Optional[dict] = None, on_change: Optional[Callable[[str, Any], None]] = None, actions: Optional[dict] = None, status: Optional[Callable[[dict, str], str]] = None, title: str = '', size=(960, 600), monospace: bool = True, word_wrap: bool = False, parent=None)` — A live preview of a tool's output: option rows beside the text,
   - `SwitchboardDialogsMixin.data_view_dialog(self, data: Any, *, title: str = '', save_path: Optional[str] = '', empty_message: str = 'Nothing to show.', size=(720, 560), parent=None)` — Show structured *data* as colour-coded JSON in a text viewer.
   - `SwitchboardDialogsMixin.save_data_dialog(self, data: Any, title: str = '', path: str = '', parent=None) -> Optional[str]` — Write *data* as indented JSON to a ``.json`` file the user picks.
   - `SwitchboardDialogsMixin.file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]` *(static)* — Open a file dialog to select files of the given type(s) using qtpy.
@@ -913,7 +917,7 @@ How a window follows the height of what it is holding.
 
 Mixin that exposes the bundled editor windows on the Switchboard.
 
-- **[`class SwitchboardEditorsMixin`](uitk/uitk/switchboard/editors.py#L299)** — Adds an ``editors`` property to Switchboard exposing the bundled editors.
+- **[`class SwitchboardEditorsMixin`](uitk/uitk/switchboard/editors.py#L312)** — Adds an ``editors`` property to Switchboard exposing the bundled editors.
   - `SwitchboardEditorsMixin.editors(self) -> _EditorRegistry` *(property)* — Cached editor registry — see :class:`_EditorRegistry`.
 
 <a id="switchboard--event_loop"></a>
@@ -1086,6 +1090,7 @@ Test isolation for every suite in the ecosystem — keep test runs off live user
   - `StyleSheet.get_variable(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None) -> str` *(class)* — Get a theme variable value, resolving overrides.
   - `StyleSheet.get_variable_px(cls, name: str, theme: str = 'light', widget: QtWidgets.QWidget = None, default: Union[int, None] = None) -> Union[int, None]` *(class)* — Get a length token as an integer pixel value.
   - `StyleSheet.is_on(value) -> bool` *(static)* — Parse a switch token (e.g.
+  - `StyleSheet.percent(value, default: float = 100.0) -> float` *(static)* — Parse a percent token (e.g.
   - `StyleSheet.get_variables(cls, theme: str = 'light') -> list[str]` *(class)* — Get list of available theme variables.
   - `StyleSheet.export_overrides(cls) -> dict` *(class)* — Export the current global overrides as a plain dict.
   - `StyleSheet.import_overrides(cls, data: dict) -> None` *(class)* — Bulk-replace global overrides from a dict and reload once.
@@ -1168,7 +1173,7 @@ A view's header menu of columns to show, hide and reorder, with the layout remem
   - `ColumnConfig.configure(self, view: QtWidgets.QAbstractItemView, settings=None, settings_key: Optional[str] = None, locked: Iterable[int] = (), app: str = 'ColumnConfig', movable: bool = True, reorderable: bool = False, hidden_by_default: Iterable[int] = ()) -> None` — Point the layout at *settings* / *settings_key*;
   - `ColumnConfig.header(self) -> QtWidgets.QHeaderView` *(property)*
   - `ColumnConfig.settings(self)` *(property)* — The settings branch the layout is kept in.
-  - `ColumnConfig.labels(self) -> List[str]` — Each logical column's header text (``"Column <n>"`` when it has none).
+  - `ColumnConfig.labels(self) -> List[str]` — Each logical column's name: its header text, else its header tooltip
   - `ColumnConfig.order(self) -> List[int]` — The logical columns, left to right as the view shows them.
   - `ColumnConfig.can_hide(self, column: int) -> bool` — Whether *column* may be hidden: not locked, not the last one showing.
   - `ColumnConfig.set_hidden(self, column: int, hidden: bool = True) -> bool` — Hide (or show) *column* and save the layout.
@@ -1509,11 +1514,12 @@ Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
 
 - [`BUILTIN_THEMES_DIR`](uitk/uitk/widgets/editors/style_editor.py#L16) — constant
 - [`BASIC_TOKENS`](uitk/uitk/widgets/editors/style_editor.py#L22) — constant
-- [`LENGTH_TOKENS`](uitk/uitk/widgets/editors/style_editor.py#L51) — constant
-- [`SWITCH_TOKENS`](uitk/uitk/widgets/editors/style_editor.py#L59) — constant
-- [`ROW_H`](uitk/uitk/widgets/editors/style_editor.py#L65) — constant
-- [`CELL_EDITOR_H`](uitk/uitk/widgets/editors/style_editor.py#L66) — constant
-- **[`class StyleEditor(EditorPanel)`](uitk/uitk/widgets/editors/style_editor.py#L69)** — UI for editing global stylesheet variables, with themes as presets.
+- [`LENGTH_TOKENS`](uitk/uitk/widgets/editors/style_editor.py#L52) — constant
+- [`SWITCH_TOKENS`](uitk/uitk/widgets/editors/style_editor.py#L60) — constant
+- [`PERCENT_TOKENS`](uitk/uitk/widgets/editors/style_editor.py#L64) — constant
+- [`ROW_H`](uitk/uitk/widgets/editors/style_editor.py#L70) — constant
+- [`CELL_EDITOR_H`](uitk/uitk/widgets/editors/style_editor.py#L71) — constant
+- **[`class StyleEditor(EditorPanel)`](uitk/uitk/widgets/editors/style_editor.py#L74)** — UI for editing global stylesheet variables, with themes as presets.
   - `StyleEditor.theme(self) -> str` *(property)* — The base theme currently shown/edited (set by loading a preset).
   - `StyleEditor.set_tier(self, tier: str)` — Programmatic Basic/All switch (mirrors a user pick in the header
   - `StyleEditor.export_preset_data(self)`
@@ -1521,6 +1527,7 @@ Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
   - `StyleEditor.populate(self)` — Populate the table with variables for the current theme + tier.
   - `StyleEditor.on_color_changed(self, name, color)` — Handle color change from swatch.
   - `StyleEditor.on_length_changed(self, name, value)` — Handle length change from spinbox.
+  - `StyleEditor.on_percent_changed(self, name, value)` — Handle a percent token's spinbox.
   - `StyleEditor.on_switch_changed(self, name, on)` — Handle a switch token's check box.
   - `StyleEditor.reset_variable(self, name)` — Reset a single variable.
   - `StyleEditor.reset_all(self)` — Reset all overrides (every theme, every widget).
@@ -1531,12 +1538,14 @@ Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
 
 The browser panel: search, tag chips, row actions, and the header menu.
 
-- **[`class SwitchboardBrowser(_LaunchMixin, EditorPanel)`](uitk/uitk/widgets/editors/switchboard_browser/_switchboard_browser.py#L116)** — Searchable launcher for every UI registered with a Switchboard.
+- **[`class SwitchboardBrowser(_LaunchMixin, EditorPanel)`](uitk/uitk/widgets/editors/switchboard_browser/_switchboard_browser.py#L117)** — Searchable launcher for every UI registered with a Switchboard.
   - `SwitchboardBrowser.hidden_uis(self) -> Set[str]` *(property)*
   - `SwitchboardBrowser.hidden_tags(self) -> Set[str]` *(property)*
   - `SwitchboardBrowser.set_search_scope(self, value: str) -> None` — Public helper: set the search-line-edit scope to ``value``.
   - `SwitchboardBrowser.set_entry_filter(self, inc: Union[str, List[str], None] = None, exc: Union[str, List[str], None] = None) -> None` — Replace the structural inc/exc entry filter (see class docstring).
   - `SwitchboardBrowser.hide_inherited_tags(self) -> bool` *(property)*
+  - `SwitchboardBrowser.eventFilter(self, obj, event)` — Track the cursor over the search row and the tag strip.
+  - `SwitchboardBrowser.event(self, event) -> bool`
   - `SwitchboardBrowser.showEvent(self, event) -> None`
   - `SwitchboardBrowser.launch_options(self) -> LaunchOptions`
 
@@ -1545,7 +1554,7 @@ The browser panel: search, tag chips, row actions, and the header menu.
 
 A provider's external apps as a program of their own: one app, or all of them.
 
-- **[`class ExternalAppHub(_ExternalAppHubInternal)`](uitk/uitk/widgets/editors/switchboard_browser/external_app_hub.py#L247)** — A provider package's external apps as a standalone program.
+- **[`class ExternalAppHub(_ExternalAppHubInternal)`](uitk/uitk/widgets/editors/switchboard_browser/external_app_hub.py#L255)** — A provider package's external apps as a standalone program.
   - `ExternalAppHub.of(cls, package: str) -> Optional['ExternalAppHub']` *(class)* — The hub *package* declares as ``HUB`` in its ``__main__``, or None.
   - `ExternalAppHub.data_dir(self) -> str` *(property)* — This hub's per-user folder: its log and rendered icon
   - `ExternalAppHub.log_file(self) -> str` *(property)* — Where a run's output goes when no console shows it.
@@ -1739,7 +1748,7 @@ A slider whose track shows the colour it is about to set.
 <a id="widgets--header"></a>
 ### `widgets/header.py`
 
-- **[`class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, pythontk.LoggingMixin)`](uitk/uitk/widgets/header.py#L17)** — Header is a QLabel that can be dragged around the screen and can be pinned/unpinned.
+- **[`class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, pythontk.LoggingMixin)`](uitk/uitk/widgets/header.py#L175)** — Header is a QLabel that can be dragged around the screen and can be pinned/unpinned.
   - `Header.pin_on_drag_only(self) -> bool` *(property)* — Whether a pin-button click dismisses the window instead of pinning it.
   - `Header.set_default_pin_on_drag_only(cls, value: bool) -> None` *(class)* — Set the process-wide pin-click mode for default-following headers.
   - `Header.pin_on_tap(self) -> bool` *(property)* — Whether a just-shown window pins itself instead of auto-hiding.
@@ -1764,19 +1773,21 @@ A slider whose track shows the colour it is about to set.
   - `Header.restore_window(self)` — Restore a minimized window to its original size and position.
   - `Header.toggle_maximize(self)` — Toggle between maximized and normal window state.
   - `Header.toggle_fullscreen(self)` — Toggle between fullscreen and normal window state.
-  - `Header.hide_window(self)` — Hide the parent window.
+  - `Header.hide_window(self)` — Hide the parent window, unpinning it first.
   - `Header.unhide_window(self)` — Unhide the parent window.
   - `Header.trigger_refresh(self)` — Emit the refresh_requested signal.
-  - `Header.set_help_text(self, text)` — Set the tool's help/instruction text and ensure the help button is shown.
+  - `Header.set_help_text(self, text, url=None)` — Set the tool's help/instruction text and ensure the help button is shown.
   - `Header.help_text(self)` — Return the current help text, or ``""``.
-  - `Header.show_help(self)` — Pop the help tooltip up at the help button.
+  - `Header.help_url(self)` — Return the help's documentation link, or ``""``.
+  - `Header.help_html(self) -> str` — The help card's content: the help text, then the documentation link.
+  - `Header.show_help(self)` — Show the help card at the help button.
   - `Header.show_menu(self)` — Show the menu.
   - `Header.toggle_collapse(self)` — Toggle between collapsed (header only) and expanded window states.
   - `Header.collapse_window(self, fixed_width=None)` — Collapse the parent window to show only the header.
   - `Header.expand_window(self)` — Expand the window back to its original size.
   - `Header.toggle_pin(self, from_drag=False)` — Toggle pinning of the window.
   - `Header.reset_pin_state(self)` — Force the header into an unpinned state without hiding the window.
-  - `Header.eventFilter(self, watched, event)` — Track pin-button hover, and keep a collapsed window's content hidden.
+  - `Header.eventFilter(self, watched, event)` — Track pin-button hover, show the help card for the help button's
   - `Header.mousePressEvent(self, event)` — Handle the mouse press event.
   - `Header.event(self, event)`
   - `Header.mouseMoveEvent(self, event)` — Handle the mouse move event.
@@ -1878,7 +1889,7 @@ A slider whose track shows the colour it is about to set.
   - `MarkingMenu.currentWidget(self) -> Optional[QtWidgets.QWidget]` — Get the currently active widget.
   - `MarkingMenu.setCurrentWidget(self, widget: QtWidgets.QWidget, *, anchor: Optional[QtCore.QPoint] = None) -> None` — Set the current widget and position its center at the given anchor.
   - `MarkingMenu.setCurrentIndex(self, index: int) -> None` — Set the current widget index (compatibility method).
-  - `MarkingMenu.preload_menus(self, names=None, *, defer: bool = True) -> None` — Warm the menus the bindings can reach so the FIRST activation
+  - `MarkingMenu.preload_menus(self, names=None, *, defer: bool = True) -> None` — Warm the menus the bindings can reach so the FIRST activation —
   - `MarkingMenu.add_child_event_filter(self, widgets) -> None` — Initialize child widgets with an event filter.
   - `MarkingMenu.child_enterEvent(self, w, event) -> None` — Handle the enter event for child widgets.
   - `MarkingMenu.child_leaveEvent(self, w, event) -> None` — Handle the leave event for child widgets.
@@ -1944,7 +1955,7 @@ Pure menu-resolution logic for the MarkingMenu.
   - `Overlay.paintEvent(self, event)` — Handles the paint event for the overlay, drawing the tangent paths as needed.
   - `Overlay.mousePressEvent(self, event)` — Handle mouse press by starting gesture at the event position.
   - `Overlay.mouseReleaseEvent(self, event)` — Handle mouse release by restoring cursor and clearing painting.
-  - `Overlay.mouseMoveEvent(self, event)`
+  - `Overlay.mouseMoveEvent(self, event)` — Follow the cursor with the trail, repainting the whole overlay.
   - `Overlay.hideEvent(self, event)` — Clears the path and restores the cursor when the overlay is hidden.
 
 <a id="widgets--menu"></a>
@@ -2741,6 +2752,7 @@ ClipItem — draggable, resizable clip rectangle on the timeline.
   - `ClipItem.is_selectable(self) -> bool` — Whether a click or a marquee may select this clip.
   - `ClipItem.sync_selectable(self) -> None` — Re-apply :meth:`is_selectable`, dropping a selection it revokes.
   - `ClipItem.keys_editable(self) -> bool` *(property)* — False when this clip is locked or read-only.
+  - `ClipItem.flat_keys(self) -> bool` *(property)* — True when the sequencer draws keys flat (``RowMetrics.key_style``).
   - `ClipItem.boundingRect(self)`
   - `ClipItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
   - `ClipItem.hoverMoveEvent(self, event)`
@@ -2759,8 +2771,8 @@ Data models and shared constants for the sequencer widget.
 - [`HATCH_DENSE`](uitk/uitk/widgets/sequencer/_data.py#L16) — constant
 - [`HATCH_MEDIUM`](uitk/uitk/widgets/sequencer/_data.py#L17) — constant
 - [`HATCH_SPARSE`](uitk/uitk/widgets/sequencer/_data.py#L18) — constant
-- [`SELECTED_ACCENT`](uitk/uitk/widgets/sequencer/_data.py#L136) — constant
-- [`DISPLAY_COLORS`](uitk/uitk/widgets/sequencer/_data.py#L143) — constant
+- [`SELECTED_ACCENT`](uitk/uitk/widgets/sequencer/_data.py#L195) — constant
+- [`DISPLAY_COLORS`](uitk/uitk/widgets/sequencer/_data.py#L202) — constant
 - **[`class PatternSpec`](uitk/uitk/widgets/sequencer/_data.py#L22)** — Declarative, hashable description of a tiled background pattern.
   - `PatternSpec.brush(self) -> QtGui.QBrush`
 - **[`class ClipData`](uitk/uitk/widgets/sequencer/_data.py#L43)** — Lightweight data record for a single clip on a track.
@@ -2769,12 +2781,19 @@ Data models and shared constants for the sequencer widget.
   - `ClipData.shown_key_times(self) -> List[float]` — The curve preview's key times that are drawn as dots.
 - **[`class TrackData`](uitk/uitk/widgets/sequencer/_data.py#L83)** — Lightweight data record for a track row.
 - **[`class MarkerData`](uitk/uitk/widgets/sequencer/_data.py#L101)** — Lightweight data record for a timeline marker.
-- **[`class MenuUtils`](uitk/uitk/widgets/sequencer/_data.py#L150)** — Construction/placement helpers for the sequencer's context menus.
-- **[`class CurveUtils`](uitk/uitk/widgets/sequencer/_data.py#L171)** — Shared value→pixel mapping + curve-segment path builder.
+- **[`class RowMetrics`](uitk/uitk/widgets/sequencer/_data.py#L137)** — How tall the track rows are and how their keys are drawn: one density.
+  - `RowMetrics.flat_keys(self) -> bool` *(property)* — True when keys are drawn on the row's centre line.
+  - `RowMetrics.preset(cls, name: str) -> 'RowMetrics'` *(class)* — The named density: ``"standard"`` (today's rows) or ``"compact"``.
+  - `RowMetrics.preset_names(cls) -> tuple` *(class)* — The preset names, in display order.
+- **[`class MenuUtils`](uitk/uitk/widgets/sequencer/_data.py#L209)** — Construction/placement helpers for the sequencer's context menus.
+- **[`class CurveUtils`](uitk/uitk/widgets/sequencer/_data.py#L230)** — Shared value→pixel mapping + curve-segment path builder.
   - `CurveUtils.make_value_mapper(rect_top: float, rect_height: float, val_min: float, val_max: float)` *(static)* — Return ``(map_y, is_flat)`` — the canonical value→pixel mapping.
   - `CurveUtils.unmap_value(rect_top: float, rect_height: float, val_min: float, val_max: float, y: float) -> float` *(static)* — The value a pixel row *y* stands for -- :meth:`make_value_mapper`
-  - `CurveUtils.build_curve_path(segments, map_x, map_y) -> QtGui.QPainterPath` *(static)* — Build a QPainterPath from curve *segments*.
-- **[`class PatternRegistry`](uitk/uitk/widgets/sequencer/_data.py#L306)** — Registry of tile-painters + cached tiled brushes for background fills.
+  - `CurveUtils.segment_is_flat(seg: dict, tolerance: float = FLAT_TOLERANCE) -> bool` *(static)* — Whether span *seg* holds one value end to end, within *tolerance*.
+  - `CurveUtils.flat_pen(pen: QtGui.QPen) -> QtGui.QPen` *(static)* — *pen* as a flat span draws: dashed (:attr:`FLAT_DASHES`), so a
+  - `CurveUtils.stroke_curve(painter, pen, path, flats=None, mark: bool = True) -> None` *(static)* — Stroke a :meth:`build_curve_path` *path* with *pen*, and its
+  - `CurveUtils.build_curve_path(segments, map_x, map_y, risers=None, flats=None) -> QtGui.QPainterPath` *(static)* — Build a QPainterPath from curve *segments*.
+- **[`class PatternRegistry`](uitk/uitk/widgets/sequencer/_data.py#L461)** — Registry of tile-painters + cached tiled brushes for background fills.
   - `PatternRegistry.register_pattern(name: str, painter: PatternPainter) -> None` *(static)* — Register (or override) a tile-painter for :meth:`pattern_brush`.
   - `PatternRegistry.pattern_brush(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush` *(static)* — Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for…
   - `PatternRegistry.paint_pattern(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None` *(static)* — Fill ``rect`` with ``spec``;
@@ -2805,6 +2824,94 @@ Shared drag infrastructure for sequencer graphics items.
   - `DraggableItemMixin.sceneEvent(self, event)` — Cancel the drag when the mouse grab is stolen mid-gesture.
   - `DraggableItemMixin.cancel_drag(self) -> bool`
 
+<a id="widgets--sequencer--_editor"></a>
+### `widgets/sequencer/_editor.py`
+
+Editors: what the sequencer's content area shows -- the seam a view plugs into.
+
+- **[`class SequencerEditor(QtCore.QObject)`](uitk/uitk/widgets/sequencer/_editor.py#L50)** — Base of the editors a :class:`SequencerWidget` hosts (module docstring).
+  - `SequencerEditor.add_option(self, key: str, label: str, getter, setter, tooltip: str = '', section: str = '') -> None` — Add a row to this editor's Options (the header pane's band).
+  - `SequencerEditor.options(self) -> List[dict]` — ``[{"key", "label", "get", "set", "tooltip", "section"}, ...]`` in
+  - `SequencerEditor.is_active(self) -> bool` *(property)*
+  - `SequencerEditor.activate(self) -> None` — Show this editor's items;
+  - `SequencerEditor.deactivate(self) -> None` — Hide this editor's items (the kernel suppresses the selection
+  - `SequencerEditor.header_widget(self) -> Optional[QtWidgets.QWidget]` — The left pane's page while active;
+  - `SequencerEditor.key_bindings(self) -> List[KeyBinding]` — Keys this editor answers before the kernel's shortcut table.
+  - `SequencerEditor.mouse_press(self, event) -> bool` — A press in the content area;
+  - `SequencerEditor.mouse_move(self, event) -> bool` — A move: a taken gesture's, or a hover in the content area.
+  - `SequencerEditor.mouse_release(self, event) -> bool`
+  - `SequencerEditor.mouse_double_click(self, event) -> bool`
+  - `SequencerEditor.wheel(self, event) -> bool`
+  - `SequencerEditor.context_menu(self, event) -> bool`
+  - `SequencerEditor.gesture_group_at(self, viewport_pos) -> Optional[str]` — The legend group under the pointer, or ``None`` for the kernel's.
+  - `SequencerEditor.relayout(self) -> None` — Re-place this editor's items after a time-axis or size change.
+  - `SequencerEditor.draw_background(self, painter, rect) -> bool` — Paint the content area's background;
+  - `SequencerEditor.content_height(self) -> Optional[float]` — The content's height in scene units, or ``None`` for the rows'.
+  - `SequencerEditor.time_bounds(self) -> Optional[Tuple[float, float]]` — ``(t0, t1)`` this editor's content spans beyond the kernel's own
+  - `SequencerEditor.key_times(self) -> Optional[List[float]]` — The sorted key times next / previous key steps through, or
+  - `SequencerEditor.frame_values(self) -> None` — Fit the vertical axis to what the framed time range shows (the
+- **[`class TrackEditor(SequencerEditor)`](uitk/uitk/widgets/sequencer/_editor.py#L186)** — The track rows: clips, expanded attribute rows, keys and shot overlays.
+
+<a id="widgets--sequencer--_graph_editor"></a>
+### `widgets/sequencer/_graph_editor.py`
+
+The graph editor: animation curves in value space, edited like Maya's.
+
+- **[`class ValueAxis`](uitk/uitk/widgets/sequencer/_graph_editor.py#L53)** — Value <-> pixel row of the graph's content area.
+  - `ValueAxis.to_y(self, value: float, top_px: float) -> float`
+  - `ValueAxis.to_value(self, y: float, top_px: float) -> float`
+  - `ValueAxis.pan(self, dy_px: float) -> None` — Move the view *dy_px* pixels: the content follows the pointer.
+  - `ValueAxis.zoom(self, factor: float, anchor_y: float, top_px: float) -> None` — Scale by *factor*, keeping the value under *anchor_y* in place.
+  - `ValueAxis.fit(self, lo: float, hi: float, height_px: float, margin: float = 0.1) -> None` — Show ``[lo, hi]`` across *height_px*, *margin* (a fraction) each side.
+  - `ValueAxis.step(self, min_px: float = 36.0) -> float` — A 1-2-5 grid step at least *min_px* pixels apart.
+- **[`class GraphEditor(SequencerEditor)`](uitk/uitk/widgets/sequencer/_graph_editor.py#L101)** — Curves in value space over the sequencer's time axis (module docstring).
+  - `GraphEditor.header_widget(self)`
+  - `GraphEditor.activate(self) -> None`
+  - `GraphEditor.deactivate(self) -> None`
+  - `GraphEditor.key_bindings(self)`
+  - `GraphEditor.content_height(self) -> float`
+  - `GraphEditor.relayout(self) -> None`
+  - `GraphEditor.draw_background(self, painter, rect) -> bool`
+  - `GraphEditor.time_bounds(self) -> Optional[Tuple[float, float]]` — The displayed curves' key extent: the timeline scrolls to it.
+  - `GraphEditor.key_times(self) -> List[float]` — The displayed curves' keys (claimed samples aside): what the
+  - `GraphEditor.frame_values(self) -> None` — Fit the value axis to what the framed time range shows.
+  - `GraphEditor.set_outline(self, entries: List[dict]) -> None` — The objects and their curves, for the left pane and the display.
+  - `GraphEditor.set_curve_provider(self, provider) -> None` — ``callable(curve_ids) -> [pythontk.KeyCurve, ...]`` -- the host's reader.
+  - `GraphEditor.set_tangent_types(self, types: Iterable[Tuple[str, str]]) -> None` — The host's tangent types as ``[(type_id, label), ...]`` (menu order).
+  - `GraphEditor.refresh(self, curve_ids: Optional[Iterable[str]] = None) -> None` — Re-read curves from the provider (every shown one, or *curve_ids*).
+  - `GraphEditor.invalidate(self, curve_ids: Iterable[str]) -> None` — Curves the host changed: the shown ones re-read now, the rest
+  - `GraphEditor.normalized(self) -> bool` *(property)* — Each curve drawn in [-1, 1] (edits still land in its own units).
+  - `GraphEditor.show_infinity(self) -> bool` *(property)* — The curves drawn dashed past their first and last keys.
+  - `GraphEditor.auto_load(self) -> bool` *(property)* — Follow the host's object selection (Maya's Auto Load Selected
+  - `GraphEditor.live(self) -> bool` *(property)* — Raise :attr:`curves_previewed` while a drag shapes the curves, so
+  - `GraphEditor.dim_outside(self) -> bool` *(property)* — Veil the time outside :attr:`focus_range` (the shots on screen).
+  - `GraphEditor.focus_range(self) -> Optional[Tuple[float, float]]` *(property)* — ``(t0, t1)`` the host is working in -- the shots its scope shows --
+  - `GraphEditor.displayed_curve_ids(self) -> List[str]`
+  - `GraphEditor.curve(self, curve_id: str)` — The curve as drawn: the drag's preview, else the host's.
+  - `GraphEditor.selected_keys(self) -> List[Tuple[str, List[float]]]` — ``[(curve_id, [time, ...]), ...]`` in display order.
+  - `GraphEditor.select_keys(self, refs: Iterable[KeyRef], mode: str = 'replace') -> None` — Select keys by ``(curve_id, time)``;
+  - `GraphEditor.focus_objects(self, object_ids: Iterable[str]) -> bool` — Show the curves of *object_ids* (their outline rows selected).
+  - `GraphEditor.select_all(self) -> None` — Select every key of the displayed curves.
+  - `GraphEditor.frame_all(self) -> None` — Frame every displayed curve's keys, in time and value.
+  - `GraphEditor.frame_selection(self) -> None` — Frame the selected keys;
+  - `GraphEditor.delete_selection(self) -> None` — Delete the selected keys (:attr:`keys_deleted`), shown at once.
+  - `GraphEditor.insert_keys_at_playhead(self) -> None` — Key the selection's curves (every displayed one when none) at the
+  - `GraphEditor.cancel_drag(self) -> bool`
+  - `GraphEditor.request_tangent_type(self, type_id: str) -> None`
+  - `GraphEditor.request_broken(self, broken: bool) -> None`
+  - `GraphEditor.request_weighted(self, weighted: bool) -> None`
+  - `GraphEditor.request_infinity(self, side: str, mode: str) -> None`
+  - `GraphEditor.mouse_press(self, event) -> bool`
+  - `GraphEditor.mouse_move(self, event) -> bool`
+  - `GraphEditor.mouse_release(self, event) -> bool`
+  - `GraphEditor.select_curve_keys(self, curve_ids: Iterable[str]) -> None` — Select every drawn key of *curve_ids*, the rest deselected -- a
+  - `GraphEditor.mouse_double_click(self, event) -> bool`
+  - `GraphEditor.wheel(self, event) -> bool`
+  - `GraphEditor.context_menu(self, event) -> bool`
+  - `GraphEditor.build_context_menu(self) -> QtWidgets.QMenu` — The right-click menu: tangents, weighting, infinity, keys, view.
+  - `GraphEditor.gesture_group_at(self, viewport_pos) -> Optional[str]`
+  - `GraphEditor.selection_frame(self) -> Optional[QtCore.QRectF]` — The scale frame around two or more selected keys (scene coords);
+
 <a id="widgets--sequencer--_keyframe"></a>
 ### `widgets/sequencer/_keyframe.py`
 
@@ -2825,7 +2932,7 @@ The interactive items of an expanded attribute sub-row.
   - `KeyframeItem.mouseMoveEvent(self, event)`
   - `KeyframeItem.mouseReleaseEvent(self, event)`
   - `KeyframeItem.contextMenuEvent(self, event)` — Right-click a key: the key menu, for the selected keys (this one
-- **[`class TangentHandleItem(QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L552)** — The grab point of a selected key's IN or OUT tangent handle.
+- **[`class TangentHandleItem(QtWidgets.QGraphicsEllipseItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L560)** — The grab point of a selected key's IN or OUT tangent handle.
   - `TangentHandleItem.side(self) -> str` *(property)*
   - `TangentHandleItem.key(self) -> KeyframeItem` *(property)*
   - `TangentHandleItem.slot(self) -> tuple` — ``(key, side, segment index, control-point key)`` -- what this
@@ -2839,7 +2946,7 @@ The interactive items of an expanded attribute sub-row.
   - `TangentHandleItem.mouseMoveEvent(self, event)`
   - `TangentHandleItem.mouseReleaseEvent(self, event)`
   - `TangentHandleItem.contextMenuEvent(self, event)`
-- **[`class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L942)** — The scale box Shift raises around a key selection.
+- **[`class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`](uitk/uitk/widgets/sequencer/_keyframe.py#L950)** — The scale box Shift raises around a key selection.
   - `KeyScaleBoxItem.lo(self) -> float` *(property)* — Frame of the box's left edge.
   - `KeyScaleBoxItem.hi(self) -> float` *(property)* — Frame of the box's right edge.
   - `KeyScaleBoxItem.side(self) -> str` *(property)* — Which handle is being dragged, or ``""`` when none is.
@@ -2889,7 +2996,7 @@ Range-related overlay items: static ranges, gap hatching, and highlights.
   - `RangeHighlightItem.hoverMoveEvent(self, event)`
   - `RangeHighlightItem.mousePressEvent(self, event)`
   - `RangeHighlightItem.mouseMoveEvent(self, event)`
-  - `RangeHighlightItem.update_edge_drag(self, scene_x: float) -> None` — Advance a drag begun with :meth:`begin_edge_drag`.
+  - `RangeHighlightItem.update_edge_drag(self, scene_x: float, modifiers=None) -> None` — Advance a drag begun with :meth:`begin_edge_drag` (*modifiers*:
   - `RangeHighlightItem.finish_edge_drag(self) -> bool` — End the drag and emit if a bound actually moved.
   - `RangeHighlightItem.mouseReleaseEvent(self, event)`
 
@@ -2941,9 +3048,9 @@ Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 
 An NLE-style timeline sequencer widget.
 
-- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L74)** — Dialog for configuring attribute-type color mappings.
+- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L75)** — Dialog for configuring attribute-type color mappings.
   - `AttributeColorDialog.load_color_map(defaults: Optional[Mapping[str, object]] = None) -> Dict[str, str]` *(static)* — The persisted attribute color map, without opening a dialog.
-- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L218)** — A split-view NLE sequencer widget.
+- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L275)** — A split-view NLE sequencer widget.
   - `SequencerWidget.window_shortcuts(self) -> bool` *(property)* — When ``True``, sequencer shortcuts are active whenever the
   - `SequencerWidget.showEvent(self, event: QtGui.QShowEvent) -> None`
   - `SequencerWidget.resizeEvent(self, event: QtGui.QResizeEvent) -> None`
@@ -2960,6 +3067,11 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.get_clip(self, clip_id: int) -> Optional[ClipData]` — Return the data for a clip, or None.
   - `SequencerWidget.get_track(self, track_id: int) -> Optional[TrackData]` — Return the data for a track, or None.
   - `SequencerWidget.tracks(self) -> List[TrackData]` — Return a list of all track data.
+  - `SequencerWidget.shortcut_manager(self) -> ShortcutManager` *(property)* — The sequencer's shortcut table: a host adds or re-points a key
+  - `SequencerWidget.context_entries(self, t: float) -> list` — The timeline's own right-click entries at time *t*, as data
+  - `SequencerWidget.refresh(self) -> None` — Re-lay every item out against the current zoom, rows and editor.
+  - `SequencerWidget.viewport_state(self) -> dict` — The view to put back after a rebuild.
+  - `SequencerWidget.restore_viewport_state(self, state: dict) -> None` — Re-apply a :meth:`viewport_state`'s zoom and horizontal scroll.
   - `SequencerWidget.clips(self, track_id: Optional[int] = None) -> List[ClipData]` — Return clip data, optionally filtered by track.
   - `SequencerWidget.clip_attributes(self) -> List[str]` — The attribute names the clips key (their ``attributes`` data), sorted
   - `SequencerWidget.swap_clips(self, clip_id_a: int, clip_id_b: int) -> None` — Swap the timeline positions of two clips and emit ``clips_reordered``.
@@ -2968,7 +3080,7 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.clear_audio_source(self) -> None` — Drop the bound audio source and stop any in-flight scrub.
   - `SequencerWidget.clear(self, *, keep_range_highlight: bool = False)` — Remove all tracks, clips, and markers.
   - `SequencerWidget.clear_decorations(self, *, keep_range_highlight: bool = False)` — Remove markers, overlays, and shot lane without touching tracks or clips.
-  - `SequencerWidget.add_marker(self, time: float, note: str = '', color: Optional[str] = None, draggable: bool = True, style: str = 'triangle', line_style: str = 'dashed', opacity: float = 1.0) -> int` — Add a marker at *time*.
+  - `SequencerWidget.add_marker(self, time: float, note: str = '', color: Optional[str] = None, draggable: bool = True, style: str = 'triangle', line_style: str = 'dashed', opacity: float = 1.0, data: Optional[Dict[str, Any]] = None) -> int` — Add a marker at *time*.
   - `SequencerWidget.remove_marker(self, marker_id: int)` — Remove a marker by id.
   - `SequencerWidget.get_marker(self, marker_id: int) -> Optional[MarkerData]` — Return marker data, or None.
   - `SequencerWidget.markers(self) -> List[MarkerData]` — Return all markers.
@@ -2994,7 +3106,8 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.go_to_start(self)` — Jump the playhead to frame 0.
   - `SequencerWidget.go_to_end(self)` — Jump the playhead to the end of the last clip.
   - `SequencerWidget.add_marker_at_playhead(self)` — Add a marker at the current playhead position.
-  - `SequencerWidget.frame_shot(self)` — Zoom and scroll the timeline to frame the active shot range.
+  - `SequencerWidget.frame_shot(self) -> bool` — Zoom and scroll the timeline to frame the active shot range.
+  - `SequencerWidget.frame_time_range(self, t_min: float, t_max: float, fit_values: bool = True)` — Zoom and scroll so ``[t_min, t_max]`` fills the timeline's width.
   - `SequencerWidget.undo(self)` — Revert to the previous clip state.
   - `SequencerWidget.redo(self)` — Re-apply a previously undone change.
   - `SequencerWidget.snap_interval(self) -> float` *(property)* — Time-snap interval.
@@ -3007,6 +3120,8 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.show_range_overlays(self) -> bool` *(property)*
   - `SequencerWidget.show_gap_overlays(self) -> bool` *(property)*
   - `SequencerWidget.show_range_highlight(self) -> bool` *(property)*
+  - `SequencerWidget.mark_flat_spans(self) -> bool` *(property)* — Draw a curve's flat spans apart (``CurveUtils.flat_pen``), so one
+  - `SequencerWidget.add_flat_spans_option(self, editor: SequencerEditor) -> None` — Offer :attr:`mark_flat_spans` in *editor*'s Display options (an
   - `SequencerWidget.zone_menu_enabled(self) -> bool` *(property)* — When ``True``, right-clicks emit :attr:`zone_context_menu_requested`
   - `SequencerWidget.shift_held_at_press(self) -> bool` *(property)* — Whether Shift was held when the last drag interaction started.
   - `SequencerWidget.ctrl_held_at_press(self) -> bool` *(property)* — Whether Ctrl was held when the last drag interaction started.
@@ -3017,6 +3132,12 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.shortcut_overlay_tracking(self) -> bool` *(property)* — Whether the group under the pointer is worth resolving: the legend
   - `SequencerWidget.attribute_colors(self) -> Dict[str, str]` *(property)* — Mapping of attribute name to hex color string.
   - `SequencerWidget.set_attribute_color(self, name: str, color: str) -> None` — Set a single attribute's color and repaint.
+  - `SequencerWidget.row_metrics(self) -> RowMetrics` *(property)* — Row sizes and key style: a :class:`RowMetrics` (a density preset).
+  - `SequencerWidget.register_editor(self, name: str, factory) -> None` — Offer an editor under *name*, built the first time it is asked for.
+  - `SequencerWidget.editor(self, name: str) -> SequencerEditor` — The editor registered under *name*, built on first use.
+  - `SequencerWidget.editor_names(self) -> List[str]` — The registered editors' names (``"tracks"``, ``"graph"``...).
+  - `SequencerWidget.active_editor(self) -> SequencerEditor` *(property)* — The editor the content area shows.
+  - `SequencerWidget.set_editor(self, name: str) -> None` — Show the editor registered under *name* in the content area.
   - `SequencerWidget.sub_row_height(self) -> int` *(property)* — Pixel height of expanded attribute sub-rows (default half track height).
   - `SequencerWidget.sub_row_provider(self)` *(property)* — Callable providing sub-row data for track expansion.
   - `SequencerWidget.expand_track(self, track_id: int, sub_row_data=None)` — Expand *track_id* to show sub-rows beneath it.
@@ -3043,15 +3164,17 @@ Timeline view, scene, and track-header widgets.
   - `TrackHeaderWidget.set_top_margin(self, margin: int) -> None`
   - `TrackHeaderWidget.add_track_label(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: str = None, text_color: str = None)`
   - `TrackHeaderWidget.set_track_expanded(self, track_idx: int, sub_names: List[str], sub_height: int)`
+  - `TrackHeaderWidget.apply_metrics(self, metrics: RowMetrics) -> None` — Re-size every label to *metrics* (the sequencer's row density).
   - `TrackHeaderWidget.set_track_collapsed(self, track_idx: int)`
   - `TrackHeaderWidget.selected_sub_rows(self) -> List[tuple]` — ``[(track_name, sub_name), ...]`` for the selected sub-rows.
   - `TrackHeaderWidget.eventFilter(self, obj, event)`
   - `TrackHeaderWidget.selected_names(self) -> List[str]`
+  - `TrackHeaderWidget.add_track_actions(self, menu: QtWidgets.QMenu, names: List[str]) -> None` — The track menu's rows onto *menu*: Hide and Delete *names*, the
   - `TrackHeaderWidget.clear_tracks(self)`
-- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L457)** — Scene that owns the ruler, playhead, and all clip items.
+- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L494)** — Scene that owns the ruler, playhead, and all clip items.
   - `TimelineScene.ruler(self) -> RulerItem` *(property)*
   - `TimelineScene.playhead(self) -> PlayheadItem` *(property)*
-- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L482)** — QGraphicsView providing zoom, pan, and coordinate mapping.
+- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L524)** — QGraphicsView providing zoom, pan, and coordinate mapping.
   - `TimelineView.event(self, event: QtCore.QEvent) -> bool`
   - `TimelineView.keyPressEvent(self, event)`
   - `TimelineView.keyReleaseEvent(self, event)`
@@ -3062,6 +3185,7 @@ Timeline view, scene, and track-header widgets.
   - `TimelineView.x_to_time(self, x: float) -> float`
   - `TimelineView.resizeEvent(self, event)`
   - `TimelineView.wheelEvent(self, event)`
+  - `TimelineView.zoom_at(self, factor: float, view_x: float) -> None` — Zoom time by *factor*, keeping the frame under viewport *view_x* still.
   - `TimelineView.mousePressEvent(self, event)`
   - `TimelineView.mouseMoveEvent(self, event)`
   - `TimelineView.leaveEvent(self, event)` — The pointer has left: no gesture context, and Shift is no longer held.
@@ -3242,13 +3366,16 @@ Reusable action-column management for :class:`TableWidget`.
 
 Scrollable rich-text viewer window.
 
-- **[`class TextViewBox(WindowPanel)`](uitk/uitk/widgets/textViewBox.py#L50)** — Read-only rich-text viewer with optional standard buttons.
+- **[`class TextViewBox(WindowPanel)`](uitk/uitk/widgets/textViewBox.py#L55)** — Read-only rich-text viewer with optional standard buttons.
   - `TextViewBox.format_data(cls, data, indent: int = 2) -> str` *(class)* — *data* as indented, colour-coded JSON HTML (one ``<pre>`` block).
   - `TextViewBox.setStandardButtons(self, *buttons) -> None` — Configure the visible buttons by name.
   - `TextViewBox.setText(self, string: str, fontColor: str = 'white', background=False, fontSize=None) -> None` — Set the body text, replacing any existing content.
   - `TextViewBox.append_text(self, string: str, fontColor: str = 'white', fontSize=None) -> None` — Append a paragraph without clearing existing content.
   - `TextViewBox.clear_text(self) -> None`
   - `TextViewBox.clicked_button(self)` *(property)* — Canonical name of the last clicked button, or ``None``.
+  - `TextViewBox.bind_preview(self, render, specs=(), values=None, on_change=None, status=None)` — Make the viewer a live preview of *render*'s text.
+  - `TextViewBox.preview_text(self) -> str` *(property)* — The text the preview shows (:meth:`bind_preview`).
+  - `TextViewBox.refresh_preview(self) -> None` — Render the preview again -- for a change outside its rows (the data
 
 <a id="widgets--toolBox"></a>
 ### `widgets/toolBox.py`
@@ -3346,9 +3473,9 @@ Scrollable rich-text viewer window.
   - `WidgetComboBox.action_icon_only(self) -> bool` *(property)* — When True, action buttons show only their icon (compact, no text).
   - `WidgetComboBox.show_action_separator(self) -> bool` *(property)* — Whether a separator is drawn above the actions section (default True).
   - `WidgetComboBox.showPopup(self) -> None` — Override to expand the popup to the widest embedded widget.
-  - `WidgetComboBox.arrow_direction(self) -> Optional[str]` *(property)* — Direction of the dropdown-affordance triangle drawn after the text.
+  - `WidgetComboBox.arrow_direction(self) -> Optional[str]` *(property)* — Direction of the dropdown-affordance chevron drawn after the text.
   - `WidgetComboBox.arrow_icon(self) -> Optional[QtGui.QIcon]` *(property)* — Custom icon drawn as the dropdown affordance, in place of the
-  - `WidgetComboBox.arrow_alpha(self) -> float` *(property)* — Opacity (``0.0``–``1.0``) of the dropdown affordance — the triangle
+  - `WidgetComboBox.arrow_alpha(self) -> float` *(property)* — Opacity (``0.0``–``1.0``) of the dropdown affordance — the chevron
   - `WidgetComboBox.paintEvent(self, event) -> None` — Paint the base combo, then overlay the optional dropdown affordance
   - `WidgetComboBox.add(self, x, data=None, header=None, header_alignment='left', clear=True, restore_index=False, ascending=False, _recursion=False, **kwargs)` — Populate the combo box with text, widgets or actions.
   - `WidgetComboBox.add_defaults_button(self) -> bool` *(property)* — When True, adds a "Restore Defaults" action at the bottom of the
@@ -3380,4 +3507,4 @@ Themed top-level uitk window: Header → body → Footer.
   - `WindowPanel.add(self, x: Union[str, QtWidgets.QWidget, type, list, tuple], label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), label_align=None, **kwargs) -> Union[QtWidgets.QWidget, list]` — Add a widget to the body the way ``Menu.add`` adds an item.
   - `WindowPanel.clear_rows(self) -> None` — Drop every row :meth:`add` placed, and the attributes exposing them.
   - `WindowPanel.tighten_sublayouts(self, spacing: int = 1) -> None` — Set every nested sub-layout inside ``body_layout`` to *spacing*.
-  - `WindowPanel.icon_button(icon_name: str = '', size: int = 24, tooltip: str = '', icon_size=None) -> QtWidgets.QPushButton` *(static)* — Build a square, flat, icon-only button for table cells / toolbars.
+  - `WindowPanel.icon_button(icon_name: str = '', size: int = 24, tooltip: str = '', icon_size=None, closes: bool = False) -> QtWidgets.QPushButton` *(static)* — Build a square, flat, icon-only button for table cells / toolbars.

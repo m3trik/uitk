@@ -175,9 +175,7 @@ class TestStackedControllerInteractions(unittest.TestCase):
         # QWidget does not have "clicked".
 
         try:
-            result = self.controller.child_mouseButtonReleaseEvent(
-                generic_widget, event
-            )
+            self.controller.child_mouseButtonReleaseEvent(generic_widget, event)
             print("Transition event handled without error.")
         except Exception as e:
             self.fail(f"Transition logic crashed: {e}")

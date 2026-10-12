@@ -15,8 +15,6 @@ from conftest import QtBaseTestCase, setup_qt_application
 
 app = setup_qt_application()
 
-from qtpy import QtWidgets  # noqa: E402
-
 from uitk.widgets.separator import Separator  # noqa: E402
 
 

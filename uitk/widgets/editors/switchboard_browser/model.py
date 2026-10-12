@@ -27,8 +27,9 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
     Columns:
         0 = Name
         1 = Tags
-        2 = Launch / Focus action (icon button via setIndexWidget)
-        3 = Close action (icon button via setIndexWidget)
+        2 = Description (the entry's one sentence; full text on hover)
+        3 = Close action (icon button via setIndexWidget; open windows only)
+        4 = Launch / Focus action (icon button via setIndexWidget)
 
     Custom roles return the same data regardless of column so filter
     predicates can query any column.
@@ -36,9 +37,19 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
 
     COL_NAME = 0
     COL_TAGS = 1
-    COL_ACTION = 2
+    COL_DESC = 2
     COL_CLOSE = 3
-    COLUMN_COUNT = 4
+    COL_ACTION = 4
+    COLUMN_COUNT = 5
+
+    #: The columns by name: what a browser's ``hidden_by_default`` spells.
+    COLUMNS = {
+        "name": COL_NAME,
+        "tags": COL_TAGS,
+        "description": COL_DESC,
+        "launch": COL_ACTION,
+        "close": COL_CLOSE,
+    }
 
     NameRole = QtCore.Qt.UserRole + 1
     PathRole = QtCore.Qt.UserRole + 2
@@ -49,6 +60,7 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
     InheritedTagsRole = QtCore.Qt.UserRole + 7
     KindRole = QtCore.Qt.UserRole + 8
     EntryRole = QtCore.Qt.UserRole + 9
+    DescriptionRole = QtCore.Qt.UserRole + 10
 
     def __init__(
         self,
@@ -171,9 +183,14 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
             return {
                 self.COL_NAME: "Name",
                 self.COL_TAGS: "Tags",
+                self.COL_DESC: "Description",
                 self.COL_ACTION: "",
                 self.COL_CLOSE: "",
             }.get(section, "")
+        if role == QtCore.Qt.ToolTipRole:
+            # The icon-button columns are too narrow for a title: their
+            # tooltip names them (and the header's column menu reads it).
+            return {self.COL_ACTION: "Launch", self.COL_CLOSE: "Close"}.get(section)
         if role == QtCore.Qt.TextAlignmentRole:
             # Left-align the title row so titles sit flush with row content
             # instead of Qt's default center alignment.
@@ -194,6 +211,8 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
             return entry.filepath
         if role == self.KindRole:
             return entry.kind
+        if role == self.DescriptionRole:
+            return entry.description
         if role == self.TagsRole:
             return sorted(entry.all_tags)
         if role == self.FileTagsRole:
@@ -208,6 +227,14 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
             )
         if role == self.VisibleRole:
             return self._is_visible(entry)
+
+        # The description cell is plain text, elided by the view; its
+        # tooltip carries the whole of it.
+        if index.column() == self.COL_DESC:
+            if role == QtCore.Qt.DisplayRole:
+                return entry.description
+            if role == QtCore.Qt.ToolTipRole:
+                return entry.description or None
 
         # Display role: only Name and Tags columns produce text via the
         # delegate's HTML renderer; the action columns hold widgets.

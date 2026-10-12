@@ -1,7 +1,9 @@
 # !/usr/bin/python
 # coding=utf-8
+import math
 import os
 import re
+from html import escape
 import pythontk as ptk
 from qtpy import QtWidgets, QtCore, QtGui, QtSvg
 from uitk.widgets._layout_items import _LayoutItems
@@ -12,6 +14,162 @@ from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.managers.icon_manager import IconManager
 from uitk.managers.cursor_manager import CursorManager
 from uitk._bootstrap import Bootstrap
+
+
+class _HelpCard(QtWidgets.QTextBrowser):
+    """A header's help, shown at its ``?`` button.
+
+    Laid out as a tooltip lays out the same text (:meth:`TooltipFormat.wrap`),
+    but a tooltip can neither scroll nor be clicked: past *max_share* of the
+    screen's height this card scrolls instead of running off the screen, and
+    its documentation link opens in the browser. A tool window that never
+    takes focus (the tooltip's own window type); it hides once the pointer has
+    left both the button and the card.
+    """
+
+    #: Pointer polls outside the button and the card before the card hides:
+    #: the grace for crossing from one to the other.
+    LEAVE_SAMPLES = 2
+    POLL_MS = 150
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowFlags(QtCore.Qt.ToolTip | QtCore.Qt.FramelessWindowHint)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
+        self.setObjectName("helpCard")
+        self.setFont(QtWidgets.QToolTip.font())
+        self.setPalette(QtWidgets.QToolTip.palette())
+        self.setOpenExternalLinks(True)
+        self.setLineWrapMode(QtWidgets.QTextEdit.NoWrap)  # wrap() broke the lines
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self._anchor = None
+        self._outside = 0
+        self._poll = QtCore.QTimer(self)
+        self._poll.setInterval(self.POLL_MS)
+        self._poll.timeout.connect(self._check_pointer)
+
+    def popup(self, anchor, html: str, max_share: float) -> None:
+        """Show *html* under *anchor*, at most *max_share* of its screen tall."""
+        self._anchor = anchor
+        self.ensurePolished()  # the style sheet's border is in frameWidth()
+        self.setHtml(html)
+        screen = anchor.screen() or QtWidgets.QApplication.primaryScreen()
+        avail = screen.availableGeometry()
+        # Measured on a copy: the browser lays its own document out at its
+        # viewport's width, which is what is being decided here.
+        doc = self.document().clone()  # unparented: Python owns it
+        doc.setTextWidth(-1)
+        frame = 2 * self.frameWidth()
+        text_w = math.ceil(doc.idealWidth())
+        text_h = math.ceil(doc.size().height())
+        cap = max(1, int(avail.height() * max_share))
+        height = min(text_h + frame, cap)
+        width = text_w + frame
+        if height < text_h + frame:  # scrolls: room for the bar beside the text
+            width += self.style().pixelMetric(QtWidgets.QStyle.PM_ScrollBarExtent)
+        clipped = width > avail.width()  # a screen narrower than a line
+        width = min(width, avail.width())
+        self.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarAsNeeded if clipped else QtCore.Qt.ScrollBarAlwaysOff
+        )
+        top_left = anchor.mapToGlobal(QtCore.QPoint(0, anchor.height()))
+        x = max(avail.left(), min(top_left.x(), avail.right() + 1 - width))
+        y = top_left.y()
+        if y + height > avail.bottom() + 1:  # no room below: above the button
+            y = anchor.mapToGlobal(QtCore.QPoint(0, 0)).y() - height
+        y = max(avail.top(), y)
+        self.setGeometry(x, y, width, height)
+        self.verticalScrollBar().setValue(0)
+        self.show()
+        self.raise_()
+        self._outside = 0
+        self._poll.start()
+
+    def _pointer_over(self, pos) -> bool:
+        if self.frameGeometry().contains(pos):
+            return True
+        try:
+            anchor = self._anchor
+            return bool(
+                anchor is not None
+                and anchor.isVisible()
+                and anchor.rect().contains(anchor.mapFromGlobal(pos))
+            )
+        except RuntimeError:  # the button was rebuilt away
+            return False
+
+    def _check_pointer(self) -> None:
+        if self._pointer_over(QtGui.QCursor.pos()):
+            self._outside = 0
+            return
+        self._outside += 1
+        if self._outside >= self.LEAVE_SAMPLES:
+            self.hide()
+
+    def hideEvent(self, event):
+        self._poll.stop()
+        super().hideEvent(event)
+
+
+class _DragRescaleGuard(QtCore.QObject):
+    """Keeps a window's size while a header drag moves it.
+
+    Between monitors of different scale Qt's logical coordinates have a gap,
+    and while a drag's ``move()`` steps cross it the window flips between the
+    screens and the window system rescales it on each flip (x1.25 a step
+    between 100% and 125%) -- it grew on every drag. That resize is
+    spontaneous (the window system's) and lands a turn or two after the move;
+    the app's own resizes are not. So a spontaneous resize is undone one
+    event-loop turn later, while a non-spontaneous one is a real resize and
+    becomes the size kept. A maximized or full-screen window is the window
+    system's to size.
+    """
+
+    #: How long the guard outlives the drag, for a rescale still in flight
+    #: from its last move.
+    GRACE_MS = 250
+
+    def __init__(self, window: QtWidgets.QWidget):
+        super().__init__(window)
+        self._size = window.size()  # the size kept
+        self._held = None  # the size a pending undo puts back
+        # Child timers rather than ``singleShot(ms, self, fn)``: PySide 6.5.3
+        # (Maya 2025) has no context overload, and a child dies with the guard.
+        self._undo_timer = self._timer(self._undo)
+        self._detach_timer = self._timer(self._detach)
+        window.installEventFilter(self)
+
+    def _timer(self, slot) -> QtCore.QTimer:
+        timer = QtCore.QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(slot)
+        return timer
+
+    def eventFilter(self, window, event):
+        if event.type() == QtCore.QEvent.Resize and window is self.parent():
+            if not event.spontaneous():
+                if self._held is None:
+                    self._size = event.size()
+            elif self._held is None and not window.windowState() & (
+                QtCore.Qt.WindowMaximized | QtCore.Qt.WindowFullScreen
+            ):
+                self._held = self._size
+                self._undo_timer.start(0)
+        return False
+
+    def _undo(self):
+        size, self._held = self._held, None
+        window = self.parent()
+        if size is not None and window.size() != size:
+            window.resize(size)
+
+    def release(self):
+        """The drag is over: keep watching for :attr:`GRACE_MS`, then detach."""
+        self._detach_timer.start(self.GRACE_MS)
+
+    def _detach(self):
+        self.parent().removeEventFilter(self)
+        self.deleteLater()
 
 
 class Header(
@@ -52,6 +210,15 @@ class Header(
 
     toggled = QtCore.Signal(bool)
     refresh_requested = QtCore.Signal()
+
+    #: The help card's height cap, as a share of the screen's available
+    #: height: longer help scrolls inside it rather than filling the screen.
+    HELP_MAX_SCREEN_SHARE = 0.6
+
+    #: The buttons that dismiss the window. One header carries one of them:
+    #: the pin button hides the window too, so the two are alternative
+    #: answers to how the window goes away (see :meth:`config_buttons`).
+    DISMISS_BUTTONS = ("pin", "hide")
 
     MINIMIZE_WIDTH = 200  # Fixed width when minimized to corner
     MINIMIZE_STACK = "horizontal"  # "horizontal" or "vertical"
@@ -168,6 +335,8 @@ class Header(
         # Persisted help text — survives config_buttons rebuilds so the help
         # button is re-added automatically if the layout is rebuilt later.
         self._help_text = ""
+        self._help_url = ""
+        self._help_card = None  # built on first show
 
         self.container_layout = QtWidgets.QHBoxLayout(self)
         self.container_layout.setContentsMargins(0, 0, 0, 0)
@@ -182,6 +351,7 @@ class Header(
         # tracker with button-less moves.
         self.setAttribute(QtCore.Qt.WA_Hover, True)
         self._dragging = False  # a press that has moved far enough to drag
+        self._drag_guard = None  # a _DragRescaleGuard while a drag moves the window
 
         self.setProperty("class", self.__class__.__name__)
         font = self.font()
@@ -404,6 +574,9 @@ class Header(
     def config_buttons(self, *button_list):
         """Configure header buttons from a list and align them to the right.
 
+        A header carries ONE of :attr:`DISMISS_BUTTONS`: the pin button hides
+        the window too, so a list naming both keeps the first named.
+
         Parameters:
             *button_list: Button names in display order (as args or single list).
                 Examples:
@@ -415,6 +588,7 @@ class Header(
         # Support both styles: config_buttons('a', 'b') and config_buttons(['a', 'b'])
         if len(button_list) == 1 and isinstance(button_list[0], (list, tuple)):
             button_list = button_list[0]
+        button_list = self._one_dismiss_button(button_list)
 
         # Clear layout
         while self.container_layout.count():
@@ -444,11 +618,13 @@ class Header(
             self.container_layout.addWidget(button)
             self.buttons[button_name] = button
 
-        # Re-add the help button when help text was previously set but
-        # 'help' wasn't included in this call's button list. Keeps help
+        # Re-add the help button when help was previously set but 'help'
+        # wasn't included in this call's button list. Keeps help
         # discoverable across config_buttons rebuilds.
-        if self._help_text and "help" not in self.buttons:
-            self._install_help_button(self._help_text)
+        if "help" in self.buttons:
+            self.buttons["help"].installEventFilter(self)  # hover shows the card
+        elif self._help_text or self._help_url:
+            self._install_help_button()
 
         self.container_layout.invalidate()
         self.trigger_resize_event()
@@ -462,6 +638,18 @@ class Header(
         # A freshly created menu button defaults to visible; reconcile it with
         # the menu's actual content so an empty menu's button stays hidden.
         self._sync_menu_button_visibility()
+
+    @classmethod
+    def _one_dismiss_button(cls, names) -> list:
+        """*names* with every dismissal button after the first one dropped."""
+        out, dismiss = [], None
+        for name in names:
+            if name in cls.DISMISS_BUTTONS:
+                if dismiss is not None:
+                    continue
+                dismiss = name
+            out.append(name)
+        return out
 
     def trigger_resize_event(self):
         current_size = self.size()
@@ -787,9 +975,14 @@ class Header(
                 self._set_button_icon(self.buttons["fullscreen"], "restore")
 
     def hide_window(self):
-        """Hide the parent window."""
-        if self.pinned:
-            self.toggle_pin(from_drag=True)  # Programmatic toggle, not user click
+        """Hide the parent window, unpinning it first.
+
+        The window's own pin counts too: a pinned ``MainWindow`` vetoes
+        ``hide()``, so a pin the header never heard of left the hide button
+        dead.
+        """
+        if self.pinned or getattr(self.window(), "pinned", False):
+            self._set_pin_state(False)
 
         # Reset minimize/collapse state when hiding
         if self._minimized:
@@ -814,13 +1007,17 @@ class Header(
         """
         self.refresh_requested.emit()
 
-    def set_help_text(self, text):
+    def set_help_text(self, text, url=None):
         """Set the tool's help/instruction text and ensure the help button is shown.
 
         Auto-adds the help button to the header if not already present (inserted
-        at the leftmost position, immediately right of the stretch). The text is
-        stored as the button's tooltip — so hovering shows it, and clicking the
-        button forces the tooltip to pop up (see :meth:`show_help`).
+        at the leftmost position, immediately right of the stretch). Hovering or
+        clicking the button shows the help card (see :meth:`show_help`): laid
+        out as a tooltip, capped at :attr:`HELP_MAX_SCREEN_SHARE` of the
+        screen's height (longer help scrolls), and ending in a link to *url*.
+
+        Keep the text to what a user needs at the panel and put the rest in
+        the document *url* points at: a card is read at a glance.
 
         The text persists across :meth:`config_buttons` rebuilds: if the layout
         is rebuilt later without ``"help"`` in the list, the help button is
@@ -828,20 +1025,22 @@ class Header(
 
         Parameters:
             text (str): Help / instruction text. Plain text or rich-text HTML
-                (e.g. built with :func:`uitk.widgets.mixins.tooltip_mixin.fmt`).
+                (e.g. built with :meth:`pythontk.TooltipFormat.fmt`).
+            url (str, optional): The tool's full documentation, linked at the
+                card's foot. ``None`` keeps the current link; ``""`` clears it.
         """
         self._help_text = text or ""
-        if "help" in self.buttons:
-            self.buttons["help"].setToolTip(self._help_text)
-        else:
-            self._install_help_button(self._help_text)
+        if url is not None:
+            self._help_url = url
+        if "help" not in self.buttons:
+            self._install_help_button()
 
-    def _install_help_button(self, text):
-        """Create the help button, insert it at the leftmost slot, and set its tooltip."""
+    def _install_help_button(self):
+        """Create the help button and insert it at the leftmost slot."""
         icon_filename, method_name = self.button_definitions["help"]
         callback = getattr(self, method_name)
         button = self.create_button(icon_filename, callback, button_type="help")
-        button.setToolTip(text)
+        button.installEventFilter(self)  # hover shows the card
         # Insert at the leftmost button slot. The stretch lives at index 0,
         # so the first widget sits at index 1.
         self.container_layout.insertWidget(1, button)
@@ -852,21 +1051,40 @@ class Header(
         """Return the current help text, or ``""``."""
         return self._help_text
 
-    def show_help(self):
-        """Pop the help tooltip up at the help button.
+    def help_url(self):
+        """Return the help's documentation link, or ``""``."""
+        return self._help_url
 
-        Slots connect implicitly via the help button's ``clicked`` signal.
-        Calling this method directly is equivalent to clicking the help button.
+    def help_html(self) -> str:
+        """The help card's content: the help text, then the documentation link.
+
+        Laid out as a tooltip lays the same text out
+        (:meth:`TooltipFormat.wrap`), so hover and click read alike.
+        """
+        text, url = self._help_text, self._help_url
+        if text and not ptk.TooltipFormat.is_rich(text):
+            text = escape(text).replace("\n", "<br>")
+        if url:
+            text += (
+                f"<p style='margin:6px 0 0 0'><a href='{escape(url, quote=True)}'>"
+                "Full documentation</a></p>"
+            )
+        return ptk.TooltipFormat.wrap(text, rich=True) if text else ""
+
+    def show_help(self):
+        """Show the help card at the help button.
+
+        Slots connect implicitly via the help button's ``clicked`` signal, and
+        the button's hover shows it too. Calling this method directly is
+        equivalent to clicking the help button.
         """
         button = self.buttons.get("help")
-        if not button:
+        html = self.help_html()
+        if not button or not html:
             return
-        text = button.toolTip()
-        if not text:
-            return
-        # Anchor just below the button so the tooltip doesn't cover it.
-        pos = button.mapToGlobal(QtCore.QPoint(0, button.height()))
-        TooltipPresenter.show_text(pos, text, button)
+        if self._help_card is None:
+            self._help_card = _HelpCard(self)
+        self._help_card.popup(button, html, self.HELP_MAX_SCREEN_SHARE)
 
     def show_menu(self):
         """Show the menu."""
@@ -1196,7 +1414,13 @@ class Header(
             button.setToolTip("Pin the window open.")
 
     def eventFilter(self, watched, event):
-        """Track pin-button hover, and keep a collapsed window's content hidden."""
+        """Track pin-button hover, show the help card for the help button's
+        tooltip, and keep a collapsed window's content hidden."""
+        if event.type() == QtCore.QEvent.ToolTip and watched is self.buttons.get(
+            "help"
+        ):
+            self.show_help()
+            return True
         if watched is self.buttons.get("pin"):
             event_type = event.type()
             if event_type == QtCore.QEvent.Enter:
@@ -1258,6 +1482,7 @@ class Header(
                         if not self.pinned:
                             self.toggle_pin(from_drag=True)
                         return super().mouseMoveEvent(event)
+                    self._drag_guard = _DragRescaleGuard(self.window())
                 self.window().move(self.window().pos() + moveAmount)
                 self.__mousePressPos = event.globalPos()
                 if not self.pinned:  # Only change state if not already pinned
@@ -1289,6 +1514,9 @@ class Header(
         hide that lands mid-drag and swallows the release."""
         if self._dragging:
             self._dragging = False
+            if self._drag_guard is not None:
+                self._drag_guard.release()
+                self._drag_guard = None
             CursorManager.pop(self)
 
     def showEvent(self, event):
@@ -1296,6 +1524,7 @@ class Header(
             self.restore_window()
         elif self._collapsed:
             self.expand_window()
+        self._follow_window_pin()
         super().showEvent(event)
         # SYNCHRONOUS — both hooks read only flags/menu state (no post-layout
         # geometry), and a child's showEvent is delivered during the parent's
@@ -1383,14 +1612,29 @@ class Header(
         self.setParent(widget)
         setattr(widget, "header", self)
 
+        self._follow_window_pin(always=True)
+
+    def _follow_window_pin(self, always: bool = False) -> None:
+        """Follow the pin of the window this header sits in (its
+        ``on_pinned_changed``), taking its current state.
+
+        :meth:`attach_to` re-targets *always*; a show (``always=False``) only
+        picks up a window with the signal that it doesn't follow yet -- a
+        ``.ui`` header is laid out, never attached, and otherwise never heard
+        of a pin set on its window.
+        """
+        window = self.window()
+        previous = getattr(self, "_pin_signal_source", None)
+        if not always and (
+            previous is window or not hasattr(window, "on_pinned_changed")
+        ):
+            return
         # Only disconnect the connection WE made previously (tracked in
         # _pin_signal_source) — blindly disconnecting on a fresh window makes
         # libpyside emit a "Failed to disconnect" RuntimeWarning. The disconnect
         # runs regardless of whether the NEW window has the signal: re-attaching
         # to a signal-less window must not leave the header reacting to the old
         # window's pin toggles.
-        window = self.window()
-        previous = getattr(self, "_pin_signal_source", None)
         if previous is not None:
             try:
                 previous.on_pinned_changed.disconnect(self._on_window_pinned_changed)
@@ -1408,6 +1652,8 @@ class Header(
     def hideEvent(self, event):
         """Reset minimize/collapse state when header (and window) is hidden."""
         self._end_drag_cursor()
+        if self._help_card is not None:
+            self._help_card.hide()
         if self._minimized:
             self.restore_window()
         elif self._collapsed:
@@ -1485,7 +1731,7 @@ if __name__ == "__main__":
     w = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(w)
     header = Header(
-        config_buttons=["menu", "collapse", "minimize", "pin", "hide"],
+        config_buttons=["menu", "collapse", "minimize", "pin"],
         setTitle="DRAG ME!",
     )
     header.toggled.connect(lambda state: print(f"Header pinned: {state}!"))

@@ -15,8 +15,9 @@ Example
 >>> w.show()
 """
 
+import dataclasses
 from contextlib import contextmanager
-from typing import Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
 
@@ -26,6 +27,7 @@ from uitk.widgets.editors.color_mapping_editor import (
 )
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
+from uitk.widgets.widgetComboBox import WidgetComboBox
 from uitk.managers.settings_manager import SettingsManager
 from uitk.managers.shortcut_manager import ShortcutManager
 
@@ -34,13 +36,12 @@ from uitk.widgets.sequencer._data import (
     MenuUtils,
     TrackData,
     MarkerData,
-    _TRACK_HEIGHT,
-    _SUB_ROW_HEIGHT,
-    _TRACK_PADDING,
+    RowMetrics,
     _HEADER_HEIGHT,
     DISPLAY_COLORS,
 )
 from uitk.widgets.sequencer._clip import ClipItem
+from uitk.widgets.sequencer._editor import SequencerEditor, TrackEditor
 from uitk.widgets.sequencer._overlays import (
     _StaticRangeOverlay,
     _GapOverlayItem,
@@ -177,42 +178,98 @@ class AttributeColorDialog(ColorMappingDialog):
 # ---------------------------------------------------------------------------
 #  SequencerWidget  (the public API)
 # ---------------------------------------------------------------------------
-#: The mouse grammar, as the consumers implement it and the shortcut overlay
-#: shows it: ``(group, keys, what it does)``.  A shot's own bound (its edges,
-#: the ruler band's edges) never moves the shot's keys: a plain drag moves
-#: the bound and the neighbouring shots ripple with their keys to keep the
-#: gaps; Ctrl moves the bound and nothing else (the shot grows into the gap
-#: over the keys there, or shrinks and leaves keys for the next shot); Shift
-#: retimes the keys into the new span.  The ruler band's body moves the shot.
-#: A gap's edge belongs to the shot beyond it: a plain drag slides that shot.
-#: A tangent handle reads the same three modifiers on the key selection it is
-#: part of (:class:`~uitk.widgets.sequencer._keyframe.TangentHandleItem`).
-_GESTURE_DEFS = (
-    ("Shot bounds", "Drag", "Move the bound; neighbours ripple (keys stay)"),
-    ("Shot bounds", "Ctrl+Drag", "Move the bound only; a neighbour's gives way"),
-    ("Shot bounds", "Shift+Drag", "Retime keys into the new span"),
-    ("Shot bounds", "Drag band", "Move the shot (keys ride)"),
-    ("Gaps", "Drag edge", "Slide the shot beyond it (gap changes)"),
-    ("Gaps", "Ctrl+Drag edge", "Move that bound only (keys stay)"),
-    ("Gaps", "Shift+Drag edge", "Retime that shot into the new span"),
-    ("Gaps", "Drag body", "Slide the gap (active shot's edge follows)"),
-    ("Gaps", "Right-click", "Lock / unlock the gap"),
-    ("Clips & keys", "Drag", "Move keys (ripple)"),
-    ("Clips & keys", "Drag edge", "Scale the clip's keys"),
-    ("Clips & keys", "Drag edge (multi)", "Scale the whole selection as one"),
-    ("Clips & keys", "Shift (keys selected)", "Scale box: drag an end to retime"),
-    ("Clips & keys", "Alt+Drag a scale end", "Scale about the playhead instead"),
-    ("Clips & keys", "Shift+Drag", "Cross shot bounds, bounds stay"),
-    ("Clips & keys", "Ctrl", "Snap to whole frames"),
-    ("Clips & keys", "Right-click", "Tangents, lock, Move to Shot"),
-    ("Tangents", "Drag a handle", "Reshape every selected key's tangent"),
-    ("Tangents", "Ctrl+Drag", "Reshape the grabbed key only"),
-    ("Tangents", "Shift+Drag", "Give every selected key this exact tangent"),
-    ("Tangents", "Alt+Drag", "Break the tangent (dotted while held)"),
-    ("Timeline", "Drag", "Marquee select (Space moves it)"),
-    ("Timeline", "Ctrl+Shift+Click", "Switch to the shot under the cursor"),
-    ("Timeline", "Wheel / Middle-drag", "Zoom / pan"),
-)
+
+
+class _OptionsCombo(WidgetComboBox):
+    """The Options band's combobox: the rows are read from the active editor
+    as it opens (:meth:`_OptionsBand.rebuild`), so they say the options'
+    values now -- a graph's context menu sets the same ones."""
+
+    def __init__(self, band: "_OptionsBand"):
+        super().__init__(band)
+        self._band = band
+
+    def showPopup(self) -> None:
+        self._band.rebuild()
+        super().showPopup()
+
+
+class _OptionsBand(QtWidgets.QWidget):
+    """The header pane's top strip, level with the ruler and the shot lane.
+
+    Pinned like them -- the rows scroll under it -- and holding one combobox
+    the pane's full width: the active editor's Options
+    (:meth:`SequencerEditor.options`), a checkbox each under its section's
+    title, collapsed until asked for, so a view's settings never cost the
+    pane's room.
+    """
+
+    def __init__(self, sequencer, host: QtWidgets.QWidget):
+        super().__init__(host)
+        self._sequencer = sequencer
+        self.setObjectName("sequencerOptionsBand")
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        self.setStyleSheet("#sequencerOptionsBand { background: #2B2B2B; }")
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(4, 2, 4, 2)
+        self.combo = _OptionsCombo(self)
+        self.combo.setToolTip("This view's options")
+        self.combo.arrow_direction = "down"
+        self.combo.item_spacing = 0  # the checkbox rows sit flush
+        self.combo.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
+        layout.addWidget(self.combo)
+        self.rebuild()
+        host.installEventFilter(self)
+        # A page switch raises the new page over every sibling, this strip
+        # included: raise it back, or an editor switch buries the button.
+        host.currentChanged.connect(lambda _index: self.sync_geometry())
+        self.sync_geometry()
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() in (QtCore.QEvent.Resize, QtCore.QEvent.Show):
+            self.sync_geometry()
+        return False
+
+    def sync_geometry(self) -> None:
+        host = self.parentWidget()
+        self.setGeometry(0, 0, host.width(), int(self._sequencer._content_top))
+        self.raise_()
+
+    def rebuild(self) -> None:
+        """The combobox's rows from the active editor's options: a checkbox
+        each, reading its value now, grouped under their sections' titles in
+        the order the sections were first added (unsectioned rows first)."""
+        from uitk.widgets.separator import Separator
+
+        rows = self._sequencer.active_editor.options()
+        order = {"": 0}  # a section's rank: first added first, unsectioned top
+        for row in rows:
+            order.setdefault(row["section"], len(order))
+        rows = sorted(rows, key=lambda r: order[r["section"]])
+        widgets, section = [], ""
+        for row in rows:
+            if row["section"] != section:
+                section = row["section"]
+                widgets.append(Separator(title=section))
+            box = QtWidgets.QCheckBox(row["label"])
+            box.setChecked(bool(row["get"]()))
+            box.setToolTip(row["tooltip"])
+            box.toggled.connect(lambda on, r=row: r["set"](on))
+            widgets.append(box)
+        if not widgets:
+            note = QtWidgets.QLabel("No options for this view")
+            note.setEnabled(False)
+            widgets.append(note)
+        self.combo.add(widgets, header="Options")
+        model = self.combo.model()
+        for i in range(model.rowCount()):  # a click acts on its widget, never picks
+            model.item(i).setFlags(QtCore.Qt.ItemIsEnabled)
+
+    def rows(self) -> List[QtWidgets.QWidget]:
+        """The combobox's row widgets, top to bottom."""
+        return [self.combo.widgetAt(i) for i in range(self.combo.count())]
 
 
 class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
@@ -309,11 +366,13 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     keys_deleted = QtCore.Signal(int, list)  # (clip_id, [time, ...])
     key_selection_changed = QtCore.Signal(
         list
-    )  # [{clip_id, obj, attr_name, times}, ...]
+    )  # [{clip_id, times}, ...] -- ``selected_keys()``
     # Right-click on a key: the selected keys (the clicked one included),
-    # grouped by clip exactly as ``key_selection_changed`` reports them, so a
+    # minus rows that refuse key edits (``ClipItem.keys_editable``), grouped
+    # by clip exactly as ``key_selection_changed`` reports them, so a
     # consumer resolves both payloads with one routine.  Emitted before
-    # ``exec_`` -- add actions; the widget appends Delete after them.
+    # ``exec_`` -- add actions; the widget adds none of its own (Delete is
+    # the shortcut, see ``show_key_menu``).
     key_menu_requested = QtCore.Signal(object, list)  # (QMenu, [{clip_id, times}])
     # A tangent handle was dragged: every key the gesture carried, grouped
     # by clip -- [(clip_id, [(time, dt, dv), ...]), ...], the handle VECTOR
@@ -325,6 +384,12 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     # the preview's control points already show the new shape, and the
     # consumer rebuilds from the scene after writing the tangents.
     keys_tangent_dragged = QtCore.Signal(list, str, bool)
+    #: The content area now shows the editor of this name (``set_editor``).
+    editor_changed = QtCore.Signal(str)
+    #: A host finished rebuilding the content: the outermost
+    #: :meth:`bulk_updates` block exited.  What an editor drawing the same
+    #: data its own way (a graph editor) refreshes from.
+    content_rebuilt = QtCore.Signal()
 
     def __init__(self, parent=None, **kwargs):
         super().__init__(QtCore.Qt.Horizontal, parent)
@@ -345,7 +410,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._attribute_colors: Dict[str, str] = dict(DISPLAY_COLORS)
         self._expanded_tracks: Dict[int, List[str]] = {}  # track_id → sub-row names
         self._bulk_depth: int = 0  # >0 inside bulk_updates() — defer scene-rect
-        self._sub_row_height: int = _SUB_ROW_HEIGHT
+        # Row sizes + key style (density); read by _iter_rows and the header.
+        self._row_metrics: RowMetrics = RowMetrics.preset("standard")
         self._sub_row_provider = None  # callable(track_id, track_name) → [(sub_name, [(start,dur,label,color), ...]), ...]
         self._range_highlight: Optional[RangeHighlightItem] = None
         self._range_overlays: List[QtWidgets.QGraphicsItem] = []
@@ -363,6 +429,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._show_range_overlays: bool = True  # toggle for shot range overlays
         self._show_gap_overlays: bool = True  # toggle for gap overlays
         self._show_range_highlight: bool = True  # toggle for active shot highlight
+        self._mark_flat_spans: bool = True  # see mark_flat_spans
         self._bg_curve_previews: Dict[tuple, dict] = {}  # (track_id, sub_row) → preview
         # Shift + a key selection raises a scale box around it; see
         # ``refresh_key_scale_box``.
@@ -415,7 +482,27 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # Clip labels / marker notes are graphics-item tooltips over its viewport.
         TooltipPresenter.manage(self._timeline)
 
-        self.addWidget(self._header_scroll)
+        # -- editors: what the content area shows (``_editor.py``) ------------
+        #: name -> editor instance, or the factory that builds it on first use
+        #: (the graph editor's module loads only when it is first shown).
+        self._editors: Dict[str, object] = {}
+        #: Keys the active editor answers before the shortcut table.
+        self._editor_keys: Dict[str, dict] = {}
+        self._active_editor_name = TrackEditor.name
+        self.register_editor(TrackEditor.name, TrackEditor)
+        self.register_editor("graph", SequencerWidget._graph_editor_factory)
+        self.editor(TrackEditor.name).activate()
+
+        # The left pane is a stack: the track header, or the active editor's
+        # own page (a graph editor's curve list).
+        self._header_stack = QtWidgets.QStackedWidget()
+        self._header_stack.setMinimumWidth(0)
+        self._header_stack.addWidget(self._header_scroll)
+        #: Pinned over the pane's top strip, level with the ruler and the
+        #: shot lane: the active editor's Options menu.
+        self._options_band = _OptionsBand(self, self._header_stack)
+
+        self.addWidget(self._header_stack)
         self.addWidget(self._timeline)
         self.setHandleWidth(2)
         self.setCollapsible(0, True)
@@ -479,7 +566,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._shortcut_mgr.add_shortcuts_batch(
             [(k, fn, desc, _ctx) for k, fn, desc in _shortcut_defs]
         )
-        for group, keys, description in _GESTURE_DEFS:
+        for group, keys, description in self.active_editor.gestures:
             self._shortcut_mgr.add_gesture(group, keys, description)
         self._shortcut_overlay = None  # built on first show (shortcut_overlay_visible)
         self._ctrl_at_press = False
@@ -509,12 +596,15 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     # -- shortcut sequence sync --------------------------------------------
 
     def _sync_shortcut_sequences(self) -> None:
-        """Rebuild the ShortcutOverride key list from the manager."""
-        self._timeline._shortcut_sequences = [
-            QtGui.QKeySequence(k)
+        """Rebuild the ShortcutOverride key list: the active editor's keys
+        (:meth:`SequencerEditor.key_bindings`), then the manager's."""
+        keys = list(self._editor_keys)
+        keys += [
+            k
             for k, v in self._shortcut_mgr.shortcuts.items()
-            if not v.get("read_only")
+            if not v.get("read_only") and k not in self._editor_keys
         ]
+        self._timeline._shortcut_sequences = [QtGui.QKeySequence(k) for k in keys]
 
     # -- consume assigned shortcuts so they don't leak to the host app --------
 
@@ -613,7 +703,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         key = QtGui.QKeySequence(event.key() | mod_int)
         for seq in self._timeline._shortcut_sequences:
             if key.matches(seq) == QtGui.QKeySequence.ExactMatch:
-                return seq, self._shortcut_mgr.shortcuts.get(seq.toString())
+                name = seq.toString()
+                # The active editor answers its own keys first: a graph
+                # editor's Delete is not the track rows' Delete.
+                entry = self._editor_keys.get(name)
+                return seq, entry or self._shortcut_mgr.shortcuts.get(name)
         return None
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
@@ -808,6 +902,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             self._selection_suppressed -= 1
             if self._bulk_depth == 0:
                 self._timeline._update_scene_rect()
+                self.content_rebuilt.emit()
 
     def add_clip(
         self,
@@ -856,7 +951,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # create visual item
         item = ClipItem(cd, self._timeline)
         self._clip_items[cid] = item
-        self._timeline._scene.addItem(item)
+        self._add_track_item(item)
         self._refresh_extent()
         return cid
 
@@ -934,7 +1029,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             )
             sub_names = self._expanded_tracks.get(t.track_id)
             if sub_names:
-                self._header.set_track_expanded(i, sub_names, self._sub_row_height)
+                self._header.set_track_expanded(
+                    i, sub_names, self._row_metrics.sub_row_height
+                )
         self._timeline._refresh_all()
 
     def get_clip(self, clip_id: int) -> Optional[ClipData]:
@@ -951,6 +1048,46 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def tracks(self) -> List[TrackData]:
         """Return a list of all track data."""
         return list(self._tracks)
+
+    @property
+    def shortcut_manager(self) -> ShortcutManager:
+        """The sequencer's shortcut table: a host adds or re-points a key
+        (``add_shortcut``) or opens the editor (``show_editor``) through it."""
+        return self._shortcut_mgr
+
+    def context_entries(self, t: float) -> list:
+        """The timeline's own right-click entries at time *t*, as data
+        (:meth:`TimelineView.default_context_entries`): what a host folds into
+        a menu it builds itself."""
+        return self._timeline.default_context_entries(t)
+
+    def refresh(self) -> None:
+        """Re-lay every item out against the current zoom, rows and editor."""
+        self._timeline._refresh_all()
+
+    def viewport_state(self) -> dict:
+        """The view to put back after a rebuild.
+
+        ``{"zoom": pixels per frame, "h_scroll": scrollbar value,
+        "expanded": [track NAME, ...]}`` -- names, since a rebuild hands out
+        fresh track ids (:meth:`restore_viewport_state` re-applies the first
+        two; the host re-expands by name once its rows exist).
+        """
+        names = []
+        for tid in self._expanded_tracks:
+            td = self.get_track(tid)
+            if td is not None:
+                names.append(td.name)
+        return {
+            "zoom": self._timeline.pixels_per_unit,
+            "h_scroll": self._timeline.horizontalScrollBar().value(),
+            "expanded": names,
+        }
+
+    def restore_viewport_state(self, state: dict) -> None:
+        """Re-apply a :meth:`viewport_state`'s zoom and horizontal scroll."""
+        self._timeline.pixels_per_unit = float(state["zoom"])  # clamps, re-lays out
+        self._timeline.horizontalScrollBar().setValue(int(state["h_scroll"]))
 
     def clips(self, track_id: Optional[int] = None) -> List[ClipData]:
         """Return clip data, optionally filtered by track."""
@@ -1113,8 +1250,13 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         style: str = "triangle",
         line_style: str = "dashed",
         opacity: float = 1.0,
+        data: Optional[Dict[str, Any]] = None,
     ) -> int:
-        """Add a marker at *time*. Returns the ``marker_id``."""
+        """Add a marker at *time*. Returns the ``marker_id``.
+
+        *data* is the consumer's payload (``MarkerData.data``): the widget
+        never reads it, and keeps it through every edit.
+        """
         mid = self._next_marker_id
         self._next_marker_id += 1
         md = MarkerData(
@@ -1126,6 +1268,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             style=style,
             line_style=line_style,
             opacity=opacity,
+            data=dict(data or {}),
         )
         self._markers[mid] = md
         item = MarkerItem(md, self._timeline)
@@ -1192,7 +1335,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """
         if self._range_highlight is None:
             self._range_highlight = RangeHighlightItem(self._timeline)
-            self._timeline._scene.addItem(self._range_highlight)
+            self._add_track_item(self._range_highlight)
         self._range_highlight.set_range(start, end)
         self._range_highlight.setVisible(self._show_range_highlight)
         if color is not None:
@@ -1219,7 +1362,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """Add a non-interactive range overlay (e.g. for non-active shots)."""
         item = _StaticRangeOverlay(self._timeline, start, end, color, alpha)
         item.setVisible(self._show_range_overlays)
-        self._timeline._scene.addItem(item)
+        self._add_track_item(item)
         self._range_overlays.append(item)
         self._refresh_extent()
 
@@ -1259,7 +1402,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             head=head,
         )
         item.setVisible(self._show_gap_overlays)
-        self._timeline._scene.addItem(item)
+        self._add_track_item(item)
         self._gap_overlays.append(item)
         self._refresh_extent()
 
@@ -1385,8 +1528,12 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """Return sorted unique visible key times.
 
         Includes clip boundaries for all clips and individual keyframe
-        times from expanded sub-row clips.
+        times from expanded sub-row clips -- or the active editor's own
+        keys (:meth:`SequencerEditor.key_times`: the graph's curves).
         """
+        own = self.active_editor.key_times()
+        if own is not None:
+            return own
         times: set = set()
         for cd in self._clips.values():
             times.add(cd.start)
@@ -1433,11 +1580,14 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         mid = self.add_marker(t)
         self.marker_added.emit(mid, t)
 
-    def frame_shot(self):
+    def frame_shot(self) -> bool:
         """Zoom and scroll the timeline to frame the active shot range.
 
         Checks range highlight first, then active range (column tint),
         then falls back to framing all clips.
+
+        Returns:
+            Whether anything was framed: ``False`` with no shot and no clip.
         """
         rh = self.range_highlight()
         if rh is not None:
@@ -1448,10 +1598,20 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             t_min = min(cd.start for cd in self._clips.values())
             t_max = max(cd.end for cd in self._clips.values())
         else:
-            return
-        span = t_max - t_min
-        if span < 1.0:
-            span = 1.0
+            return False
+        self.frame_time_range(t_min, t_max)
+        return True
+
+    def frame_time_range(self, t_min: float, t_max: float, fit_values: bool = True):
+        """Zoom and scroll so ``[t_min, t_max]`` fills the timeline's width.
+
+        Parameters:
+            t_min, t_max: The frames to show (a span under one frame shows one).
+            fit_values: Let the active editor fit its vertical axis to what the
+                range shows (:meth:`SequencerEditor.frame_values`) -- a graph
+                editor's value axis; the track rows have none.
+        """
+        span = max(t_max - t_min, 1.0)
         vp_w = self._timeline.viewport().width()
         padding = _FRAME_PADDING
         usable = max(vp_w - padding * 2, 1)
@@ -1460,6 +1620,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._timeline.horizontalScrollBar().setValue(
             int(self._timeline.time_to_x(t_min) - padding)
         )
+        if fit_values:
+            self.active_editor.frame_values()
 
     # -- drag cancel -------------------------------------------------------
     def _cancel_active_drag(self) -> bool:
@@ -1701,6 +1863,31 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             self._range_highlight.setVisible(value)
 
     @property
+    def mark_flat_spans(self) -> bool:
+        """Draw a curve's flat spans apart (``CurveUtils.flat_pen``), so one
+        that only nearly holds reads as moving: every view's curves -- the
+        clips', the rows' background and the graph's.  One setting, offered
+        in each of those editors' Display options."""
+        return self._mark_flat_spans
+
+    @mark_flat_spans.setter
+    def mark_flat_spans(self, value: bool) -> None:
+        self._mark_flat_spans = bool(value)
+        self._timeline._scene.update()  # clips, rows and canvas alike
+
+    def add_flat_spans_option(self, editor: SequencerEditor) -> None:
+        """Offer :attr:`mark_flat_spans` in *editor*'s Display options (an
+        editor whose curves honour it)."""
+        editor.add_option(
+            "flat_spans",
+            "Mark Flat Spans",
+            lambda: self.mark_flat_spans,
+            lambda on: setattr(self, "mark_flat_spans", on),
+            "Dash the spans that hold one value: a nearly flat one stays solid",
+            section="Display",
+        )
+
+    @property
     def zone_menu_enabled(self) -> bool:
         """When ``True``, right-clicks emit :attr:`zone_context_menu_requested`
         (letting the consumer present a zone-specific menu) instead of the
@@ -1871,16 +2058,131 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._attribute_colors[name] = color
         self._timeline._scene.update()
 
+    # -- row density --------------------------------------------------------
+    @property
+    def row_metrics(self) -> RowMetrics:
+        """Row sizes and key style: a :class:`RowMetrics` (a density preset).
+
+        ``RowMetrics.preset("standard")`` is today's rows; ``"compact"``
+        narrows every row and draws keys flat.  Setting it re-lays the scene
+        rows and the header labels out together, so the two stay level.
+        """
+        return self._row_metrics
+
+    @row_metrics.setter
+    def row_metrics(self, metrics: RowMetrics) -> None:
+        if not isinstance(metrics, RowMetrics):
+            raise TypeError(f"row_metrics takes a RowMetrics, got {metrics!r}")
+        if metrics == self._row_metrics:
+            return
+        self._row_metrics = metrics
+        self._header.apply_metrics(metrics)
+        self._timeline._refresh_all()
+
+    # -- editors: the content area's views (``_editor.py``) -----------------
+    @staticmethod
+    def _graph_editor_factory(sequencer) -> SequencerEditor:
+        """Build the graph editor; its module loads on first use only."""
+        from uitk.widgets.sequencer._graph_editor import GraphEditor
+
+        return GraphEditor(sequencer)
+
+    def register_editor(self, name: str, factory) -> None:
+        """Offer an editor under *name*, built the first time it is asked for.
+
+        Parameters:
+            name: Registry name (:meth:`set_editor`).
+            factory: A :class:`SequencerEditor` subclass, or any
+                ``callable(sequencer) -> SequencerEditor``.
+
+        Raises:
+            ValueError: An editor of that name is already built.
+        """
+        if isinstance(self._editors.get(name), SequencerEditor):
+            raise ValueError(f"The {name!r} editor is already built.")
+        self._editors[name] = factory
+
+    def editor(self, name: str) -> SequencerEditor:
+        """The editor registered under *name*, built on first use.
+
+        Raises:
+            KeyError: No editor is registered under *name*.
+        """
+        entry = self._editors[name]
+        if not isinstance(entry, SequencerEditor):
+            entry = self._editors[name] = entry(self)
+            # Its page is the pane's from the start: a page first parented
+            # when the editor is shown was a top-level the editor's Python
+            # side alone held, destroyed by whichever garbage collection
+            # reached it after the sequencer was gone -- mid-way through
+            # another widget's events.
+            page = entry.header_widget()
+            if page is not None and self._header_stack.indexOf(page) < 0:
+                self._header_stack.addWidget(page)
+        return entry
+
+    def editor_names(self) -> List[str]:
+        """The registered editors' names (``"tracks"``, ``"graph"``...)."""
+        return list(self._editors)
+
+    @property
+    def active_editor(self) -> SequencerEditor:
+        """The editor the content area shows."""
+        return self.editor(self._active_editor_name)
+
+    def set_editor(self, name: str) -> None:
+        """Show the editor registered under *name* in the content area.
+
+        The ruler, shot lane, playhead, markers and every shortcut stay; the
+        previous editor's items hide (their selection is not reported as a
+        user's deselection), the left pane shows the new editor's page, the
+        legend its gestures, and its keys answer before the shortcut table.
+
+        Raises:
+            KeyError: No editor is registered under *name*.
+        """
+        if name == self._active_editor_name:
+            return
+        new = self.editor(name)
+        old = self.active_editor
+        self._selection_suppressed += 1
+        try:
+            old.deactivate()
+            for group in dict.fromkeys(g for g, _k, _d in old.gestures):
+                self._shortcut_mgr.remove_gesture_group(group)
+            self._active_editor_name = name
+            new.activate()
+            for group, keys, description in new.gestures:
+                self._shortcut_mgr.add_gesture(group, keys, description)
+        finally:
+            self._selection_suppressed -= 1
+        page = new.header_widget() or self._header_scroll
+        if self._header_stack.indexOf(page) < 0:
+            self._header_stack.addWidget(page)
+        self._header_stack.setCurrentWidget(page)
+        self._editor_keys = {
+            QtGui.QKeySequence(key).toString(): {"action": fn, "description": desc}
+            for key, fn, desc in new.key_bindings()
+        }
+        self._sync_shortcut_sequences()
+        self._timeline._refresh_all()
+        self.editor_changed.emit(name)
+
+    def _add_track_item(self, item: QtWidgets.QGraphicsItem) -> None:
+        """Put a track-rows scene item under the track editor's content root."""
+        item.setParentItem(self.editor(TrackEditor.name).content_root)
+
     # -- sub-row expansion --------------------------------------------------
     @property
     def sub_row_height(self) -> int:
         """Pixel height of expanded attribute sub-rows (default half track height)."""
-        return self._sub_row_height
+        return self._row_metrics.sub_row_height
 
     @sub_row_height.setter
     def sub_row_height(self, value: int):
-        self._sub_row_height = max(8, value)
-        self._timeline._refresh_all()
+        self.row_metrics = dataclasses.replace(
+            self._row_metrics, sub_row_height=max(8, value)
+        )
 
     @property
     def sub_row_provider(self):
@@ -1948,7 +2250,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._sync_track_selectability(track_id)
         idx = self._track_index(track_id)
         if idx is not None:
-            self._header.set_track_expanded(idx, sub_names, self._sub_row_height)
+            self._header.set_track_expanded(
+                idx, sub_names, self._row_metrics.sub_row_height
+            )
         self._timeline._refresh_all()
         self.track_expanded.emit(track_id)
 
@@ -2042,16 +2346,18 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         ``_total_row_height``, and ``_visual_rows`` are all expressed
         through it so the metrics can't silently diverge.
         """
+        m = self._row_metrics
         y = self._content_top
         for td in self._tracks:
-            yield td, None, y, _TRACK_HEIGHT
-            y += _TRACK_HEIGHT + _TRACK_PADDING
+            yield td, None, y, m.track_height
+            y += m.track_height + m.padding
             for sr in self._expanded_tracks.get(td.track_id, []):
-                yield td, sr, y, self._sub_row_height
-                y += self._sub_row_height + _TRACK_PADDING
+                yield td, sr, y, m.sub_row_height
+                y += m.sub_row_height + m.padding
 
     def _row_position(self, track_id: int, sub_row: str = "") -> tuple:
         """Return ``(y, height)`` for a given track and optional sub-row."""
+        m = self._row_metrics
         fallback = None
         for td, sr, y, h in self._iter_rows():
             if td.track_id != track_id:
@@ -2064,20 +2370,21 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             # Remember the last row of the matching track: a requested
             # sub-row that isn't expanded falls through to just after
             # the track's final row (legacy behavior).
-            fallback = (y + h + _TRACK_PADDING, self._sub_row_height)
+            fallback = (y + h + m.padding, m.sub_row_height)
         if sub_row and fallback is not None:
             return fallback
         # Past the end — first free y after all rows.
         end_y = self._content_top
         for _td, _sr, y, h in self._iter_rows():
-            end_y = y + h + _TRACK_PADDING
-        return end_y, _TRACK_HEIGHT
+            end_y = y + h + m.padding
+        return end_y, m.track_height
 
     def _total_row_height(self) -> float:
         """Total pixel height of all tracks including expanded sub-rows."""
+        pad = self._row_metrics.padding
         h = 0.0
         for _td, _sr, _y, row_h in self._iter_rows():
-            h += row_h + _TRACK_PADDING
+            h += row_h + pad
         return h
 
     def _visual_rows(self) -> List[tuple]:
@@ -2279,7 +2586,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             return
         if box is None:
             box = self._key_scale_box = KeyScaleBoxItem(self)
-            self._timeline._scene.addItem(box)
+            self._add_track_item(box)
         box.set_span(*span)
 
     def clear_key_scale_box(self) -> None:

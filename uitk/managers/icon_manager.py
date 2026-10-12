@@ -27,6 +27,10 @@ class IconManager:
     _widget_icon_info = {}  # Icon settings keyed by id(widget)
     _default_color = None  # Default icon color (set by theme)
     _last_update_color = {}  # Track last color applied per widget
+    #: Opacity of a disabled widget's glyph: it recedes in its own color. Left
+    #: to the style, the generated pixmap keeps full opacity and is retinted
+    #: from the palette, which barely dims a light glyph on a dark ground.
+    DISABLED_OPACITY = 0.35
 
     @classmethod
     def set_default_color(cls, color: str):
@@ -210,7 +214,8 @@ class IconManager:
         Args:
             svg_content: The SVG XML content
             size: Requested logical size (width, height)
-            for_states: If True, creates pixmaps for different icon states
+            for_states: If True, also adds the Disabled-mode pixmap (the glyph
+                at :attr:`DISABLED_OPACITY`)
 
         Returns:
             QIcon with proper scaling and anti-aliasing
@@ -282,8 +287,26 @@ class IconManager:
 
             # Add for normal mode
             icon.addPixmap(pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
+            if for_states:
+                icon.addPixmap(
+                    cls._faded(pixmap, cls.DISABLED_OPACITY),
+                    QtGui.QIcon.Disabled,
+                    QtGui.QIcon.Off,
+                )
 
         return icon
+
+    @staticmethod
+    def _faded(pixmap: QtGui.QPixmap, opacity: float) -> QtGui.QPixmap:
+        """*pixmap* drawn at *opacity* onto a transparent copy of its size."""
+        faded = QtGui.QPixmap(pixmap.size())
+        faded.fill(QtCore.Qt.transparent)
+        faded.setDevicePixelRatio(pixmap.devicePixelRatio())
+        painter = QtGui.QPainter(faded)
+        painter.setOpacity(opacity)
+        painter.drawPixmap(0, 0, pixmap)
+        painter.end()
+        return faded
 
     @classmethod
     def get(

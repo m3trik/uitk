@@ -29,7 +29,6 @@ from qtpy import QtCore, QtGui, QtWidgets
 from conftest import QtBaseTestCase, QtWait
 from test_marking_menu_integration import (
     DriveableMarkingMenu,
-    StubUi,
     DEFAULT_BINDINGS,
 )
 

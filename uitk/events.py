@@ -46,6 +46,10 @@ from typing import Iterable
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
+#: EventFactoryFilter's handler-cache default: "not resolved yet", as opposed to
+#: a cached ``None`` ("resolved: the target has no handler").
+_UNRESOLVED = object()
+
 
 class EventFactoryFilter(QtCore.QObject):
     """Efficient dynamic event filter with lazy handler resolution and scoped widget control.
@@ -128,8 +132,12 @@ class EventFactoryFilter(QtCore.QObject):
             return False
 
         cache_key = (id(self.forward_events_to), etype)
-        handler = self._handler_cache.get(cache_key)
-        if handler is None:
+        # A miss is cached as None too, so .get() needs a distinct default: a
+        # watched type the target has no handler for (MouseMove on a marking
+        # menu page) must not re-run the name formatting + failing getattr on
+        # every event.
+        handler = self._handler_cache.get(cache_key, _UNRESOLVED)
+        if handler is _UNRESOLVED:
             method_name = self._format_event_name(etype)
             handler = getattr(self.forward_events_to, method_name, None)
             self._handler_cache[cache_key] = handler
@@ -219,6 +227,8 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         self._prev_mouse_over: set[QtWidgets.QWidget] = set()
         self._mouse_over: set[QtWidgets.QWidget] = set()
         self._filtered_widgets: "weakref.WeakSet[QtWidgets.QWidget]" = weakref.WeakSet()
+        # Widget type -> owns a viewport. See _owns_viewport.
+        self._viewport_by_type: dict[type, bool] = {}
         self._extra_widgets: "weakref.WeakSet[QtWidgets.QWidget]" = weakref.WeakSet()
         self._mouse_owner: QtWidgets.QWidget | None = None
         # Gated by MarkingMenu.enable_input_logging — keeps the grab-handoff debug
@@ -561,11 +571,12 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         per scan at 50 tracked widgets, ~1.8 ms at 200 — against a 16.7 ms
         frame budget). The already-filtered
         guard is checked first, so a widget that already owns a viewport filter
-        costs one set lookup on a rescan instead of a probe (a small win: at
-        these set sizes the reorder alone is within noise, because almost every
-        tracked widget is plain and so reaches the probe either way). A plain widget is
-        never in ``_filtered_widgets``, so it IS re-probed on every rebuild —
-        which is precisely why this belongs to the rebuild and not to the move.
+        costs one set lookup on a rescan. A plain widget is never in
+        ``_filtered_widgets``, so it reaches the viewport question on every
+        rebuild — answered from :meth:`_owns_viewport`'s per-type memo, never a
+        fresh probe (the rebuild runs on every marking-menu page swap,
+        activation and focus-in; memoizing it took most of ~10 ms off a ~34 ms
+        Maya activation press).
 
         Parameters:
             widgets (Iterable[QWidget], optional): Scan only these. Defaults to
@@ -574,9 +585,25 @@ class MouseTracking(QtCore.QObject, ptk.LoggingMixin):
         for widget in self._widgets if widgets is None else widgets:
             if widget in self._filtered_widgets:
                 continue
-            if hasattr(widget, "viewport"):
+            if self._owns_viewport(widget):
                 self._filtered_widgets.add(widget)
                 self._handle_viewport_widget(widget)
+
+    def _owns_viewport(self, widget) -> bool:
+        """Whether *widget* owns a ``viewport`` — probed once per widget TYPE.
+
+        The probe is an exception-driven ``hasattr`` for the plain widgets that
+        make up nearly all of a tracked set (microseconds each under Maya's
+        PySide 6.5), and its answer is a fact of the class (``viewport`` is a
+        ``QAbstractScrollArea`` method), so the first widget of a type answers
+        for every later one. The memo is per tracker: no process-wide state to
+        outlive a module reload.
+        """
+        wtype = type(widget)
+        owns = self._viewport_by_type.get(wtype)
+        if owns is None:
+            owns = self._viewport_by_type[wtype] = hasattr(widget, "viewport")
+        return owns
 
     def _handle_viewport_widget(self, widget):
         """Adds event filter to viewport instead of overwriting mouseMoveEvent."""

@@ -209,6 +209,12 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         return style
 
     def showEvent(self, event):
+        # Tooltips through the presenter (wrapped, shown for a time that
+        # scales with them), as a MainWindow's registered widgets get them: a
+        # subclass builds its body itself (the UI Browser's table), so the
+        # tree is swept at each show. ``manage`` is idempotent.
+        for widget in (self, *self.findChildren(QtWidgets.QWidget)):
+            TooltipPresenter.manage(widget)
         super().showEvent(event)
         # First-show: apply the default dark theme unless someone has
         # already explicitly styled this panel. The dual-condition
@@ -573,6 +579,7 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         size: int = 24,
         tooltip: str = "",
         icon_size=None,
+        closes: bool = False,
     ) -> QtWidgets.QPushButton:
         """Build a square, flat, icon-only button for table cells / toolbars.
 
@@ -593,6 +600,9 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
         icon_size : tuple[int, int] or None
             Inner icon size. Defaults to ``(size - 8, size - 8)``,
             which gives the icon ~4 px breathing room on each side.
+        closes : bool
+            The button closes or hides something: it hovers red, like a
+            window header's own close button. Defaults to False.
 
         Returns
         -------
@@ -604,6 +614,9 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
 
         btn = QtWidgets.QPushButton()
         btn.setFlat(True)
+        # Styled as one (style.qss): disabled dims the glyph, not the ground;
+        # a CloseButton hovers red, as the header's hide button does.
+        btn.setProperty("class", "IconButton CloseButton" if closes else "IconButton")
         btn.setFocusPolicy(QtCore.Qt.NoFocus)
         btn.setCursor(QtCore.Qt.PointingHandCursor)
         btn.setFixedSize(size, size)

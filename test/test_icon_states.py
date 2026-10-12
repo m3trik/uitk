@@ -54,6 +54,32 @@ class IconTestCase(QtBaseTestCase):
         super().tearDown()
 
 
+class TestDisabledGlyph(IconTestCase):
+    """A disabled widget's icon fades in its own color; the style's generated
+    disabled pixmap kept full opacity and retinted it toward the palette."""
+
+    @staticmethod
+    def _ink(image):
+        """The most opaque pixel: ``(alpha, rgb name)``."""
+        best = (0, "")
+        for x in range(image.width()):
+            for y in range(image.height()):
+                color = image.pixelColor(x, y)
+                if color.alpha() > best[0]:
+                    best = (color.alpha(), color.name())
+        return best
+
+    def test_a_disabled_icon_fades_its_glyph(self):
+        from qtpy import QtGui
+
+        icon = IconManager.get("close", (16, 16), "#dcdcdc")
+        size = QtCore.QSize(16, 16)
+        normal = self._ink(icon.pixmap(size, QtGui.QIcon.Normal).toImage())
+        disabled = self._ink(icon.pixmap(size, QtGui.QIcon.Disabled).toImage())
+        self.assertLess(disabled[0], normal[0] * 0.6, "the glyph recedes")
+        self.assertEqual(disabled[1], normal[1], "in its own color")
+
+
 class TestIconManagerPinning(IconTestCase):
     """Explicitly-colored icons must survive theme sweeps; theme-managed
     icons must keep following them."""

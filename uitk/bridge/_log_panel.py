@@ -47,8 +47,8 @@ class _LogPanelMixin(object):
 
     # Where the panel's detailed documentation lives (a web URL). When set,
     # :meth:`_show_docs_link` logs ``"<DOCS_LABEL>: <url>"`` into the log pane
-    # once at startup as a clickable anchor -- the header help is a tooltip,
-    # so it can't carry a clickable link; the log pane can. Empty = no line.
+    # once at startup as a clickable anchor, and the header's help card ends
+    # in the same link (``header_init``). Empty = neither.
     # Subclasses set these (or override :meth:`docs_url` to compute the URL).
     DOCS_URL: str = ""
     DOCS_LABEL: str = "Detailed docs"

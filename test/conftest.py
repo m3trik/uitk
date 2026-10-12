@@ -716,6 +716,43 @@ def get_uitk_path(relative_path: str) -> Path:
     return UITK_DIR / relative_path
 
 
+def write_ui_file(
+    path, name: str, tags_csv: Optional[str] = None, description: Optional[str] = None
+) -> None:
+    """Write a minimal ``QMainWindow`` ``.ui`` file, for a registry fixture.
+
+    Parameters:
+        path: Destination file; its stem is the name the UI registers under.
+        name: The ``QMainWindow``'s objectName.
+        tags_csv: Optional ``uitk_tags`` dynamic property (comma-separated).
+        description: Optional ``accessibleDescription`` of the root widget
+            (the launcher's Description column).
+    """
+    tag_block = ""
+    if tags_csv is not None:
+        tag_block = (
+            f'<property name="uitk_tags" stdset="0">'
+            f"<string>{tags_csv}</string></property>"
+        )
+    if description is not None:
+        from xml.sax.saxutils import escape
+
+        tag_block += (
+            f'<property name="accessibleDescription">'
+            f"<string>{escape(description)}</string></property>"
+        )
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>QtUi</class>
+ <widget class="QMainWindow" name="{name}">
+  {tag_block}
+ </widget>
+</ui>
+"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
 def run_launch_snippet(code, probe, extra_paths=(), host_app=False, timeout=180):
     """Run a ``launch_code`` snippet in a fresh interpreter; return *probe*'s value.
 

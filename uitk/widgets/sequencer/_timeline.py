@@ -12,8 +12,7 @@ if TYPE_CHECKING:
     from uitk.widgets.sequencer._sequencer import SequencerWidget
 
 from uitk.widgets.sequencer._data import (
-    _TRACK_HEIGHT,
-    _TRACK_PADDING,
+    RowMetrics,
     _RULER_HEIGHT,
     _HEADER_HEIGHT,
     MenuUtils,
@@ -23,6 +22,7 @@ from uitk.widgets.sequencer._data import (
 from uitk.widgets.sequencer._clip import ClipItem
 from uitk.widgets.sequencer._keyframe import KeyframeItem, TangentHandleItem
 from uitk.widgets.sequencer._draggable import HeldGeometryMixin
+from uitk.widgets.sequencer._editor import SequencerEditor
 from uitk.widgets.sequencer._overlays import (
     _GapOverlayItem,
     RangeHighlightItem,
@@ -138,9 +138,11 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         self._sub_labels: Dict[int, List[QtWidgets.QLabel]] = {}  # idx → sub-row labels
         self._sub_names: Dict[int, List[str]] = {}  # idx → sub-row names
         self._sub_selected: List[tuple] = []  # (track_idx, sub_idx) selected
+        # Row sizes, shared with the scene's row layout (SequencerWidget).
+        self._metrics: RowMetrics = RowMetrics.preset("standard")
         self._layout = QtWidgets.QVBoxLayout(self)
         self._layout.setContentsMargins(0, _HEADER_HEIGHT, 0, 0)
-        self._layout.setSpacing(_TRACK_PADDING)
+        self._layout.setSpacing(self._metrics.padding)
         self._layout.addStretch()
 
     def set_top_margin(self, margin: int) -> None:
@@ -180,14 +182,14 @@ class TrackHeaderWidget(QtWidgets.QWidget):
                     16, 16, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
                 )
             widget = QtWidgets.QWidget()
-            widget.setFixedHeight(_TRACK_HEIGHT)
+            widget.setFixedHeight(self._metrics.track_height)
             widget.setStyleSheet(base_style)
             h = QtWidgets.QHBoxLayout(widget)
             h.setContentsMargins(4, 0, 2, 0)
             h.setSpacing(4)
             ico_lbl = QtWidgets.QLabel()
             ico_lbl.setPixmap(px)
-            ico_lbl.setFixedSize(22, _TRACK_HEIGHT)
+            ico_lbl.setFixedSize(22, self._metrics.track_height)
             ico_lbl.setAlignment(QtCore.Qt.AlignCenter)
             ico_lbl.setStyleSheet("background:transparent; border:none; padding:0;")
             txt_color = (
@@ -206,7 +208,7 @@ class TrackHeaderWidget(QtWidgets.QWidget):
             h.addWidget(txt_lbl, 1)  # stretch so text fills available space
         else:
             widget = QtWidgets.QLabel(name)
-            widget.setFixedHeight(_TRACK_HEIGHT)
+            widget.setFixedHeight(self._metrics.track_height)
             widget.setStyleSheet(base_style)
 
         widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -252,6 +254,26 @@ class TrackHeaderWidget(QtWidgets.QWidget):
             sub_lbls.append(lbl)
         self._sub_labels[track_idx] = sub_lbls
         self._sub_names[track_idx] = list(sub_names)
+
+    def apply_metrics(self, metrics: RowMetrics) -> None:
+        """Re-size every label to *metrics* (the sequencer's row density).
+
+        Labels take a fixed height when they are made, so a later change of
+        the sequencer's :attr:`~SequencerWidget.row_metrics` re-lays the
+        scene rows out and the header has to follow, or every label below
+        the first drifts off its row.  Labels made afterwards read the same
+        metrics.
+        """
+        self._metrics = metrics
+        self._layout.setSpacing(metrics.padding)
+        for lbl in self._labels:
+            lbl.setFixedHeight(metrics.track_height)
+            for child in lbl.findChildren(QtWidgets.QLabel):
+                if child.pixmap() is not None and not child.pixmap().isNull():
+                    child.setFixedSize(22, metrics.track_height)
+        for labels in self._sub_labels.values():
+            for lbl in labels:
+                lbl.setFixedHeight(metrics.sub_row_height)
 
     def set_track_collapsed(self, track_idx: int):
         name = self._names[track_idx]
@@ -412,25 +434,40 @@ class TrackHeaderWidget(QtWidgets.QWidget):
 
     def _show_label_menu(self, widget, pos):
         # Selection is already adjusted by eventFilter (right-click path).
-        names = self.selected_names()
-        count = len(names)
+        # Parented for its style, so released: one QMenu leaked per click.
         menu = MenuUtils._styled_menu(self)
-        hide_label = f"Hide {count} Tracks" if count > 1 else "Hide Track"
-        menu.addAction(hide_label, lambda: self.track_hide_requested.emit(names))
-        del_label = f"Delete {count} Tracks" if count > 1 else "Delete Track"
-        menu.addAction(del_label, lambda: self.track_delete_requested.emit(names))
+        try:
+            self.add_track_actions(menu, self.selected_names())
+            menu.exec_(widget.mapToGlobal(pos))
+        finally:
+            menu.deleteLater()
 
-        # Let consumers add custom actions
-        self.track_menu_requested.emit(menu, names)
+    def add_track_actions(self, menu: QtWidgets.QMenu, names: List[str]) -> None:
+        """The track menu's rows onto *menu*: Hide and Delete *names*, the
+        host's own rows (``track_menu_requested``), and Show Hidden.
 
-        # "Show Hidden" submenu
+        One builder for every view listing the same objects -- the track
+        labels, the graph editor's outline -- so a row added here, or by a
+        host, shows in each.  With no *names*, only Show Hidden.
+
+        Parameters:
+            menu: The menu to fill.
+            names: The tracks the rows act on.
+        """
+        names = list(names)
+        if names:
+            count = len(names)
+            hide_label = f"Hide {count} Tracks" if count > 1 else "Hide Track"
+            menu.addAction(hide_label, lambda: self.track_hide_requested.emit(names))
+            del_label = f"Delete {count} Tracks" if count > 1 else "Delete Track"
+            menu.addAction(del_label, lambda: self.track_delete_requested.emit(names))
+            # Let consumers add custom actions
+            self.track_menu_requested.emit(menu, names)
         hidden = self._hidden_track_names
         if hidden:
             sub = menu.addMenu(f"Show Hidden ({len(hidden)})")
             for name in sorted(hidden):
                 sub.addAction(name, lambda n=name: self.track_show_requested.emit(n))
-
-        menu.exec_(widget.mapToGlobal(pos))
 
     def clear_tracks(self):
         for idx in list(self._sub_labels):
@@ -460,6 +497,11 @@ class TimelineScene(QtWidgets.QGraphicsScene):
     def __init__(self, timeline: "TimelineView", parent=None):
         super().__init__(parent)
         self._timeline = timeline
+        # A rect of its own from the start (the view's _update_scene_rect
+        # replaces it): an unset one is derived from every item's bounds, and
+        # an item sizing itself from sceneRect() -- the graph canvas -- then
+        # recursed until the stack overflowed.
+        self.setSceneRect(0.0, 0.0, 1.0, 1.0)
         self._ruler = RulerItem(timeline)
         self.addItem(self._ruler)
         self._playhead = PlayheadItem(timeline)
@@ -487,6 +529,10 @@ class TimelineView(QtWidgets.QGraphicsView):
         self._pixels_per_unit = 2.0  # default zoom
         self._scene = TimelineScene(self)
         super().__init__(self._scene, parent)
+        # Owned by the view (a view never owns its scene): orphaned, a dead
+        # sequencer's scene lived on with its items and index timer, whose
+        # next pass asked the items for bounds through the dead widgets.
+        self._scene.setParent(self)
         self.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
@@ -511,6 +557,9 @@ class TimelineView(QtWidgets.QGraphicsView):
         self._marquee_modifier = 0  # modifier held at press time
         self._space_held = False
         self._space_last_pos = QtCore.QPoint()
+        #: The active editor took the current press (``SequencerEditor``): its
+        #: moves and its release go to the editor too.
+        self._editor_grab = False
         # Now that the scene/view wiring is complete, sync deferred items
         self._scene.playhead.sync()
         # Keep ruler pinned to the viewport top during vertical scroll
@@ -637,19 +686,29 @@ class TimelineView(QtWidgets.QGraphicsView):
 
     # -- zoom ---------------------------------------------------------------
     def wheelEvent(self, event):
+        pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+        editor = self.parent_sequencer.active_editor
+        if self._hit_zone(pos.y()) == "tracks" and editor.wheel(event):
+            return
         factor = 1.15 if event.angleDelta().y() > 0 else 1.0 / 1.15
-        old_ppu = self._pixels_per_unit
-
         view_x = event.position().x() if hasattr(event, "position") else event.pos().x()
+        self.zoom_at(factor, view_x)
+        event.accept()
+
+    def zoom_at(self, factor: float, view_x: float) -> None:
+        """Zoom time by *factor*, keeping the frame under viewport *view_x* still."""
+        old_ppu = self._pixels_per_unit
         scene_x_before = self.mapToScene(int(view_x), 0).x()
         time_under_cursor = scene_x_before / old_ppu if old_ppu else 0.0
 
-        self._pixels_per_unit = max(0.01, min(100.0, old_ppu * factor))
+        # The cap bounds the wheel, not a framing: from past it (F on one key)
+        # a wheel-in holds and a wheel-out zooms out -- never a jump to the cap.
+        cap = max(100.0, old_ppu)
+        self._pixels_per_unit = max(0.01, min(cap, old_ppu * factor))
         self._refresh_all()
 
         scene_x_after = time_under_cursor * self._pixels_per_unit
         self.horizontalScrollBar().setValue(int(scene_x_after - view_x))
-        event.accept()
 
     # -- shot-bound handles on the ruler ------------------------------------
 
@@ -709,8 +768,11 @@ class TimelineView(QtWidgets.QGraphicsView):
         body passes presses through so the marquee keeps working inside the
         shot (see ``RangeHighlightItem.mousePressEvent``).
         """
-        hl = self.parent_sequencer._range_highlight
-        if hl is None or not hl.isVisible():
+        sq = self.parent_sequencer
+        hl = sq._range_highlight
+        # Asked of the setting, not of the item: under another editor the
+        # track rows' items are hidden, and the shot lane still owns the grab.
+        if hl is None or not sq.show_range_highlight:
             return ""
         if not self._in_shot_lane(viewport_pos.y()):
             return ""
@@ -820,6 +882,18 @@ class TimelineView(QtWidgets.QGraphicsView):
 
     # -- clicking / dragging ------------------------------------------------
     def mousePressEvent(self, event):
+        # The content area is the active editor's first: it answers what it
+        # changes (a graph editor's middle drag moves keys), and everything it
+        # declines falls through to the track rows' handling below.
+        editor = self.parent_sequencer.active_editor
+        if self._editor_grab and not event.buttons() & ~event.button():
+            # A press with nothing else held starts a new gesture: an editor
+            # grab still set lost its release (a popup took it).
+            self._editor_grab = False
+        if self._hit_zone(event.pos().y()) == "tracks" and editor.mouse_press(event):
+            self._editor_grab = True
+            event.accept()
+            return
         if event.button() == QtCore.Qt.MiddleButton:
             self._pan_active = True
             self._pan_start = event.pos()
@@ -928,6 +1002,14 @@ class TimelineView(QtWidgets.QGraphicsView):
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._editor_grab:
+            if event.buttons():
+                self.parent_sequencer.active_editor.mouse_move(event)
+                event.accept()
+                return
+            # No button held: the grab's release went elsewhere -- this is a
+            # hover again (the editor hears it below and ends its drag).
+            self._editor_grab = False
         if self._pan_active:
             delta = event.pos() - self._pan_start
             self._pan_start = event.pos()
@@ -939,7 +1021,9 @@ class TimelineView(QtWidgets.QGraphicsView):
                 self._update_scene_rect()
             event.accept()
         elif self._range_edge_drag is not None:
-            self._range_edge_drag.update_edge_drag(self.mapToScene(event.pos()).x())
+            self._range_edge_drag.update_edge_drag(
+                self.mapToScene(event.pos()).x(), event.modifiers()
+            )
             event.accept()
         elif self._ruler_drag:
             scene_pos = self.mapToScene(event.pos())
@@ -958,8 +1042,11 @@ class TimelineView(QtWidgets.QGraphicsView):
             self.viewport().update()
             event.accept()
         else:
-            self._sync_shot_bound_cursor(event.pos())
             self._sync_gesture_context(event.pos())
+            editor = self.parent_sequencer.active_editor
+            if self._hit_zone(event.pos().y()) == "tracks" and editor.mouse_move(event):
+                return  # the editor's hover (cursor, highlight)
+            self._sync_shot_bound_cursor(event.pos())
             super().mouseMoveEvent(event)
 
     def _sync_gesture_context(self, viewport_pos) -> None:
@@ -968,7 +1055,12 @@ class TimelineView(QtWidgets.QGraphicsView):
         if not sq.shortcut_overlay_tracking:
             return  # nobody is reading: skip the per-move scene query
         zone = self._hit_zone(viewport_pos.y())
-        if zone in ("ruler", "shot_lane"):
+        editor_group = None
+        if zone == "tracks":
+            editor_group = sq.active_editor.gesture_group_at(viewport_pos)
+        if editor_group is not None:
+            group = editor_group
+        elif zone in ("ruler", "shot_lane"):
             group = "Shot bounds" if self._shot_band_zone(viewport_pos) else "Timeline"
         else:
             item = self.itemAt(viewport_pos)
@@ -1007,6 +1099,12 @@ class TimelineView(QtWidgets.QGraphicsView):
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._editor_grab:
+            if not event.buttons():
+                self._editor_grab = False
+            self.parent_sequencer.active_editor.mouse_release(event)
+            event.accept()
+            return
         if event.button() == QtCore.Qt.MiddleButton:
             self._pan_active = False
             CursorManager.pop(self)
@@ -1062,6 +1160,10 @@ class TimelineView(QtWidgets.QGraphicsView):
 
     def mouseDoubleClickEvent(self, event):
         zone = self._hit_zone(event.pos().y())
+        editor = self.parent_sequencer.active_editor
+        if zone == "tracks" and editor.mouse_double_click(event):
+            event.accept()
+            return
         if event.button() == QtCore.Qt.LeftButton and zone in ("ruler", "shot_lane"):
             item = self.itemAt(event.pos())
             if isinstance(item, MarkerItem):
@@ -1102,6 +1204,9 @@ class TimelineView(QtWidgets.QGraphicsView):
         sq = self.parent_sequencer
         item = self.itemAt(event.pos())
         zone = self._hit_zone(event.pos().y())
+        if zone == "tracks" and sq.active_editor.context_menu(event):
+            event.accept()
+            return
 
         # A key selection owns the right-click.  The key menu used to need a
         # hit on a 7-pixel dot -- and reaching it took a press that had
@@ -1248,9 +1353,13 @@ class TimelineView(QtWidgets.QGraphicsView):
         return _handle
 
     def _show_default_context_menu(self, sq, t, global_pos):
+        # Parented for its style, so released: one QMenu leaked per click.
         menu = MenuUtils._styled_menu(self)
-        handled = self.add_default_context_actions(menu, t)
-        handled(menu.exec_(global_pos))
+        try:
+            handled = self.add_default_context_actions(menu, t)
+            handled(menu.exec_(global_pos))
+        finally:
+            menu.deleteLater()
 
     # -- ruler pinning ------------------------------------------------------
     def _sync_ruler_pos(self):
@@ -1271,13 +1380,24 @@ class TimelineView(QtWidgets.QGraphicsView):
 
     # -- internal refresh ---------------------------------------------------
     def _refresh_all(self):
+        sq = self.parent_sequencer
+        # Another editor's items are hidden: re-placing them on every zoom tick
+        # is wasted work, and showing their editor again runs this anyway.
+        idle_roots = {
+            ed.content_root
+            for ed in sq._editors.values()
+            if isinstance(ed, SequencerEditor) and not ed.is_active
+        }
         for item in self._scene.items():
+            if idle_roots and item.topLevelItem() in idle_roots:
+                continue
             if isinstance(item, ClipItem):
                 item._sync_geometry()
             elif isinstance(item, HeldGeometryMixin):
                 # Markers, overlays, the range highlight and the playhead:
                 # bounds re-derived from the new layout, announced first.
                 item.sync()
+        sq.active_editor.relayout()
         self._sync_ruler_pos()
         # The Shift scale box brackets key dots that just moved under it.
         self.parent_sequencer.refresh_key_scale_box()
@@ -1321,6 +1441,9 @@ class TimelineView(QtWidgets.QGraphicsView):
             _span(blk["start"], blk["end"])
         if sq._active_range is not None:
             _span(*sq._active_range)
+        own = sq.active_editor.time_bounds()  # a graph's keys past the clips
+        if own is not None:
+            _span(*own)
         if lo is None:
             return 0.0, 0.0
         return lo, hi
@@ -1344,9 +1467,19 @@ class TimelineView(QtWidgets.QGraphicsView):
         visible = self.mapToScene(self.viewport().rect()).boundingRect()
         left = min(left, visible.left())
         right = max(right, visible.right())
-        row_h = max(sq._total_row_height(), self.viewport().height() - sq._content_top)
+        row_h = sq.active_editor.content_height()
+        if row_h is None:
+            row_h = max(
+                sq._total_row_height(), self.viewport().height() - sq._content_top
+            )
         h = sq._content_top + row_h
-        self._scene.setSceneRect(left, 0, right - left, h)
+        rect = QtCore.QRectF(left, 0, right - left, h)
+        if rect != self._scene.sceneRect():
+            self._scene.setSceneRect(rect)
+            # An editor sized from the scene rect (the graph canvas) follows
+            # it here too: a rebuild or a new clip widens the scene without
+            # the full re-layout of _refresh_all.
+            sq.active_editor.relayout()
         # Keep the ruler's boundingRect as wide as the scene so its ticks/
         # labels/background keep painting in a newly-widened region at high
         # zoom / far scroll (a fixed cap stopped them past width/ppu), and as
@@ -1364,6 +1497,19 @@ class TimelineView(QtWidgets.QGraphicsView):
 
     def drawBackground(self, painter: QtGui.QPainter, rect: QtCore.QRectF):
         painter.fillRect(rect, QtGui.QColor("#1E1E1E"))
+        sq = self.parent_sequencer
+        if not sq.active_editor.draw_background(painter, rect):
+            self._draw_track_rows(painter, rect)
+        ar = sq._active_range
+        if ar is not None:
+            x0 = self.time_to_x(ar[0])
+            x1 = self.time_to_x(ar[1])
+            top = sq._content_top
+            h = max(sq._total_row_height(), self.viewport().height() - top)
+            painter.fillRect(QtCore.QRectF(x0, top, x1 - x0, h), sq._active_range_color)
+
+    def _draw_track_rows(self, painter: QtGui.QPainter, rect: QtCore.QRectF) -> None:
+        """The track editor's background: alternating rows and full-range curves."""
         sq = self.parent_sequencer
         _BG_MAIN = (QtGui.QColor("#262626"), QtGui.QColor("#2A2A2A"))
         _BG_SUB = (QtGui.QColor("#222222"), QtGui.QColor("#252525"))
@@ -1389,8 +1535,9 @@ class TimelineView(QtWidgets.QGraphicsView):
         # --- full-range background curves for expanded sub-rows ---
         # Exclude each visible clip rect so curves don't overlap clip-level
         # curve previews.  The mask follows clips in real-time during drag.
+        # None with flat keys: the rows show no value axis to draw them on.
         bg_previews = getattr(sq, "_bg_curve_previews", {})
-        if bg_previews:
+        if bg_previews and not sq.row_metrics.flat_keys:
             painter.save()
             clip_items = getattr(sq, "_clip_items", {})
             if clip_items:
@@ -1405,6 +1552,8 @@ class TimelineView(QtWidgets.QGraphicsView):
                 if not exclude.isEmpty():
                     painter.setClipRegion(full.subtracted(exclude))
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            marked = sq.mark_flat_spans
             for (track_id, sub_row), entry in bg_previews.items():
                 preview = entry["preview"]
                 segs = preview.get("segments", [])
@@ -1417,18 +1566,11 @@ class TimelineView(QtWidgets.QGraphicsView):
                     preview.get("val_min", 0.0),
                     preview.get("val_max", 1.0),
                 )
-                path = CurveUtils.build_curve_path(segs, self.time_to_x, map_y)
+                flats = QtGui.QPainterPath() if marked else None
+                path = CurveUtils.build_curve_path(
+                    segs, self.time_to_x, map_y, flats=flats
+                )
                 c = QtGui.QColor(entry.get("color", "#CCCCCC"))
                 c.setAlpha(180)
-                painter.setPen(QtGui.QPen(c, 1.2))
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawPath(path)
+                CurveUtils.stroke_curve(painter, QtGui.QPen(c, 1.2), path, flats)
             painter.restore()
-
-        ar = sq._active_range
-        if ar is not None:
-            x0 = self.time_to_x(ar[0])
-            x1 = self.time_to_x(ar[1])
-            top = sq._content_top
-            h = max(sq._total_row_height(), self.viewport().height() - top)
-            painter.fillRect(QtCore.QRectF(x0, top, x1 - x0, h), sq._active_range_color)

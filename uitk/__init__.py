@@ -192,8 +192,11 @@ DEFAULT_INCLUDE = {
         "SequencerWidget",
         "ClipData",
         "TrackData",
+        "RowMetrics",
         "AttributeColorDialog",
     ],
+    "widgets.sequencer._editor": ["SequencerEditor", "TrackEditor"],
+    "widgets.sequencer._graph_editor": ["GraphEditor"],
     "widgets.sequencer._keyframe": ["KeyframeItem"],
     # Widget mixins
     "widgets.mixins.attributes": "AttributesMixin",

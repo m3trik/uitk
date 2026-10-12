@@ -350,15 +350,15 @@ Subclass for DCC integration — override `show`, `default_persistence`, or prov
 
 Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handlers/handler_entry.py](../uitk/handlers/handler_entry.py) · [handlers/external_app_handler.py](../uitk/handlers/external_app_handler.py) · [handlers/editor_handler.py](../uitk/handlers/editor_handler.py). Handler-ecosystem prose (registration, `DEFAULTS`, `sb.handlers.*`): [Architecture](ARCHITECTURE.md).
 
-**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("ui_browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`. Optional, probed by the browser: `save_tags(name, tags)`, `focus(name)` (the row's Focus button), `launch_code(name, **options) -> str | None` (the row menu's *Copy launch code*) and the pair `can_create_shortcut(name) -> bool` / `create_shortcut(name, location) -> str` (the row menu's *Create desktop shortcut* / *Add to Start menu*, offered when the first says True).
+**`BaseHandler`** — common base for Switchboard handlers (`ptk.SingletonMixin` + `ptk.LoggingMixin`): `instance(switchboard=None, **kwargs)` classmethod and a `config` property (the handler's `sb.configurable` branch). A handler that wants to appear in the launcher (`sb.editors.show("ui_browser")`) additionally satisfies `LaunchableHandlerProtocol`: `entries()`, `launch(name, **options)`, `close(name)`, `is_visible(name)`. A `close` that hides a window should use `BaseHandler._dismiss(widget)`, which dismisses it as its own hide button does (a pinned `MainWindow` vetoes a bare `hide()`). Optional, probed by the browser: `save_tags(name, tags)`, `focus(name)` (the row's Focus button), `launch_code(name, **options) -> str | None` (the row menu's *Copy launch code*) and the pair `can_create_shortcut(name) -> bool` / `create_shortcut(name, location) -> str` (the row menu's *Create desktop shortcut* / *Add to Start menu*, offered when the first says True).
 
-**`HandlerEntry`** — the launchable-entry data class every handler yields from `entries()`; `all_tags` and `editable_tags` properties.
+**`HandlerEntry`** — the launchable-entry data class every handler yields from `entries()`; `all_tags` and `editable_tags` properties. `description` is one concise sentence saying what the entry does (`""` when none), shown in the UI Browser's Description column with the full text on hover: a `.ui` entry's is its root widget's `accessibleDescription` (read from the file, never loaded), an external app's is the one it was registered with or else the first paragraph of its module's docstring (read, not imported), a bundled editor's is the registry's.
 
 **`ExternalAppHandler`** — registers, installs on demand, and launches external Python apps as subprocesses (or in-process widgets):
 
 | Method | Purpose |
 |:---|:---|
-| `register(name, *, module, entry=None, install_spec=None, python=None, show_kwargs=None, mode="subprocess", tags=None, hidden_in=None)` | Pre-register an app so it can be launched by name |
+| `register(name, *, module, entry=None, install_spec=None, python=None, show_kwargs=None, mode="subprocess", tags=None, hidden_in=None, description=None)` | Pre-register an app so it can be launched by name |
 | `discover(groups=None) -> int` | Auto-register every app advertised under a uitk entry-point group |
 | `add_provider(install_spec, *, probe_module=None, group=None, python=None)` | Register a provider package that ships discoverable apps |
 | `is_registered(name)` / `unregister(name)` | Query / remove |
@@ -385,7 +385,7 @@ if __name__ == "__main__":
     raise SystemExit(HUB.run())
 ```
 
-and, for a console-free command, a gui-script: `[project.gui-scripts] mypkg = "mypkg.__main__:HUB.run"`. `python -m mypkg` opens the UI Browser listing every external app (the provider's own included when it is a source checkout on `PYTHONPATH`); `python -m mypkg <app>` opens one app; `--shortcut desktop|start_menu` writes a launcher and exits. The process quits once none of its windows shows (uitk windows hide rather than close, so Qt's own last-window rule would never fire).
+and, for a console-free command, a gui-script: `[project.gui-scripts] mypkg = "mypkg.__main__:HUB.run"`. `python -m mypkg` opens the UI Browser listing every external app (the provider's own included when it is a source checkout on `PYTHONPATH`), each described in the Description column in place of its tags (the first paragraph of its module's docstring); `python -m mypkg <app>` opens one app; `--shortcut desktop|start_menu` writes a launcher and exits. The process quits once none of its windows shows (uitk windows hide rather than close, so Qt's own last-window rule would never fire).
 
 | Member | Purpose |
 |:---|:---|

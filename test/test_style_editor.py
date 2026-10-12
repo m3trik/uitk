@@ -631,6 +631,30 @@ class TestStyleEditorTheming(_PresetRootSandboxCase):
         self.editor.reset_variable("WINDOW_BLUR")
         self.assertEqual(check.isChecked(), base)
 
+    def test_percent_token_renders_as_percent_spinbox_and_resets(self):
+        """WINDOW_BLUR_OPACITY is a percent: a ``%`` spin box beside the blur
+        switch, writing ``"N%"``; reset restores the theme's value."""
+        self.editor.set_tier("Basic")
+        cell = self._cell_for("WINDOW_BLUR_OPACITY")
+        self.assertIsNotNone(cell)
+        spin = cell.findChild(QtWidgets.QSpinBox)
+        self.assertIsNotNone(spin)
+        self.assertEqual(spin.suffix(), "%")
+        self.assertEqual((spin.minimum(), spin.maximum()), (0, 100))
+        base = round(
+            StyleSheet.percent(
+                StyleSheet.get_variable("WINDOW_BLUR_OPACITY", self.editor.theme)
+            )
+        )
+        self.assertEqual(spin.value(), base)
+        spin.setValue(55)
+        self.assertEqual(
+            StyleSheet.get_variable("WINDOW_BLUR_OPACITY", theme=self.editor.theme),
+            "55%",
+        )
+        self.editor.reset_variable("WINDOW_BLUR_OPACITY")
+        self.assertEqual(spin.value(), base)
+
     # Value-change handlers --------------------------------------------
 
     def test_length_change_writes_px_suffix_to_overrides(self):
