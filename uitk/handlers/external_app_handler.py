@@ -120,6 +120,8 @@ class ExternalAppHandler(BaseHandler):
         # ``is_visible`` can report "running" without re-polling the OS
         # process table.
         self._subprocesses: Dict[str, "subprocess.Popen"] = {}
+        # module -> its docstring's summary: an app's fallback description.
+        self._summaries: Dict[str, str] = {}
         if auto_discover:
             self._discover_providers()
             self.discover()
@@ -268,9 +270,10 @@ class ExternalAppHandler(BaseHandler):
 
         ``(None, None)`` when there is no readable, matching one.
 
-        ``find_spec`` locates the package without importing it, so a heavy
-        or broken provider can neither slow discovery nor break it. The
-        search then climbs: a flat checkout puts the file one level above
+        :meth:`_find_spec_unimported` locates the package without importing it
+        or its parents, so a heavy or broken provider can neither slow
+        discovery nor break it. The search then climbs: a flat checkout puts
+        the file one level above
         the package, a ``src/`` layout two, and stopping at one would fail
         the second kind silently -- the exact failure mode this whole path
         exists to end.
@@ -282,9 +285,7 @@ class ExternalAppHandler(BaseHandler):
         to failing quietly.
         """
         try:
-            import importlib.util
-
-            spec = importlib.util.find_spec(module)
+            spec = self._find_spec_unimported(module)
         except Exception:
             return (None, None)
         origin = getattr(spec, "origin", None) if spec is not None else None
@@ -562,6 +563,7 @@ class ExternalAppHandler(BaseHandler):
         mode: str = "subprocess",
         tags: Optional[Iterable[str]] = None,
         hidden_in: Optional[Iterable[str]] = None,
+        description: Optional[str] = None,
     ) -> None:
         """Pre-register an app so it can be launched by name.
 
@@ -603,6 +605,10 @@ class ExternalAppHandler(BaseHandler):
                 accidentally gate an app out of a host. Maya, for
                 instance, hides the Substance/Marmoset panels
                 (``hidden_in={"maya"}``) because it ships native bridges.
+            description: One concise sentence saying what the app does: the
+                browser's Description column. ``None`` (what :meth:`discover`
+                registers) reads the first paragraph of *module*'s docstring,
+                without importing it.
         """
         self._apps[name] = {
             "module": module,
@@ -613,6 +619,7 @@ class ExternalAppHandler(BaseHandler):
             "mode": mode,
             "tags": frozenset(tags or ()),
             "hidden_in": frozenset(hidden_in or ()),
+            "description": description,
         }
         self._notify_entries_changed()
 
@@ -668,7 +675,101 @@ class ExternalAppHandler(BaseHandler):
                 # ``filepath is not None``, so we expose a synthetic
                 # config:// URI to mark "editable, but not file-backed".
                 filepath=f"config://external_app/{name}",
+                description=cfg.get("description")
+                or self._module_summary(cfg.get("module")),
             )
+
+    @staticmethod
+    def _find_spec_unimported(module: str):
+        """*module*'s spec, or None, found without importing anything.
+
+        ``importlib.util.find_spec`` imports a dotted name's parent packages,
+        and a provider's ``__init__`` may import every app it ships. So only
+        the top-level name goes through it (which imports nothing); each
+        package below it is placed by the import system's own finders
+        (``sys.meta_path``, given the parent's locations: a folder, a zip, an
+        editable install's remap) -- an already imported one by its own
+        ``__path__`` -- and the module itself is found in the last of them. A
+        namespace package is the exception: its finder builds a
+        ``_NamespacePath``, which looks the (deliberately unimported) parent
+        up in ``sys.modules`` and raises KeyError, so its portions are the
+        parent's folders of that name.
+        """
+        import importlib.machinery
+        import importlib.util
+
+        loaded = sys.modules.get(module)
+        if getattr(loaded, "__spec__", None) is not None:
+            return loaded.__spec__
+        top, *rest = module.split(".")
+        spec = importlib.util.find_spec(top)
+        if not rest:
+            return spec
+        if spec is None or spec.submodule_search_locations is None:
+            return None  # not a package: nothing below it
+        dirs, name = list(spec.submodule_search_locations), top
+        for segment in rest[:-1]:
+            name = f"{name}.{segment}"
+            package = sys.modules.get(name)
+            if getattr(package, "__path__", None) is not None:
+                dirs = list(package.__path__)
+                continue
+            dirs = ExternalAppHandler._package_locations(name, dirs)
+            if not dirs:
+                return None
+        return importlib.machinery.PathFinder.find_spec(module, dirs)
+
+    @staticmethod
+    def _package_locations(name: str, parent_dirs: list) -> list:
+        """The locations of package *name*, whose parent package spans
+        *parent_dirs*, found without importing it (:meth:`_find_spec_unimported`).
+
+        A regular package -- in a folder, a zip, or remapped by an editable
+        install -- is the first ``sys.meta_path`` finder's answer, as in an
+        import; failing one, the namespace portions: the parent's folders of
+        that name.
+        """
+        for finder in sys.meta_path:
+            find = getattr(finder, "find_spec", None)
+            if find is None:
+                continue
+            try:
+                spec = find(name, parent_dirs)
+            except Exception:  # a namespace package: KeyError on its parent
+                continue
+            if (
+                spec is not None
+                and spec.loader is not None
+                and spec.submodule_search_locations
+            ):
+                return list(spec.submodule_search_locations)
+        segment = name.rpartition(".")[2]
+        found = (os.path.join(d, segment) for d in parent_dirs)
+        return [d for d in found if os.path.isdir(d)]
+
+    def _module_summary(self, module: Optional[str]) -> str:
+        """The first paragraph of *module*'s docstring on one line, or ``""``.
+
+        Read from the source :meth:`_find_spec_unimported` locates, so
+        nothing is imported; cached per module for the session.
+        """
+        if not module:
+            return ""
+        if module not in self._summaries:
+            import ast
+
+            text = ""
+            try:
+                spec = self._find_spec_unimported(module)
+                get_source = getattr(getattr(spec, "loader", None), "get_source", None)
+                source = get_source(module) if callable(get_source) else None
+                doc = ast.get_docstring(ast.parse(source)) if source else None
+                if doc:
+                    text = " ".join(doc.split("\n\n", 1)[0].split())
+            except Exception:  # noqa: BLE001 -- an unreadable app has none
+                self.logger.debug(f"[description] {module!r} unread", exc_info=True)
+            self._summaries[module] = text
+        return self._summaries[module]
 
     # ── Editable tags via the handler's config branch ────────────────────
 
@@ -738,8 +839,7 @@ class ExternalAppHandler(BaseHandler):
         widget = self._in_process_widgets.get(name)
         if widget is not None:
             try:
-                if hasattr(widget, "hide"):
-                    widget.hide()
+                self._dismiss(widget)
             except RuntimeError:
                 # C++ object already deleted.
                 pass
@@ -845,13 +945,13 @@ class ExternalAppHandler(BaseHandler):
         ``__main__``, no hub in it, or it fails to import.
         """
         import importlib
-        import importlib.util
 
         name = f"{package}.__main__"
         try:
             module = sys.modules.get(name)
             if module is None:
-                spec = importlib.util.find_spec(name)
+                # Not even the package is imported to read its __main__.
+                spec = cls._find_spec_unimported(name)
                 if spec is None:
                     return None
                 get_source = getattr(spec.loader, "get_source", None)

@@ -1,6 +1,5 @@
 import sys
 import os
-import time
 
 # Ensure we can find mayatk and pythontk in the monorepo structure
 SCRIPT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))

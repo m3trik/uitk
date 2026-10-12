@@ -21,7 +21,7 @@ import unittest
 import os
 import warnings
 
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets
 
 from conftest import QtBaseTestCase
 from uitk.widgets.region import Region

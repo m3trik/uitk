@@ -318,6 +318,82 @@ class SwitchboardDialogsMixin:
         CursorManager.drain()
         return dlg
 
+    def preview_dialog(
+        self,
+        render: Callable[[dict], str],
+        specs=(),
+        *,
+        values: Optional[dict] = None,
+        on_change: Optional[Callable[[str, Any], None]] = None,
+        actions: Optional[dict] = None,
+        status: Optional[Callable[[dict, str], str]] = None,
+        title: str = "",
+        size=(960, 600),
+        monospace: bool = True,
+        word_wrap: bool = False,
+        parent=None,
+    ):
+        """A live preview of a tool's output: option rows beside the text,
+        which renders again on every change, and the verbs that write it.
+
+        :meth:`text_view_dialog`'s viewer (the Get Scene Info report's) made
+        a preview by :meth:`TextViewBox.bind_preview`.  Non-modal: the tool
+        it previews stays usable, and the caller re-renders it when what it
+        shows changes (``refresh_preview``).
+
+        Parameters:
+            render: ``render(values) -> str``: the output for the options'
+                *values*, shown as plain text.
+            specs: The options (``bind_preview``'s: ``AttributeSpec``\\ s or
+                dicts of their fields).
+            values: The options' values to start from.
+            on_change: ``on_change(key, value)`` once an option changed.
+            actions: ``{button name: action(viewer)}`` -- each a footer button
+                (``"Copy"``, ``"SaveAs"`` ...: :attr:`TextViewBox.BUTTONS`),
+                then ``Close``.  A Copy / Save As leaves the preview open.
+            status: ``status(values, text) -> str`` for the viewer's footer.
+            title, size, monospace, word_wrap, parent: As
+                :meth:`text_view_dialog`.
+
+        Returns:
+            The :class:`TextViewBox`.
+
+        Raises:
+            ValueError: An action named for no button (it would never run).
+        """
+        known = self.registered_widgets.TextViewBox.BUTTONS
+        actions = dict(actions or {})
+        unknown = [name for name in actions if name.lower() not in known]
+        if unknown:
+            raise ValueError(
+                f"No button for the action(s) {unknown}: name one of "
+                f"TextViewBox.BUTTONS ({', '.join(v[2] for v in known.values())})."
+            )
+        # Keyed by the canonical name a click reports ("Copy"), however the
+        # caller spelled it ("copy").
+        actions = {known[name.lower()][2]: action for name, action in actions.items()}
+        dlg = self.text_view_dialog(
+            "",
+            *actions,
+            "Close",
+            title=title,
+            size=size,
+            monospace=monospace,
+            word_wrap=word_wrap,
+            parent=parent,
+        )
+        dlg.bind_preview(
+            render, specs, values=values, on_change=on_change, status=status
+        )
+
+        def on_clicked(name):
+            action = actions.get(name)
+            if action is not None:
+                action(dlg)
+
+        dlg.button_clicked.connect(on_clicked)
+        return dlg
+
     def data_view_dialog(
         self,
         data: Any,

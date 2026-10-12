@@ -214,6 +214,206 @@ class TestExternalAppUserTags(unittest.TestCase):
         )
 
 
+class TestExternalAppClose(unittest.TestCase):
+    def test_close_hides_a_window_its_header_drag_pinned(self):
+        """Dragging a window's header pins it, and a pinned MainWindow vetoes
+        a bare ``hide()``: the browser's Close did nothing to an extapps
+        window once its header had been dragged."""
+        import types
+
+        from qtpy import QtWidgets
+        from uitk.widgets.header import Header
+        from uitk.widgets.mainWindow import MainWindow
+
+        sb = _make_sb()
+        window = MainWindow("pinned_app", sb)
+        self.addCleanup(window.deleteLater)
+        central = QtWidgets.QWidget()
+        header = Header(parent=central, config_buttons=["hide"])
+        header.setObjectName("header")
+        QtWidgets.QVBoxLayout(central).addWidget(header)  # laid out, as a .ui's
+        window.setCentralWidget(central)
+        module = types.ModuleType("fake_external_app_pinned")
+        module.PinnedUI = lambda *args, **kwargs: window
+        sys.modules[module.__name__] = module
+        self.addCleanup(sys.modules.pop, module.__name__, None)
+        h = sb.handlers.external_app
+        h.register(
+            "pinned_app", module=module.__name__, entry="PinnedUI", mode="in_process"
+        )
+        with patch.object(ExternalAppHandler, "_is_importable", return_value=True):
+            h.launch("pinned_app")
+        header.toggle_pin(from_drag=True)  # what the drag does
+        self.assertTrue(window.pinned)
+
+        h.close("pinned_app")
+        self.assertFalse(window.isVisible())
+        self.assertFalse(window.pinned)
+
+    def test_close_hides_an_app_object_that_is_no_widget(self):
+        """An in-process entry may hand back any object with a ``hide``."""
+
+        class Controller:
+            hidden = False
+
+            def hide(self):
+                self.hidden = True
+
+        h = _make_sb().handlers.external_app
+        controller = Controller()
+        h._in_process_widgets["controller"] = controller
+        h.close("controller")
+        self.assertTrue(controller.hidden)
+
+
+class TestExternalAppDescription(unittest.TestCase):
+    """An app's description: the one it was registered with, else the first
+    paragraph of its module's docstring, read without importing the module."""
+
+    def test_a_registered_description_is_the_entrys(self):
+        h = _make_sb().handlers.external_app
+        h.register("mytool", module="mytool", entry="UI", description="Do it.")
+        entry = next(e for e in h.entries() if e.name == "mytool")
+        self.assertEqual(entry.description, "Do it.")
+
+    def test_without_one_the_modules_docstring_summary_is_read_unimported(self):
+        import pythontk as ptk
+
+        tmp = ptk.TempArtifacts("uitk_test_app_description", policy="scoped")
+        self.addCleanup(tmp.cleanup)
+        folder = tmp.dir_path()
+        with open(os.path.join(folder, "desc_probe_app.py"), "w") as handle:
+            handle.write(
+                '"""Do the probe app\'s\n   one thing.\n\nMore detail."""\n'
+                'raise RuntimeError("imported")\n'  # the read must never import
+            )
+        sys.path.insert(0, folder)
+        self.addCleanup(sys.path.remove, folder)
+        h = _make_sb().handlers.external_app
+        h.register("probe", module="desc_probe_app", entry="UI")
+        entry = next(e for e in h.entries() if e.name == "probe")
+        self.assertEqual(entry.description, "Do the probe app's one thing.")
+        self.assertNotIn("desc_probe_app", sys.modules)
+
+    def test_an_apps_parent_packages_are_not_imported_either(self):
+        """``find_spec`` imports a dotted name's parents, and a provider's
+        ``__init__`` may import every app it ships (extapps' does): the first
+        browser populate in a host imported 62 modules to read docstrings."""
+        import pythontk as ptk
+
+        tmp = ptk.TempArtifacts("uitk_test_app_description", policy="scoped")
+        self.addCleanup(tmp.cleanup)
+        package = os.path.join(tmp.dir_path(), "desc_probe_pkg")
+        os.makedirs(package)
+        with open(os.path.join(package, "__init__.py"), "w") as handle:
+            handle.write('raise RuntimeError("imported")\n')
+        with open(os.path.join(package, "app.py"), "w") as handle:
+            handle.write('"""Do the nested app\'s one thing."""\n')
+        sys.path.insert(0, os.path.dirname(package))
+        self.addCleanup(sys.path.remove, os.path.dirname(package))
+        h = _make_sb().handlers.external_app
+        h.register("nested", module="desc_probe_pkg.app", entry="UI")
+        entry = next(e for e in h.entries() if e.name == "nested")
+        self.assertEqual(entry.description, "Do the nested app's one thing.")
+        self.assertNotIn("desc_probe_pkg", sys.modules)
+
+    def test_a_namespace_folder_on_the_way_is_found_too(self):
+        """A namespace package below the top level recalculates its path
+        against its parent in ``sys.modules`` -- unimported, by design -- so
+        walking it raised KeyError: a regular package, then a namespace
+        folder; and two namespace folders."""
+        import pythontk as ptk
+
+        tmp = ptk.TempArtifacts("uitk_test_app_description", policy="scoped")
+        self.addCleanup(tmp.cleanup)
+        root = tmp.dir_path()
+        files = {
+            ("desc_regular_pkg", "__init__.py"): 'raise RuntimeError("imported")\n',
+            ("desc_regular_pkg", "ns", "app.py"): '"""Do the regular one."""\n',
+            ("desc_ns_top", "ns", "app.py"): '"""Do the namespace one."""\n',
+        }
+        for parts, text in files.items():
+            path = os.path.join(root, *parts)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as handle:
+                handle.write(text)
+        sys.path.insert(0, root)
+        self.addCleanup(sys.path.remove, root)
+        h = _make_sb().handlers.external_app
+        for name, module, expected in (
+            ("regular", "desc_regular_pkg.ns.app", "Do the regular one."),
+            ("namespaces", "desc_ns_top.ns.app", "Do the namespace one."),
+        ):
+            h.register(name, module=module, entry="UI")
+            entry = next(e for e in h.entries() if e.name == name)
+            self.assertEqual(entry.description, expected, module)
+        self.assertNotIn("desc_regular_pkg", sys.modules)
+
+    def test_a_package_only_the_import_system_can_place_is_found(self):
+        """A package below the top level that is no folder on the parent's
+        path -- one inside a zip, or one an editable install remaps
+        (setuptools' ``package_dir``, found by a ``sys.meta_path`` finder)
+        -- is found the way an import would find it, still unimported."""
+        import importlib.util
+        import zipfile
+
+        import pythontk as ptk
+
+        tmp = ptk.TempArtifacts("uitk_test_app_description", policy="scoped")
+        self.addCleanup(tmp.cleanup)
+        root = tmp.dir_path()
+        archive = os.path.join(root, "desc_zip.zip")
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("desc_zip_pkg/__init__.py", 'raise RuntimeError("imported")\n')
+            zf.writestr("desc_zip_pkg/sub/__init__.py", 'raise RuntimeError("x")\n')
+            zf.writestr("desc_zip_pkg/sub/app.py", '"""Do the zipped one."""\n')
+        remapped = os.path.join(root, "src", "elsewhere")
+        os.makedirs(os.path.join(root, "desc_ed_pkg"))
+        os.makedirs(remapped)
+        for path, text in (
+            (
+                os.path.join(root, "desc_ed_pkg", "__init__.py"),
+                'raise RuntimeError("i")\n',
+            ),
+            (os.path.join(remapped, "__init__.py"), 'raise RuntimeError("i")\n'),
+            (os.path.join(remapped, "app.py"), '"""Do the remapped one."""\n'),
+        ):
+            with open(path, "w") as handle:
+                handle.write(text)
+
+        class _EditableFinder:  # what setuptools' editable install appends
+            @staticmethod
+            def find_spec(fullname, path=None, target=None):
+                if fullname != "desc_ed_pkg.remapped":
+                    return None
+                return importlib.util.spec_from_file_location(
+                    fullname,
+                    os.path.join(remapped, "__init__.py"),
+                    submodule_search_locations=[remapped],
+                )
+
+        sys.path[:0] = [archive, root]
+        self.addCleanup(lambda: [sys.path.remove(p) for p in (archive, root)])
+        sys.meta_path.append(_EditableFinder)
+        self.addCleanup(sys.meta_path.remove, _EditableFinder)
+        h = _make_sb().handlers.external_app
+        for name, module, expected in (
+            ("zipped", "desc_zip_pkg.sub.app", "Do the zipped one."),
+            ("remapped", "desc_ed_pkg.remapped.app", "Do the remapped one."),
+        ):
+            h.register(name, module=module, entry="UI")
+            entry = next(e for e in h.entries() if e.name == name)
+            self.assertEqual(entry.description, expected, module)
+        for name in ("desc_zip_pkg", "desc_ed_pkg"):
+            self.assertNotIn(name, sys.modules)
+
+    def test_an_unfindable_module_has_no_description(self):
+        h = _make_sb().handlers.external_app
+        h.register("ghost_tool", module="no_such_module_xyz", entry="UI")
+        entry = next(e for e in h.entries() if e.name == "ghost_tool")
+        self.assertEqual(entry.description, "")
+
+
 class _FakeDist:
     """Stand-in for an ``EntryPoint.dist`` with just a ``.name``."""
 
@@ -1375,8 +1575,10 @@ class TestSourceCheckoutDiscovery(unittest.TestCase):
 
     def setUp(self):
         self.pkg = "src_checkout_provider_demo"
+        # Per process: two suites running at once (two sessions) shared one
+        # tree, and one's tearDown deleted the other's checkout mid-test.
         self.root = os.path.join(
-            os.path.dirname(__file__), "temp_tests", self.pkg + "_src"
+            os.path.dirname(__file__), "temp_tests", f"{self.pkg}_src_{os.getpid()}"
         )
         self._lay_out_package()
         self._write_pyproject(
@@ -1618,7 +1820,9 @@ class TestDesktopShortcuts(unittest.TestCase):
 
         with patch.object(ExternalAppHandler, "_hub_of", return_value=None):
             self.assertFalse(self.handler.can_create_shortcut("panel"))
-        with patch.object(ExternalAppHandler, "_hub_of", return_value=ExternalAppHub("p")):
+        with patch.object(
+            ExternalAppHandler, "_hub_of", return_value=ExternalAppHub("p")
+        ):
             self.assertEqual(
                 self.handler.can_create_shortcut("panel"),
                 sys.platform == "win32" or sys.platform.startswith("linux"),
@@ -1633,7 +1837,10 @@ class TestDesktopShortcuts(unittest.TestCase):
         create = patch.object(
             ExternalAppHub, "create_shortcut", autospec=True, return_value="P.lnk"
         )
-        with patch.object(ExternalAppHandler, "_hub_of", return_value=hub), create as create:
+        with (
+            patch.object(ExternalAppHandler, "_hub_of", return_value=hub),
+            create as create,
+        ):
             self.assertEqual(
                 self.handler.create_shortcut("panel", "start_menu"), "P.lnk"
             )

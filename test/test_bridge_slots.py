@@ -1582,6 +1582,30 @@ class TestCheckListKind(BaseTestCase):
         KindFactory.set_value(w, ["audio_event"])
         self.assertEqual(KindFactory.read_value(w), ["audio_event"])
 
+    def test_a_squeezed_layout_still_shows_every_label_whole(self):
+        """A list's own size hint is a fixed guess, so a layout squeezing the
+        row clipped its labels ("Secti...", "Desc..." -- the Shot Manifest's
+        Export preview, 2026-10-11): its minimum width is its longest label."""
+        from qtpy import QtWidgets
+
+        host = QtWidgets.QWidget()
+        self.addCleanup(host.deleteLater)
+        form = QtWidgets.QFormLayout(host)
+        w = self._widget(
+            choices=[("A Long Column Label", "a"), ("Description", "b")],
+            default=["a"],
+        )
+        form.addRow("Columns", w)
+        splitter = QtWidgets.QSplitter()
+        self.addCleanup(splitter.deleteLater)
+        splitter.addWidget(host)
+        splitter.addWidget(QtWidgets.QTextEdit())
+        splitter.setSizes([1, 900])  # the rows given as little as they allow
+        splitter.resize(1000, 300)
+        splitter.show()
+        QtWidgets.QApplication.processEvents()
+        self.assertGreaterEqual(w.viewport().width(), w.sizeHintForColumn(0))
+
     def test_set_choices_preserves_surviving_checks(self):
         """A refill must not silently re-check (or drop) what the user chose --
         entries that come back keep their state, ones that don't are gone."""

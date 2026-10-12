@@ -392,6 +392,23 @@ class TestPresenter(unittest.TestCase):
         self._hover(view.viewport(), view.visualItemRect(view.item(0)).center())
         self.assertEqual(QtWidgets.QToolTip.text(), TooltipFormat.wrap(self.LONG))
 
+    def test_a_window_panels_own_content_is_managed_once_shown(self):
+        """``MainWindow`` registers every widget of a ``.ui``; a ``WindowPanel``
+        subclass builds its body itself (the UI Browser's table), so its
+        item tooltips -- an app's whole description -- showed unwrapped."""
+        from qtpy import QtCore
+
+        from uitk.widgets.windowPanel import WindowPanel
+
+        panel = WindowPanel(title="Probe")
+        view = QtWidgets.QListWidget()
+        view.addItem("with tip")
+        view.item(0).setData(QtCore.Qt.ToolTipRole, self.LONG)
+        panel.body_layout.addWidget(view)
+        self._show(panel)
+        self._hover(view.viewport(), view.visualItemRect(view.item(0)).center())
+        self.assertEqual(QtWidgets.QToolTip.text(), TooltipFormat.wrap(self.LONG))
+
     def test_an_item_without_a_tip_falls_through_to_the_views_own(self):
 
         from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter

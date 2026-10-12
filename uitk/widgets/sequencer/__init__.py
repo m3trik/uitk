@@ -29,6 +29,7 @@ lazy_exports(
             "ClipData",
             "TrackData",
             "MarkerData",
+            "RowMetrics",
             "_TRACK_HEIGHT",
             "_SUB_ROW_HEIGHT",
             "_TRACK_PADDING",
@@ -52,6 +53,10 @@ lazy_exports(
         ),
         "_drag_tooltip": "FrameTooltip",
         "_draggable": ("DraggableItemMixin", "ItemRetirement"),
+        # The content-area seam: a host subclasses SequencerEditor for
+        # ``SequencerWidget.register_editor``.
+        "_editor": ("SequencerEditor", "TrackEditor"),
+        "_graph_editor": "GraphEditor",
         "_clip": "ClipItem",
         "_keyframe": ("KeyframeItem", "TangentHandleItem", "KeyScaleBoxItem"),
         "_overlays": (

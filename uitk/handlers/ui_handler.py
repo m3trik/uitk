@@ -129,6 +129,8 @@ class UiHandler(BaseHandler):
         """
         super().__init__(switchboard=switchboard, log_level=log_level)
         self.recursive = recursive
+        # .ui path -> its description, read once per session (as tags are).
+        self._descriptions: Dict[str, str] = {}
 
         # Seed the process-wide pin-click default from the persisted
         # preference. This is what carries the preference to headers this
@@ -778,6 +780,7 @@ class UiHandler(BaseHandler):
         file-backed (``<uitk_tags>`` XML) so the browser can render them
         with the existing inherited-vs-file UX. Only file tags are
         editable; that's signalled by passing ``file_tags`` (vs ``None``).
+        The description is the file's root ``accessibleDescription``.
         """
         ui_registry = getattr(self.sb.registry, "ui_registry", None)
         if ui_registry is None:
@@ -791,7 +794,26 @@ class UiHandler(BaseHandler):
                 inherited_tags=frozenset(self._inherited_tags_for(name, filepath)),
                 file_tags=frozenset(self.sb._get_ui_tags(name)),
                 filepath=filepath,
+                description=self._description_for(filepath),
             )
+
+    def _description_for(self, filepath: Optional[str]) -> str:
+        """*filepath*'s root ``accessibleDescription`` on one line, or ``""``.
+
+        Read from the XML (the UI is never loaded) once per session: the
+        model re-walks every entry on each show / hide, so no per-call stat.
+        """
+        if not filepath:
+            return ""
+        if filepath not in self._descriptions:
+            from uitk.compile import UiCompiler
+
+            try:
+                text = UiCompiler.extract_metadata(filepath)["description"]
+            except Exception:  # noqa: BLE001 -- a missing or malformed file has none
+                text = ""
+            self._descriptions[filepath] = text
+        return self._descriptions[filepath]
 
     def _inherited_tags_for(self, name: str, filepath: Optional[str]) -> set:
         """Filename-derived + source-directory inherited tags.
@@ -960,27 +982,6 @@ class UiHandler(BaseHandler):
         """
         return cls.TRANSIENT_HEADER if persistence == "transient" else cls.STICKY_HEADER
 
-    @staticmethod
-    def _ui_header(ui, attr: str = "config_buttons"):
-        """Resolve a UI's header widget exposing *attr*, or None.
-
-        ``ui.header`` may not be registered yet (``register_children`` runs later
-        in ``showEvent``), so fall back to ``findChild`` by objectName. *attr* is
-        the capability the caller needs (e.g. ``config_buttons`` for chrome,
-        ``hide_window`` for dismissal) — a header lacking it resolves to None.
-        """
-        header = getattr(ui, "header", None)
-        if header is not None and hasattr(header, attr):
-            return header
-        header = (
-            ui.findChild(QtWidgets.QWidget, "header")
-            if hasattr(ui, "findChild")
-            else None
-        )
-        if header is not None and hasattr(header, attr):
-            return header
-        return None
-
     @classmethod
     def _persistence_buttons(cls, buttons, persistence) -> tuple:
         """*buttons* with its dismissal button swapped to match *persistence*.
@@ -1041,25 +1042,11 @@ class UiHandler(BaseHandler):
             pass
 
     def close(self, name: str) -> None:
-        """Hide the named UI via its header (matches the in-window hide button).
-
-        Routes through ``Header.hide_window`` when present so collapse /
-        minimize state is reset cleanly. Falls back to a direct
-        ``ui.hide()`` for UIs without a uitk Header.
-        """
+        """Hide the named UI as its own hide button would (:meth:`_dismiss`)."""
         ui = self.sb.loaded_ui.peek(name)
         if not isinstance(ui, QtWidgets.QWidget):
             return
-        header = self._ui_header(ui, attr="hide_window")
-        hidden = False
-        if header is not None:
-            try:
-                header.hide_window()
-                hidden = True
-            except Exception:
-                pass
-        if not hidden:
-            ui.hide()
+        self._dismiss(ui)
         self._notify_entries_changed(name)
 
     def is_visible(self, name: str) -> bool:

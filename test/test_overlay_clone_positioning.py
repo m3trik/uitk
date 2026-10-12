@@ -17,7 +17,7 @@ target position via the trusted parent's ``mapFromGlobal``.
 """
 import unittest
 
-from qtpy import QtCore, QtWidgets
+from qtpy import QtWidgets
 
 from conftest import QtBaseTestCase
 from uitk.widgets.marking_menu._marking_menu import MarkingMenu

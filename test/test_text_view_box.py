@@ -19,7 +19,7 @@ from conftest import QtBaseTestCase, setup_qt_application
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
 
-from qtpy import QtCore, QtGui  # noqa: E402
+from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from uitk.widgets.textViewBox import TextViewBox  # noqa: E402
 
 ACTION = QtCore.QUrl("action://select?node=%7Croot%7CDOOR_A")
@@ -97,6 +97,99 @@ class TestTextViewBoxLinks(QtBaseTestCase):
         self.assertEqual(
             {k: v[0] for k, v in parse_qs(seen[0].query()).items()}, params
         )
+
+
+class TestTextViewBoxPreview(QtBaseTestCase):
+    """``bind_preview``: option rows beside the text, every change rendering
+    the text again at once -- what a tool will write, seen before it writes
+    (the Shot Manifest's Export, 2026-10-11)."""
+
+    SPECS = (
+        {
+            "key": "fmt",
+            "label": "Format",
+            "kind": "choice",
+            "default": "csv",
+            "choices": (("CSV", "csv"), ("JSON", "json")),
+        },
+        {
+            "key": "cols",
+            "label": "Columns",
+            "kind": "check_list",
+            "default": ["a", "b"],
+            "choices": (("A", "a"), ("B", "b")),
+            "hint": "Which columns go.",
+        },
+    )
+
+    @staticmethod
+    def render(values):
+        return f"{values['fmt']}:{','.join(values['cols'])} <a&b>"
+
+    def test_the_text_is_rendered_from_the_values_as_plain_text(self):
+        box = self.track_widget(TextViewBox(monospace=True))
+        box.bind_preview(self.render, self.SPECS, values={"fmt": "json"})
+        self.assertEqual(box.preview_values, {"fmt": "json", "cols": ["a", "b"]})
+        self.assertEqual(box.text_edit.toPlainText(), "json:a,b <a&b>")
+        self.assertEqual(box.preview_text, "json:a,b <a&b>")
+
+    def test_a_changed_row_renders_at_once_and_is_reported(self):
+        seen = []
+        box = self.track_widget(TextViewBox())
+        box.bind_preview(
+            self.render, self.SPECS, on_change=lambda k, v: seen.append((k, v))
+        )
+        fmt = box.preview_widgets["fmt"]
+        fmt.setCurrentIndex(fmt.findData("json"))
+        box.preview_widgets["cols"].item(0).setCheckState(QtCore.Qt.Unchecked)
+        self.assertEqual(seen, [("fmt", "json"), ("cols", ["b"])])
+        self.assertEqual(box.text_edit.toPlainText(), "json:b <a&b>")
+
+    def test_the_status_names_what_is_shown(self):
+        box = self.track_widget(TextViewBox())
+        box.bind_preview(
+            self.render, self.SPECS, status=lambda values, text: f"{len(text)} chars"
+        )
+        self.assertEqual(box.footer.text(), "13 chars")
+        plain = self.track_widget(TextViewBox())
+        plain.bind_preview(lambda values: "one\ntwo\n", ())
+        self.assertEqual(plain.footer.text(), "2 lines")
+
+    def test_refresh_renders_again_for_a_change_outside_the_rows(self):
+        state = {"n": 1}
+        box = self.track_widget(TextViewBox())
+        box.bind_preview(lambda values: f"rows: {state['n']}", ())
+        state["n"] = 2
+        box.refresh_preview()
+        self.assertEqual(box.text_edit.toPlainText(), "rows: 2")
+
+    def test_the_rows_sit_beside_the_text(self):
+        box = self.track_widget(TextViewBox())
+        box.bind_preview(self.render, self.SPECS)
+        box.resize(800, 400)
+        box.show()
+        QtWidgets.QApplication.processEvents()
+        rows = box.preview_widgets["fmt"].mapTo(box, QtCore.QPoint(0, 0))
+        text = box.text_edit.mapTo(box, QtCore.QPoint(0, 0))
+        self.assertLess(rows.x(), text.x())
+        # At its own width, not squeezed to its minimum: a check list's
+        # labels read whole (the Shot Manifest's Columns, clipped at first).
+        cols = box.preview_widgets["cols"]
+        self.assertGreaterEqual(cols.viewport().width(), cols.sizeHintForColumn(0))
+
+    def test_a_button_reports_its_name_and_an_apply_role_stays_open(self):
+        clicked = []
+        box = self.track_widget(TextViewBox())
+        box.setStandardButtons("Copy", "SaveAs", "Close")
+        box.button_clicked.connect(clicked.append)
+        box.show()
+        labels = [b.text() for b in box.button_box.buttons()]
+        self.assertIn("Save As…", labels)
+        for button in box.button_box.buttons():
+            if button.text() in ("Copy", "Save As…"):
+                button.click()
+        self.assertEqual(sorted(clicked), ["Copy", "SaveAs"])
+        self.assertTrue(box.isVisible())
 
 
 if __name__ == "__main__":

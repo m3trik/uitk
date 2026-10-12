@@ -349,7 +349,17 @@ class _WindowBlur:
             return False
         on = on and widget.testAttribute(QtCore.Qt.WA_TranslucentBackground)
         if backend.DEFERRED:
-            QtCore.QTimer.singleShot(0, widget, lambda: cls._run(backend, widget, on))
+            # A child timer, dying with the widget: PySide 6.5.3 (Maya 2025)
+            # has no ``singleShot(ms, context, fn)``.
+            timer = QtCore.QTimer(widget)
+            timer.setSingleShot(True)
+
+            def run():
+                timer.deleteLater()
+                cls._run(backend, widget, on)
+
+            timer.timeout.connect(run)
+            timer.start(0)
             return on
         return cls._run(backend, widget, on)
 

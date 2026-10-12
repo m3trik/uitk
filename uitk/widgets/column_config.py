@@ -178,6 +178,9 @@ class ColumnConfig(QtCore.QObject):
         #: True while ``stretchLastSection`` is this class's own fallback (see
         #: :meth:`_settle_fill`), not the view's way of filling.
         self._fallback = False
+        #: ``{column: (its own resize mode, its width)}`` while the fallback has
+        #: a column stretching in place of a fixed one that happens to be last.
+        self._borrowed = {}
         self.configure(
             view,
             settings,
@@ -261,17 +264,23 @@ class ColumnConfig(QtCore.QObject):
         return self._settings
 
     def labels(self) -> List[str]:
-        """Each logical column's header text (``"Column <n>"`` when it has none)."""
+        """Each logical column's name: its header text, else its header tooltip
+        (an icon-only column's), else ``"Column <n>"``."""
         header = self.header
         model = header.model()
         out = []
         for column in range(header.count()):
-            text = (
-                model.headerData(column, header.orientation(), QtCore.Qt.DisplayRole)
-                if model is not None
-                else None
-            )
-            out.append(str(text) if text is not None else f"Column {column}")
+            text = None
+            for role in (QtCore.Qt.DisplayRole, QtCore.Qt.ToolTipRole):
+                value = (
+                    model.headerData(column, header.orientation(), role)
+                    if model is not None
+                    else None
+                )
+                if value not in (None, ""):
+                    text = str(value)
+                    break
+            out.append(text if text is not None else f"Column {column}")
         return out
 
     def order(self) -> List[int]:
@@ -342,8 +351,11 @@ class ColumnConfig(QtCore.QObject):
         that, ``stretchLastSection`` is only a fallback, on while every
         ``Stretch`` column is hidden, so the last one showing fills instead of
         a gap opening at the right edge; Qt gives it its own width back when a
-        ``Stretch`` column returns. A view with no ``Stretch`` column (fixed
-        widths, or a host sizing one itself) is left as it is.
+        ``Stretch`` column returns. A ``Fixed`` column is never the one: with
+        fixed columns last (a row's icon buttons), the last column showing
+        that sizes freely stretches in their place, and gets its own mode back
+        when a ``Stretch`` column returns. A view with no ``Stretch`` column
+        (fixed widths, or a host sizing one itself) is left as it is.
 
         Parameters:
             order: The visual order to read "last" from (a header drag reports
@@ -358,13 +370,39 @@ class ColumnConfig(QtCore.QObject):
             header.setStretchLastSection(False)
             if shown:
                 header.setSectionResizeMode(shown[-1], stretch)
+        # A column only standing in for the fill gets its own mode back first,
+        # so what follows reads the modes the view was authored with.
+        for column, (mode, width) in self._borrowed.items():
+            header.setSectionResizeMode(column, mode)
+            if mode == QtWidgets.QHeaderView.Interactive:
+                header.resizeSection(column, width)  # Qt keeps the stretched one
+        self._borrowed = {}
         stretching = [
             c for c in range(header.count()) if header.sectionResizeMode(c) == stretch
         ]
         self._fallback = bool(stretching) and all(
             header.isSectionHidden(c) for c in stretching
         )
-        header.setStretchLastSection(self._fallback)
+        stand_in = self._fill_stand_in(order) if self._fallback else None
+        if stand_in is not None:
+            self._borrowed[stand_in] = (
+                header.sectionResizeMode(stand_in),
+                header.sectionSize(stand_in),
+            )
+            header.setSectionResizeMode(stand_in, stretch)
+        header.setStretchLastSection(self._fallback and stand_in is None)
+
+    def _fill_stand_in(self, order: Optional[List[int]] = None) -> Optional[int]:
+        """The column to stretch while every ``Stretch`` column is hidden, when
+        the last one showing is ``Fixed``: the last showing that isn't. ``None``
+        when the last one showing may fill itself, or every one is fixed."""
+        header = self.header
+        fixed = QtWidgets.QHeaderView.Fixed
+        shown = [c for c in order or self.order() if not header.isSectionHidden(c)]
+        if not shown or header.sectionResizeMode(shown[-1]) != fixed:
+            return None
+        free = [c for c in shown if header.sectionResizeMode(c) != fixed]
+        return free[-1] if free else None
 
     # ------------------------------------------------------------------ menu
     def build_menu(self) -> QtWidgets.QMenu:

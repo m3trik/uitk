@@ -715,6 +715,7 @@ class RangeHighlightItem(
         """
         self._grab_zone = edge
         self._drag_mode = edge
+        self._about_centre = False
         self._drag_origin_x = scene_x
         self._drag_origin_start = self._start
         self._drag_origin_end = self._end
@@ -730,8 +731,31 @@ class RangeHighlightItem(
         if self._drag_mode == "move":
             return "Move"
         if sq.shift_held_at_press:
-            return "Retime"
-        return "Trim" if sq.ctrl_held_at_press else "Resize"
+            verb = "Retime"
+        else:
+            verb = "Trim" if sq.ctrl_held_at_press else "Resize"
+        return f"{verb} about centre" if self._about_centre else verb
+
+    #: Alt held on the last move of a bound drag (:meth:`_drag_bound`).
+    _about_centre = False
+
+    def _drag_bound(self, dt: float, modifiers) -> None:
+        """Move the grabbed bound by *dt* (snapped).  With Alt held the other
+        bound moves as far the other way -- a resize about the shot's centre,
+        as the Graph Editor's scale manipulator does with Alt.  Both bounds
+        come from the drag's origin, so Alt pressed or let go mid-drag
+        switches cleanly."""
+        centre = bool(modifiers & QtCore.Qt.AltModifier)
+        self._about_centre = centre
+        o_start, o_end = self._drag_origin_start, self._drag_origin_end
+        if self._drag_mode == "left":
+            start = DraggableItemMixin.snap_time(o_start + dt, self._timeline)
+            end = o_end - (start - o_start) if centre else o_end
+        else:
+            end = DraggableItemMixin.snap_time(o_end + dt, self._timeline)
+            start = o_start - (end - o_end) if centre else o_start
+        if start < end:
+            self._start, self._end = start, end
 
     def _hit_zone(self, pos: QtCore.QPointF) -> str:
         r = self._rect()
@@ -805,6 +829,7 @@ class RangeHighlightItem(
         sq.record_press_modifiers(event.modifiers())
         self._grab_zone = zone
         self._drag_mode = zone
+        self._about_centre = False
         self._drag_origin_x = event.scenePos().x()
         self._drag_origin_start = self._start
         self._drag_origin_end = self._end
@@ -835,43 +860,26 @@ class RangeHighlightItem(
             )
             self._start = new_start
             self._end = new_start + span
-        elif self._drag_mode == "left":
-            new_start = DraggableItemMixin.snap_time(
-                self._drag_origin_start + dt, self._timeline
-            )
-            if new_start < self._end:
-                self._start = new_start
-        elif self._drag_mode == "right":
-            new_end = DraggableItemMixin.snap_time(
-                self._drag_origin_end + dt, self._timeline
-            )
-            if new_end > self._start:
-                self._end = new_end
+        elif self._drag_mode in ("left", "right"):
+            self._drag_bound(dt, event.modifiers())
 
         self.sync()
         self._update_range_drag_tooltip(event.scenePos())
         event.accept()
 
-    def update_edge_drag(self, scene_x: float) -> None:
-        """Advance a drag begun with :meth:`begin_edge_drag`."""
+    def update_edge_drag(self, scene_x: float, modifiers=None) -> None:
+        """Advance a drag begun with :meth:`begin_edge_drag` (*modifiers*:
+        the move's own; Alt resizes about the centre)."""
         if self._drag_mode is None:
             return
         if not self._undo_captured:
             self._undo_captured = True
             self._timeline.parent_sequencer._capture_undo()
+        if modifiers is None:
+            modifiers = QtWidgets.QApplication.keyboardModifiers()
         dt = (scene_x - self._drag_origin_x) / (self._timeline._pixels_per_unit or 1)
-        if self._drag_mode == "left":
-            new_start = DraggableItemMixin.snap_time(
-                self._drag_origin_start + dt, self._timeline
-            )
-            if new_start < self._end:
-                self._start = new_start
-        elif self._drag_mode == "right":
-            new_end = DraggableItemMixin.snap_time(
-                self._drag_origin_end + dt, self._timeline
-            )
-            if new_end > self._start:
-                self._end = new_end
+        if self._drag_mode in ("left", "right"):
+            self._drag_bound(dt, modifiers)
         elif self._drag_mode == "move":
             # Both bounds by the same snapped delta, so the shot's DURATION
             # is untouched -- measuring the delta off the start and adding it

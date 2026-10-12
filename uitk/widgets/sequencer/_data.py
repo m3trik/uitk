@@ -109,6 +109,9 @@ class MarkerData:
     style: str = "triangle"  # triangle | diamond | line | bracket
     line_style: str = "dashed"  # dashed | solid | dotted | none
     opacity: float = 1.0
+    #: The consumer's own payload (who placed the marker, what it marks),
+    #: carried untouched through every edit the widget makes.
+    data: Dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +131,62 @@ _HEADER_HEIGHT = _RULER_HEIGHT + _SHOT_LANE_HEIGHT
 _HANDLE_WIDTH = 5  # pixels from edge that activates resize cursor
 _MIN_CLIP_DURATION = 1.0
 _MIN_POINT_CLIP_WIDTH = 4  # minimum pixel width for zero-duration clips
+
+
+@dataclass(frozen=True)
+class RowMetrics:
+    """How tall the track rows are and how their keys are drawn: one density.
+
+    The one source every row reader shares -- the scene's row layout
+    (``SequencerWidget._iter_rows``) and the header's labels
+    (``TrackHeaderWidget.apply_metrics``) -- so the two cannot drift.
+
+    ``key_style`` is ``"curve"`` (a sub-row draws its keys at their values on
+    a mini normalised curve, with tangent handles) or ``"flat"`` (keys sit on
+    the row's centre line, dope-sheet style, no curve and no handles; an
+    object row draws its ``summary_times`` as ticks).
+    """
+
+    track_height: int = _TRACK_HEIGHT
+    sub_row_height: int = _SUB_ROW_HEIGHT
+    padding: int = _TRACK_PADDING
+    key_style: str = "curve"
+
+    #: The ``key_style`` values a preset may name.
+    KEY_STYLES = ("curve", "flat")
+
+    def __post_init__(self):
+        if self.key_style not in self.KEY_STYLES:
+            raise ValueError(
+                f"key_style must be one of {self.KEY_STYLES}, got {self.key_style!r}"
+            )
+
+    @property
+    def flat_keys(self) -> bool:
+        """True when keys are drawn on the row's centre line."""
+        return self.key_style == "flat"
+
+    @classmethod
+    def preset(cls, name: str) -> "RowMetrics":
+        """The named density: ``"standard"`` (today's rows) or ``"compact"``.
+
+        Raises:
+            KeyError: *name* is not a preset.
+        """
+        return _ROW_METRICS_PRESETS[name]
+
+    @classmethod
+    def preset_names(cls) -> tuple:
+        """The preset names, in display order."""
+        return tuple(_ROW_METRICS_PRESETS)
+
+
+_ROW_METRICS_PRESETS: Dict[str, RowMetrics] = {
+    "standard": RowMetrics(),
+    "compact": RowMetrics(
+        track_height=16, sub_row_height=14, padding=1, key_style="flat"
+    ),
+}
 
 #: The one accent every "this is selected" cue is drawn in -- the shot band in
 #: the ruler, the range highlight over the tracks, and a selected clip's
@@ -226,19 +285,87 @@ class CurveUtils:
             return val_min
         return val_min + (y_bot - y) / y_span * val_range
 
+    #: Values this close are one level (curve units) -- a span that stays
+    #: within it of its start is flat (:meth:`segment_is_flat`); the
+    #: tolerance the hosts split hold spans out at (mayatk / blendertk
+    #: ``SegmentKeys.collect_segments(static_tolerance=)``), so a span the
+    #: track view shows as a hold clip never draws as moving.
+    FLAT_TOLERANCE = 1e-4
+    #: A flat span's stroke, against a moving one's (:meth:`flat_pen`).
+    FLAT_DASHES = (4.0, 3.0)
+
     @staticmethod
-    def build_curve_path(segments, map_x, map_y) -> QtGui.QPainterPath:
+    def segment_is_flat(seg: dict, tolerance: float = FLAT_TOLERANCE) -> bool:
+        """Whether span *seg* holds one value end to end, within *tolerance*.
+
+        A step span always does (its jump is a riser, not the span); any
+        other must end where it starts, with its control points or samples
+        level too -- equal ends with tilted handles overshoot, and move.
+
+        Parameters:
+            seg: A :meth:`build_curve_path` segment.
+            tolerance: Curve units within which two values are one.
+        """
+        samples = seg.get("samples")
+        out_type = seg.get("out_type", "spline")
+        if out_type in ("step", "stepnext") and not samples:
+            return True
+        v0 = seg["v0"]
+        if abs(seg["v1"] - v0) > tolerance:  # most spans: no list built
+            return False
+        if samples:
+            inner = (v for _t, v in samples)
+        elif out_type == "linear":
+            return True
+        else:
+            inner = (cp[1] for cp in (seg.get("cp1"), seg.get("cp2")) if cp)
+        return all(abs(v - v0) <= tolerance for v in inner)
+
+    @staticmethod
+    def flat_pen(pen: QtGui.QPen) -> QtGui.QPen:
+        """*pen* as a flat span draws: dashed (:attr:`FLAT_DASHES`), so a
+        span that only nearly holds -- solid -- reads apart from one that
+        does, at any zoom."""
+        out = QtGui.QPen(pen)
+        out.setDashPattern(list(CurveUtils.FLAT_DASHES))
+        return out
+
+    @staticmethod
+    def stroke_curve(painter, pen, path, flats=None, mark: bool = True) -> None:
+        """Stroke a :meth:`build_curve_path` *path* with *pen*, and its
+        *flats* with :meth:`flat_pen` -- or with *pen*, unmarked -- the one
+        way every view draws a curve's flat spans."""
+        painter.setPen(pen)
+        painter.drawPath(path)
+        if flats is not None and not flats.isEmpty():
+            painter.setPen(CurveUtils.flat_pen(pen) if mark else pen)
+            painter.drawPath(flats)
+
+    @staticmethod
+    def build_curve_path(
+        segments, map_x, map_y, risers=None, flats=None
+    ) -> QtGui.QPainterPath:
         """Build a QPainterPath from curve *segments*.
 
         One implementation of the out-type switch (``step`` /
         ``stepnext`` / ``linear`` / cubic-Bézier via ``cp1``/``cp2``) shared
-        by the clip curve preview and the background curve painter, so a
-        tangent-rendering change can't silently diverge between them.
+        by the clip curve preview, the background curve painter and the
+        graph editor, so a tangent-rendering change can't silently diverge
+        between them.
 
         A segment may also carry ``samples`` -- ``[(t, v), ...]`` strictly
         between its endpoints -- for a span neither a line nor one cubic can
         draw (Blender's eased interpolations: SINE, BACK, BOUNCE, ...); it is
         drawn through them, whatever its ``out_type`` says.
+
+        *risers*, a ``QPainterPath``, takes each step span's vertical jump
+        instead of the returned path (which moves across it), for a painter
+        that draws the jump apart -- the graph editor dots it, as Maya's
+        Graph Editor does.  Without it the jump is part of the path.
+
+        *flats*, a ``QPainterPath``, likewise takes every flat span
+        (:meth:`segment_is_flat`; a run of them as one line) for a painter
+        that marks them (:meth:`flat_pen`): a step's jump stays a jump.
         """
         path = QtGui.QPainterPath()
         if not segments:
@@ -265,22 +392,36 @@ class CurveUtils:
             cp1 = seg.get("cp1")
             cp2 = seg.get("cp2")
             samples = seg.get("samples")
+            flat = flats is not None and CurveUtils.segment_is_flat(seg)
+            if flat or ot in ("step", "stepnext"):  # the start, only when used
+                x0, y0 = map_x(seg["t0"]), map_y(seg["v0"])
+            # The span's body: the path, or -- flat -- *flats*, continuing
+            # its run there (one line, so a dash pattern flows through).
+            body = path
+            if flat:
+                body = flats
+                start = QtCore.QPointF(x0, y1 if ot == "stepnext" else y0)
+                if flats.elementCount() == 0 or flats.currentPosition() != start:
+                    flats.moveTo(start)
             if samples:
                 for t, v in samples:
-                    path.lineTo(map_x(t), map_y(v))
-                path.lineTo(x1, y1)
+                    body.lineTo(map_x(t), map_y(v))
+                body.lineTo(x1, y1)
             elif ot == "step":
                 # Hold value, then jump at next key
-                path.lineTo(x1, map_y(seg["v0"]))
-                path.lineTo(x1, y1)
+                body.lineTo(x1, y0)
+                if body is flats:
+                    path.moveTo(x1, y0)
+                CurveUtils._jump(path, risers, x1, y0, y1)
+                continue  # the path is at the span's end
             elif ot == "stepnext":
                 # Jump to next value immediately, then hold
-                path.lineTo(map_x(seg["t0"]), y1)
-                path.lineTo(x1, y1)
+                CurveUtils._jump(path, risers, x0, y0, y1)
+                body.lineTo(x1, y1)
             elif ot == "linear" or cp1 is None or cp2 is None:
-                path.lineTo(x1, y1)
+                body.lineTo(x1, y1)
             else:
-                path.cubicTo(
+                body.cubicTo(
                     map_x(cp1[0]),
                     map_y(cp1[1]),
                     map_x(cp2[0]),
@@ -288,7 +429,21 @@ class CurveUtils:
                     x1,
                     y1,
                 )
+            if body is flats:
+                path.moveTo(x1, y1)
         return path
+
+    @staticmethod
+    def _jump(path, risers, x: float, y_from: float, y_to: float) -> None:
+        """A step's vertical at *x*, *y_from* to *y_to*: onto *risers* (the
+        path moving across it) when given, else the path's own line.  A jump
+        of no height stays on the path: drawn apart it is a stray dot."""
+        if risers is None or y_from == y_to:
+            path.lineTo(x, y_to)
+            return
+        risers.moveTo(x, y_from)
+        risers.lineTo(x, y_to)
+        path.moveTo(x, y_to)
 
 
 # ---------------------------------------------------------------------------

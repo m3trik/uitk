@@ -4,7 +4,7 @@
 
 import unittest
 from conftest import QtBaseTestCase
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtCore, QtGui
 
 from uitk.widgets.treeWidget import TreeWidget
 
@@ -220,7 +220,6 @@ class TestTreeWidgetCtrlToggle(QtBaseTestCase):
         tree = self._make_tree(ctrl_toggle=True)
         item0 = tree.topLevelItem(0)
         item1 = tree.topLevelItem(1)
-        pos0 = self._item_viewport_center(tree, item0)
         pos1 = self._item_viewport_center(tree, item1)
 
         # Select first item

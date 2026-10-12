@@ -245,7 +245,8 @@ class TestEventFactoryFilterEventHandling(QtBaseTestCase):
             QtCore.Qt.NoModifier,
         )
 
-        result = filter_obj.eventFilter(widget, event)
+        # The handler's return value is the filter's verdict (it returns True).
+        self.assertTrue(filter_obj.eventFilter(widget, event))
         self.assertTrue(self.handler_called)
         self.assertEqual(self.handler_widget, widget)
 
@@ -305,6 +306,41 @@ class TestEventFactoryFilterEventHandling(QtBaseTestCase):
         # First call populates cache
         filter_obj.eventFilter(widget, event)
         self.assertGreater(len(filter_obj._handler_cache), 0)
+
+    def test_missing_handler_is_resolved_once(self):
+        """A watched event type the target has no handler for is looked up once.
+
+        Regression: the cache stored a miss as ``None`` — indistinguishable
+        from "not resolved yet" — so every such event re-ran the enum-name
+        formatting and a failing ``getattr`` on the target. The marking menu
+        watches MouseMove/MouseButtonPress on every page widget but defines
+        no handler for either, so each drag move over a grabbed button paid it.
+        """
+        lookups = []
+
+        class NoHandlers:
+            def __getattr__(target_self, name):  # reached only on a miss
+                lookups.append(name)
+                raise AttributeError(name)
+
+        filter_obj = EventFactoryFilter(
+            forward_events_to=NoHandlers(), event_types={"MouseButtonPress"}
+        )
+        widget = self.track_widget(QtWidgets.QPushButton())
+        filter_obj.install(widget)
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(10, 10),
+            QtCore.QPointF(10, 10),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+
+        for _ in range(5):
+            self.assertFalse(filter_obj.eventFilter(widget, event))
+
+        self.assertEqual(lookups, ["mouseButtonPressEvent"])
 
 
 class TestEventFactoryFilterEventNameFormatting(QtBaseTestCase):
@@ -692,8 +728,10 @@ class TestMouseTrackingWithStackedWidget(QtBaseTestCase):
         tracker = MouseTracking(stack)
         tracker.update_child_widgets()
 
-        # Should find button1 since page1 is current
+        # Should find button1 since page1 is current -- and not the hidden
+        # page's button2.
         self.assertIn(button1, tracker._widgets)
+        self.assertNotIn(button2, tracker._widgets)
 
 
 class TestMouseTrackingDragHoverHandoff(QtBaseTestCase):
@@ -719,10 +757,12 @@ class TestMouseTrackingDragHoverHandoff(QtBaseTestCase):
         self.parent.resize(400, 200)
         self.btn_a = self.track_widget(QtWidgets.QPushButton("A", self.parent))
         self.btn_a.setObjectName("A")
-        self.btn_a.resize(80, 30); self.btn_a.move(50, 50)
+        self.btn_a.resize(80, 30)
+        self.btn_a.move(50, 50)
         self.btn_b = self.track_widget(QtWidgets.QPushButton("B", self.parent))
         self.btn_b.setObjectName("B")
-        self.btn_b.resize(80, 30); self.btn_b.move(200, 50)
+        self.btn_b.resize(80, 30)
+        self.btn_b.move(200, 50)
         self.parent.show()
         # Qt only establishes a mouse grab on a widget whose window is active.
         # Under a full-suite run a prior test can leave another window active,
@@ -1030,6 +1070,35 @@ class TestMouseTrackingViewportFiltering(QtBaseTestCase):
             "MouseMove re-probed the tracked set; the scan belongs to the "
             "moment a widget is tracked, not to every move",
         )
+
+    def test_rebuild_probes_each_widget_type_once(self):
+        """Rebuilding the tracking set must not re-probe every plain widget.
+
+        Regression: a plain widget never joins ``_filtered_widgets``, so every
+        ``update_child_widgets`` re-ran the exception-driven ``hasattr``
+        viewport probe over the whole set — and the marking menu rebuilds on
+        every page swap, window activation and focus-in (~340 tracked widgets,
+        ~4 rebuilds per activation press in Maya 2025; memoizing took most of
+        ~10 ms off a ~34 ms press). Owning a viewport is a fact of the widget's
+        TYPE, so one probe per type answers it for good.
+        """
+        for _ in range(60):
+            _ViewportProbeWidget(self.parent_widget)
+        view = QtWidgets.QListView(self.parent_widget)
+
+        _ViewportProbeWidget.probe_count = 0
+        for _ in range(5):
+            self.tracker.update_child_widgets()
+
+        self.assertEqual(
+            _ViewportProbeWidget.probe_count,
+            1,
+            "a rebuild re-probed widgets whose type was already classified",
+        )
+        # The memo must not cost correctness: the scroll area is still filtered,
+        # exactly once.
+        self.assertEqual(self._filtered.count(view), 1)
+        self.assertIn(view.viewport(), self.tracker._filtered_widgets)
 
 
 class TestTreeDragReparentFilter(QtBaseTestCase):

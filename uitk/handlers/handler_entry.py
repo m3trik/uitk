@@ -7,10 +7,12 @@ launcher surface (e.g. :class:`uitk.widgets.editors.SwitchboardBrowser`)
 yields :class:`HandlerEntry` instances from its ``entries()`` method.
 
 The entry is a frozen value object: identity (``name``, ``kind``) and
-static metadata (``tags``, ``filepath``) are baked in at construction.
+static metadata (``tags``, ``filepath``, ``description``) are baked in at
+construction.
 Live state (``is_visible``) is queried back through the owning handler
 at use time so an entry never goes stale.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -45,6 +47,9 @@ class HandlerEntry:
             editing. An empty frozenset means "editable but empty".
         filepath: On-disk path of the backing file when one exists.
             ``None`` for purely synthetic entries like external tools.
+        description: One concise sentence saying what the entry does, or
+            ``""``: the browser's Description column (full text on hover).
+            A ``.ui`` entry's is its root widget's ``accessibleDescription``.
     """
 
     name: str
@@ -53,6 +58,7 @@ class HandlerEntry:
     inherited_tags: FrozenSet[str] = frozenset()
     file_tags: Optional[FrozenSet[str]] = None
     filepath: Optional[str] = None
+    description: str = ""
 
     @property
     def all_tags(self) -> FrozenSet[str]:

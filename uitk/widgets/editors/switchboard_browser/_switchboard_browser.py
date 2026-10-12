@@ -22,6 +22,7 @@ from qtpy import QtCore, QtWidgets
 # import needed.
 from uitk.compile import UiCompiler
 from uitk.widgets.editors.editor_panel import EditorPanel
+from uitk.widgets.optionBox._optionBox import OptionBoxContainer
 from uitk.widgets.optionBox.options.filter import FilterOption, NEGATE_PREFIX
 from uitk.widgets.pushButton import PushButton
 from .filtering import (
@@ -147,6 +148,17 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         browser = SwitchboardBrowser(
             switchboard=app.sb, exc=["*#startmenu*", "*#submenu*"]
         )
+
+    The window comes back at the size and place it was closed at, and the
+    header's right-click menu shows and hides the columns (``name``, ``tags``,
+    ``description``, ``close``, ``launch``; Name always shows), both remembered
+    across sessions. ``hidden_by_default`` names the columns hidden until the
+    user shows them: Description here, while a browser whose rows all share
+    their tags hides Tags instead (``ExternalAppHub``). ``layout_key`` keeps a
+    browser's window size and column layout apart from the UI Browser's own,
+    so neither one's choices reach the other::
+
+        SwitchboardBrowser(sb, hidden_by_default=["tags"], layout_key="hub")
     """
 
     def __init__(
@@ -155,8 +167,14 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         parent=None,
         inc: Union[str, List[str], None] = None,
         exc: Union[str, List[str], None] = None,
+        hidden_by_default: Union[str, int, Iterable[Union[str, int]], None] = (
+            "description",
+        ),
+        layout_key: str = "",
         **switchboard_kwargs,
     ):
+        # Resolved first: a misspelled column fails before anything is built.
+        hidden_columns = self._column_indices(hidden_by_default)
         # Accept an existing Switchboard, or auto-create one. Passing
         # both is ambiguous — the kwargs would silently apply to the
         # caller's switchboard or be dropped, neither obviously right —
@@ -193,13 +211,14 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
             on_top=False,
         )
         self.sb: Switchboard = switchboard
-        self.resize(420, 560)
-        # Skip EditorPanel's QTableWidget-based auto-fit; we use a QTableView
-        # and manage our own size.
-        self._size_initialized = True
+        self.resize(420, 560)  # the first show's size; later, the user's own
 
         # Browser-owned settings (hide lists, scope, last options)
         self._settings = self.sb.settings.branch("ui_browser")
+        # A browser with its own layout (the extapps hub) keeps its own size
+        # and columns; the UI Browser's are the unsuffixed keys.
+        suffix = f".{layout_key}" if layout_key else ""
+        self.persist_geometry(self._settings, key=f"window_geometry{suffix}")
 
         # ``state`` is the contract a Menu's *Restore Defaults* button looks
         # for — see :class:`_BrowserState`. Made public-ish so any nested
@@ -264,6 +283,19 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         self._active_tag_filters: Set[str] = set()
         self._chip_buttons = {}  # tag -> QPushButton
 
+        # The strip auto-hides (see _sync_chip_strip): it shows while the
+        # search row or the strip itself is hovered, or a tag filter is on.
+        self._chip_scroll.setVisible(False)
+        self._chip_hover_targets = [self._chip_scroll, self._search]
+        self._chip_hovered: List[QtWidgets.QWidget] = []
+        self._chip_menu_open = False
+        self._chip_hide_timer = QtCore.QTimer(self)
+        self._chip_hide_timer.setSingleShot(True)
+        self._chip_hide_timer.setInterval(self.CHIP_HIDE_DELAY_MS)
+        self._chip_hide_timer.timeout.connect(self._sync_chip_strip)
+        for target in self._chip_hover_targets:
+            target.installEventFilter(self)
+
         # ── Header option menu ─────────────────────────────────────────
         # Built *before* the table view because attaching a proxy via
         # ``setSourceModel`` / ``setModel`` immediately invokes the filter
@@ -297,6 +329,9 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
             SwitchboardBrowserModel.COL_TAGS, QtWidgets.QHeaderView.Stretch
         )
         h.setSectionResizeMode(
+            SwitchboardBrowserModel.COL_DESC, QtWidgets.QHeaderView.Stretch
+        )
+        h.setSectionResizeMode(
             SwitchboardBrowserModel.COL_ACTION, QtWidgets.QHeaderView.Fixed
         )
         h.setSectionResizeMode(
@@ -325,7 +360,24 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         self._view.verticalHeader().setVisible(False)
         self._view.verticalHeader().setDefaultSectionSize(22)
         self._view.setShowGrid(False)
+        # One line per row: a long description elides (full text on hover)
+        # rather than wrapping into a second line the row height crops.
+        self._view.setWordWrap(False)
         self.body_layout.addWidget(self._view, 1)
+
+        # Header right-click: show / hide columns, remembered per layout_key.
+        # With Tags and Description both hidden, the fill falls to Name, never
+        # to a fixed icon-button column (ColumnConfig._settle_fill).
+        from uitk.widgets.column_config import ColumnConfig
+
+        self._columns = ColumnConfig.attach(
+            self._view,
+            settings=self._settings,
+            settings_key=f"columns{suffix}",
+            locked=[SwitchboardBrowserModel.COL_NAME],
+            hidden_by_default=hidden_columns,
+        )
+        self._columns.restore()
 
         # ── Footer status ──────────────────────────────────────────────
         # Idle: counts (registered / visible / shown). Selected: the
@@ -534,7 +586,8 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
             setText="Hide inherited tags",
             setToolTip=(
                 "Hide tags declared at registration time (filename "
-                "suffix, source-dir tag, entry-point extras). Only "
+                "suffix, source-dir tag, entry-point extras) and the "
+                "kind chip (e.g. external:in-proc). Only "
                 "user-added tags remain visible — both in row chips "
                 "and in the tag chip-filter strip."
             ),
@@ -1037,6 +1090,42 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
             self._chip_layout.addWidget(btn)
             self._chip_buttons[t] = btn
         self._chip_layout.addStretch(1)
+        self._sync_chip_strip()
+
+    #: How long the tag strip lingers after the cursor leaves it (ms): long
+    #: enough to cross the gap from the search row onto the chips.
+    CHIP_HIDE_DELAY_MS = 400
+
+    def _sync_chip_strip(self) -> None:
+        """Show the tag chips only while they are in use -- the search row or
+        the strip hovered, a chip's menu open, or a tag filter on -- and never
+        when there are none to click."""
+        wanted = bool(self._chip_buttons) and bool(
+            self._chip_hovered or self._chip_menu_open or self._active_tag_filters
+        )
+        if self._chip_scroll.isHidden() == wanted:
+            self._chip_scroll.setVisible(wanted)
+
+    def eventFilter(self, obj, event):
+        """Track the cursor over the search row and the tag strip."""
+        if any(obj is target for target in getattr(self, "_chip_hover_targets", ())):
+            kind = event.type()
+            if kind == QtCore.QEvent.ParentChange and obj is self._search:
+                # The option box wraps the field in its container after the
+                # first show: the whole row (field + option buttons) counts.
+                row = obj.parentWidget()
+                if isinstance(row, OptionBoxContainer):
+                    self._chip_hover_targets.append(row)
+                    row.installEventFilter(self)
+            elif kind == QtCore.QEvent.Enter:
+                if not any(obj is w for w in self._chip_hovered):
+                    self._chip_hovered.append(obj)
+                self._chip_hide_timer.stop()
+                self._sync_chip_strip()
+            elif kind == QtCore.QEvent.Leave:
+                self._chip_hovered = [w for w in self._chip_hovered if w is not obj]
+                self._chip_hide_timer.start()
+        return super().eventFilter(obj, event)
 
     def _on_chip_toggled(self, tag: str, checked: bool) -> None:
         if checked:
@@ -1056,7 +1145,12 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         else:
             act = menu.addAction(f"Hide all UIs tagged #{tag}")
             act.triggered.connect(lambda: self._toggle_hide_tag(tag, hide=True))
-        menu.exec_(btn.mapToGlobal(pos))
+        self._chip_menu_open = True  # the strip stays while its menu is up
+        try:
+            menu.exec_(btn.mapToGlobal(pos))
+        finally:
+            self._chip_menu_open = False
+            self._chip_hide_timer.start()
 
     def _toggle_hide_tag(self, tag: str, hide: bool) -> None:
         s = self.hidden_tags
@@ -1283,8 +1377,60 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         self._refresh_row_widgets()
         self._update_footer_status()
 
+    def _fit_to_content(self) -> None:
+        """Keep the size the browser was given: its rows scroll, and the base
+        fit (a ``QTableWidget``'s rows, else ``adjustSize``) would shrink it.
+        Runs only on a first show with no saved size to restore."""
+
+    @staticmethod
+    def _column_indices(columns) -> List[int]:
+        """The model columns *columns* names: one or several, each a name (any
+        case) or a column index; None names none.
+
+        Raises:
+            ValueError: For one that is no column, listing the ones there are.
+        """
+        model = SwitchboardBrowserModel
+        if columns is None:
+            return []
+        if isinstance(columns, (str, int)) or not hasattr(columns, "__iter__"):
+            columns = [columns]
+        columns = list(columns)  # read a one-pass iterable once
+
+        def index(column):
+            if isinstance(column, str):
+                return model.COLUMNS.get(column.lower())
+            if type(column) is int and 0 <= column < model.COLUMN_COUNT:
+                return column  # ``type`` and not isinstance: True is no column
+            return None
+
+        indices = [index(c) for c in columns]
+        unknown = [c for c, i in zip(columns, indices) if i is None]
+        if unknown:
+            raise ValueError(
+                f"SwitchboardBrowser: no column {', '.join(map(repr, unknown))}; "
+                f"the columns are {', '.join(model.COLUMNS)}, or their indices."
+            )
+        return indices
+
+    def event(self, event) -> bool:
+        # A theme applied over the window restyles it; the Launch tints follow
+        # its checked color. Deferred: the theme is recorded for the window
+        # only after its stylesheet is set. A child timer (PySide 6.5.3 has no
+        # ``singleShot(ms, context, fn)``), so restyles in one turn refresh once.
+        if event.type() == QtCore.QEvent.StyleChange:
+            timer = getattr(self, "_retint_timer", None)
+            if timer is None:
+                timer = self._retint_timer = QtCore.QTimer(self)
+                timer.setSingleShot(True)
+                timer.timeout.connect(self._refresh_row_widgets)
+            timer.start(0)
+        return super().event(event)
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        self._chip_hovered = []  # a leave may have gone undelivered while hidden
+        self._sync_chip_strip()
         # While hidden the model might have processed entries-changed
         # signals without triggering row rebuilds (see ``_defer_full_refresh``).
         # Bring the view fully up to date on show.
@@ -1298,60 +1444,94 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         idx = self._proxy.index(0, 0)
         self._view.setCurrentIndex(idx)
 
-    # ── Per-row icon buttons (Launch/Focus + Close) ──────────────────────────
+    # ── Per-row icon buttons (Close + Launch/Focus) ──────────────────────────
+
+    #: A row button's property naming the entry it acts on, read at click
+    #: time: a button follows its proxy row, and filtering shifts rows.
+    _ROW_ENTRY = "browserEntry"
 
     def _refresh_row_widgets(self) -> None:
-        """(Re)install action + close icon buttons for every visible row.
+        """Bring every visible row's Close and Launch buttons up to date.
 
-        ``QTableView.setIndexWidget`` is keyed by proxy model index, but
-        proxy filtering shifts the visible rows. Each refresh replaces any
-        existing widgets with fresh instances — Qt deletes the old ones —
-        so connections never accumulate.
+        A row's buttons are made once and then updated in place -- the Launch
+        icon's tint, the tooltips, whether Close shows -- so a refresh never
+        deletes a button mid-press, which would swallow the click. A cell whose
+        button belongs to another entry (``setIndexWidget`` keys by proxy
+        index, and filtering shifts the rows) gets a fresh one; Qt deletes the
+        old.
 
-        Each button is wrapped in a centered container so the cell's
-        selection highlight looks clean around it (vs. a button anchored
-        to the top-left of a wider cell).
+        Launch keeps one icon (``open_external``: it opens the UI as its own
+        window) and, while the window is open, tints it the theme's checked
+        color over an unchanged ground; a click then focuses the window.
+        Close shows only on an open window's row: elsewhere there is nothing
+        to close, and an empty cell reads quieter than a disabled button.
         """
         if not hasattr(self, "_view"):
             return
         from uitk.managers.icon_manager import IconManager
 
+        model = SwitchboardBrowserModel
+        open_color = self.style.resolve_variable("BUTTON_CHECKED", self) or ""
         for r in range(self._proxy.rowCount()):
-            proxy_idx_action = self._proxy.index(r, SwitchboardBrowserModel.COL_ACTION)
-            proxy_idx_close = self._proxy.index(r, SwitchboardBrowserModel.COL_CLOSE)
-            name = proxy_idx_action.data(SwitchboardBrowserModel.NameRole)
-            visible = bool(proxy_idx_action.data(SwitchboardBrowserModel.VisibleRole))
+            row = self._proxy.index(r, model.COL_NAME)
+            name = row.data(model.NameRole)
+            visible = bool(row.data(model.VisibleRole))
 
-            # Action icons:
-            #   visible → "eye" (focus the window)
-            #   not visible → "open_external" (open it as its own window),
-            #     which reads more clearly than a generic transport "play"
-            #     for an action that pops a new top-level window.
-            action_btn = self._make_icon_btn()
-            IconManager.set_icon(
-                action_btn,
-                "eye" if visible else "open_external",
-                size=(14, 14),
-            )
-            action_btn.setToolTip(f"Focus {name}" if visible else f"Launch {name}")
-            if visible:
-                action_btn.clicked.connect(lambda _=False, n=name: self._focus(n))
-            else:
-                action_btn.clicked.connect(lambda _=False, n=name: self._launch(n))
-            self._view.setIndexWidget(proxy_idx_action, self._wrap_centered(action_btn))
+            close = self._row_button(r, model.COL_CLOSE, name, closes=True)
+            close.setVisible(visible)
 
-            # Close: only enabled when the UI is currently visible
-            close_btn = self._make_icon_btn()
-            IconManager.set_icon(close_btn, "close", size=(12, 12))
-            close_btn.setToolTip(f"Hide {name}" if visible else "")
-            close_btn.setEnabled(visible)
-            close_btn.clicked.connect(lambda _=False, n=name: self._close_ui(n))
-            self._view.setIndexWidget(proxy_idx_close, self._wrap_centered(close_btn))
+            launch = self._row_button(r, model.COL_ACTION, name)
+            launch.setToolTip(f"Focus {name}" if visible else f"Launch {name}")
+            # Re-tinted when the window opens or closes, or the theme's checked
+            # color changes (a pinned tint sits out the theme's icon sweep, so
+            # a style change re-runs this: see ``event``). No checked color:
+            # untinted, as made.
+            tint = open_color if visible else ""
+            if launch.property("entryTint") != tint:
+                launch.setProperty("entryTint", tint)
+                IconManager.set_icon(
+                    launch, "open_external", size=(14, 14), color=tint or None
+                )
 
-    def _make_icon_btn(self) -> QtWidgets.QPushButton:
+    def _row_button(
+        self, row: int, column: int, name: str, closes: bool = False
+    ) -> QtWidgets.QPushButton:
+        """Row *row*'s button in *column* for entry *name*: the one already
+        there, or a new one (Close, or Launch) when the cell has none for it."""
+        from uitk.managers.icon_manager import IconManager
+
+        index = self._proxy.index(row, column)
+        container = self._view.indexWidget(index)
+        button = container.findChild(QtWidgets.QPushButton) if container else None
+        if button is not None and button.property(self._ROW_ENTRY) == name:
+            return button
+        button = self._make_icon_btn(closes=closes)
+        button.setProperty(self._ROW_ENTRY, name)
+        act = self._close_ui if closes else self._on_row_action
+        button.clicked.connect(
+            lambda _=False, b=button, act=act: act(b.property(self._ROW_ENTRY))
+        )
+        if closes:
+            IconManager.set_icon(button, "close", size=(12, 12))
+            button.setToolTip(f"Hide {name}")
+        else:  # untinted; the caller tints an open window's
+            IconManager.set_icon(button, "open_external", size=(14, 14))
+            button.setProperty("entryTint", "")
+        self._view.setIndexWidget(index, self._wrap_centered(button))
+        return button
+
+    def _on_row_action(self, name: str) -> None:
+        """A row's Launch button: focus the window when open, else launch it."""
+        entry = self._model.entry_for_name(name)
+        if entry is not None and self._model._is_visible(entry):
+            self._focus(name)
+        else:
+            self._launch(name)
+
+    def _make_icon_btn(self, closes: bool = False) -> QtWidgets.QPushButton:
         # Delegates to EditorPanel.icon_button (shared template). Slightly
         # smaller (22 vs the 24 default) to match this table's row height.
-        return self.icon_button(size=22)
+        return self.icon_button(size=22, closes=closes)
 
     @staticmethod
     def _wrap_centered(widget: QtWidgets.QWidget) -> QtWidgets.QWidget:

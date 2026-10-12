@@ -73,12 +73,15 @@ class _HeaderMenuMixin(object):
             )
             getattr(widget.menu, name).clicked.connect(getattr(self, handler))
 
-        spec = self.help_spec()
-        if spec:
+        # The help card ends in the panel's docs link (``docs_url``), the
+        # same one the log pane shows at startup.
+        spec, url = self.help_spec(), self.docs_url()
+        if spec or url:
             try:
                 from pythontk import TooltipFormat
 
-                widget.set_help_text(TooltipFormat.fmt(**spec))
+                text = TooltipFormat.fmt(**spec) if spec else ""
+                widget.set_help_text(text, url=url)
             except Exception:  # noqa: BLE001 - help is non-essential chrome
                 pass
 

@@ -16,8 +16,13 @@ name via :attr:`clicked_button`.
 
 Structured data renders through :meth:`TextViewBox.format_data` --
 colour-coded JSON, the one place the data viewer's look is tuned.
+
+A live preview (:meth:`TextViewBox.bind_preview`) puts option rows beside the
+text and renders it again on every change: what a tool will write, seen as
+its options are set, before it writes anything.
 """
 
+import dataclasses
 import html
 import json
 import logging
@@ -80,6 +85,10 @@ class TextViewBox(WindowPanel):
     # Not a Designer widget-box entry: a standalone window, not a form element.
     designer_spec = {"visible": False}
 
+    #: A button's canonical name (``"Ok"``, ``"Copy"`` ...) as it is clicked,
+    #: before a closing role closes the window.
+    button_clicked = QtCore.Signal(str)
+
     # Case-insensitive map from MessageBox-style button names to
     # ``(label, role, canonical_name)`` for :class:`QDialogButtonBox`.
     # Keys are lowercase so lookup is ``name.lower()``; the canonical
@@ -90,6 +99,9 @@ class TextViewBox(WindowPanel):
         "open": ("Open", QtWidgets.QDialogButtonBox.AcceptRole, "Open"),
         "save": ("Save", QtWidgets.QDialogButtonBox.AcceptRole, "Save"),
         "saveall": ("Save All", QtWidgets.QDialogButtonBox.AcceptRole, "SaveAll"),
+        # A preview's verbs: each leaves it open, to export another way.
+        "saveas": ("Save As…", QtWidgets.QDialogButtonBox.ApplyRole, "SaveAs"),
+        "copy": ("Copy", QtWidgets.QDialogButtonBox.ApplyRole, "Copy"),
         "retry": ("Retry", QtWidgets.QDialogButtonBox.AcceptRole, "Retry"),
         "apply": ("Apply", QtWidgets.QDialogButtonBox.ApplyRole, "Apply"),
         "reset": ("Reset", QtWidgets.QDialogButtonBox.ResetRole, "Reset"),
@@ -341,8 +353,114 @@ class TextViewBox(WindowPanel):
         """
         return self._result_name
 
+    # -- live preview -----------------------------------------------------
+
+    def bind_preview(self, render, specs=(), values=None, on_change=None, status=None):
+        """Make the viewer a live preview of *render*'s text.
+
+        A row per spec beside the text (built by ``KindFactory``, the widget
+        a spec's kind names), and every change to one renders the text again
+        at once.
+
+        Parameters:
+            render: ``render(values) -> str``: the text shown, as plain text
+                (never read as HTML) -- the output itself.
+            specs: The options, each an ``AttributeSpec`` or a dict of its
+                fields (``key``, ``label``, ``kind``, ``default``,
+                ``choices``, ``tooltip``), a dict's ``hint`` its row's hint.
+            values: ``{key: value}`` to start from; a spec's default else.
+            on_change: ``on_change(key, value)`` once a row changed, before
+                the text renders -- to keep the choice.
+            status: ``status(values, text) -> str`` for the footer, asked
+                right after each render; the text's line count when omitted.
+        """
+        from uitk.bridge.attribute_spec import AttributeSpec
+        from uitk.bridge.spec import KindFactory
+
+        self._preview_render = render
+        self._preview_on_change = on_change
+        self._preview_status = status
+        self.preview_values = {}
+        self.preview_widgets = {}
+        values = values or {}
+        for spec in specs:
+            hint = None
+            if isinstance(spec, dict):
+                spec = dict(spec)
+                hint = spec.pop("hint", None)
+                spec = AttributeSpec(**spec)
+            if spec.key in values:
+                spec = dataclasses.replace(spec, default=values[spec.key])
+            widget = KindFactory.make_widget(spec, self.form)
+            widget.restore_state = False  # the caller keeps the values
+            self.form.add(widget, label=spec.display_label, hint=hint)
+            self.preview_values[spec.key] = KindFactory.read_value(widget)
+            self.preview_widgets[spec.key] = widget
+            KindFactory.connect_changed(
+                widget, lambda value, key=spec.key: self._on_preview_row(key, value)
+            )
+        self._place_rows_beside_text()
+        self.refresh_preview()
+
+    @property
+    def preview_text(self) -> str:
+        """The text the preview shows (:meth:`bind_preview`)."""
+        return getattr(self, "_preview_text", "")
+
+    def refresh_preview(self) -> None:
+        """Render the preview again -- for a change outside its rows (the data
+        it shows); a no-op until :meth:`bind_preview`."""
+        render = getattr(self, "_preview_render", None)
+        if render is None:
+            return
+        text = render(dict(self.preview_values))
+        self._preview_text = text
+        bar = self.text_edit.verticalScrollBar()
+        top = bar.value()
+        self.text_edit.setPlainText(text)
+        bar.setValue(top)  # an option changed, not the place being read
+        status = self._preview_status
+        self.footer.setText(
+            status(dict(self.preview_values), text)
+            if status is not None
+            else f"{len(text.splitlines())} lines"
+        )
+
+    def _on_preview_row(self, key: str, value) -> None:
+        """A row changed: keep its value, tell the caller, render again."""
+        self.preview_values[key] = value
+        if self._preview_on_change is not None:
+            self._preview_on_change(key, value)
+        self.refresh_preview()
+
+    def _place_rows_beside_text(self) -> None:
+        """Move the form beside the text (once): option rows read down a
+        column the way a preview is compared, the text keeping the height."""
+        if getattr(self, "_preview_splitter", None) is not None:
+            return
+        side = QtWidgets.QWidget()
+        column = QtWidgets.QVBoxLayout(side)
+        column.setContentsMargins(0, 0, 4, 0)
+        self.body_layout.removeWidget(self.form)
+        self.body_layout.removeWidget(self.text_edit)
+        column.addWidget(self.form)
+        column.addStretch(1)
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, self)
+        splitter.addWidget(side)
+        splitter.addWidget(self.text_edit)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setChildrenCollapsible(False)
+        # The rows at their own width (a splitter starts a side at its
+        # minimum, which clips a check list's labels); the text the rest.
+        side_w = side.sizeHint().width()
+        splitter.setSizes([side_w, max(self.width() - side_w, side_w)])
+        self.body_layout.addWidget(splitter, 1)
+        self._preview_splitter = splitter
+
     def _on_button_clicked(self, name: str) -> None:
         self._result_name = name
+        self.button_clicked.emit(name)
         spec = self.BUTTONS.get(name.lower())
         if spec is None:
             return

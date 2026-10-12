@@ -137,14 +137,22 @@ class _ExternalAppHubInternal:
 
     def _browser(self, sb):
         """The UI Browser over *sb*'s external apps, with this hub's shortcut
-        buttons in its header menu."""
+        buttons in its header menu.
+
+        Every row is the same kind of app, so their tags say little: the hub
+        shows each app's description in their place, and keeps its window size
+        and column layout apart from a host's browser."""
         from uitk.widgets.editors.switchboard_browser._switchboard_browser import (
             SwitchboardBrowser,
         )
         from uitk.widgets.editors.switchboard_browser.launch import SHORTCUT_ACTIONS
         from uitk.widgets.pushButton import PushButton
 
-        browser = SwitchboardBrowser(switchboard=sb)
+        browser = SwitchboardBrowser(
+            switchboard=sb,
+            hidden_by_default=["tags"],
+            layout_key=f"hub.{self.package}",
+        )
         browser.setWindowTitle(self.title)
         browser.header.setTitle(self.title)
         menu = browser.header.menu

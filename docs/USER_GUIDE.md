@@ -293,6 +293,8 @@ icon = sb.get_icon("save")                # raw registered QIcon (no recoloring)
 
 `WINDOW_BLUR` (`"on"`/`"off"`; on by default, except in the opaque `high-contrast` theme) blurs the desktop seen through a translucent window background — frosted glass instead of see-through — for every window `style.set` styles and the popups they open (Windows 10+, macOS, and KDE Plasma on X11 while its blur effect is on; elsewhere -- native Wayland, GNOME, other X11 window managers -- the background just stays translucent, see `Bootstrap.blurs()`). It is a theme token like any other: the Style Editor shows it as a check box under *Effects*, and `StyleSheet.set_variable("WINDOW_BLUR", "off", theme="dark")` sets the same persisted override.
 
+`WINDOW_BLUR_OPACITY` (a percent; `"60%"` by default) is how much of `WINDOW_BACKGROUND`'s alpha a window keeps while it is blurred: lower shows more of the frosted desktop. The blur's own strength is the desktop's and cannot be set. Where nothing blurs (`WINDOW_BLUR` off, or a desktop without blur) the background keeps its full alpha, so an unblurred window never turns more see-through; context menus (`QMenu`, `ContextMenu`) are opaque, on `MENU_BACKGROUND`. It follows the theme, not each window: a window a caller keeps opaque, or a panel docked into a host, paints the thinner fill over its own ground. The Style Editor shows it as a `%` spin box under *Effects*; `StyleSheet.set_variable("WINDOW_BLUR_OPACITY", "65%", theme="dark")` sets it in code.
+
 Live theme editing:
 ```python
 from uitk.widgets.editors.style_editor import StyleEditor

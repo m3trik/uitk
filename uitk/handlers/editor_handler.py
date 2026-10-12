@@ -61,7 +61,12 @@ class EditorHandler(BaseHandler):
         taken = self._names_listed_elsewhere()
         for name in self.sb.editors.names():
             if name not in taken:
-                yield HandlerEntry(name=name, kind=self.KIND, handler=self)
+                yield HandlerEntry(
+                    name=name,
+                    kind=self.KIND,
+                    handler=self,
+                    description=self.sb.editors.description(name),
+                )
 
     def _names_listed_elsewhere(self) -> set:
         """Entry names the switchboard's OTHER launchable handlers yield."""
@@ -89,7 +94,7 @@ class EditorHandler(BaseHandler):
     def close(self, name: str) -> None:
         editor = self.sb.editors.peek(name)
         if editor is not None:
-            editor.hide()
+            self._dismiss(editor)
         self._notify_entries_changed(name)
 
     def is_visible(self, name: str) -> bool:

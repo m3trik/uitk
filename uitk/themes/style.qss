@@ -23,7 +23,7 @@ QToolTip {
     border: {BORDER_W} solid {BORDER_COLOR};
 }
 QWidget.centralWidget {
-    background-color: {WINDOW_BACKGROUND};
+    background-color: {WINDOW_FILL};
     border: {BORDER_W} solid {BORDER_COLOR};
     color: {TEXT_COLOR};
 }
@@ -74,7 +74,7 @@ QToolBox::tab:hover:!selected {
     color: {TEXT_HOVER};
 }
 QMainWindow {
-    background-color: {WINDOW_BACKGROUND};
+    background-color: {WINDOW_FILL};
     border: {BORDER_W} solid {BORDER_COLOR};
 }
 QGroupBox {
@@ -82,7 +82,7 @@ QGroupBox {
     border-radius: {RADIUS};
     padding: 1px 1px 2px 1px;
     margin: 12px 0px 2px 0px;
-    background-color: {WINDOW_BACKGROUND};
+    background-color: {WINDOW_FILL};
 }
 /* QGroupBox:hover {
     border: {BORDER_W} solid {BUTTON_HOVER};
@@ -110,8 +110,11 @@ QGroupBox::title:disabled {
 }
 
 /* -- Menus -- */
+/* A context menu is a popup over the desktop, never blurred (no window
+   StyleSheet styles): the opaque context-menu ground ContextMenu paints, not
+   the translucent window one, which read as see-through. */
 QMenu {
-    background-color: {WINDOW_BACKGROUND};
+    background-color: {MENU_BACKGROUND};
     border: {BORDER_W} solid {BORDER_COLOR};
     margin: 0px;
 }
@@ -236,6 +239,14 @@ QPushButton#toggle_expand {
     background-color: {PANEL_BACKGROUND};
 }
 QPushButton:flat {
+    border: none;
+}
+/* Icon-only buttons (WindowPanel.icon_button): disabled keeps the enabled
+   ground and only the glyph recedes (IconManager renders a faded Disabled
+   pixmap) -- the raised DISABLED_BACKGROUND plate reads as a live button.
+   A checked one keeps the generic faint checked tint. */
+QPushButton[class~="IconButton"]:disabled:!checked {
+    background-color: {WIDGET_BACKGROUND};
     border: none;
 }
 QPushButton:default {
@@ -719,6 +730,16 @@ QTextEdit:disabled {
 QTextEdit QWidget#qt_scrollarea_viewport {
     background-color: {WIDGET_BACKGROUND};
 }
+/* A header's help card (Header.show_help): a scrollable tooltip, styled as one. */
+QTextBrowser#helpCard,
+QTextBrowser#helpCard:hover {
+    color: {TEXT_COLOR};
+    background-color: {PANEL_BACKGROUND};
+    border: {BORDER_W} solid {BORDER_COLOR};
+}
+QTextBrowser#helpCard QWidget#qt_scrollarea_viewport {
+    background-color: {PANEL_BACKGROUND};
+}
 QTextEdit#hudTextEdit {
     border: none;
     background-color: transparent;
@@ -1073,31 +1094,6 @@ QSizeGrip[class~="SizeGrip"] {
     qproperty-hoverColor: {BUTTON_HOVER};
 }
 
-.MenuStatusBar {
-    background-color: {WINDOW_BACKGROUND};
-    border: none;
-    color: {TEXT_COLOR};
-}
-.MenuStatusBar QLabel,
-.MenuStatusBar QPushButton,
-.MenuStatusBar QToolButton {
-    background: transparent;
-    border: none;
-    color: {TEXT_COLOR};
-}
-.MenuStatusBar QLabel:hover,
-.MenuStatusBar QPushButton:hover,
-.MenuStatusBar QToolButton:hover {
-    background: transparent;
-    color: {TEXT_COLOR};
-}
-.MenuStatusBar QLabel:pressed,
-.MenuStatusBar QPushButton:pressed,
-.MenuStatusBar QToolButton:pressed {
-    background: transparent;
-    color: {TEXT_COLOR};
-}
-
 
 /* -- Custom Classes -- */
 .default {
@@ -1167,7 +1163,7 @@ QSizeGrip[class~="SizeGrip"] {
     selection-color: {SELECTION_FG};
 }
 .translucentBgWithBorder {
-    background-color: {WINDOW_BACKGROUND};
+    background-color: {WINDOW_FILL};
     border: {BORDER_W} solid {BORDER_COLOR};
     color: {TEXT_COLOR};
     selection-background-color: {SELECTION_BG};
@@ -1278,7 +1274,7 @@ Header > QPushButton {
     border: none;
 }
 Header > QPushButton:hover:!checked {
-    background-color: {WINDOW_BACKGROUND};
+    background-color: {WINDOW_FILL};
     border: none;
 }
 Header > QPushButton:checked {
@@ -1293,7 +1289,10 @@ Header > QPushButton:pressed {
     background-color: {BUTTON_HOVER};
     border: none;
 }
-Header > QPushButton#hdr_hide:hover {
+/* A window's close (hide) button, and any icon button that closes something
+   (icon_button(closes=True)), hovers red. */
+Header > QPushButton#hdr_hide:hover,
+QPushButton[class~="CloseButton"]:hover {
     background-color: red;
     border: none;
 }
@@ -1310,7 +1309,7 @@ Header > QPushButton#hdr_pin[pinHides="true"]:hover {
     border: none;
 }
 [footerWidget="true"]:hover:!checked {
-    background-color: {WINDOW_BACKGROUND};
+    background-color: {WINDOW_FILL};
     border: none;
 }
 [footerWidget="true"]:checked {
@@ -1341,7 +1340,7 @@ Footer > QAbstractButton[footerRounded="false"] {
 /* Menu & MainWindow custom widgets inherit translucent border styling */
 Menu,
 MainWindow {
-    background-color: {WINDOW_BACKGROUND};
+    background-color: {WINDOW_FILL};
     border: {BORDER_W} solid {BORDER_COLOR};
     color: {TEXT_COLOR};
     selection-background-color: {SELECTION_BG};
@@ -1350,12 +1349,12 @@ MainWindow {
 
 /* Menu Frame (inner container with border) */
 QFrame#menuFrame {
-    background-color: {WINDOW_BACKGROUND};
+    background-color: {WINDOW_FILL};
     border: {BORDER_W} solid {BORDER_COLOR};
     color: {TEXT_COLOR};
 }
 QFrame#menuFrame:hover {
-    background-color: {WINDOW_BACKGROUND};
+    background-color: {WINDOW_FILL};
     border: {BORDER_W} solid {BORDER_COLOR};
 }
 

@@ -225,7 +225,7 @@ class WidgetComboBox(ComboBox):
         # Dropdown affordance drawn after the displayed text (the theme hides
         # the native QComboBox::down-arrow).  Off by default — matching the
         # base ``ComboBox``, which draws none — so a combo only shows one when
-        # a caller opts in via ``arrow_direction`` (triangle) or ``arrow_icon``
+        # a caller opts in via ``arrow_direction`` (chevron) or ``arrow_icon``
         # (custom icon).  ``arrow_alpha`` sets the affordance's opacity.  Size
         # auto-scales with the font.
         self._arrow_direction: Optional[str] = None
@@ -1013,16 +1013,19 @@ class WidgetComboBox(ComboBox):
                     geo.setWidth(min_w + 4)
                     popup.setGeometry(geo)
 
-    _ARROW_DIRECTIONS = (None, "down", "up", "left", "right")
+    # The unit vector each direction's chevron apex points along.
+    _ARROW_APEX = {"down": (0, 1), "up": (0, -1), "left": (-1, 0), "right": (1, 0)}
+    _ARROW_DIRECTIONS = (None, *_ARROW_APEX)
 
     @property
     def arrow_direction(self) -> Optional[str]:
-        """Direction of the dropdown-affordance triangle drawn after the text.
+        """Direction of the dropdown-affordance chevron drawn after the text.
 
         One of ``"down"``, ``"up"``, ``"left"``, ``"right"`` — or ``None``
-        (default) to draw no triangle.  Ignored when :attr:`arrow_icon` is set
-        (the icon takes precedence).  Triangle size and gap auto-scale with
-        the current font.
+        (default) to draw no chevron.  The chevron is a thin open stroke in
+        the text colour, not a filled triangle.  Ignored when
+        :attr:`arrow_icon` is set (the icon takes precedence).  Chevron size,
+        stroke and gap auto-scale with the current font.
         """
         return self._arrow_direction
 
@@ -1040,9 +1043,9 @@ class WidgetComboBox(ComboBox):
     @property
     def arrow_icon(self) -> Optional[QtGui.QIcon]:
         """Custom icon drawn as the dropdown affordance, in place of the
-        triangle.
+        chevron.
 
-        ``None`` (default) falls back to :attr:`arrow_direction` (a triangle,
+        ``None`` (default) falls back to :attr:`arrow_direction` (a chevron,
         or nothing when that is also ``None``).  A non-null ``QIcon`` is drawn
         after the text regardless of ``arrow_direction``, at a font-scaled
         size and at :attr:`arrow_alpha` opacity.
@@ -1060,7 +1063,7 @@ class WidgetComboBox(ComboBox):
 
     @property
     def arrow_alpha(self) -> float:
-        """Opacity (``0.0``–``1.0``) of the dropdown affordance — the triangle
+        """Opacity (``0.0``–``1.0``) of the dropdown affordance — the chevron
         or the custom :attr:`arrow_icon`.  Default ``1.0`` (fully opaque);
         values are clamped to the valid range."""
         return self._arrow_alpha
@@ -1073,48 +1076,27 @@ class WidgetComboBox(ComboBox):
         self._arrow_alpha = value
         self.update()
 
-    def _build_arrow_polygon(
-        self, cx: float, cy: float, direction: str, em: float
-    ) -> QtGui.QPolygonF:
-        """Build a triangle polygon centred at (cx, cy) for *direction*.
+    # Chevron extents as fractions of the font's ascent: 0.8 em across, 0.4 em
+    # deep -- the 2:1 of the icon set's ``chevron_down``.
+    _CHEVRON_HALF_SPAN = 0.4
+    _CHEVRON_HALF_DEPTH = 0.2
 
-        ``em`` is a font-derived reference size (typically ``fontMetrics.ascent``);
-        the base of the triangle is ``em`` and the depth is ~0.57 × em, matching
-        the original 10.5×6 visual proportions and scaling with the font.
+    def _build_arrow_chevron(self, direction: str, em: float) -> QtGui.QPolygonF:
+        """Build the open chevron polyline (arm, apex, arm) centred on the origin.
+
+        ``em`` is a font-derived reference size (``fontMetrics.ascent``), so
+        the chevron scales with the font.  The apex points *direction*; the
+        arms spread across the perpendicular axis.
         """
-        base = em
-        depth = em * 0.57
-
-        if direction == "down":
-            return QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(cx - base / 2.0, cy - depth / 2.0),
-                    QtCore.QPointF(cx + base / 2.0, cy - depth / 2.0),
-                    QtCore.QPointF(cx, cy + depth / 2.0),
-                ]
-            )
-        if direction == "up":
-            return QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(cx - base / 2.0, cy + depth / 2.0),
-                    QtCore.QPointF(cx + base / 2.0, cy + depth / 2.0),
-                    QtCore.QPointF(cx, cy - depth / 2.0),
-                ]
-            )
-        if direction == "right":
-            return QtGui.QPolygonF(
-                [
-                    QtCore.QPointF(cx - depth / 2.0, cy - base / 2.0),
-                    QtCore.QPointF(cx - depth / 2.0, cy + base / 2.0),
-                    QtCore.QPointF(cx + depth / 2.0, cy),
-                ]
-            )
-        # direction == "left"
+        span = em * self._CHEVRON_HALF_SPAN
+        depth = em * self._CHEVRON_HALF_DEPTH
+        ax, ay = self._ARROW_APEX[direction]
+        px, py = abs(ay), abs(ax)  # the perpendicular the arms spread along
         return QtGui.QPolygonF(
             [
-                QtCore.QPointF(cx + depth / 2.0, cy - base / 2.0),
-                QtCore.QPointF(cx + depth / 2.0, cy + base / 2.0),
-                QtCore.QPointF(cx - depth / 2.0, cy),
+                QtCore.QPointF(-ax * depth - px * span, -ay * depth - py * span),
+                QtCore.QPointF(ax * depth, ay * depth),
+                QtCore.QPointF(-ax * depth + px * span, -ay * depth + py * span),
             ]
         )
 
@@ -1123,8 +1105,8 @@ class WidgetComboBox(ComboBox):
         immediately after the displayed text.
 
         Theme hides Qt's native ``QComboBox::down-arrow``.  When
-        :attr:`arrow_icon` is set it is drawn here; otherwise a triangle in
-        :attr:`arrow_direction` (text palette colour) is drawn.  Both scale
+        :attr:`arrow_icon` is set it is drawn here; otherwise a chevron
+        pointing :attr:`arrow_direction` (text palette colour) is stroked.  Both scale
         with the font and honour :attr:`arrow_alpha`.  Draws nothing when
         neither is set (the default).
         """
@@ -1161,15 +1143,20 @@ class WidgetComboBox(ComboBox):
 
         fm = QtGui.QFontMetrics(self.font())
         text_width = fm.horizontalAdvance(text)
-        em = fm.ascent()
+        em = fm.ascent()  # font-relative sizing: bigger font, bigger glyph + gap
 
-        # Font-relative sizing — bigger font → bigger arrow + gap.
-        gap = em * 0.83  # ~10 px at 12 px ascent (original hardcoded value)
-        base = em  # ~10.5 px at 12 px ascent
+        if has_icon:
+            # A square a touch larger than the chevron's span, so a glyph
+            # reads at a comparable weight.
+            side = max(8, int(round(em * 1.2)))
+            half_width = side / 2.0
+        else:
+            chevron = self._build_arrow_chevron(direction, em)
+            half_width = chevron.boundingRect().width() / 2.0
         cx = (
             self._compute_text_end_x(field_rect, text_width, alignment)
-            + gap
-            + base / 2.0
+            + em * 0.5  # the gap after the text, ~6 px at a 12 px ascent
+            + half_width
         )
         cy = field_rect.center().y() + 1
 
@@ -1179,11 +1166,8 @@ class WidgetComboBox(ComboBox):
             painter.setOpacity(self._arrow_alpha)
 
             if has_icon:
-                # Square icon centred on the same (cx, cy) anchor the triangle
-                # uses, sized a touch larger than the triangle base so a glyph
-                # reads at a comparable weight.  Honour the disabled state the
-                # same way the triangle dims via QPalette.Disabled.
-                side = max(8, int(round(base * 1.2)))
+                # Honour the disabled state the same way the chevron dims via
+                # QPalette.Disabled.
                 mode = QtGui.QIcon.Normal if self.isEnabled() else QtGui.QIcon.Disabled
                 pixmap = icon.pixmap(QtCore.QSize(side, side), mode)
                 painter.drawPixmap(
@@ -1196,9 +1180,13 @@ class WidgetComboBox(ComboBox):
                     else QtGui.QPalette.Active,
                     QtGui.QPalette.Text,
                 )
-                painter.setPen(QtCore.Qt.NoPen)
-                painter.setBrush(color)
-                painter.drawPolygon(self._build_arrow_polygon(cx, cy, direction, em))
+                # The icon set's stroke: 1.5 px at a 12 px ascent, round ends.
+                pen = QtGui.QPen(color, max(1.0, em * 0.125))
+                pen.setCapStyle(QtCore.Qt.RoundCap)
+                pen.setJoinStyle(QtCore.Qt.RoundJoin)
+                painter.setPen(pen)
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawPolyline(chevron.translated(cx, cy))
         finally:
             painter.end()
 

@@ -40,6 +40,7 @@ BASIC_TOKENS = frozenset(
         "RADIUS",
         # Effects
         "WINDOW_BLUR",
+        "WINDOW_BLUR_OPACITY",
     }
 )
 
@@ -57,6 +58,10 @@ LENGTH_TOKENS = {
 
 # On/off tokens (see ``StyleSheet.is_on``), rendered as a check box.
 SWITCH_TOKENS = frozenset({"WINDOW_BLUR"})
+
+# Percent tokens (see ``StyleSheet.percent``), mapped to their spinbox
+# ``(min, max)`` range; listed with the switches under *Effects*.
+PERCENT_TOKENS = {"WINDOW_BLUR_OPACITY": (0, 100)}
 
 # Fixed 22px table rows (matches the UI Browser). The QSS QTableWidget::item
 # rule reserves a 1px (BORDER_W) border, and the grid another 1px, so the
@@ -89,10 +94,11 @@ class StyleEditor(EditorPanel):
     restore gap (see ``PresetManager``); an app wanting the saved theme
     at startup applies it from its own entry point.
 
-    Three value types are handled: color tokens get a :class:`ColorSwatch`;
+    Four value types are handled: color tokens get a :class:`ColorSwatch`;
     length tokens (see ``LENGTH_TOKENS``) get a ``QSpinBox`` with a ``" px"``
     suffix, clamped to each token's pixel range; switch tokens (see
-    ``SWITCH_TOKENS``) get a check box. The Basic/All tier combo
+    ``SWITCH_TOKENS``) get a check box; percent tokens (see
+    ``PERCENT_TOKENS``) a ``%`` spin box. The Basic/All tier combo
     lives in the header's ⋯-menu ("Show:") and filters the table to either
     the most-edited tokens (``BASIC_TOKENS``) or every token.
     """
@@ -249,7 +255,7 @@ class StyleEditor(EditorPanel):
         """Populate the table with variables for the current theme + tier.
 
         Color tokens render first, then a section divider and the length
-        tokens, then another and the switch tokens. ``setRowCount(0)`` + ``clearSpans()`` resets any prior
+        tokens, then another and the effect (switch and percent) tokens. ``setRowCount(0)`` + ``clearSpans()`` resets any prior
         spans before re-rendering.
         """
         self.table.setRowCount(0)
@@ -263,16 +269,17 @@ class StyleEditor(EditorPanel):
         else:
             visible = list(all_vars)
 
+        effect_tokens = SWITCH_TOKENS.union(PERCENT_TOKENS)
         colors = sorted(
-            v for v in visible if v not in LENGTH_TOKENS and v not in SWITCH_TOKENS
+            v for v in visible if v not in LENGTH_TOKENS and v not in effect_tokens
         )
         lengths = sorted(v for v in visible if v in LENGTH_TOKENS)
-        switches = sorted(v for v in visible if v in SWITCH_TOKENS)
+        effects = sorted(v for v in visible if v in effect_tokens)
 
         total_rows = (
             len(colors)
             + (1 + len(lengths) if lengths else 0)
-            + (1 + len(switches) if switches else 0)
+            + (1 + len(effects) if effects else 0)
         )
         self.table.setRowCount(total_rows)
         colors_word = "color" if len(colors) == 1 else "colors"
@@ -290,13 +297,16 @@ class StyleEditor(EditorPanel):
             self._add_section_header(row, "— Sizes —")
             row += 1
             for var_name in lengths:
-                self._add_length_row(row, var_name, current_theme)
+                self._add_spin_row(row, var_name, current_theme)
                 row += 1
-        if switches:
+        if effects:
             self._add_section_header(row, "— Effects —")
             row += 1
-            for var_name in switches:
-                self._add_switch_row(row, var_name, current_theme)
+            for var_name in effects:
+                if var_name in SWITCH_TOKENS:
+                    self._add_switch_row(row, var_name, current_theme)
+                else:
+                    self._add_spin_row(row, var_name, current_theme)
                 row += 1
 
     def _add_color_row(self, row, var_name, theme):
@@ -316,24 +326,30 @@ class StyleEditor(EditorPanel):
 
         self._add_reset_button(row, var_name)
 
-    def _add_length_row(self, row, var_name, theme):
+    @staticmethod
+    def _spin_value(var_name, theme) -> int:
+        """A spin-box token's value: a percent token's number, else its px."""
+        if var_name in PERCENT_TOKENS:
+            return round(StyleSheet.percent(StyleSheet.get_variable(var_name, theme)))
+        return StyleSheet.get_variable_px(var_name, theme=theme, default=0)
+
+    def _add_spin_row(self, row, var_name, theme):
+        """A length (``" px"``) or percent (``"%"``) token's spin box."""
         name_item = QtWidgets.QTableWidgetItem(var_name)
         name_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
         self.table.setItem(row, 0, name_item)
 
-        n = StyleSheet.get_variable_px(var_name, theme=theme, default=0)
-
+        percent = var_name in PERCENT_TOKENS
         spin = QtWidgets.QSpinBox()
-        spin.setRange(*LENGTH_TOKENS[var_name])
-        spin.setSuffix(" px")
-        spin.setValue(n)
+        spin.setRange(*(PERCENT_TOKENS if percent else LENGTH_TOKENS)[var_name])
+        spin.setSuffix("%" if percent else " px")
+        spin.setValue(self._spin_value(var_name, theme))
         # 76px: Qt reserves internal width for hidden up/down arrow buttons.
         spin.setFixedSize(76, CELL_EDITOR_H)
         self.table.setCellWidget(row, 1, self._centered_cell(spin))
 
-        spin.valueChanged.connect(
-            lambda v, name=var_name: self.on_length_changed(name, v)
-        )
+        handler = self.on_percent_changed if percent else self.on_length_changed
+        spin.valueChanged.connect(lambda v, name=var_name: handler(name, v))
 
         self._add_reset_button(row, var_name)
 
@@ -412,6 +428,12 @@ class StyleEditor(EditorPanel):
         self._preset_mgr.refresh_modified_state()
         self.footer.setStatusText(f"{name} → {value}px")
 
+    def on_percent_changed(self, name, value):
+        """Handle a percent token's spinbox."""
+        StyleSheet.set_variable(name, f"{value}%", theme=self._theme)
+        self._preset_mgr.refresh_modified_state()
+        self.footer.setStatusText(f"{name} → {value}%")
+
     def on_switch_changed(self, name, on):
         """Handle a switch token's check box."""
         value = "on" if on else "off"
@@ -467,7 +489,5 @@ class StyleEditor(EditorPanel):
         spin = container.findChild(QtWidgets.QSpinBox)
         if spin:
             spin.blockSignals(True)
-            spin.setValue(
-                StyleSheet.get_variable_px(name, theme=self._theme, default=0)
-            )
+            spin.setValue(self._spin_value(name, self._theme))
             spin.blockSignals(False)

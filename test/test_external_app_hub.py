@@ -35,6 +35,7 @@ _FILES = {
         "    raise SystemExit(HUB.run())\n"
     ),
     "hubpkg/app.py": (
+        '"""Do the fake app\'s one thing."""\n'
         "from qtpy import QtWidgets\n"
         "class FakeAppUI(QtWidgets.QMainWindow):\n"
         "    pass\n"
@@ -54,6 +55,13 @@ _FILES = {
         "open(os.path.join(os.path.dirname(__file__), 'ran'), 'w').close()\n"
         "raise SystemExit(2)\n"
     ),
+    # A provider without a hub whose package import does work (extapps'
+    # imports every app it ships).
+    "busypkg/__init__.py": (
+        "import os\n"
+        "open(os.path.join(os.path.dirname(__file__), 'imported'), 'w').close()\n"
+    ),
+    "busypkg/__main__.py": "print('a program')\n",
 }
 
 
@@ -80,7 +88,7 @@ class _HubCase(BaseTestCase):
     @classmethod
     def tearDownClass(cls):
         sys.path.remove(cls.root)
-        packages = ("hubpkg", "nohub", "runpkg")
+        packages = ("hubpkg", "nohub", "runpkg", "busypkg")
         for name in [m for m in sys.modules if m.split(".")[0] in packages]:
             del sys.modules[name]
         shutil.rmtree(cls.root, ignore_errors=True)
@@ -119,6 +127,13 @@ class TestDeclaration(_HubCase):
         self.assertIsNone(ExternalAppHub.of("runpkg"))
         self.assertFalse(os.path.exists(os.path.join(self.root, "runpkg", "ran")))
 
+    def test_a_provider_without_a_hub_is_not_imported_to_find_out(self):
+        """Its ``__main__`` is read from source, and reaching it must not
+        import the package either (``find_spec`` of a dotted name would)."""
+        self.assertIsNone(ExternalAppHub.of("busypkg"))
+        marker = os.path.join(self.root, "busypkg", "imported")
+        self.assertFalse(os.path.exists(marker))
+
     def test_defaults_are_derived_from_the_package(self):
         hub = ExternalAppHub("somepkg")
         self.assertEqual((hub.title, hub.app_id), ("somepkg", "uitk.somepkg"))
@@ -155,6 +170,38 @@ class TestOpen(_HubCase):
         self.assertTrue(
             {"btn_hub_shortcut_desktop", "btn_hub_shortcut_start_menu"} <= buttons
         )
+
+    def test_the_browser_describes_each_app_in_place_of_its_tags(self):
+        """Every hub row is the same kind of app, so its tags say little: the
+        hub shows the app's description (its module's docstring) instead."""
+        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowserModel
+
+        browser = self.hub.open(self.switchboard())
+        self.close_windows(browser)
+        header = browser._view.horizontalHeader()
+        self.assertTrue(header.isSectionHidden(SwitchboardBrowserModel.COL_TAGS))
+        self.assertFalse(header.isSectionHidden(SwitchboardBrowserModel.COL_DESC))
+        model = browser._model
+        cell = model.index(
+            model._names.index("fake_app"), SwitchboardBrowserModel.COL_DESC
+        )
+        self.assertEqual(cell.data(), "Do the fake app's one thing.")
+
+    def test_hiding_inherited_tags_hides_the_kind_chip_too(self):
+        """The kind chip (``⟨external:in-proc⟩``) is registration metadata,
+        like the inherited tags; "Hide inherited tags" left it on every row."""
+        from uitk.widgets.editors.switchboard_browser import SwitchboardBrowserModel
+
+        browser = self.hub.open(self.switchboard())
+        self.close_windows(browser)
+        model = browser._model
+        cell = model.index(
+            model._names.index("fake_app"), SwitchboardBrowserModel.COL_TAGS
+        )
+        self.assertIn("external:in-proc", browser._row_delegate._tags_html(cell))
+        browser._cb_hide_inherited_tags.setChecked(True)
+        self.addCleanup(browser._cb_hide_inherited_tags.setChecked, False)
+        self.assertNotIn("external", browser._row_delegate._tags_html(cell))
 
     def test_an_app_name_opens_that_app_alone(self):
         window = self.hub.open(self.switchboard(), "fake_app")

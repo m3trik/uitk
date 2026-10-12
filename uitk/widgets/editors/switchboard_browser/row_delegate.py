@@ -104,8 +104,9 @@ class _BrowserRowDelegate(QtWidgets.QStyledItemDelegate):
         # Kind chip first when the kind has an explicit label — lets the
         # eye anchor "what kind of thing am I looking at" before scanning
         # tags. .ui-backed entries get no chip (they're the default and
-        # rendering one for every row is noise).
-        kind_label = _KIND_CHIP_LABELS.get(kind)
+        # rendering one for every row is noise). Registration metadata like
+        # the inherited tags, so the same toggle hides it.
+        kind_label = None if hide_inherited else _KIND_CHIP_LABELS.get(kind)
         if kind_label:
             chips.append(
                 f'<span style="color:{_KIND_CHIP_COLOR};font-weight:bold">'

@@ -82,6 +82,15 @@ class _EditorRegistry:
         ),
     }
 
+    #: What each editor does, one sentence: the launcher's Description column.
+    _DESCRIPTIONS: Dict[str, str] = {
+        "style_editor": "Pick a theme and tune its colors and metrics, saved as presets.",
+        "shortcut_editor": "Search, edit and reset every shortcut, with presets and import/export.",
+        "global_shortcuts": "Set the marking-menu key and the navigation commands' shortcuts.",
+        "ui_browser": "Search, launch and tag every registered UI and app.",
+        "preset_editor": "Browse, lock, hide and share every tool's presets in one tree.",
+    }
+
     #: The names the editors had before they took their titles'.
     _canonical = staticmethod(
         ptk.Deprecation.values(
@@ -111,6 +120,10 @@ class _EditorRegistry:
     def names(self) -> Iterable[str]:
         """Return the editor names this registry knows how to build."""
         return tuple(self._EDITORS.keys())
+
+    def description(self, name: str) -> str:
+        """What editor *name* does, in one sentence (``""`` when unknown)."""
+        return self._DESCRIPTIONS.get(self._canonical(name), "")
 
     def add_post_build_hook(self, name: str, hook: Callable) -> None:
         """Register a callable to run when *name* editor is first built.

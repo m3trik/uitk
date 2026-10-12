@@ -15,8 +15,6 @@ from conftest import QtBaseTestCase, setup_qt_application
 
 app = setup_qt_application()
 
-from qtpy import QtCore  # noqa: E402
-
 from uitk.widgets.editors.color_mapping_editor import (  # noqa: E402
     ColorMappingDialog,
     ColorMappingEditor,

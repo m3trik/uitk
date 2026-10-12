@@ -335,9 +335,12 @@ class TestScriptOutput(QtBaseTestCase):
         """Regression vs uitk.TextEdit (which wipes its document on hide)."""
         w = self.track_widget(ScriptOutput())
         w.setPlainText("persist across hide")
-        w.show(); QtWait.pump()
-        w.hide(); QtWait.pump()
-        w.show(); QtWait.pump()
+        w.show()
+        QtWait.pump()
+        w.hide()
+        QtWait.pump()
+        w.show()
+        QtWait.pump()
         self.assertEqual(w.toPlainText(), "persist across hide")
 
     def test_copy_joins_with_newlines(self):

@@ -1,5 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
+import re
 import unittest
 from unittest.mock import MagicMock, patch
 from qtpy import QtCore, QtWidgets, QtGui
@@ -271,13 +272,11 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
         high-contrast stays opaque (translucency hurts legibility there)."""
 
         def alpha(color_str):
-            # Parse with the engine's own color pattern so hex-format themes
-            # read the same as rgb()/rgba() ones.
-            m = StyleSheet._color_pat.fullmatch(color_str.strip())
-            self.assertIsNotNone(m, f"unparsable color {color_str!r}")
-            if m.group(1) is not None:  # rgb() / rgba()
-                return float(m.group(4)) if m.group(4) else 255.0
-            return float(int(m.group(6), 16)) if m.group(6) else 255.0  # #hex(a)
+            # Read with the engine's own parser so hex-format themes read the
+            # same as rgb()/rgba() ones.
+            color = StyleSheet._parse_color(color_str)
+            self.assertIsNotNone(color, f"unparsable color {color_str!r}")
+            return StyleSheet._alpha(color)
 
         for theme_name, theme_vars in StyleSheet.themes.items():
             chrome = theme_vars["CHROME_BACKGROUND"]
@@ -487,6 +486,60 @@ class TestStyleSheetPlates(QtBaseTestCase):
         image, panel = self.render(page)
         self.assertLess(self.alpha_in(image, panel, page), 255)
 
+    def icon_grounds(self, *specs):
+        """Paint one ``icon_button(**kwargs)`` per *spec* in a themed panel
+        (``hovered`` / ``enabled`` keys set that state) and return each one's
+        ground color name, sampled at a corner clear of the glyph.
+
+        Painted through the button's own style, as its ``paintEvent`` does,
+        with the hover state put in the option: Qt 6's QPushButton reads hover
+        from its private enter tracking, which no synthetic event sets offscreen.
+        """
+        row = QtWidgets.QWidget()
+        QtWidgets.QHBoxLayout(row)
+        _, panel = self.render(row)
+        buttons = []
+        for spec in specs:
+            spec = dict(spec)
+            hovered = spec.pop("hovered", False)
+            enabled = spec.pop("enabled", True)
+            button = panel.icon_button("close", size=22, **spec)
+            button.setEnabled(enabled)
+            row.layout().addWidget(button)
+            buttons.append((button, hovered))
+        QtWidgets.QApplication.processEvents()
+        grounds = []
+        for button, hovered in buttons:
+            option = QtWidgets.QStyleOptionButton()
+            button.initStyleOption(option)
+            if hovered:
+                option.state |= QtWidgets.QStyle.State_MouseOver
+            image = QtGui.QImage(button.size(), QtGui.QImage.Format_ARGB32)
+            image.fill(QtCore.Qt.transparent)
+            painter = QtGui.QPainter(image)
+            button.style().drawControl(
+                QtWidgets.QStyle.CE_PushButton, option, painter, button
+            )
+            painter.end()
+            grounds.append(image.pixelColor(2, 2).name())
+        return grounds
+
+    def test_a_disabled_icon_button_keeps_the_enabled_ground(self):
+        """Only the glyph recedes: a disabled icon button paints the ground an
+        enabled one does, not the raised disabled plate that reads as live."""
+        enabled, disabled = self.icon_grounds({}, {"enabled": False})
+        self.assertEqual(disabled, enabled)
+
+    def test_a_close_icon_button_hovers_red_like_a_windows_close(self):
+        """``closes=True``: the header hide button's red hover; a plain icon
+        button keeps the theme's hover."""
+        closing, plain, resting = self.icon_grounds(
+            {"closes": True, "hovered": True}, {"hovered": True}, {"closes": True}
+        )
+        self.assertEqual(closing, "#ff0000")
+        self.assertNotEqual(plain, "#ff0000")
+        self.assertNotEqual(resting, "#ff0000", "red only under the cursor")
+
 
 class TestStyleSheetPublicApi(QtBaseTestCase):
     """The flagship apply method and icon-color resolution."""
@@ -580,6 +633,110 @@ class TestWindowBlur(QtBaseTestCase):
         self.assertTrue(resolver(popup))
         StyleSheet.set_variable("WINDOW_BLUR", "off", theme="dark")
         self.assertFalse(resolver(popup))
+
+    def _fill_alpha(self, theme: str, **kwargs) -> int:
+        """The alpha a styled window body (``QWidget.centralWidget``) paints,
+        read off a render of its own stylesheet background."""
+        body = self.track_widget(QtWidgets.QWidget())
+        body.setAttribute(QtCore.Qt.WA_StyledBackground)
+        StyleSheet().set(body, theme=theme, style_class="centralWidget", **kwargs)
+        return self._painted(body).alpha()
+
+    @staticmethod
+    def _painted(widget) -> QtGui.QColor:
+        """The color *widget*'s own background paints at its center."""
+        widget.resize(40, 40)
+        img = QtGui.QImage(40, 40, QtGui.QImage.Format_ARGB32_Premultiplied)
+        img.fill(QtCore.Qt.transparent)
+        widget.render(
+            img,
+            QtCore.QPoint(),
+            QtGui.QRegion(),
+            QtWidgets.QWidget.RenderFlag.DrawChildren,
+        )
+        return img.pixelColor(20, 20)
+
+    def test_a_context_menu_is_opaque(self):
+        """A plain QMenu is a popup over the desktop: nothing blurs behind it
+        (no window this engine styles) and a translucent ground read as
+        see-through. It paints MENU_BACKGROUND, the opaque context-menu
+        ground ContextMenu paints, so Qt never makes it translucent."""
+        with patch("uitk.themes.style_sheet.Bootstrap.blurs", return_value=True):
+            for theme in StyleSheet.themes:
+                owner = self.track_widget(QtWidgets.QWidget())
+                StyleSheet().set(owner, theme=theme)
+                menu = QtWidgets.QMenu(owner)
+                menu.ensurePolished()
+                rgb = re.findall(r"\d+", StyleSheet.themes[theme]["MENU_BACKGROUND"])
+                expected = QtGui.QColor(*map(int, rgb[:3]))
+                self.assertEqual(self._painted(menu), expected, theme)
+                self.assertFalse(
+                    menu.testAttribute(QtCore.Qt.WA_TranslucentBackground), theme
+                )
+
+    def test_a_blurred_window_paints_a_thinner_fill(self):
+        """While the desktop blurs behind it, the body paints WINDOW_BACKGROUND
+        at WINDOW_BLUR_OPACITY of its alpha, so more of the frosted backdrop
+        shows (the blur itself has no strength to turn down)."""
+        with patch("uitk.themes.style_sheet.Bootstrap.blurs", return_value=True):
+            self.assertEqual(self._fill_alpha("dark"), 75)  # 125 at 60%
+            self.assertEqual(self._fill_alpha("light"), 102)  # 170 at 60%
+
+    def test_the_fill_keeps_its_alpha_where_nothing_blurs(self):
+        """Unblurred, the desktop behind is sharp: the fill stays as authored
+        on a desktop without blur, under WINDOW_BLUR off, and in a window
+        that opts out of the blur (``MessageBox``)."""
+        with patch("uitk.themes.style_sheet.Bootstrap.blurs", return_value=False):
+            self.assertEqual(self._fill_alpha("dark"), 125)
+        with patch("uitk.themes.style_sheet.Bootstrap.blurs", return_value=True):
+            self.assertEqual(self._fill_alpha("dark", WINDOW_BLUR="off"), 125)
+            StyleSheet.set_variable("WINDOW_BLUR", "off", theme="dark")
+            self.assertEqual(self._fill_alpha("dark"), 125)
+
+    def test_the_opacity_is_a_theme_token(self):
+        with patch("uitk.themes.style_sheet.Bootstrap.blurs", return_value=True):
+            StyleSheet.set_variable("WINDOW_BLUR_OPACITY", "40%", theme="dark")
+            self.assertEqual(self._fill_alpha("dark"), 50)
+            StyleSheet.set_variable("WINDOW_BLUR_OPACITY", "100%", theme="dark")
+            self.assertEqual(self._fill_alpha("dark"), 125)
+
+    def test_scaling_reads_the_alpha_the_way_qt_does(self):
+        """Qt reads a decimal rgba() alpha as a fraction (``0.5`` paints 127),
+        an integer as 0-255; a color without alpha is opaque."""
+        scale = StyleSheet._scale_alpha
+        self.assertEqual(scale("rgba(100,100,100,0.5)", 0.8), "rgba(100,100,100,102)")
+        self.assertEqual(scale("rgba(100,100,100,125)", 0.8), "rgba(100,100,100,100)")
+        self.assertEqual(scale("rgb(100,100,100)", 0.8), "rgba(100,100,100,204)")
+        self.assertEqual(scale("#646464", 0.5), "rgba(100,100,100,128)")
+        self.assertEqual(scale("not a color", 0.5), "not a color")
+
+    def test_an_alpha_of_one_reads_and_writes_the_way_qt_does(self):
+        """Qt reads an rgba() alpha of 1 as a fraction -- opaque -- so 1%
+        of a 125 fill (1) can't be written ``rgba(...,1)``: that painted
+        the window solid where 0% and 2% were all but clear."""
+        scale = StyleSheet._scale_alpha
+        self.assertEqual(scale("rgba(100,100,100,1)", 0.5), "rgba(100,100,100,128)")
+        self.assertEqual(
+            scale("rgba(100,100,100,125)", 0.01), "rgba(100,100,100,0.004)"
+        )
+        self.assertEqual(scale("rgba(100,100,100,125)", 0.02), "rgba(100,100,100,2)")
+
+    def test_eight_digit_hex_is_alpha_first_the_way_qt_reads_it(self):
+        """Qt reads ``#aarrggbb``; a color it names any other way (``#rgb``,
+        a name) scales and blends too, rather than passing through."""
+        scale, blend = StyleSheet._scale_alpha, StyleSheet._blend
+        self.assertEqual(scale("#80112233", 0.5), "rgba(17,34,51,64)")
+        self.assertEqual(blend("#80000000", "#ffffff", 0.5), "#80808080")
+        self.assertEqual(scale("#123", 0.5), "rgba(17,34,51,128)")
+        self.assertEqual(scale("white", 0.5), "rgba(255,255,255,128)")
+        self.assertEqual(blend("#000", "#ffffff", 0.5), "#808080")
+
+    def test_percent(self):
+        self.assertEqual(StyleSheet.percent("80%"), 80.0)
+        self.assertEqual(StyleSheet.percent(" 62.5 %"), 62.5)
+        for value in ("", None, "half"):
+            self.assertEqual(StyleSheet.percent(value), 100.0, value)
+        self.assertEqual(StyleSheet.percent("half", default=0.0), 0.0)
 
     def test_is_on(self):
         for value in ("on", "ON", " true", "yes", "1"):

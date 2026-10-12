@@ -115,6 +115,16 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         """
         return not (self._data.locked or self._data.data.get("read_only"))
 
+    @property
+    def flat_keys(self) -> bool:
+        """True when the sequencer draws keys flat (``RowMetrics.key_style``).
+
+        A sub-row then puts its keys on the row's centre line with no curve
+        and no tangent handles, and an object row draws its
+        ``summary_times`` as ticks: the dope-sheet reading of the same data.
+        """
+        return self._timeline.parent_sequencer.row_metrics.flat_keys
+
     # -- geometry sync ------------------------------------------------------
     def _sync_geometry(self):
         """Recalculate rect from data using the timeline's mapper."""
@@ -446,6 +456,9 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         if waveform and rect.width() > 4:
             self._paint_waveform(painter, rect, waveform, color)
 
+        if self.flat_keys:
+            self._paint_summary_ticks(painter, rect, fg)
+
         # Label — center label (abbreviated attrs) always shown, the clip's
         # length in frames beside it where both fit; edge frame numbers only
         # appear during drag operations.
@@ -670,6 +683,66 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         p.end()
         return pixmap
 
+    def _time_mapper(self, rect: QtCore.QRectF):
+        """``t -> x`` inside *rect* for what this clip draws of its own content.
+
+        During any drag the mapping is locked to the pre-drag values.  Move:
+        keeps the content's local pixel coords fixed so it travels with the
+        widget.  Resize: the original fractions applied to the growing /
+        shrinking rect produce a proportional stretch that matches what
+        scaleKey does on release (new_t = anchor + (t - anchor) * new_dur /
+        old_dur).  One mapping for the curve preview and the summary ticks.
+        """
+        if self._drag_mode is not None:
+            map_start = self._drag_origin_start
+            map_dur = self._drag_origin_duration
+        else:
+            map_start = self._data.start
+            map_dur = self._data.duration
+
+        def map_x(t):
+            frac = (t - map_start) / map_dur if map_dur > 1e-6 else 0.5
+            return rect.x() + frac * rect.width()
+
+        return map_x
+
+    #: Summary ticks closer than this (px) draw as one.
+    _SUMMARY_TICK_MIN_GAP = 2.0
+
+    def _paint_summary_ticks(self, painter, rect, fg) -> None:
+        """Draw ``data["summary_times"]`` as ticks across an object row.
+
+        The flat-key reading of a collapsed object (``RowMetrics`` ``"flat"``):
+        every key time the host reports for the object in this clip, the
+        dope sheet's summary row.  Painted only -- the times are no snap or
+        navigation target, so a density switch never changes what a drag
+        snaps to.  Ticks closer than :attr:`_SUMMARY_TICK_MIN_GAP` pixels
+        merge, so a dense bake costs one line per pixel column, not per key.
+        """
+        times = self._data.data.get("summary_times")
+        if not times or rect.width() < 2:
+            return
+        map_x = self._time_mapper(rect)
+        lo, hi = rect.left(), rect.right()
+        tick = QtGui.QColor(fg)
+        tick.setAlpha(150)
+        painter.save()
+        painter.setPen(QtGui.QPen(tick, 1.0))
+        # Half the old height and on the row's bottom edge: the clip's label
+        # sits mid-row and has to stay readable through them.
+        top, bottom = rect.bottom() - rect.height() * 0.3, rect.bottom() - 1.0
+        last_x = None
+        for x in sorted(map_x(t) for t in times):
+            if x > hi:
+                break
+            if x < lo:
+                continue
+            if last_x is not None and x - last_x < self._SUMMARY_TICK_MIN_GAP:
+                continue
+            painter.drawLine(QtCore.QPointF(x, top), QtCore.QPointF(x, bottom))
+            last_x = x
+        painter.restore()
+
     def _paint_curve_preview(self, painter, rect, preview, color, fg):
         """Draw a normalised mini graph-editor view inside a sub-row clip.
 
@@ -711,34 +784,16 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawRect(paint_rect)
 
-        if not segments:
+        # Flat keys: the dots sit on the centre line (KeyframeItem), and a
+        # curve drawn at values the row no longer shows would contradict them.
+        if not segments or self.flat_keys:
             return
 
         # If keyframe items are being dragged, adjust segment times to
         # follow the current key positions so the curve updates live.
         segments = self._drag_adjusted_segments(segments, keys)
 
-        # --- coordinate mapping helpers ---
-        # During any drag, lock the time→pixel mapping to the pre-drag
-        # values.  Move: keeps the curve's local pixel coords fixed so
-        # it travels with the widget.  Resize: the original fractions
-        # applied to the growing/shrinking rect produce a proportional
-        # stretch that matches what scaleKey will do on release
-        # (new_t = anchor + (t - anchor) * new_dur / old_dur).
-        if self._drag_mode is not None:
-            map_start = self._drag_origin_start
-            map_dur = self._drag_origin_duration
-        else:
-            map_start = self._data.start
-            map_dur = self._data.duration
-
-        def map_x(t):
-            if map_dur > 1e-6:
-                frac = (t - map_start) / map_dur
-            else:
-                frac = 0.5
-            return rect.x() + frac * rect.width()
-
+        map_x = self._time_mapper(rect)
         map_y, _is_flat = CurveUtils.make_value_mapper(
             rect.top(), rect.height(), val_min, val_max
         )
@@ -750,10 +805,12 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
 
         curve_color = QtGui.QColor(color)
         curve_color.setAlpha(180)
-        painter.setPen(QtGui.QPen(curve_color, 1.2))
         painter.setBrush(QtCore.Qt.NoBrush)
 
-        painter.drawPath(CurveUtils.build_curve_path(segments, map_x, map_y))
+        marked = self._timeline.parent_sequencer.mark_flat_spans
+        flats = QtGui.QPainterPath() if marked else None
+        path = CurveUtils.build_curve_path(segments, map_x, map_y, flats=flats)
+        CurveUtils.stroke_curve(painter, QtGui.QPen(curve_color, 1.2), path, flats)
         self._paint_tangent_handles(painter, curve_color)
 
         painter.restore()

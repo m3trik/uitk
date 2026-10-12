@@ -1,66 +1,122 @@
 # uitk — API Changes
 
-_Diff vs the last release (origin/main @ 12bf794)._
+_Diff vs the last release (origin/main @ 49cad58)._
 
-## Added (57)
+## Added (113)
 
-- `_bootstrap.py::Bootstrap.blurs() -> bool`
-- `_bootstrap.py::Bootstrap.capture_output(log_file: str, force: bool = False) -> 'str | None'`
-- `_bootstrap.py::Bootstrap.detach_console() -> bool`
-- `_bootstrap.py::Bootstrap.report_uncaught(title: str, log_file: 'str | None' = None) -> None`
-- `_bootstrap.py::Bootstrap.set_app_id(app_id: str) -> bool`
-- `_bootstrap.py::Bootstrap.set_blur(widget: QtWidgets.QWidget, on: Union[bool, Callable[[QtWidgets.QWidget], bool]] = True) -> bool`
-- `handlers/external_app_handler.py::ExternalAppHandler.can_create_shortcut(self, name: str) -> bool`
-- `handlers/external_app_handler.py::ExternalAppHandler.create_shortcut(self, name: str, location: str = 'desktop') -> str`
-- `handlers/external_app_handler.py::ExternalAppHandler.hub_for(self, name: str)`
-- `managers/preset_manager.py::PresetManager.builtin_dir(self) -> Optional[Path]`
-- `testing.py::TestSandbox.activated(cls)`
-- `themes/style_sheet.py::StyleSheet.is_on(value) -> bool`
-- `themes/style_sheet.py::StyleSheet.resolve_variable(cls, name: str, widget: QtWidgets.QWidget = None, default: str = '') -> str`
-- `themes/style_sheet.py::StyleSheet.window_blur(cls, widget: QtWidgets.QWidget) -> bool`
-- `widgets/editors/style_editor.py::SWITCH_TOKENS(constant)`
-- `widgets/editors/style_editor.py::StyleEditor.on_switch_changed(self, name, on)`
-- `widgets/editors/switchboard_browser/external_app_hub.py::ExternalAppHub(class)`
-- `widgets/editors/switchboard_browser/external_app_hub.py::ExternalAppHub.create_shortcut(self, location: str = 'desktop', app: Optional[str] = None, python: Optional[str] = None) -> str`
-- `widgets/editors/switchboard_browser/external_app_hub.py::ExternalAppHub.data_dir(self) -> str`
-- `widgets/editors/switchboard_browser/external_app_hub.py::ExternalAppHub.log_file(self) -> str`
-- `widgets/editors/switchboard_browser/external_app_hub.py::ExternalAppHub.of(cls, package: str) -> Optional['ExternalAppHub']`
-- `widgets/editors/switchboard_browser/external_app_hub.py::ExternalAppHub.open(self, sb, app: Optional[str] = None)`
-- `widgets/editors/switchboard_browser/external_app_hub.py::ExternalAppHub.run(self, argv: Optional[Sequence[str]] = None) -> int`
-- `widgets/editors/switchboard_browser/launch.py::SHORTCUT_ACTIONS(constant)`
-- `widgets/row_tags.py::RowTags(class)`
-- `widgets/row_tags.py::RowTags.add_to_menu(self, menu, rows: Rows = None) -> QtWidgets.QWidget`
-- `widgets/row_tags.py::RowTags.attach(cls, view: QtWidgets.QAbstractItemView, settings=None, settings_key: Optional[str] = None, app: str = 'RowTags', defaults: Optional[Mapping[str, Any]] = None, inherit: bool = True) -> 'RowTags'`
-- `widgets/row_tags.py::RowTags.auto_tag(self, row: Row) -> Optional[str]`
-- `widgets/row_tags.py::RowTags.color(self, slot: Optional[str]) -> Optional[str]`
-- `widgets/row_tags.py::RowTags.colors(self) -> Dict[str, str]`
-- `widgets/row_tags.py::RowTags.configure(self, view: QtWidgets.QAbstractItemView, settings=None, settings_key: Optional[str] = None, app: str = 'RowTags', defaults: Optional[Mapping[str, Any]] = None, inherit: bool = True) -> None`
-- `widgets/row_tags.py::RowTags.detach(self) -> None`
-- `widgets/row_tags.py::RowTags.edit_color(self, slot: str, pos: Optional[QtCore.QPoint] = None) -> bool`
-- `widgets/row_tags.py::RowTags.eventFilter(self, obj, event)`
-- `widgets/row_tags.py::RowTags.menu_row(self, rows: Rows = None, parent=None) -> QtWidgets.QWidget`
-- `widgets/row_tags.py::RowTags.of(cls, view: QtWidgets.QAbstractItemView) -> Optional['RowTags']`
-- `widgets/row_tags.py::RowTags.paintEvent(self, event)`
-- `widgets/row_tags.py::RowTags.qcolor(self, slot: Optional[str]) -> Optional[QtGui.QColor]`
-- `widgets/row_tags.py::RowTags.reset_colors(self) -> None`
-- `widgets/row_tags.py::RowTags.selected_rows(self) -> List[QtCore.QModelIndex]`
-- `widgets/row_tags.py::RowTags.set_color(self, slot: str, color: Any) -> None`
-- `widgets/row_tags.py::RowTags.set_tag(self, rows: Iterable[Row], slot: Optional[str], auto: bool = False) -> List[QtCore.QModelIndex]`
-- `widgets/row_tags.py::RowTags.settings(self)`
-- `widgets/row_tags.py::RowTags.shown_tag(self, row: Row) -> Optional[str]`
-- `widgets/row_tags.py::RowTags.slots(self) -> List[str]`
-- `widgets/row_tags.py::RowTags.tag(self, row: Row) -> Optional[str]`
-- `widgets/row_tags.py::RowTags.view(self) -> Optional[QtWidgets.QAbstractItemView]`
-- `widgets/sequencer/_data.py::ClipData.key_hidden(self, index: int) -> bool`
-- `widgets/sequencer/_data.py::ClipData.shown_key_times(self) -> List[float]`
-- `widgets/sequencer/_draggable.py::HeldGeometryMixin(class)`
-- `widgets/sequencer/_draggable.py::HeldGeometryMixin.sync(self) -> None`
-- `widgets/tableWidget.py::TableWidget.commitData(self, editor)`
-- `widgets/tableWidget.py::TableWidget.enable_row_tags(self, settings=None, settings_key=None, defaults=None)`
-- `widgets/treeWidget.py::TreeWidget.elided_tooltips(self) -> bool`
-- `widgets/treeWidget.py::TreeWidget.enable_row_tags(self, settings=None, settings_key=None, defaults=None, inherit=True)`
-- `widgets/treeWidget.py::TreeWidget.is_elided(self, index) -> bool`
-- `widgets/treeWidget.py::TreeWidget.item_tooltip(self, index, text: Optional[str]) -> Optional[str]`
+- `managers/shortcut_manager.py::ShortcutManager.remove_gesture_group(self, group: str) -> bool`
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.preview_dialog(self, render: Callable[[dict], str], specs=(), *, values: Optional[dict] = None, on_change: Optional[Callable[[str, Any], None]] = None, actions: Optional[dict] = None, status: Optional[Callable[[dict, str], str]] = None, title: str = '', size=(960, 600), monospace: bool = True, word_wrap: bool = False, parent=None)`
+- `themes/style_sheet.py::StyleSheet.percent(value, default: float = 100.0) -> float`
+- `widgets/editors/style_editor.py::PERCENT_TOKENS(constant)`
+- `widgets/editors/style_editor.py::StyleEditor.on_percent_changed(self, name, value)`
+- `widgets/editors/switchboard_browser/_switchboard_browser.py::SwitchboardBrowser.event(self, event) -> bool`
+- `widgets/editors/switchboard_browser/_switchboard_browser.py::SwitchboardBrowser.eventFilter(self, obj, event)`
+- `widgets/header.py::Header.help_html(self) -> str`
+- `widgets/header.py::Header.help_url(self)`
+- `widgets/sequencer/_clip.py::ClipItem.flat_keys(self) -> bool`
+- `widgets/sequencer/_data.py::CurveUtils.flat_pen(pen: QtGui.QPen) -> QtGui.QPen`
+- `widgets/sequencer/_data.py::CurveUtils.segment_is_flat(seg: dict, tolerance: float = FLAT_TOLERANCE) -> bool`
+- `widgets/sequencer/_data.py::CurveUtils.stroke_curve(painter, pen, path, flats=None, mark: bool = True) -> None`
+- `widgets/sequencer/_data.py::RowMetrics(class)`
+- `widgets/sequencer/_data.py::RowMetrics.flat_keys(self) -> bool`
+- `widgets/sequencer/_data.py::RowMetrics.preset(cls, name: str) -> 'RowMetrics'`
+- `widgets/sequencer/_data.py::RowMetrics.preset_names(cls) -> tuple`
+- `widgets/sequencer/_editor.py::SequencerEditor(class)`
+- `widgets/sequencer/_editor.py::SequencerEditor.activate(self) -> None`
+- `widgets/sequencer/_editor.py::SequencerEditor.add_option(self, key: str, label: str, getter, setter, tooltip: str = '', section: str = '') -> None`
+- `widgets/sequencer/_editor.py::SequencerEditor.content_height(self) -> Optional[float]`
+- `widgets/sequencer/_editor.py::SequencerEditor.context_menu(self, event) -> bool`
+- `widgets/sequencer/_editor.py::SequencerEditor.deactivate(self) -> None`
+- `widgets/sequencer/_editor.py::SequencerEditor.draw_background(self, painter, rect) -> bool`
+- `widgets/sequencer/_editor.py::SequencerEditor.frame_values(self) -> None`
+- `widgets/sequencer/_editor.py::SequencerEditor.gesture_group_at(self, viewport_pos) -> Optional[str]`
+- `widgets/sequencer/_editor.py::SequencerEditor.header_widget(self) -> Optional[QtWidgets.QWidget]`
+- `widgets/sequencer/_editor.py::SequencerEditor.is_active(self) -> bool`
+- `widgets/sequencer/_editor.py::SequencerEditor.key_bindings(self) -> List[KeyBinding]`
+- `widgets/sequencer/_editor.py::SequencerEditor.key_times(self) -> Optional[List[float]]`
+- `widgets/sequencer/_editor.py::SequencerEditor.mouse_double_click(self, event) -> bool`
+- `widgets/sequencer/_editor.py::SequencerEditor.mouse_move(self, event) -> bool`
+- `widgets/sequencer/_editor.py::SequencerEditor.mouse_press(self, event) -> bool`
+- `widgets/sequencer/_editor.py::SequencerEditor.mouse_release(self, event) -> bool`
+- `widgets/sequencer/_editor.py::SequencerEditor.options(self) -> List[dict]`
+- `widgets/sequencer/_editor.py::SequencerEditor.relayout(self) -> None`
+- `widgets/sequencer/_editor.py::SequencerEditor.time_bounds(self) -> Optional[Tuple[float, float]]`
+- `widgets/sequencer/_editor.py::SequencerEditor.wheel(self, event) -> bool`
+- `widgets/sequencer/_editor.py::TrackEditor(class)`
+- `widgets/sequencer/_graph_editor.py::GraphEditor(class)`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.activate(self) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.auto_load(self) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.build_context_menu(self) -> QtWidgets.QMenu`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.cancel_drag(self) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.content_height(self) -> float`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.context_menu(self, event) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.curve(self, curve_id: str)`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.deactivate(self) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.delete_selection(self) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.dim_outside(self) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.displayed_curve_ids(self) -> List[str]`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.draw_background(self, painter, rect) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.focus_objects(self, object_ids: Iterable[str]) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.focus_range(self) -> Optional[Tuple[float, float]]`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.frame_all(self) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.frame_selection(self) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.frame_values(self) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.gesture_group_at(self, viewport_pos) -> Optional[str]`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.header_widget(self)`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.insert_keys_at_playhead(self) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.invalidate(self, curve_ids: Iterable[str]) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.key_bindings(self)`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.key_times(self) -> List[float]`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.live(self) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.mouse_double_click(self, event) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.mouse_move(self, event) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.mouse_press(self, event) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.mouse_release(self, event) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.normalized(self) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.refresh(self, curve_ids: Optional[Iterable[str]] = None) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.relayout(self) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.request_broken(self, broken: bool) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.request_infinity(self, side: str, mode: str) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.request_tangent_type(self, type_id: str) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.request_weighted(self, weighted: bool) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.select_all(self) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.select_curve_keys(self, curve_ids: Iterable[str]) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.select_keys(self, refs: Iterable[KeyRef], mode: str = 'replace') -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.selected_keys(self) -> List[Tuple[str, List[float]]]`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.selection_frame(self) -> Optional[QtCore.QRectF]`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.set_curve_provider(self, provider) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.set_outline(self, entries: List[dict]) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.set_tangent_types(self, types: Iterable[Tuple[str, str]]) -> None`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.show_infinity(self) -> bool`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.time_bounds(self) -> Optional[Tuple[float, float]]`
+- `widgets/sequencer/_graph_editor.py::GraphEditor.wheel(self, event) -> bool`
+- `widgets/sequencer/_graph_editor.py::ValueAxis(class)`
+- `widgets/sequencer/_graph_editor.py::ValueAxis.fit(self, lo: float, hi: float, height_px: float, margin: float = 0.1) -> None`
+- `widgets/sequencer/_graph_editor.py::ValueAxis.pan(self, dy_px: float) -> None`
+- `widgets/sequencer/_graph_editor.py::ValueAxis.step(self, min_px: float = 36.0) -> float`
+- `widgets/sequencer/_graph_editor.py::ValueAxis.to_value(self, y: float, top_px: float) -> float`
+- `widgets/sequencer/_graph_editor.py::ValueAxis.to_y(self, value: float, top_px: float) -> float`
+- `widgets/sequencer/_graph_editor.py::ValueAxis.zoom(self, factor: float, anchor_y: float, top_px: float) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.active_editor(self) -> SequencerEditor`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.add_flat_spans_option(self, editor: SequencerEditor) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.context_entries(self, t: float) -> list`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.editor(self, name: str) -> SequencerEditor`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.editor_names(self) -> List[str]`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.frame_time_range(self, t_min: float, t_max: float, fit_values: bool = True)`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.mark_flat_spans(self) -> bool`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.refresh(self) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.register_editor(self, name: str, factory) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.restore_viewport_state(self, state: dict) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.row_metrics(self) -> RowMetrics`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.set_editor(self, name: str) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.shortcut_manager(self) -> ShortcutManager`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.viewport_state(self) -> dict`
+- `widgets/sequencer/_timeline.py::TimelineView.zoom_at(self, factor: float, view_x: float) -> None`
+- `widgets/sequencer/_timeline.py::TrackHeaderWidget.add_track_actions(self, menu: QtWidgets.QMenu, names: List[str]) -> None`
+- `widgets/sequencer/_timeline.py::TrackHeaderWidget.apply_metrics(self, metrics: RowMetrics) -> None`
+- `widgets/textViewBox.py::TextViewBox.bind_preview(self, render, specs=(), values=None, on_change=None, status=None)`
+- `widgets/textViewBox.py::TextViewBox.preview_text(self) -> str`
+- `widgets/textViewBox.py::TextViewBox.refresh_preview(self) -> None`
 
 ## Deprecations (1)
 
@@ -68,16 +124,26 @@ _Live retirement debt, earliest deadline first. An **EXPIRED** row has outlived 
 
 - **HELD** `bridge/parameters.py::Parameters.shader_type_spec` — remove in 1.7.0, not before 2026-10-26
 
-## Moved (3)
+## Signature changed (7)
 
-_Still resolvable at the same call site -- hoisted to a base class or re-exported from another module. NOT a removal: no alias or minor bump is owed._
-
-- `widgets/sequencer/_markers.py::MarkerItem.sync`
-- `widgets/sequencer/_overlays.py::RangeHighlightItem.sync`
-- `widgets/sequencer/_playhead.py::PlayheadItem.sync`
-
-## Signature changed (1)
-
-- `widgets/editors/color_editor.py::ColorEditorPopup.get_color`
-  - was: `(cls, initial=None, parent=None, title='Colour', **editor_kwargs)`
-  - now: `(cls, initial=None, parent=None, title='Colour', pos=None, **editor_kwargs)`
+- `handlers/external_app_handler.py::ExternalAppHandler.register`
+  - was: `(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None) -> None`
+  - now: `(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None, description: Optional[str] = None) -> None`
+- `widgets/header.py::Header.set_help_text`
+  - was: `(self, text)`
+  - now: `(self, text, url=None)`
+- `widgets/sequencer/_data.py::CurveUtils.build_curve_path`
+  - was: `(segments, map_x, map_y) -> QtGui.QPainterPath`
+  - now: `(segments, map_x, map_y, risers=None, flats=None) -> QtGui.QPainterPath`
+- `widgets/sequencer/_overlays.py::RangeHighlightItem.update_edge_drag`
+  - was: `(self, scene_x: float) -> None`
+  - now: `(self, scene_x: float, modifiers=None) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.add_marker`
+  - was: `(self, time: float, note: str = '', color: Optional[str] = None, draggable: bool = True, style: str = 'triangle', line_style: str = 'dashed', opacity: float = 1.0) -> int`
+  - now: `(self, time: float, note: str = '', color: Optional[str] = None, draggable: bool = True, style: str = 'triangle', line_style: str = 'dashed', opacity: float = 1.0, data: Optional[Dict[str, Any]] = None) -> int`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.frame_shot`
+  - was: `(self)`
+  - now: `(self) -> bool`
+- `widgets/windowPanel.py::WindowPanel.icon_button`
+  - was: `(icon_name: str = '', size: int = 24, tooltip: str = '', icon_size=None) -> QtWidgets.QPushButton`
+  - now: `(icon_name: str = '', size: int = 24, tooltip: str = '', icon_size=None, closes: bool = False) -> QtWidgets.QPushButton`

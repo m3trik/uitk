@@ -141,13 +141,15 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         ``cp1`` of the segment this key opens, the IN handle ``cp2`` of the
         one it closes.  Nothing on a stepped or linear span (no control
         points there).  Nothing at all on a clip that refuses key edits
-        (:attr:`ClipItem.keys_editable`) -- the one gate both the painted
-        handle lines and the draggable grab points read.  *index* is this
-        key's position among the clip's keys when the caller already knows
-        it (the clip walks them in order); otherwise it is looked up, a
-        linear scan.
+        (:attr:`ClipItem.keys_editable`), nor while keys are drawn flat
+        (:attr:`ClipItem.flat_keys`: no value axis to aim a handle along) --
+        the one gate both the painted handle lines and the draggable grab
+        points read.  *index* is this key's position among the clip's keys
+        when the caller already knows it (the clip walks them in order);
+        otherwise it is looked up, a linear scan.
         """
-        if not self._parent_clip.keys_editable:
+        clip = self._parent_clip
+        if not clip.keys_editable or clip.flat_keys:
             return []
         segments = self._segments()
         idx = self._key_index() if index is None else index
@@ -224,7 +226,8 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         """Clip-local pixel position of curve point ``(t, v)``.
 
         The one mapping the key dot, its tangent handles and the clip's own
-        curve preview share, so all three stay pixel-aligned.
+        curve preview share, so all three stay pixel-aligned.  With flat keys
+        (:attr:`ClipItem.flat_keys`) every value lands on the row's centre.
         """
         clip = self._parent_clip
         rect = clip.rect()
@@ -232,6 +235,8 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
         dur = clip._data.duration
         start = clip._data.start
         frac = (t - start) / dur if dur > 1e-6 else 0.5
+        if clip.flat_keys:
+            return QtCore.QPointF(rect.x() + frac * rect.width(), rect.center().y())
         map_y, _is_flat = CurveUtils.make_value_mapper(
             rect.top(),
             rect.height(),
@@ -242,13 +247,16 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
 
     def _curve_coords(self, point: QtCore.QPointF) -> Tuple[float, float]:
         """The ``(t, v)`` a clip-local *point* stands for: :meth:`_clip_point`
-        run backwards, for a handle dragged in pixels."""
+        run backwards, for a handle dragged in pixels.  Flat keys have no
+        value axis, so the value read back is this key's own."""
         clip = self._parent_clip
         rect = clip.rect()
         preview = self._preview()
         dur = clip._data.duration
         frac = (point.x() - rect.x()) / rect.width() if rect.width() > 1e-6 else 0.0
         t = clip._data.start + frac * dur
+        if clip.flat_keys:
+            return t, self._value
         v = CurveUtils.unmap_value(
             rect.top(),
             rect.height(),

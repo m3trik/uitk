@@ -2,6 +2,7 @@
 # coding=utf-8
 """Tests for the SequencerWidget."""
 
+import copy
 import sys
 import unittest
 from pathlib import Path
@@ -733,6 +734,19 @@ class TestMarkerSystem(BaseTestCase):
         self.assertEqual(md.style, "diamond")
         self.assertEqual(md.line_style, "solid")
         self.assertAlmostEqual(md.opacity, 0.5)
+
+    def test_marker_data_carries_the_consumers_payload(self):
+        """A tool's tag on its marker (the Shot Manifest's owner) survives the
+        widget: copied in, never shared, kept through an in-place edit."""
+        self.assertEqual(MarkerData(marker_id=0, time=1.0).data, {})
+        tag = {"owner": "shot_manifest", "shot_id": 3}
+        mid = self.w.add_marker(time=10.0, note="Fade In: door", data=tag)
+        md = self.w.get_marker(mid)
+        self.assertEqual(md.data, tag)
+        self.assertIsNot(md.data, tag)
+        md.note = "edited"  # as the marker's context menu edits it
+        self.assertEqual(self.w.get_marker(mid).data, tag)
+        self.assertEqual(self.w.get_marker(self.w.add_marker(time=2.0)).data, {})
 
     # -- add_marker with new params -----------------------------------------
 
@@ -1812,6 +1826,63 @@ class TestHiddenTracks(BaseTestCase):
     def test_hidden_tracks_empty_by_default(self):
         self.assertEqual(self.w._hidden_tracks, [])
 
+    def test_a_labels_right_click_menu_hides_deletes_and_shows_hidden(self):
+        """A real right-click on a track label: Hide and Delete it, the host's
+        rows, Show Hidden -- the rows ``add_track_actions`` builds for every
+        view of the tracks (the graph's outline too)."""
+        from unittest.mock import patch
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        self.w.add_track("obj_A")
+        self.w.set_hidden_tracks(["obj_B"])
+        self.w.show()
+        asked, seen, menus = [], {}, []
+        self.w.track_menu_requested.connect(
+            lambda menu, names: (asked.append(names), menu.addAction("Reveal"))
+        )
+        for name in ("track_hidden", "track_deleted", "track_shown"):
+            getattr(self.w, name).connect(
+                lambda value, n=name: seen.setdefault(n, []).append(value)
+            )
+        label = self.w._header._labels[0]
+        pos = QtCore.QPoint(2, 2)
+        QtWidgets.QApplication.sendEvent(
+            label,
+            QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonPress,
+                QtCore.QPointF(pos),
+                QtCore.Qt.RightButton,
+                QtCore.Qt.RightButton,
+                QtCore.Qt.NoModifier,
+            ),
+        )
+
+        def run(menu, *_args, **_kwargs):
+            menus.append([a.text() for a in menu.actions()])
+            for action in menu.actions():
+                for row in action.menu().actions() if action.menu() else [action]:
+                    row.trigger()
+
+        with patch.object(QtWidgets.QMenu, "exec_", run):
+            QtWidgets.QApplication.sendEvent(
+                label,
+                QtGui.QContextMenuEvent(
+                    QtGui.QContextMenuEvent.Mouse, pos, label.mapToGlobal(pos)
+                ),
+            )
+        self.assertEqual(
+            menus, [["Hide Track", "Delete Track", "Reveal", "Show Hidden (1)"]]
+        )
+        self.assertEqual(asked, [["obj_A"]])
+        self.assertEqual(
+            seen,
+            {
+                "track_hidden": [["obj_A"]],
+                "track_deleted": [["obj_A"]],
+                "track_shown": ["obj_B"],
+            },
+        )
+
 
 # =========================================================================
 # DrawBackground (center-line rendering)
@@ -2158,6 +2229,2119 @@ class TestSubRowHeight(BaseTestCase):
     def test_sub_row_height_clamps_minimum(self):
         self.w.sub_row_height = 3
         self.assertEqual(self.w.sub_row_height, 8)
+
+    def test_header_sub_labels_follow_a_new_sub_row_height(self):
+        """An expanded track's header labels stay level with their rows.
+
+        The setter re-laid the scene rows out, but the header's sub-labels
+        kept the fixed height they were given at expansion, so every label
+        below the first drifted off its row.
+        """
+        tid = self.w.add_track("obj_A")
+        self.w.expand_track(
+            tid,
+            sub_row_data=[
+                (attr, [(0, 10, attr, None, {})])
+                for attr in ("translateX", "translateY", "translateZ")
+            ],
+        )
+        self.w.sub_row_height = 30
+        self.w.resize(600, 400)
+        self.w.show()
+        app.processEvents()
+
+        header = self.w._header
+        for sub_name, label in zip(
+            ("translateX", "translateY", "translateZ"), header._sub_labels[0]
+        ):
+            row_y, row_h = self.w._row_position(tid, sub_name)
+            self.assertEqual(label.height(), row_h, sub_name)
+            self.assertEqual(label.mapTo(header, label.rect().topLeft()).y(), row_y)
+
+
+# =========================================================================
+# Editors: the content area's views (the seam a graph editor plugs into)
+# =========================================================================
+
+
+class TestEditorSeam(BaseTestCase):
+    """``set_editor`` hands the content area to another editor, and back."""
+
+    def setUp(self):
+        from qtpy import QtWidgets
+        from uitk.widgets.sequencer._editor import SequencerEditor
+
+        test = self
+
+        class _ProbeEditor(SequencerEditor):
+            name = "probe"
+            gestures = (("Probe", "Drag", "Probe the content"),)
+
+            def __init__(self, sequencer):
+                super().__init__(sequencer)
+                self.events = []
+                self.page = QtWidgets.QLabel("probe page")
+
+            def header_widget(self):
+                return self.page
+
+            def key_bindings(self):
+                return [("Delete", lambda: self.events.append("delete"), "Probe")]
+
+            def mouse_press(self, event):
+                self.events.append("press")
+                return True
+
+            def mouse_move(self, event):
+                if event.buttons():
+                    self.events.append("move")
+                return bool(event.buttons())
+
+            def mouse_release(self, event):
+                self.events.append("release")
+                return True
+
+            def relayout(self):
+                self.events.append("relayout")
+
+            def content_height(self):
+                return 50.0
+
+        self.Probe = _ProbeEditor
+        test.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+        self.tid = self.w.add_track("obj_A")
+        self.cid = self.w.add_clip(self.tid, 0, 100)
+        self.w.set_range_highlight(10, 60)
+        self.w.register_editor("probe", _ProbeEditor)
+        app.processEvents()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _content_point(self):
+        from qtpy import QtCore
+
+        tl = self.w._timeline
+        y = self.w._content_top + 40
+        return QtCore.QPoint(int(tl.mapFromScene(tl.time_to_x(30), y).x()), int(y))
+
+    def test_the_rows_are_the_default_editor(self):
+        self.assertEqual(self.w.active_editor.name, "tracks")
+        self.assertIn("graph", self.w.editor_names())
+        self.assertIn("probe", self.w.editor_names())
+
+    def test_switching_hides_the_rows_and_back_restores_them(self):
+        clip = self.w._clip_items[self.cid]
+        self.w.set_editor("probe")
+        self.assertFalse(clip.isVisible())
+        self.assertFalse(self.w._range_highlight.isVisible())
+        self.assertTrue(self.w._timeline._scene.playhead.isVisible())
+        self.w.set_editor("tracks")
+        self.assertTrue(clip.isVisible())
+        self.assertTrue(self.w._range_highlight.isVisible())
+
+    def test_the_content_area_mouse_goes_to_the_active_editor(self):
+        from qtpy import QtCore, QtTest
+
+        self.w.set_editor("probe")
+        probe = self.w.editor("probe")
+        vp = self.w._timeline.viewport()
+        pt = self._content_point()
+        QtTest.QTest.mousePress(vp, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pt)
+        QtTest.QTest.mouseMove(vp, pt + QtCore.QPoint(20, 5))
+        QtTest.QTest.mouseRelease(
+            vp, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pt + QtCore.QPoint(20, 5)
+        )
+        self.assertEqual(
+            [e for e in probe.events if e != "relayout"], ["press", "move", "release"]
+        )
+        self.assertFalse(self.w._timeline._marquee_active, "no track marquee")
+
+    def test_a_grab_whose_release_went_elsewhere_lets_go(self):
+        """Bug: the editor's grab ended only on a release; one a popup took
+        left every later hover -- and the next kernel gesture's release --
+        routed to the editor.
+        Fixed: 2026-10-12"""
+        from qtpy import QtCore, QtGui, QtTest, QtWidgets
+
+        self.w.set_editor("probe")
+        tl = self.w._timeline
+        vp = tl.viewport()
+        pt = self._content_point()
+        L, none = QtCore.Qt.LeftButton, QtCore.Qt.NoButton
+        for kind, btn, btns in (
+            (QtCore.QEvent.MouseButtonPress, L, L),
+            (QtCore.QEvent.MouseMove, none, none),  # the release never came
+        ):
+            QtWidgets.QApplication.sendEvent(
+                vp,
+                QtGui.QMouseEvent(
+                    kind,
+                    QtCore.QPointF(pt),
+                    QtCore.QPointF(vp.mapToGlobal(pt)),
+                    btn,
+                    btns,
+                    QtCore.Qt.NoModifier,
+                ),
+            )
+        self.assertFalse(tl._editor_grab, "a buttonless move is a hover again")
+        tl._editor_grab = True  # and a lone press starts afresh, whatever it hits
+        x = int(tl.mapFromScene(tl.time_to_x(40), 0).x())
+        QtTest.QTest.mousePress(vp, L, QtCore.Qt.NoModifier, QtCore.QPoint(x, 5))
+        self.assertFalse(tl._editor_grab, "the ruler's press is the kernel's")
+        QtTest.QTest.mouseRelease(vp, L, QtCore.Qt.NoModifier, QtCore.QPoint(x, 5))
+
+    def test_the_ruler_stays_the_kernels(self):
+        from qtpy import QtCore, QtTest
+
+        self.w.set_editor("probe")
+        probe = self.w.editor("probe")
+        tl = self.w._timeline
+        x = int(tl.mapFromScene(tl.time_to_x(40), 0).x())
+        QtTest.QTest.mousePress(
+            tl.viewport(),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+            QtCore.QPoint(x, 5),
+        )
+        QtTest.QTest.mouseRelease(
+            tl.viewport(),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+            QtCore.QPoint(x, 5),
+        )
+        self.assertNotIn("press", probe.events)
+        self.assertAlmostEqual(self.w._timeline._scene.playhead.time, 40, delta=1)
+
+    def test_the_active_editor_answers_its_keys_first(self):
+        from qtpy import QtCore, QtTest
+
+        fired = []
+        self.w._shortcut_mgr.add_shortcut(
+            "Delete", lambda: fired.append("tracks"), "track delete"
+        )
+        self.w.set_editor("probe")
+        QtTest.QTest.keyClick(self.w._timeline, QtCore.Qt.Key_Delete)
+        self.assertEqual(self.w.editor("probe").events[-1], "delete")
+        self.assertEqual(fired, [])
+        self.w.set_editor("tracks")
+        QtTest.QTest.keyClick(self.w._timeline, QtCore.Qt.Key_Delete)
+        self.assertEqual(fired, ["tracks"])
+
+    def test_the_legend_shows_the_active_editors_gestures(self):
+        groups = self.w._shortcut_mgr.gestures
+        self.assertIn("Shot bounds", groups)
+        self.w.set_editor("probe")
+        self.assertEqual(list(groups), ["Probe"])
+        self.w.set_editor("tracks")
+        self.assertNotIn("Probe", groups)
+        self.assertIn("Clips & keys", groups)
+
+    def test_the_left_pane_shows_the_editors_page(self):
+        self.w.set_editor("probe")
+        self.assertIs(self.w._header_stack.currentWidget(), self.w.editor("probe").page)
+        self.w.set_editor("tracks")
+        self.assertIs(self.w._header_stack.currentWidget(), self.w._header_scroll)
+
+    def test_the_editor_sets_the_content_extent_and_relayouts(self):
+        self.w.set_editor("probe")
+        probe = self.w.editor("probe")
+        self.assertIn("relayout", probe.events)
+        rect = self.w._timeline._scene.sceneRect()
+        self.assertEqual(rect.height(), self.w._content_top + 50.0)
+
+    def test_hiding_the_rows_reports_no_deselection(self):
+        """Hiding selected items deselects them; a host mirroring that empty
+        selection would wipe its own key selection on every switch."""
+        clip = self.w._clip_items[self.cid]
+        clip.setSelected(True)
+        seen = []
+        self.w.selection_changed.connect(seen.append)
+        self.w.key_selection_changed.connect(seen.append)
+        self.w.set_editor("probe")
+        self.assertEqual(seen, [])
+
+    def test_the_shot_lane_still_grabs_the_bound_under_another_editor(self):
+        from qtpy import QtCore
+
+        self.w.set_editor("probe")
+        tl = self.w._timeline
+        x = tl.mapFromScene(tl.time_to_x(60), 0).x()
+        from uitk.widgets.sequencer import _RULER_HEIGHT
+
+        zone = tl._shot_band_zone(QtCore.QPoint(int(x), _RULER_HEIGHT + 3))
+        self.assertEqual(zone, "right")
+
+    def test_an_unknown_editor_is_refused(self):
+        with self.assertRaises(KeyError):
+            self.w.set_editor("nope")
+        with self.assertRaises(ValueError):
+            self.w.register_editor("tracks", self.Probe)
+
+
+# =========================================================================
+# Graph editor: curves in value space, edited like Maya's Graph Editor
+# =========================================================================
+
+
+def _tuples(value):
+    """*value* with every list a tuple: a Qt signal hands tuples back as lists."""
+    if isinstance(value, (list, tuple)):
+        return tuple(_tuples(v) for v in value)
+    return value
+
+
+class TestGraphEditor(BaseTestCase):
+    """The graph editor, driven by real presses, drags, wheels and keys."""
+
+    def setUp(self):
+        import pythontk as ptk
+
+        self.ptk = ptk
+        self.w = SequencerWidget()
+        self.w.resize(1000, 520)
+        self.w.show()
+        self.w.set_editor("graph")
+        self.g = self.w.active_editor
+        self.curves = {
+            "tx": ptk.KeyCurve(
+                [
+                    ptk.CurveKey(0.0, 0.0, out_handle=(1.0, 0.0)),
+                    ptk.CurveKey(
+                        10.0, 5.0, in_handle=(-1.0, 0.0), out_handle=(1.0, 0.0)
+                    ),
+                    ptk.CurveKey(20.0, 2.0, in_handle=(-1.0, 0.0)),
+                ],
+                curve_id="tx",
+                weighted=False,
+            ),
+            "ty": ptk.KeyCurve(
+                [
+                    ptk.CurveKey(0.0, 1.0, out_handle=(3.0, 0.0)),
+                    ptk.CurveKey(
+                        15.0, -2.0, in_handle=(-4.0, 0.0), out_handle=(4.0, 0.0)
+                    ),
+                    ptk.CurveKey(30.0, 1.0, in_handle=(-3.0, 0.0), hidden=False),
+                ],
+                curve_id="ty",
+            ),
+        }
+        self.g.set_outline(
+            [
+                {
+                    "id": "cube",
+                    "label": "cube",
+                    "children": [
+                        {"curve_id": "tx", "label": "translateX", "color": "#E06666"},
+                        {"curve_id": "ty", "label": "translateY", "color": "#6AA84F"},
+                    ],
+                }
+            ]
+        )
+        self.g.set_curve_provider(
+            lambda ids: [self.curves[i].copy() for i in ids if i in self.curves]
+        )
+        self.seen = {}
+        for name in (
+            "keys_edited",
+            "tangents_edited",
+            "keys_deleted",
+            "keys_inserted",
+            "tangent_type_requested",
+            "infinity_requested",
+        ):
+            getattr(self.g, name).connect(
+                lambda payload=None, *rest, n=name: self.seen.setdefault(n, []).append(
+                    _tuples((payload, *rest))
+                )
+            )
+        app.processEvents()
+        self.g.frame_all()
+        app.processEvents()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    # -- host sync ----------------------------------------------------------------
+
+    def test_invalidate_rereads_shown_curves_and_drops_hidden_ones(self):
+        self.g._page.select_curves(["tx"])
+        self.assertEqual(self.g.displayed_curve_ids(), ["tx"])
+        self.curves["tx"].keys[1].value = 9.0
+        self.curves["ty"].keys[1].value = 7.0  # cached, but no longer shown
+        self.g.invalidate(["tx", "ty"])
+        self.assertEqual(self.g.curve("tx").keys[1].value, 9.0)
+        self.assertNotIn("ty", self.g._curves)
+        self.g._page.select_curves(["ty"])
+        self.assertEqual(self.g.curve("ty").keys[1].value, 7.0, "read when shown")
+
+    def test_a_curve_the_host_no_longer_has_is_dropped(self):
+        del self.curves["tx"]
+        self.g.refresh(["tx"])
+        self.assertIsNone(self.g.curve("tx"))
+        self.w._timeline.viewport().repaint()  # paints with a shown id uncached
+
+    def test_a_new_outline_keeps_the_selected_and_collapsed_rows(self):
+        self.g._page.select_curves(["ty"])
+        top = self.g._page.tree.topLevelItem(0)
+        top.setExpanded(False)
+        self.g.set_outline(list(self.g._outline))  # a host re-sync
+        self.assertEqual(self.g.displayed_curve_ids(), ["ty"])
+        self.assertFalse(self.g._page.tree.topLevelItem(0).isExpanded())
+
+    def test_next_and_previous_key_step_through_the_graphs_keys(self):
+        self.curves["ty"].keys[1].hidden = True  # a claimed sample: skipped
+        self.g.refresh()
+        self.w.set_playhead(0.0)
+        stops = []
+        for _ in range(4):
+            self.w.go_to_next_key()
+            stops.append(self.w._timeline._scene.playhead.time)
+        self.assertEqual(stops, [10.0, 20.0, 30.0, 30.0])
+        self.w.go_to_prev_key()
+        self.assertEqual(self.w._timeline._scene.playhead.time, 20.0)
+
+    def test_a_click_on_a_curve_selects_its_keys(self):
+        shift, ctrl = QtCore.Qt.ShiftModifier, QtCore.Qt.ControlModifier
+        on_tx = self._vp("tx", 5.0, self.g.curve("tx").evaluate(5.0))
+        on_ty = self._vp("ty", 25.0, self.g.curve("ty").evaluate(25.0))
+        tx = {("tx", 0.0), ("tx", 10.0), ("tx", 20.0)}
+        ty = {("ty", 0.0), ("ty", 15.0), ("ty", 30.0)}
+        self._click(on_tx)
+        self.assertEqual(self.g._sel, tx)
+        self._click(on_ty, mods=shift)
+        self.assertEqual(self.g._sel, tx | ty, "Shift adds an unselected curve")
+        self._click(on_tx, mods=shift)
+        self.assertEqual(self.g._sel, ty, "... and toggles a selected one off")
+        self._click(on_ty, mods=ctrl)
+        self.assertEqual(self.g._sel, set(), "Ctrl removes")
+        self._click(on_tx, mods=ctrl | shift)
+        self.assertEqual(self.g._sel, tx, "Ctrl+Shift adds")
+
+    def test_a_drag_from_a_curve_still_boxes(self):
+        start = self._vp("tx", 5.0, self.g.curve("tx").evaluate(5.0))
+        end = self._vp("tx", 12.0, 7.0)
+        self._drag(start, end)
+        self.assertEqual(self.g._sel, {("tx", 10.0)}, "the box, not the curve")
+
+    def test_ctrl_alt_drag_zooms_to_the_box(self):
+        from qtpy import QtCore
+
+        a, b = self._vp("tx", 8.0, 4.5), self._vp("tx", 12.0, 2.5)
+        self._drag(a, b, mods=QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier)
+        t0, t1 = self.g._visible_time_range()
+        self.assertTrue(t0 <= 8.5 and 11.5 <= t1, (t0, t1))
+        self.assertLess(t1 - t0, 8.0, "zoomed in on 4 frames, not the 30")
+        top = self.w._content_top
+        v_hi = self.g.axis.to_value(top, top)
+        v_lo = self.g.axis.to_value(top + self.g.content_height(), top)
+        self.assertTrue(v_lo <= 2.5 and 4.5 <= v_hi and v_hi - v_lo < 4.0, (v_lo, v_hi))
+        self.assertEqual(self.g.selected_keys(), [], "a zoom selects nothing")
+
+    def test_a_host_without_weighting_gets_no_weighting_rows(self):
+        menu = self.g.build_context_menu()  # held: its actions die with it
+        self.assertIn("Weighted Tangents", [a.text() for a in menu.actions()])
+        self.g.offers_weighting = False
+        menu = self.g.build_context_menu()
+        titles = [a.text() for a in menu.actions()]
+        self.assertNotIn("Weighted Tangents", titles)
+        self.assertNotIn("Non-Weighted Tangents", titles)
+
+    def test_the_options_band_lists_the_graphs_options(self):
+        from qtpy import QtWidgets
+
+        band = self.w._options_band
+        self.assertEqual(band.height(), int(self.w._content_top), "level with the lane")
+        band.rebuild()
+        self.assertEqual(
+            [getattr(w, "title", None) or w.text() for w in band.rows()],
+            [
+                "Display",
+                "Normalize",
+                "Show Infinity",
+                "Dim Outside Shots",
+                "Mark Flat Spans",
+                "Behavior",
+                "Auto Load Selected",
+                "Live Update",
+            ],
+        )
+        rows = {w.text(): w for w in band.rows() if isinstance(w, QtWidgets.QCheckBox)}
+        self.assertTrue(rows["Auto Load Selected"].isChecked())
+        rows["Auto Load Selected"].setChecked(False)
+        self.assertFalse(self.g.auto_load)
+        context = self.g.build_context_menu()  # the same rows, one source
+        act = next(a for a in context.actions() if a.text() == "Auto Load Selected")
+        self.assertFalse(act.isChecked())
+
+    def test_a_box_zoom_dragged_right_to_left_zooms_out(self):
+        from qtpy import QtCore
+
+        t0, t1 = self.g._visible_time_range()
+        a, b = self._vp("tx", 12.0, 2.5), self._vp("tx", 8.0, 4.5)  # leftwards
+        self._drag(a, b, mods=QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier)
+        n0, n1 = self.g._visible_time_range()
+        self.assertGreater(n1 - n0, (t1 - t0) * 2, "zoomed out, not in")
+
+    def test_alt_shift_middle_drag_pans_along_one_axis(self):
+        from qtpy import QtCore
+
+        self.w._timeline.zoom_at(4.0, 300)  # room to scroll either way
+        top0 = self.g.axis.top
+        bar = self.w._timeline.horizontalScrollBar()
+        x0 = bar.value()
+        start = self._vp("tx", 10.0, 1.0)
+        self._drag(
+            start,
+            start + QtCore.QPoint(-60, 6),
+            button=QtCore.Qt.MiddleButton,
+            mods=QtCore.Qt.AltModifier | QtCore.Qt.ShiftModifier,
+        )
+        self.assertNotEqual(bar.value(), x0, "panned in time")
+        self.assertEqual(self.g.axis.top, top0, "not in value: the axis is locked")
+
+    def test_the_page_narrows_freely(self):
+        self.assertLessEqual(self.g._page.minimumSizeHint().width(), 90)
+        self.assertFalse(hasattr(self.g._page, "frame_field"), "no typed stats")
+
+    def test_a_live_drag_brought_back_to_its_start_cancels_and_commits_nothing(self):
+        from qtpy import QtCore
+
+        cancels = []
+        self.g.preview_cancelled.connect(lambda: cancels.append(True))
+        self.g.live = True
+        start = self._vp("tx", 10.0, 5.0)
+        self._press_and_move(start, start + QtCore.QPoint(40, -20))
+        self._drag_release_at(start)  # back where it began
+        self.assertEqual(cancels, [True])
+        self.assertNotIn("keys_edited", self.seen, "nothing to commit")
+
+    def _drag_release_at(self, pos):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        vp = self.w._timeline.viewport()
+        for kind, btns in (
+            (QtCore.QEvent.MouseMove, QtCore.Qt.LeftButton),
+            (QtCore.QEvent.MouseButtonRelease, QtCore.Qt.NoButton),
+        ):
+            ev = QtGui.QMouseEvent(
+                kind,
+                QtCore.QPointF(pos),
+                QtCore.QPointF(vp.mapToGlobal(pos)),
+                QtCore.Qt.LeftButton,
+                btns,
+                QtCore.Qt.NoModifier,
+            )
+            QtWidgets.QApplication.sendEvent(vp, ev)
+
+    def test_live_update_previews_mid_drag_and_a_commit_cancels_nothing(self):
+        from qtpy import QtCore
+
+        previews, cancels = [], []
+        self.g.curves_previewed.connect(lambda rows: previews.append(rows))
+        self.g.preview_cancelled.connect(lambda: cancels.append(True))
+        self.g.live = True
+        start = self._vp("tx", 10.0, 5.0)
+        self._drag(start, start + QtCore.QPoint(30, -20))
+        self.assertTrue(previews, "the drag shaped the curve live")
+        cid, curve = previews[-1][0]
+        self.assertEqual(cid, "tx")
+        self.assertNotEqual(curve.keys[1].time, 10.0)
+        self.assertFalse(cancels, "a committed drag cancels nothing")
+        previews.clear()
+        start = self._vp(
+            "tx", self.g.curve("tx").keys[1].time, self.g.curve("tx").keys[1].value
+        )
+        self._drag(start, start)  # pressed and released in place
+        self._drag(start, start + QtCore.QPoint(30, 0), steps=3)
+        self.assertTrue(previews)
+
+    def test_live_off_previews_nothing(self):
+        from qtpy import QtCore
+
+        previews = []
+        self.g.curves_previewed.connect(lambda rows: previews.append(rows))
+        start = self._vp("tx", 10.0, 5.0)
+        self._drag(start, start + QtCore.QPoint(30, -20))
+        self.assertEqual(previews, [])
+
+    def test_escape_mid_live_drag_cancels_the_preview(self):
+        from qtpy import QtCore
+
+        cancels = []
+        self.g.preview_cancelled.connect(lambda: cancels.append(True))
+        self.g.live = True
+        start = self._vp("tx", 10.0, 5.0)
+        self._press_and_move(start, start + QtCore.QPoint(40, 0))
+        self.assertTrue(self.g.cancel_drag())
+        self.assertEqual(cancels, [True])
+
+    def _press_and_move(self, start, end):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        vp = self.w._timeline.viewport()
+        for kind, pos, btns in (
+            (QtCore.QEvent.MouseButtonPress, start, QtCore.Qt.LeftButton),
+            (QtCore.QEvent.MouseMove, end, QtCore.Qt.LeftButton),
+        ):
+            ev = QtGui.QMouseEvent(
+                kind,
+                QtCore.QPointF(pos),
+                QtCore.QPointF(vp.mapToGlobal(pos)),
+                QtCore.Qt.LeftButton,
+                btns,
+                QtCore.Qt.NoModifier,
+            )
+            QtWidgets.QApplication.sendEvent(vp, ev)
+
+    def test_a_drag_shows_its_frame_and_value_and_hides_on_release(self):
+        from qtpy import QtCore
+
+        start = self._vp("tx", 10.0, 5.0)
+        self._press_and_move(start, start + QtCore.QPoint(40, 0))
+        drag = self.g._drag
+        self.assertTrue(drag.get("readout"), drag)
+        self.assertTrue(self.g._readout.is_visible())
+        self.g.cancel_drag()
+        self.assertFalse(self.g._readout.is_visible())
+
+    def test_a_scale_drag_reads_its_factor(self):
+        from qtpy import QtCore
+
+        self.g.select_keys([("tx", 0.0), ("tx", 10.0), ("tx", 20.0)])
+        frame = self.g.selection_frame()
+        right = self.w._timeline.mapFromScene(
+            QtCore.QPointF(frame.right(), frame.center().y())
+        )
+        self._press_and_move(right, right + QtCore.QPoint(60, 0))
+        self.assertIn("Scale", self.g._drag.get("readout", ""), self.g._drag)
+        self.g.cancel_drag()
+
+    def test_dim_outside_veils_the_time_outside_the_focus_range(self):
+        inside = self._color_at("tx", 5.0, self.g.curve("tx").evaluate(5.0))
+        self.g.focus_range = (8.0, 30.0)
+        dimmed = self._color_at("tx", 5.0, self.g.curve("tx").evaluate(5.0))
+        kept = self._color_at("tx", 15.0, self.g.curve("tx").evaluate(15.0))
+        from qtpy import QtGui
+
+        self.assertLess(
+            QtGui.QColor(dimmed).lightness(), QtGui.QColor(inside).lightness()
+        )
+        self.g.dim_outside = False
+        self.assertEqual(
+            self._color_at("tx", 5.0, self.g.curve("tx").evaluate(5.0)), inside
+        )
+        self.assertTrue(kept)
+
+    def test_the_host_adds_its_rows_to_the_key_menu(self):
+        seen = []
+
+        def host(menu, groups):
+            seen.append(_tuples(groups))
+            menu.addAction("Host Row")
+
+        self.g.key_menu_requested.connect(host)
+        self.g.select_keys([("tx", 10.0), ("ty", 15.0)])
+        menu = self.g.build_context_menu()  # held: its actions die with it
+        titles = [a.text() for a in menu.actions()]
+        self.assertEqual(seen, [(("tx", (10.0,)), ("ty", (15.0,)))])
+        self.assertLess(titles.index("Host Row"), titles.index("Frame All"))
+
+    def test_focus_objects_shows_only_their_curves(self):
+        ptk = self.ptk
+        self.curves["tz"] = ptk.KeyCurve(
+            [ptk.CurveKey(0.0, 0.0), ptk.CurveKey(10.0, 1.0)], curve_id="tz"
+        )
+        outline = list(self.g._outline) + [
+            {
+                "id": "ball",
+                "label": "ball",
+                "children": [{"curve_id": "tz", "label": "translateZ"}],
+            }
+        ]
+        self.g.set_outline(outline)
+        self.assertTrue(self.g.focus_objects(["ball"]))
+        self.assertEqual(self.g.displayed_curve_ids(), ["tz"])
+        self.assertFalse(self.g.focus_objects(["nothing"]), "unknown ids")
+        self.assertEqual(self.g.displayed_curve_ids(), ["tz"], "display kept")
+
+    def test_focusing_the_shown_object_keeps_an_isolated_curve(self):
+        self.g._page.select_curves(["ty"])
+        self.assertEqual(self.g.displayed_curve_ids(), ["ty"])
+        self.assertTrue(self.g.focus_objects(["cube"]))  # a key click re-selects it
+        self.assertEqual(self.g.displayed_curve_ids(), ["ty"], "still isolated")
+
+    # -- what the paint puts on screen (curves drawn through a transform) ------
+
+    def _color_at(self, cid, t, v, dx=0, dy=0):
+        from qtpy import QtGui
+
+        view = self.w._timeline
+        img = view.viewport().grab().toImage()
+        p = view.mapFromScene(self.g._point(cid, t, v))
+        return QtGui.QColor(img.pixel(p.x() + dx, p.y() + dy)).name()
+
+    def _canvas_color(self, name):
+        return getattr(type(self.g._canvas), name).name()
+
+    def test_a_key_draws_as_a_solid_dot_at_its_point(self):
+        self.assertEqual(self._color_at("tx", 10.0, 5.0), self._canvas_color("KEY"))
+        self.assertNotEqual(
+            self._color_at("tx", 10.0, 5.0, dx=-5),
+            self._canvas_color("KEY"),
+            "no outline ring round it",
+        )
+
+    def test_keys_follow_normalization(self):
+        self.g.normalized = True
+        app.processEvents()
+        for cid, t, v in (("tx", 20.0, 2.0), ("ty", 15.0, -2.0)):
+            self.assertEqual(self._color_at(cid, t, v), self._canvas_color("KEY"))
+
+    def test_selected_breakdown_and_hidden_keys_draw_apart(self):
+        self.g.select_keys([("tx", 10.0)])
+        app.processEvents()
+        self.assertEqual(
+            self._color_at("tx", 10.0, 5.0), self._canvas_color("KEY_SELECTED")
+        )
+        self.curves["ty"].keys[1].breakdown = True
+        self.curves["tx"].keys[2].hidden = True
+        self.g.refresh()
+        app.processEvents()
+        self.assertEqual(
+            self._color_at("ty", 15.0, -2.0), self._canvas_color("KEY_BREAKDOWN")
+        )
+        self.assertNotEqual(
+            self._color_at("tx", 20.0, 2.0),
+            self._canvas_color("KEY"),
+            "a hidden key draws no dot",
+        )
+
+    def test_a_cycling_side_repeats_the_curve_past_its_end(self):
+        self.curves["tx"] = self.curves["tx"].with_infinity(post="cycle")
+        self.g.refresh()
+        self.g.show_infinity = True
+        self.w.frame_time_range(0.0, 45.0)
+        app.processEvents()
+        curve = self.g.curve("tx")
+        bg = self._canvas_color("BG")
+        for t in (24.0, 30.0, 36.0):  # the first repeat, past the last key (20)
+            v = curve.evaluate(t)
+            near = {
+                self._color_at("tx", t, v, dx, dy)
+                for dx in (-1, 0, 1)
+                for dy in (-1, 0, 1)
+            }
+            self.assertTrue(near - {bg, self._canvas_color("GRID")}, (t, near))
+
+    def test_paint_culls_to_the_spans_on_screen(self):
+        ptk = self.ptk
+        curve = ptk.KeyCurve(
+            [ptk.CurveKey(float(t), 0.0) for t in range(101)], curve_id="long"
+        )
+        span = type(self.g._canvas)._visible_span
+        self.assertEqual(span(curve, 10.5, 20.2), (10, 21), "one key past each edge")
+        self.assertEqual(span(curve, -50.0, 3.0), (0, 4))
+        self.assertEqual(span(curve, 98.0, 500.0), (97, 100))
+        self.assertEqual(span(curve, 200.0, 300.0), (100, 100), "all off screen")
+
+    def test_a_stepped_spans_jump_draws_dotted(self):
+        """Maya's Graph Editor dots a stepped tangent's vertical jump: the
+        hold stays the curve's solid line, the riser is dotted in its colour
+        -- drawn solid, a shot boundary's steps read as more curve."""
+        from qtpy import QtGui
+
+        self.curves["tx"].keys[1].interpolation = "step"  # 10..20 holds 5, then 2
+        self.w.mark_flat_spans = False  # the hold unmarked: the riser alone
+        self.g.refresh()
+        app.processEvents()
+        view = self.w._timeline
+        img = view.viewport().grab().toImage()
+        hi = view.mapFromScene(self.g._point("tx", 20.0, 5.0))
+        lo = view.mapFromScene(self.g._point("tx", 20.0, 2.0))
+
+        def red(x, y):  # the curve's own colour (#E06666), not grid or ground
+            c = QtGui.QColor(img.pixel(x, y))
+            return c.red() > c.green() + 40 and c.red() > c.blue() + 40
+
+        riser = [
+            any(red(hi.x() + dx, y) for dx in (-1, 0, 1))
+            for y in range(hi.y() + 4, lo.y() - 4)
+        ]
+        self.assertGreater(len(riser), 20, "a riser long enough to read")
+        self.assertTrue(any(riser), "the jump is drawn")
+        self.assertFalse(all(riser), "with gaps: dotted, not solid")
+        x0 = view.mapFromScene(self.g._point("tx", 11.0, 5.0)).x()
+        hold = [
+            any(red(x, hi.y() + dy) for dy in (-1, 0, 1)) for x in range(x0, hi.x() - 4)
+        ]
+        self.assertTrue(hold and all(hold), "the hold is the solid curve")
+
+    # -- input helpers ----------------------------------------------------------
+
+    def _vp(self, cid, t, v):
+        """Viewport point of curve value ``(t, v)``."""
+        scene = self.g._point(cid, t, v)
+        return self.w._timeline.mapFromScene(scene)
+
+    def _drag(self, start, end, button=None, mods=None, steps=6):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        button = QtCore.Qt.LeftButton if button is None else button
+        mods = QtCore.Qt.NoModifier if mods is None else mods
+        vp = self.w._timeline.viewport()
+
+        def send(kind, pos, buttons):
+            ev = QtGui.QMouseEvent(
+                kind,
+                QtCore.QPointF(pos),
+                QtCore.QPointF(vp.mapToGlobal(pos)),
+                button,
+                buttons,
+                mods,
+            )
+            QtWidgets.QApplication.sendEvent(vp, ev)
+
+        send(QtCore.QEvent.MouseButtonPress, start, button)
+        for i in range(1, steps + 1):
+            pt = start + (end - start) * (i / steps)
+            send(
+                QtCore.QEvent.MouseMove, QtCore.QPoint(int(pt.x()), int(pt.y())), button
+            )
+        send(QtCore.QEvent.MouseButtonRelease, end, QtCore.Qt.NoButton)
+        app.processEvents()
+
+    def _click(self, pos, mods=None):
+        self._drag(pos, pos, mods=mods, steps=0)
+
+    def _key(self, cid, t):
+        return self.g._key(cid, t)
+
+    # -- display ----------------------------------------------------------------
+
+    def test_the_outline_lists_the_curves_and_all_show_by_default(self):
+        self.assertEqual(self.g.displayed_curve_ids(), ["tx", "ty"])
+        self.assertIs(self.w._header_stack.currentWidget(), self.g.header_widget())
+
+    def test_selecting_an_outline_row_shows_only_its_curve(self):
+        self.g._page.select_curves(["ty"])
+        self.assertEqual(self.g.displayed_curve_ids(), ["ty"])
+
+    def test_f_frames_the_active_shot_when_no_key_is_selected(self):
+        """Bug: F with no key selected framed every curve over all of time --
+        and did nothing with none displayed -- where the track view's F
+        frames the active shot (2026-10-11: "frame seems to frame all keys
+        (or not work at all) when it should just frame the current shot's
+        keys").  A still frames everything.
+        Fixed: 2026-10-11"""
+        self.w.set_range_highlight(8.0, 12.0)
+        self.g.frame_selection()
+        t0, t1 = self.g._visible_time_range()
+        self.assertLess(t0, 8.0)
+        self.assertGreater(t1, 12.0)
+        self.assertLess(t1 - t0, 10.0, "the shot fills the view, not all 30 frames")
+        area = self.w._timeline.viewport().rect()
+        self.assertTrue(area.contains(self._vp("tx", 10.0, 5.0)), "its key, in value")
+        self.g.frame_all()
+        self.assertGreater(
+            self.g._visible_time_range()[1] - self.g._visible_time_range()[0], 30.0
+        )
+
+        self.g._page.select_curves([])  # nothing displayed: still the shot
+        self.g._shown = []
+        self.g.frame_selection()
+        t0, t1 = self.g._visible_time_range()
+        self.assertLess(t1 - t0, 10.0)
+
+    def test_f_frames_every_curve_when_there_is_no_shot(self):
+        self.w._timeline._pixels_per_unit = 40.0  # zoomed in: frames 0-30 off view
+        self.w._timeline._refresh_all()
+        self.g.frame_selection()
+        area = self.w._timeline.viewport().rect()
+        self.assertTrue(area.contains(self._vp("ty", 30.0, 1.0)), "no shot: all")
+
+    def test_the_first_switch_to_the_graph_frames_the_active_shot(self):
+        w = SequencerWidget()
+        self.addCleanup(w.deleteLater)
+        self.addCleanup(w.close)
+        w.resize(1000, 520)
+        w.show()
+        w.set_range_highlight(8.0, 12.0)
+        g = w.editor("graph")
+        g.set_outline(
+            [{"id": "cube", "label": "cube", "children": [{"curve_id": "tx"}]}]
+        )
+        g.set_curve_provider(lambda ids: [self.curves["tx"].copy()])
+        w.set_editor("graph")
+        app.processEvents()
+        t0, t1 = g._visible_time_range()
+        self.assertLess(t1 - t0, 10.0, "the shot, not every key of the scene")
+
+    def test_normalize_refits_the_values_and_keeps_the_time_framed(self):
+        self.w.set_range_highlight(8.0, 12.0)
+        self.g.frame_selection()
+        framed = self.g._visible_time_range()
+        self.g.normalized = True
+        self.assertEqual(self.g._visible_time_range(), framed)
+
+    def test_frame_all_fits_every_key(self):
+        view = self.w._timeline
+        area = view.viewport().rect()
+        for cid in ("tx", "ty"):
+            for k in self.curves[cid].keys:
+                self.assertTrue(
+                    area.contains(self._vp(cid, k.time, k.value)), (cid, k.time)
+                )
+
+    # -- selection -------------------------------------------------------------
+
+    def test_click_selects_and_shift_toggles(self):
+        from qtpy import QtCore
+
+        self._click(self._vp("tx", 10, 5))
+        self.assertEqual(self.g.selected_keys(), [("tx", [10.0])])
+        self._click(self._vp("ty", 15, -2), QtCore.Qt.ShiftModifier)
+        self.assertEqual(self.g.selected_keys(), [("tx", [10.0]), ("ty", [15.0])])
+        self._click(self._vp("tx", 10, 5), QtCore.Qt.ShiftModifier)
+        self.assertEqual(self.g.selected_keys(), [("ty", [15.0])])
+
+    def test_a_box_selects_what_it_covers_and_ctrl_removes(self):
+        from qtpy import QtCore
+
+        a, b = self._vp("tx", 8, 5.5), self._vp("ty", 17, -2.5)
+        self._drag(QtCore.QPoint(a.x(), a.y()), QtCore.QPoint(b.x(), b.y()))
+        self.assertEqual(self.g.selected_keys(), [("tx", [10.0]), ("ty", [15.0])])
+        c, d = self._vp("ty", 13, 0), self._vp("ty", 17, -2.6)
+        self._drag(c, d, mods=QtCore.Qt.ControlModifier)
+        self.assertEqual(self.g.selected_keys(), [("tx", [10.0])])
+
+    def test_a_click_on_empty_space_clears(self):
+        self.g.select_keys([("tx", 10.0)])
+        self._click(self._vp("tx", 5, -10))
+        self.assertEqual(self.g.selected_keys(), [])
+
+    def test_hidden_samples_cannot_be_picked(self):
+        self.curves["tx"].keys[1].hidden = True
+        self.g.refresh()
+        self._click(self._vp("tx", 10, 5))
+        # On the curve, so the click selects the curve -- its drawn keys only.
+        self.assertEqual(self.g.selected_keys(), [("tx", [0.0, 20.0])])
+        self.g.select_keys([("tx", 10.0)])
+        self.assertEqual(self.g.selected_keys(), [], "nor by name")
+
+    # -- moving ----------------------------------------------------------------
+
+    def test_a_drag_moves_a_key_in_time_and_value(self):
+        start = self._vp("tx", 10, 5)
+        end = self._vp("tx", 13, 3)
+        self._drag(start, end)
+        ((cid, rows),) = self.seen["keys_edited"][-1][0]
+        t, dt, dv = rows[0]
+        self.assertEqual((cid, t), ("tx", 10.0))
+        self.assertAlmostEqual(dt, 3.0, places=6, msg="time snaps to the frame")
+        self.assertAlmostEqual(dv, -2.0, delta=0.1)
+        self.assertEqual(self.g.selected_keys()[0][1], [13.0], "selection follows")
+
+    def test_shift_locks_the_axis_the_drag_starts_on(self):
+        from qtpy import QtCore
+
+        self._drag(
+            self._vp("tx", 10, 5),
+            self._vp("tx", 10.2, 2.0),
+            mods=QtCore.Qt.ShiftModifier,
+        )
+        ((_cid, rows),) = self.seen["keys_edited"][-1][0]
+        self.assertEqual(rows[0][1], 0.0, "time held")
+        self.assertAlmostEqual(rows[0][2], -3.0, delta=0.1)
+        self._drag(
+            self._vp("tx", 10, 2.0),
+            self._vp("tx", 16, 2.3),
+            mods=QtCore.Qt.ShiftModifier,
+        )
+        ((_cid, rows),) = self.seen["keys_edited"][-1][0]
+        self.assertAlmostEqual(rows[0][1], 6.0, places=6)
+        self.assertEqual(rows[0][2], 0.0, "value held")
+
+    def test_a_middle_drag_moves_the_selection_from_anywhere(self):
+        from qtpy import QtCore
+
+        self.g.select_keys([("tx", 10.0), ("ty", 15.0)])
+        self._drag(
+            self._vp("tx", 2, -8), self._vp("tx", 4, -8), button=QtCore.Qt.MiddleButton
+        )
+        moved = dict(self.seen["keys_edited"][-1][0])
+        self.assertAlmostEqual(moved["tx"][0][1], 2.0, places=6)
+        self.assertAlmostEqual(moved["ty"][0][1], 2.0, places=6)
+
+    def test_a_move_never_jumps_a_neighbour(self):
+        self._drag(self._vp("tx", 10, 5), self._vp("tx", 40, 5))
+        ((_cid, rows),) = self.seen["keys_edited"][-1][0]
+        self.assertLess(10.0 + rows[0][1], 20.0)
+
+    def test_escape_cancels_a_drag(self):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        vp = self.w._timeline.viewport()
+        start = self._vp("tx", 10, 5)
+        press = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonPress,
+            QtCore.QPointF(start),
+            QtCore.QPointF(vp.mapToGlobal(start)),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+        QtWidgets.QApplication.sendEvent(vp, press)
+        self.assertTrue(self.g.cancel_drag())
+        self.assertNotIn("keys_edited", self.seen)
+
+    # -- scaling ---------------------------------------------------------------
+
+    def test_the_frame_scales_time_about_its_far_edge(self):
+        self.g.select_keys([("tx", 0.0), ("tx", 10.0), ("tx", 20.0)])
+        frame = self.g.selection_frame()
+        view = self.w._timeline
+        right = view.mapFromScene(frame.right(), frame.center().y())
+        target_x = view.mapFromScene(self.g._point("tx", 30.0 + 0.35, 0)).x()
+        self._drag(right, type(right)(target_x, right.y()))
+        moved = {t: dt for t, dt, _dv in self.seen["keys_edited"][-1][0][0][1]}
+        self.assertNotIn(0.0, moved, "the far edge holds: no row for a key that stays")
+        self.assertGreater(moved[20.0], moved[10.0])
+        self.assertAlmostEqual(moved[20.0] / moved[10.0], 2.0, delta=0.15)
+
+    def test_the_frame_scales_value_about_its_far_edge(self):
+        self.g.select_keys([("tx", 0.0), ("tx", 10.0)])
+        frame = self.g.selection_frame()
+        view = self.w._timeline
+        top = view.mapFromScene(frame.center().x(), frame.top())
+        self._drag(top, type(top)(top.x(), top.y() - 60))
+        rows = dict(
+            ((t, (dt, dv)) for t, dt, dv in self.seen["keys_edited"][-1][0][0][1])
+        )
+        self.assertNotIn(0.0, rows, "the bottom key is the pivot: it stays, no row")
+        self.assertEqual(rows[10.0][0], 0.0, "time held")
+        self.assertGreater(rows[10.0][1], 0.0)
+
+    def test_alt_scales_about_the_frames_centre(self):
+        from qtpy import QtCore
+
+        self.g.select_keys([("tx", 0.0), ("tx", 20.0)])
+        frame = self.g.selection_frame()
+        view = self.w._timeline
+        right = view.mapFromScene(frame.right(), frame.center().y())
+        self._drag(
+            right, type(right)(right.x() + 80, right.y()), mods=QtCore.Qt.AltModifier
+        )
+        rows = {t: dt for t, dt, _dv in self.seen["keys_edited"][-1][0][0][1]}
+        self.assertLess(rows[0.0], 0.0)
+        self.assertGreater(rows[20.0], 0.0)
+        self.assertAlmostEqual(rows[0.0], -rows[20.0], places=6)
+
+    # -- tangents ----------------------------------------------------------------
+
+    def test_a_handle_drag_reshapes_an_unweighted_tangent(self):
+        self.g.select_keys([("tx", 10.0)])
+        curve = self.g._curves["tx"]
+        hp = self.g._handle_point("tx", curve, curve.keys[1], "out")
+        view = self.w._timeline
+        start = view.mapFromScene(hp)
+        self._drag(start, type(start)(start.x(), start.y() - 40))
+        ((cid, items),) = self.seen["tangents_edited"][-1][0]
+        t, side, dt, dv, broken = items[0]
+        self.assertEqual((cid, t, side, broken), ("tx", 10.0, "out", False))
+        self.assertEqual(dt, 1.0, "an unweighted handle carries its slope")
+        self.assertGreater(dv, 0.0)
+        key = self.g._curves["tx"].keys[1]
+        self.assertAlmostEqual(key.in_handle[1] / key.in_handle[0], dv, places=6)
+
+    def test_alt_breaks_the_tangent(self):
+        from qtpy import QtCore
+
+        self.g.select_keys([("ty", 15.0)])
+        curve = self.g._curves["ty"]
+        hp = self.g._handle_point("ty", curve, curve.keys[1], "in")
+        start = self.w._timeline.mapFromScene(hp)
+        before = curve.keys[1].out_handle
+        self._drag(
+            start, type(start)(start.x(), start.y() + 30), mods=QtCore.Qt.AltModifier
+        )
+        items = self.seen["tangents_edited"][-1][0][0][1]
+        self.assertTrue(items[0][4], "broken")
+        self.assertEqual(self.g._curves["ty"].keys[1].out_handle, before)
+
+    # -- keys and stats -----------------------------------------------------------
+
+    def test_delete_and_insert_keys(self):
+        from qtpy import QtCore, QtTest
+
+        self.g.select_keys([("tx", 10.0)])
+        QtTest.QTest.keyClick(self.w._timeline, QtCore.Qt.Key_Delete)
+        self.assertEqual(self.seen["keys_deleted"][-1][0], (("tx", (10.0,)),))
+        self.w.set_playhead(7)
+        self.g.select_keys([("ty", 15.0)])
+        QtTest.QTest.keyClick(self.w._timeline, QtCore.Qt.Key_I)
+        self.assertEqual(self.seen["keys_inserted"][-1][0], (("ty", 7.0),))
+
+    def test_double_click_on_a_curve_inserts_there(self):
+        from qtpy import QtCore, QtTest
+
+        t = 5.0
+        pos = self._vp("ty", t, self.curves["ty"].evaluate(t))
+        QtTest.QTest.mouseDClick(
+            self.w._timeline.viewport(), QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pos
+        )
+        ((cid, at),) = self.seen["keys_inserted"][-1][0]
+        self.assertEqual(cid, "ty")
+        self.assertAlmostEqual(at, t, delta=0.3)
+
+    def test_f_frames_the_selection(self):
+        from qtpy import QtCore, QtTest
+
+        self.g.select_keys([("ty", 15.0), ("ty", 30.0)])
+        QtTest.QTest.keyClick(self.w._timeline, QtCore.Qt.Key_F)
+        view = self.w._timeline
+        width = view.viewport().width()
+        x0 = self._vp("ty", 15, -2).x()
+        x1 = self._vp("ty", 30, 1).x()
+        self.assertGreater(x1 - x0, width * 0.6)
+
+    # -- view ------------------------------------------------------------------
+
+    def test_wheel_zooms_both_axes_ctrl_time_shift_value(self):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        view = self.w._timeline
+        vp = view.viewport()
+
+        def wheel(mods):
+            pos = QtCore.QPointF(vp.width() / 2, vp.height() / 2)
+            ev = QtGui.QWheelEvent(
+                pos,
+                QtCore.QPointF(vp.mapToGlobal(pos.toPoint())),
+                QtCore.QPoint(),
+                QtCore.QPoint(0, 120),
+                QtCore.Qt.NoButton,
+                mods,
+                QtCore.Qt.NoScrollPhase,
+                False,
+            )
+            QtWidgets.QApplication.sendEvent(vp, ev)
+
+        ppu, scale = view.pixels_per_unit, self.g.axis.scale
+        wheel(QtCore.Qt.NoModifier)
+        self.assertGreater(view.pixels_per_unit, ppu)
+        self.assertGreater(self.g.axis.scale, scale)
+        ppu, scale = view.pixels_per_unit, self.g.axis.scale
+        wheel(QtCore.Qt.ControlModifier)
+        self.assertGreater(view.pixels_per_unit, ppu)
+        self.assertEqual(self.g.axis.scale, scale)
+        ppu = view.pixels_per_unit
+        wheel(QtCore.Qt.ShiftModifier)
+        self.assertEqual(view.pixels_per_unit, ppu)
+        self.assertGreater(self.g.axis.scale, scale)
+
+    def test_alt_middle_pans_and_alt_right_zooms(self):
+        from qtpy import QtCore
+
+        top = self.g.axis.top
+        start = self._vp("tx", 10, 0)
+        self._drag(
+            start,
+            type(start)(start.x(), start.y() + 50),
+            button=QtCore.Qt.MiddleButton,
+            mods=QtCore.Qt.AltModifier,
+        )
+        self.assertGreater(self.g.axis.top, top)
+        scale = self.g.axis.scale
+        self._drag(
+            start,
+            type(start)(start.x(), start.y() - 50),
+            button=QtCore.Qt.RightButton,
+            mods=QtCore.Qt.AltModifier,
+        )
+        self.assertGreater(self.g.axis.scale, scale)
+
+    def test_normalized_edits_land_in_curve_units(self):
+        self.g.normalized = True
+        app.processEvents()
+        off, sc = self.g._norm("tx")
+        start = self._vp("tx", 10, 5)
+        end = self.w._timeline.mapFromScene(
+            self.g._point("tx", 10, 5).x(),
+            self.g.axis.to_y((5 - off) * sc - 0.5, self.w._content_top),
+        )
+        self._drag(start, end)
+        ((_cid, rows),) = self.seen["keys_edited"][-1][0]
+        self.assertAlmostEqual(rows[0][2], -0.5 / sc, delta=0.05 / sc)
+
+    def test_the_context_menu_requests_infinity_and_tangent_types(self):
+        self.g.set_tangent_types([("linear", "Linear"), ("flat", "Flat")])
+        self.g.select_keys([("tx", 10.0)])
+        menu = self.g.build_context_menu()
+        acts = {a.text(): a for a in menu.actions()}
+        tang = {a.text(): a for a in acts["Tangents"].menu().actions()}
+        tang["Flat"].trigger()
+        self.assertEqual(
+            self.seen["tangent_type_requested"][-1], ("flat", (("tx", (10.0,)),))
+        )
+        post = {a.text(): a for a in acts["Post Infinity"].menu().actions()}
+        post["Cycle with Offset"].trigger()
+        self.assertEqual(
+            self.seen["infinity_requested"][-1], ("post", "cycle_offset", ("tx",))
+        )
+
+    def test_switching_back_restores_the_rows(self):
+        tid = self.w.add_track("obj")
+        cid = self.w.add_clip(tid, 0, 10)
+        self.assertFalse(self.w._clip_items[cid].isVisible())
+        self.w.set_editor("tracks")
+        self.assertTrue(self.w._clip_items[cid].isVisible())
+
+    def test_no_track_row_is_painted_under_the_canvas(self):
+        """The canvas paints the content area opaque, so the track rows and
+        their full-range curves beneath it were drawn for nothing."""
+        from unittest import mock
+        from uitk.widgets.sequencer._timeline import TimelineView
+
+        calls = []
+        with mock.patch.object(
+            TimelineView, "_draw_track_rows", new=lambda *_a: calls.append(1)
+        ):
+            self.w._timeline.viewport().grab()
+            self.assertEqual(calls, [])
+            self.w.set_editor("tracks")
+            self.w._timeline.viewport().grab()
+        self.assertTrue(calls, "the track editor still paints its rows")
+
+    # -- pre-release review, 2026-10-12 -------------------------------------------
+
+    def _use_curve(self, times, cid="tx", **kw):
+        """Show one curve, keys at *times* (value = time), framed."""
+        ptk = self.ptk
+        self.curves[cid] = ptk.KeyCurve(
+            [ptk.CurveKey(float(t), float(t)) for t in times], curve_id=cid, **kw
+        )
+        self.g._page.select_curves([cid])
+        self.g.refresh()
+        self.g.frame_all()
+        app.processEvents()
+
+    def _send(self, kind, pos, button, buttons, mods=None):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        vp = self.w._timeline.viewport()
+        ev = QtGui.QMouseEvent(
+            kind,
+            QtCore.QPointF(pos),
+            QtCore.QPointF(vp.mapToGlobal(pos)),
+            button,
+            buttons,
+            QtCore.Qt.NoModifier if mods is None else mods,
+        )
+        QtWidgets.QApplication.sendEvent(vp, ev)
+
+    def test_a_move_keeps_every_moved_key_selected(self):
+        """Bug: moved by their own spacing, consecutive keys came out of the
+        release with only the last one selected -- the selection was remapped
+        key by key, and a key's new time was the next key's old one.
+        Fixed: 2026-10-12"""
+        self._use_curve((0, 2, 3, 4, 10))
+        self.g.select_keys([("tx", 2.0), ("tx", 3.0), ("tx", 4.0)])
+        self._drag(self._vp("tx", 3.0, 3.0), self._vp("tx", 4.0, 3.0))
+        self.assertEqual(
+            {t for _cid, t in self.g._sel}, {3.0, 4.0, 5.0}, self.seen["keys_edited"]
+        )
+
+    def test_a_moved_block_stops_whole_at_its_neighbour(self):
+        """Bug: each moved key was clamped against its own unmoved neighbour,
+        so keys 0 and 10 dragged past key 20 both landed on 19.999.  The
+        block stops together, its spacing kept (as ``KeyCurve.with_keys_moved``
+        clamps a move).
+        Fixed: 2026-10-12"""
+        self.g._page.select_curves(["tx"])
+        self.g.select_keys([("tx", 0.0), ("tx", 10.0)])
+        self._drag(self._vp("tx", 10.0, 5.0), self._vp("tx", 40.0, 5.0))
+        rows = {t: dt for t, dt, _dv in self.seen["keys_edited"][-1][0][0][1]}
+        self.assertAlmostEqual(rows[0.0], rows[10.0], places=6, msg=rows)
+        self.assertLess(10.0 + rows[10.0], 20.0)
+        times = self.g.curve("tx").times()
+        self.assertEqual(len(set(times)), 3, times)
+
+    def test_grabbing_the_frame_edge_scales_nothing_until_it_moves_along(self):
+        """Bug: the factor was measured against the keys' extent, but the edge
+        is grabbed in a padded band beyond it, so the press itself scaled --
+        a vertical wobble on the right edge moved the keys in time.
+        Fixed: 2026-10-12"""
+        from qtpy import QtCore
+
+        self.g.select_keys([("tx", 10.0), ("tx", 20.0)])
+        frame = self.g.selection_frame()
+        right = self.w._timeline.mapFromScene(frame.right(), frame.center().y())
+        self._drag(right, right + QtCore.QPoint(0, 25))
+        self.assertNotIn("keys_edited", self.seen, "a pure vertical move on 'r'")
+
+    def test_a_second_button_mid_drag_leaves_the_drag_alone(self):
+        """Bug: any press reset the drag and any release ended it: a middle
+        click during a key drag committed it with the left button still down,
+        and a right press dropped it with its preview left on screen.
+        Fixed: 2026-10-12"""
+        from qtpy import QtCore
+
+        L, M, R = (QtCore.Qt.LeftButton, QtCore.Qt.MiddleButton, QtCore.Qt.RightButton)
+        ev = QtCore.QEvent
+        start = self._vp("tx", 10.0, 5.0)
+        moved = start + QtCore.QPoint(40, 0)
+        self._send(ev.MouseButtonPress, start, L, L)
+        self._send(ev.MouseMove, moved, QtCore.Qt.NoButton, L)
+        for other in (M, R):
+            self._send(ev.MouseButtonPress, moved, other, L | other)
+            self._send(ev.MouseButtonRelease, moved, other, L)
+        self.assertNotIn("keys_edited", self.seen, "committed by another button")
+        self.assertIsNotNone(self.g._drag, "the drag survives")
+        self._send(ev.MouseButtonRelease, moved, L, QtCore.Qt.NoButton)
+        self.assertEqual(len(self.seen["keys_edited"]), 1)
+
+    def test_a_drag_whose_release_went_elsewhere_ends_on_the_next_hover(self):
+        """Bug: a release a popup took never reached the graph, so the drag
+        lived on: every buttonless hover went on moving the keys.
+        Fixed: 2026-10-12"""
+        from qtpy import QtCore
+
+        L, ev = QtCore.Qt.LeftButton, QtCore.QEvent
+        # Hover moves reach the view as they do once a scene holds hover
+        # items (a host's clips): Qt enables tracking on its viewport then.
+        self.w._timeline.viewport().setMouseTracking(True)
+        start = self._vp("tx", 10.0, 5.0)
+        self._send(ev.MouseButtonPress, start, L, L)
+        self._send(ev.MouseMove, start + QtCore.QPoint(40, 0), QtCore.Qt.NoButton, L)
+        hover = start + QtCore.QPoint(80, 20)  # no button held: the release is gone
+        self._send(ev.MouseMove, hover, QtCore.Qt.NoButton, QtCore.Qt.NoButton)
+        self.assertIsNone(self.g._drag)
+        self.assertEqual(self.g._preview, {}, "the preview put back")
+        self.assertEqual(self.g.curve("tx").keys[1].time, 10.0)
+
+    def test_no_context_menu_rides_on_a_drag(self):
+        """Bug: a context-menu event during a drag (a press-trigger platform's
+        right press), or right after an Alt+right-drag zoom (Windows triggers
+        on the release), opened the graph's menu over the gesture.
+        Fixed: 2026-10-12"""
+        from unittest import mock
+        from qtpy import QtCore, QtGui, QtWidgets
+        from uitk.widgets.sequencer._graph_editor import GraphEditor
+
+        opened = []
+        real = GraphEditor.build_context_menu
+
+        def build(editor):
+            opened.append(True)
+            menu = real(editor)
+            menu.exec_ = lambda *_a: None
+            return menu
+
+        vp = self.w._timeline.viewport()
+        pos = self._vp("tx", 10.0, 1.0)
+
+        def menu_event():
+            QtWidgets.QApplication.sendEvent(
+                vp,
+                QtGui.QContextMenuEvent(
+                    QtGui.QContextMenuEvent.Mouse, pos, vp.mapToGlobal(pos)
+                ),
+            )
+
+        with mock.patch.object(GraphEditor, "build_context_menu", new=build):
+            self._drag(
+                pos,
+                pos + QtCore.QPoint(60, 0),
+                button=QtCore.Qt.RightButton,
+                mods=QtCore.Qt.AltModifier,
+            )
+            menu_event()  # the zoom's release-triggered menu
+            self.assertEqual(opened, [], "a zoom drag opened the menu")
+            L = QtCore.Qt.LeftButton
+            self._send(QtCore.QEvent.MouseButtonPress, pos, L, L)
+            menu_event()  # mid-drag
+            self._send(QtCore.QEvent.MouseButtonRelease, pos, L, QtCore.Qt.NoButton)
+            self.assertEqual(opened, [], "a menu over a drag")
+            menu_event()  # a plain right click still has its menu
+            self.assertEqual(opened, [True])
+
+    def test_handles_too_many_to_draw_cannot_be_grabbed(self):
+        """Bug: past ``HANDLE_CAP`` selected keys the handles are not drawn,
+        but the hit test still found them: a click on blank space started a
+        tangent drag.
+        Fixed: 2026-10-12"""
+        from unittest import mock
+        from uitk.widgets.sequencer._graph_editor import _GraphCanvas
+
+        self.g.select_keys([("tx", 0.0), ("tx", 10.0)])
+        curve = self.g.curve("tx")
+        key = curve.keys[1]
+        tip = self.g._handle_point("tx", curve, key, "out")
+        self.assertIsNotNone(self.g._handle_at(tip), "precondition: drawn, grabbed")
+        with mock.patch.object(_GraphCanvas, "HANDLE_CAP", 1):
+            self.assertIsNone(self.g._handle_at(tip))
+
+    def test_frame_all_reaches_curves_beyond_the_clips(self):
+        """Bug: the scene's extent came from the clips and shots alone, so
+        curves keyed past them could not be framed or panned to: A on keys
+        500-1000 with no clip showed frames 100-655.
+        Fixed: 2026-10-12"""
+        self._use_curve((500, 750, 1000))
+        t0, t1 = self.g._visible_time_range()
+        self.assertLessEqual(t0, 500.0)
+        self.assertGreaterEqual(t1, 1000.0)
+
+    def test_a_large_selection_reads_each_curve_once(self):
+        """Bug: every per-key lookup rebuilt the curve's time list, and with
+        Normalize every displayed value re-measured the curve: a select-all
+        over a bake froze the UI for seconds per move (O(keys^2)).
+        Fixed: 2026-10-12"""
+        from unittest import mock
+
+        KeyCurve = self.ptk.KeyCurve
+        self._use_curve(range(0, 3000, 2))
+        self.g.select_all()
+        counts = {"times": 0, "normalization": 0}
+
+        def counted(name):
+            real = getattr(KeyCurve, name)
+
+            def wrapper(curve, *a, **kw):
+                counts[name] += 1
+                return real(curve, *a, **kw)
+
+            return wrapper
+
+        self.g.normalized = True
+        with mock.patch.multiple(
+            KeyCurve,
+            times=counted("times"),
+            normalization=counted("normalization"),
+        ):
+            self.g._selection_box_units()
+            self.g._key_at(self.g._point("tx", 1000.0, 1000.0))
+        self.assertLessEqual(counts["times"], 2, counts)
+        self.assertLessEqual(counts["normalization"], 2, counts)
+
+    def test_a_shift_tangent_drag_copies_each_curve_once(self):
+        """Bug: Shift gives every selected key the dragged vector, one
+        ``KeyCurve.with_handle`` each -- a whole-curve copy per key, per
+        mouse move (33.8 s a move for 1000 keys on a 2000-key curve).
+        Fixed: 2026-10-12"""
+        from unittest import mock
+        from qtpy import QtCore
+
+        KeyCurve = self.ptk.KeyCurve
+        self._use_curve(range(0, 400, 2))
+        self.g.select_all()
+        curve = self.g.curve("tx")
+        copied = []
+        real = KeyCurve.copy
+
+        def copy(c):
+            copied.append(len(c.keys))
+            return real(c)
+
+        drag = {"handle": ("tx", 10, "out")}
+        tip = self.g._handle_point("tx", curve, curve.keys[10], "out")
+
+        class _Event:
+            def modifiers(self):
+                return QtCore.Qt.ShiftModifier
+
+        with mock.patch.object(KeyCurve, "copy", copy):
+            self.g._drag_tangent(_Event(), tip + QtCore.QPointF(5, -5), drag)
+        self.assertLessEqual(sum(copied), 3 * len(curve.keys), copied[:5])
+        handles = {k.out_handle for k in self.g._preview["tx"].keys}
+        self.assertEqual(len(handles), 1, "every selected key took the vector")
+
+    def test_switching_back_keeps_the_view_the_user_framed(self):
+        """Bug: the first switch framed a selection without marking the
+        graph framed, so every later switch back re-framed it and threw the
+        user's view away.
+        Fixed: 2026-10-12"""
+        w = SequencerWidget()
+        self.addCleanup(w.deleteLater)
+        self.addCleanup(w.close)
+        w.resize(1000, 520)
+        w.show()
+        g = w.editor("graph")
+        g.set_outline(
+            [{"id": "cube", "label": "cube", "children": [{"curve_id": "tx"}]}]
+        )
+        g.set_curve_provider(lambda ids: [self.curves["tx"].copy()])
+        g.select_keys([("tx", 0.0), ("tx", 10.0)])
+        w.set_editor("graph")
+        app.processEvents()
+        w.frame_time_range(100.0, 250.0, fit_values=False)
+        w.set_editor("tracks")
+        w.set_editor("graph")
+        app.processEvents()
+        t0, t1 = g._visible_time_range()
+        self.assertTrue(t0 < 100.0 < 250.0 < t1 < 300.0, (t0, t1))
+
+    def test_a_wheel_in_past_the_zoom_cap_never_zooms_out(self):
+        """Bug: framing one key zooms past the wheel's 100 px/frame cap, and
+        the next wheel-in clamped to the cap -- a 7x zoom OUT.
+        Fixed: 2026-10-12"""
+        self.g.select_keys([("tx", 10.0)])
+        self.g.frame_selection()
+        ppu = self.w._timeline.pixels_per_unit
+        self.assertGreater(ppu, 100.0, "precondition: framed past the cap")
+        self.w._timeline.zoom_at(1.15, 100)
+        self.assertGreaterEqual(self.w._timeline.pixels_per_unit, ppu)
+        self.w._timeline.zoom_at(1 / 1.15, 100)
+        self.assertLess(self.w._timeline.pixels_per_unit, ppu, "and out still works")
+
+    def test_switching_editor_mid_drag_cancels_it(self):
+        """A drag the graph no longer shows must not linger: its preview,
+        readout and live state go, and a live host puts its scene back.
+        Fixed: 2026-10-12"""
+        from qtpy import QtCore
+
+        cancels = []
+        self.g.preview_cancelled.connect(lambda: cancels.append(True))
+        self.g.live = True
+        start = self._vp("tx", 10.0, 5.0)
+        self._press_and_move(start, start + QtCore.QPoint(40, 0))
+        self.assertTrue(self.g._preview)
+        self.w.set_editor("tracks")
+        self.assertIsNone(self.g._drag)
+        self.assertEqual(self.g._preview, {})
+        self.assertEqual(cancels, [True])
+
+    def test_a_curve_under_two_objects_is_shown_once(self):
+        """A curve id listed under two objects (an instanced or shared curve)
+        doubled every payload group: ``keys_deleted`` named it twice.
+        Fixed: 2026-10-12"""
+        tx = {"curve_id": "tx", "label": "translateX"}
+        self.g.set_outline(
+            [
+                {"id": "a", "label": "a", "children": [tx]},
+                {"id": "b", "label": "b", "children": [tx]},
+            ]
+        )
+        self.assertEqual(self.g.displayed_curve_ids(), ["tx"])
+
+    def test_a_cycle_draws_however_far_from_its_keys(self):
+        """Bug: the repeat cap counted from the curve, so a view 500 periods
+        out drew no cycle at all (and every repeat before it was stroked).
+        Fixed: 2026-10-12"""
+        from unittest import mock
+        from uitk.widgets.sequencer._graph_editor import _GraphCanvas
+
+        curve = self.ptk.KeyCurve(
+            [self.ptk.CurveKey(0.0, 0.0), self.ptk.CurveKey(10.0, 1.0)],
+            post_infinity="cycle",
+        )
+        painter = mock.MagicMock()
+        _GraphCanvas._paint_infinity(  # one path: a repeat is one draw
+            self.g._canvas, painter, curve, [mock.MagicMock()], 5000.0, 5020.0
+        )
+        self.assertTrue(1 <= painter.drawPath.call_count <= 4, painter.drawPath)
+
+    def test_a_colour_qt_cannot_take_is_refused_where_it_is_given(self):
+        """Bug: a curve's own colour was parsed inside every paint, where a
+        value ``QColor`` refuses raised inside Qt's call (a fault, not an
+        error).  It is parsed as the curve is read, and raises there.
+        Fixed: 2026-10-12"""
+        bad = self.curves["tx"].copy()
+        bad.color = (224, 102, 102)
+        self.g._colors.pop("tx")  # no outline colour: the curve's own is used
+        with self.assertRaises(TypeError):
+            self.g.set_curve_provider(lambda ids: [bad.copy()])
+
+    def test_a_pending_first_frame_dies_with_its_sequencer(self):
+        """Bug: the first switch scheduled its framing on a bare timer, which
+        still fired after the sequencer was deleted and raised from inside
+        the event loop (``Internal C++ object already deleted``).
+        Fixed: 2026-10-12"""
+        import sys
+        from unittest import mock
+        from qtpy import QtCore
+
+        w = SequencerWidget()
+        g = w.editor("graph")
+        g.set_outline(
+            [{"id": "cube", "label": "cube", "children": [{"curve_id": "tx"}]}]
+        )
+        g.set_curve_provider(lambda ids: [self.curves["tx"].copy()])
+        w.set_editor("graph")  # schedules the first framing
+        raised = []
+        with mock.patch.object(sys, "excepthook", lambda *a: raised.append(a)):
+            w.deleteLater()
+            app.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+            app.processEvents()
+        self.assertEqual(raised, [])
+
+    # -- the outline's right-click menu (the track labels' own) -------------------
+
+    def _row(self, key):
+        """The outline row ``("obj", id)`` / ``("curve", id)``."""
+        page = self.g._page
+        return next(
+            item
+            for top, rows in page._rows()
+            for item in [top] + rows
+            if page._row_key(item) == key
+        )
+
+    def _right_click(self, key):
+        """A real right-click on outline row *key*: the press (Qt's own
+        selection) and the context-menu event.  Returns the menus opened,
+        as their rows' texts, with the menu itself last."""
+        from unittest.mock import patch
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        tree = self.g._page.tree
+        vp = tree.viewport()
+        pos = tree.visualItemRect(self._row(key)).center()
+        QtWidgets.QApplication.sendEvent(
+            vp,
+            QtGui.QMouseEvent(
+                QtCore.QEvent.MouseButtonPress,
+                QtCore.QPointF(pos),
+                QtCore.Qt.RightButton,
+                QtCore.Qt.RightButton,
+                QtCore.Qt.NoModifier,
+            ),
+        )
+        opened = []
+
+        def run(menu, *_args, **_kwargs):
+            opened.append([a.text() for a in menu.actions()])
+            opened.append(menu)
+
+        with patch.object(QtWidgets.QMenu, "exec_", run):
+            QtWidgets.QApplication.sendEvent(
+                vp,
+                QtGui.QContextMenuEvent(
+                    QtGui.QContextMenuEvent.Mouse, pos, vp.mapToGlobal(pos)
+                ),
+            )
+        self.assertEqual(len(opened), 2, "one menu opened")
+        return opened
+
+    @staticmethod
+    def _act(menu, text):
+        """Trigger *menu*'s row *text* (a submenu's, as ``"Sub/Row"``).
+
+        Every ``actions()`` list is held: a dropped wrapper of the QAction a
+        submenu was read from takes the submenu with it (PySide)."""
+        held = [menu.actions()]
+        for part in text.split("/")[:-1]:
+            sub = next(a for a in held[-1] if a.text() == part).menu()
+            held.append(sub.actions())
+        next(a for a in held[-1] if a.text() == text.split("/")[-1]).trigger()
+
+    def test_an_object_rows_menu_is_the_track_labels(self):
+        """Hide / Delete Track, the host's rows and Show Hidden, the object
+        named by its outline id -- under the graph's own Select Keys."""
+        self.w.set_hidden_tracks(["ball"])
+        asked, hidden, deleted = [], [], []
+        self.w.track_menu_requested.connect(
+            lambda menu, names: (asked.append(names), menu.addAction("Reveal"))
+        )
+        self.w.track_hidden.connect(hidden.append)
+        self.w.track_deleted.connect(deleted.append)
+        texts, menu = self._right_click(("obj", "cube"))
+        self.assertEqual(
+            texts,
+            [
+                "Select Keys",
+                "",
+                "Hide Track",
+                "Delete Track",
+                "Reveal",
+                "Show Hidden (1)",
+            ],
+        )
+        self.assertEqual(asked, [["cube"]])
+        self._act(menu, "Hide Track")
+        self._act(menu, "Delete Track")
+        self.assertEqual((hidden, deleted), ([["cube"]], [["cube"]]))
+        self._act(menu, "Select Keys")
+        self.assertEqual(
+            _tuples(self.g.selected_keys()),
+            (("tx", (0.0, 10.0, 20.0)), ("ty", (0.0, 15.0, 30.0))),
+        )
+
+    def test_a_right_click_selects_its_row_as_a_track_labels_does(self):
+        """An unselected row alone (the display follows); a selected one
+        keeps the rest, and the menu acts on them all."""
+        texts, _menu = self._right_click(("curve", "ty"))
+        self.assertEqual(self.g.displayed_curve_ids(), ["ty"])
+        self.assertIn("Hide Curve", texts)
+        self.g._page.select_curves(["tx", "ty"])
+        texts, _menu = self._right_click(("curve", "ty"))
+        self.assertEqual(self.g.displayed_curve_ids(), ["tx", "ty"])
+        self.assertIn("Hide 2 Curves", texts)
+
+    def test_a_curve_rows_menu_hides_and_shows_curves(self):
+        """Hide Curve takes it out of the outline and the display, kept over
+        a host re-sync, until Show Hidden Curves brings it back; the host's
+        track rows act on the curve's object -- and no Delete Track."""
+        asked = []
+        self.w.track_menu_requested.connect(lambda menu, names: asked.append(names))
+        texts, menu = self._right_click(("curve", "tx"))
+        self.assertEqual(texts, ["Select Keys", "", "Hide Curve"])
+        self.assertEqual(asked, [["cube"]])
+        self._act(menu, "Select Keys")
+        self.assertEqual(_tuples(self.g.selected_keys()), (("tx", (0.0, 10.0, 20.0)),))
+        self._act(menu, "Hide Curve")
+        self.assertTrue(self._row(("curve", "tx")).isHidden())
+        self.assertEqual(self.g.displayed_curve_ids(), ["ty"], "the rest, not none")
+        self.assertEqual(self.g.selected_keys(), [], "its keys left the selection")
+        self.g.set_outline(list(self.g._outline))  # a host re-sync
+        self.assertEqual(self.g.displayed_curve_ids(), ["ty"])
+        texts, menu = self._right_click(("curve", "ty"))
+        self.assertEqual(texts[-1], "Show Hidden Curves (1)")
+        self._act(menu, "Show Hidden Curves (1)/translateX (cube)")
+        self.assertFalse(self._row(("curve", "tx")).isHidden())
+        self.assertEqual(self.g.displayed_curve_ids(), ["ty"], "shown, not isolated")
+
+    def test_a_display_change_that_drops_selected_keys_reports_it(self):
+        """Bug: showing other curves (an outline click, Hide Curve) dropped
+        the hidden curves' keys from the selection without a word, so a host
+        mirroring it (Maya's key selection) kept keys no longer selected.
+        Fixed: 2026-10-12"""
+        seen = []
+        self.g.select_keys([("tx", 10.0), ("ty", 15.0)])
+        self.g.key_selection_changed.connect(seen.append)
+        self.g._page.hide_curves(["tx"])
+        self.assertEqual(_tuples(seen), ((("ty", (15.0,)),),))
+        self.g._page.select_curves(["ty"])  # the display changes, not the keys
+        self.assertEqual(len(seen), 1, "an unchanged selection is not re-announced")
+
+    def test_the_empty_pane_brings_hidden_curves_and_tracks_back(self):
+        """With every curve hidden no row is left to right-click: the pane's
+        own menu shows them again (and the hidden tracks)."""
+        self.w.set_hidden_tracks(["ball"])
+        self.g._page.hide_curves(["tx", "ty"])
+        self.assertEqual(self.g.displayed_curve_ids(), [])
+        texts = [a.text() for a in self.g._page.build_menu(None).actions()]
+        self.assertEqual(texts, ["Show Hidden Curves (2)", "Show Hidden (1)"])
+        self._act(self.g._page.build_menu(None), "Show Hidden Curves (2)/Show All")
+        self.assertEqual(self.g.displayed_curve_ids(), ["tx", "ty"])
+
+
+# =========================================================================
+# Row density (RowMetrics): Standard / Compact
+# =========================================================================
+
+
+class TestSceneRectIsAlwaysExplicit(BaseTestCase):
+    """Bug: a graph editor made before the sequencer was first laid out
+    (a host composing its graph sync at panel load) crashed the next event
+    pass: the canvas sizes itself from ``sceneRect()``, and a scene with no
+    rect set derives one from every item's bounds -- the canvas's own, which
+    asked ``sceneRect()`` again.  The scene starts with a rect of its own.
+    Fixed: 2026-10-11"""
+
+    def test_a_graph_editor_made_before_the_first_show_survives_events(self):
+        w = SequencerWidget()
+        self.addCleanup(w.deleteLater)
+        w.editor("graph")
+        app.processEvents()
+        self.assertFalse(w._timeline._scene.sceneRect().isNull())
+        w.resize(800, 400)
+        w.show()
+        app.processEvents()
+        self.assertGreater(w._timeline._scene.sceneRect().width(), 1.0)
+        w.close()
+
+    def test_the_graph_canvas_follows_every_scene_rect_change(self):
+        """Bug: the graph canvas spans the scene rect, but only a full
+        re-layout re-derived it: a host's rebuild (``bulk_updates``) or a
+        new clip widened the scene alone, and scrolled out there the graph
+        showed no curves -- the canvas still ended where the old rect did.
+        Fixed: 2026-10-12"""
+        w = SequencerWidget()
+        self.addCleanup(w.deleteLater)
+        w.resize(900, 400)
+        w.show()
+        w.set_editor("graph")
+        app.processEvents()
+        canvas = w.active_editor._canvas
+        with w.bulk_updates():
+            w.add_clip(w.add_track("obj"), -500, 9000)
+        app.processEvents()
+        scene_rect = w._timeline._scene.sceneRect()
+        bounds = canvas.boundingRect()
+        self.assertEqual(
+            (bounds.left(), bounds.right()), (scene_rect.left(), scene_rect.right())
+        )
+        w.close()
+
+    def test_the_scene_goes_with_its_sequencer(self):
+        """Bug: the timeline's scene had no Qt parent (a view never owns its
+        scene), so a deleted sequencer left it alive, its items and their
+        index timer with it: the timer's next pass asked the graph canvas for
+        its bounds, the canvas asked the dead sequencer, and the error raised
+        inside Qt's call crashed shiboken -- an access violation in whichever
+        later test was running (``test_sequencer.py`` faulted order-
+        dependently; native trace: ``sceneEffectiveBoundingRect`` ->
+        ``storePythonOverrideErrorOrPrint``).
+        Fixed: 2026-10-11"""
+        import shiboken6
+        from qtpy import QtCore
+
+        w = SequencerWidget()
+        w.editor("graph")
+        scene = w._timeline._scene
+        self.assertIs(scene.parent(), w._timeline)
+        w.deleteLater()
+        app.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.assertFalse(shiboken6.isValid(scene), "the scene outlived its view")
+
+    def test_an_editors_page_goes_with_its_sequencer(self):
+        """Bug: an editor's page (the graph's curve list) was parented only
+        when the editor was first shown; never shown, it outlived its
+        sequencer as a top-level only the editor's Python side held, and the
+        garbage collection that reached it later -- in the middle of another
+        widget's events -- crashed the process (``test_sequencer.py`` faulted
+        in unrelated tests, order-dependent).
+        Fixed: 2026-10-11"""
+        import shiboken6
+        from qtpy import QtCore
+
+        w = SequencerWidget()
+        page = w.editor("graph").header_widget()
+        self.assertIs(page.parentWidget(), w._header_stack)
+        w.deleteLater()
+        app.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.assertFalse(shiboken6.isValid(page), "the page outlived its sequencer")
+
+
+class TestEditorOptions(BaseTestCase):
+    """The header pane's Options band: the active editor's own rows."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+        app.processEvents()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def test_a_host_adds_a_track_option_and_the_band_lists_it(self):
+        state = {"on": False}
+        tracks = self.w.editor("tracks")
+        tracks.add_option(
+            "holds",
+            "Show Internal Holds",
+            lambda: state["on"],
+            lambda on: state.update(on=on),
+        )
+        tracks.add_option(  # added again: replaced, not doubled
+            "holds",
+            "Show Internal Holds",
+            lambda: state["on"],
+            lambda on: state.update(on=on),
+        )
+        band = self.w._options_band
+        band.rebuild()
+        boxes = [w for w in band.rows() if getattr(w, "text", None)]
+        holds = [w for w in boxes if w.text() == "Show Internal Holds"]
+        self.assertEqual(len(holds), 1, "replaced, not doubled")
+        holds[0].setChecked(True)
+        self.assertTrue(state["on"])
+
+    def _texts(self):
+        return [w.text() for w in self.w._options_band.rows() if hasattr(w, "text")]
+
+    def test_the_band_follows_the_active_editor(self):
+        self.w.set_editor("graph")
+        app.processEvents()
+        self.w._options_band.rebuild()
+        self.assertIn("Normalize", self._texts())
+        self.w.set_editor("tracks")
+        self.w._options_band.rebuild()
+        self.assertNotIn("Normalize", self._texts())
+        self.assertIn("Mark Flat Spans", self._texts(), "the kernel's, in both")
+
+    def test_a_section_titles_its_rows_wherever_they_were_added(self):
+        tracks = self.w.editor("tracks")
+        state = {}
+        for key, section in (
+            ("a", "Display"),
+            ("b", ""),
+            ("c", "Rows"),
+            ("d", "Display"),
+        ):
+            tracks.add_option(
+                key,
+                key.upper(),
+                lambda: False,
+                lambda on, k=key: state.update({k: on}),
+                section=section,
+            )
+        self.w._options_band.rebuild()
+        self.assertEqual(
+            [
+                getattr(w, "title", None) or w.text()
+                for w in self.w._options_band.rows()
+            ],
+            ["B", "Display", "Mark Flat Spans", "A", "D", "Rows", "C"],
+        )
+
+    def test_the_combobox_runs_the_panes_full_width_and_reads_options(self):
+        """2026-10-11: "change the options combobox to a widget combobox and
+        have it run the full width ... so we can better organise options"."""
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        band = self.w._options_band
+        self.assertIsInstance(band.combo, WidgetComboBox)
+        self.assertEqual(band.combo.currentText() or band.combo.header_text, "Options")
+        margins = band.layout().contentsMargins()
+        self.assertEqual(
+            band.combo.width(), band.width() - margins.left() - margins.right()
+        )
+
+    def test_opening_reads_the_values_set_elsewhere_and_a_click_toggles(self):
+        state = {"on": False}
+        self.w.editor("tracks").add_option(
+            "holds",
+            "Show Internal Holds",
+            lambda: state["on"],
+            lambda on: state.update(on=on),
+        )
+        combo = self.w._options_band.combo
+        state["on"] = True  # set elsewhere: the graph's menu, a host
+        combo.showPopup()
+        app.processEvents()
+        try:
+            box = self.w._options_band.rows()[0]  # unsectioned: first
+            self.assertEqual(box.text(), "Show Internal Holds")
+            self.assertTrue(box.isChecked())
+            self._click_row(combo, 0)  # the checkbox fills its row
+            self.assertFalse(state["on"])
+            self.assertEqual(combo.currentIndex(), -1, "the header stays: Options")
+        finally:
+            combo.hidePopup()
+
+    def _click_row(self, combo, row):
+        """Click the middle of *row* in the open popup, on whatever is there
+        -- the widget under it, else the list -- as a real click lands."""
+        from qtpy import QtCore, QtTest
+
+        viewport = combo.view().viewport()
+        pos = combo.view().visualRect(combo.model().index(row, 0)).center()
+        target = viewport.childAt(pos) or viewport
+        QtTest.QTest.mouseClick(
+            target, QtCore.Qt.LeftButton, pos=target.mapFrom(viewport, pos)
+        )
+        app.processEvents()
+
+    def test_no_row_is_picked_so_the_header_stays_options(self):
+        """A click between a row's widget and its edge reaches the list: a
+        selectable row would be picked, and its label replace "Options"."""
+        from qtpy import QtCore
+
+        self.w.set_editor("graph")
+        self.w._options_band.rebuild()
+        model = self.w._options_band.combo.model()
+        picked = [
+            i
+            for i in range(model.rowCount())
+            if model.item(i).flags() & QtCore.Qt.ItemIsSelectable
+        ]
+        self.assertEqual(picked, [])
+
+    def test_the_band_stays_on_top_through_editor_switches(self):
+        from qtpy import QtCore
+
+        band = self.w._options_band
+
+        def on_top():
+            child = self.w._header_stack.childAt(QtCore.QPoint(10, 10))
+            return child is band or (child is not None and band.isAncestorOf(child))
+
+        self.assertTrue(on_top())
+        for name in ("graph", "tracks", "graph"):
+            self.w.set_editor(name)
+            app.processEvents()
+            self.assertTrue(on_top(), f"buried after switching to {name}")
+
+    def test_the_band_is_pinned_over_the_track_labels_top_strip(self):
+        band = self.w._options_band
+        self.assertEqual(band.geometry().top(), 0)
+        self.assertEqual(band.height(), int(self.w._content_top))
+        self.assertEqual(band.width(), self.w._header_stack.width())
+
+
+class TestRowMetricsDensity(BaseTestCase):
+    """``row_metrics`` narrows every row and draws keys flat, header included."""
+
+    SUBS = ("translateX", "translateY")
+
+    def setUp(self):
+        from uitk.widgets.sequencer import RowMetrics
+
+        self.RowMetrics = RowMetrics
+        self.w = SequencerWidget()
+        self.w.resize(800, 400)
+        self.w.show()
+        self.tid = self.w.add_track("obj_A")
+        self.main_cid = self.w.add_clip(
+            self.tid, 0, 100, summary_times=[10.0, 50.0, 90.0]
+        )
+        # A copy: a key drag rewrites its clip's preview IN PLACE.
+        preview = copy.deepcopy(TestKeyframeItem.SAMPLE_PREVIEW)
+        self.w.expand_track(
+            self.tid,
+            sub_row_data=[
+                (sub, [(0, 100, sub, "#FF6600", {"curve_preview": preview})])
+                for sub in self.SUBS
+            ],
+        )
+        app.processEvents()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _sub_item(self, sub="translateX"):
+        cd = next(c for c in self.w.clips() if c.sub_row == sub)
+        return self.w._clip_items[cd.clip_id]
+
+    def _compact(self):
+        self.w.row_metrics = self.RowMetrics.preset("compact")
+        app.processEvents()
+
+    # -- the presets --------------------------------------------------------
+
+    def test_standard_is_todays_rows(self):
+        m = self.RowMetrics.preset("standard")
+        self.assertEqual((m.sub_row_height, m.key_style), (_SUB_ROW_HEIGHT, "curve"))
+        self.assertEqual(self.w.row_metrics, m)
+
+    def test_compact_is_narrower_and_flat(self):
+        std, cmp_ = (self.RowMetrics.preset(n) for n in ("standard", "compact"))
+        self.assertLess(cmp_.track_height, std.track_height)
+        self.assertLess(cmp_.sub_row_height, std.sub_row_height)
+        self.assertTrue(cmp_.flat_keys)
+        self.assertEqual(self.RowMetrics.preset_names(), ("standard", "compact"))
+
+    def test_unknown_key_style_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.RowMetrics(key_style="wavy")
+
+    def test_row_metrics_takes_only_row_metrics(self):
+        with self.assertRaises(TypeError):
+            self.w.row_metrics = "compact"
+
+    # -- layout -------------------------------------------------------------
+
+    def test_compact_rows_and_header_labels_stay_level(self):
+        self._compact()
+        m = self.w.row_metrics
+        header = self.w._header
+        y, h = self.w._row_position(self.tid)
+        self.assertEqual(h, m.track_height)
+        label = header._labels[0]
+        self.assertEqual(label.height(), m.track_height)
+        self.assertEqual(label.mapTo(header, label.rect().topLeft()).y(), y)
+        for sub, lbl in zip(self.SUBS, header._sub_labels[0]):
+            row_y, row_h = self.w._row_position(self.tid, sub)
+            self.assertEqual(row_h, m.sub_row_height)
+            self.assertEqual(lbl.height(), row_h, sub)
+            self.assertEqual(lbl.mapTo(header, lbl.rect().topLeft()).y(), row_y)
+
+    def test_clip_rects_follow_the_density(self):
+        self._compact()
+        item = self._sub_item()
+        _y, row_h = self.w._row_position(self.tid, "translateX")
+        self.assertEqual(item.rect().height(), row_h)
+
+    def test_sub_row_height_keeps_the_rest_of_the_density(self):
+        self._compact()
+        self.w.sub_row_height = 20
+        m = self.w.row_metrics
+        self.assertEqual((m.sub_row_height, m.key_style), (20, "flat"))
+
+    # -- flat keys ----------------------------------------------------------
+
+    def test_flat_keys_sit_on_the_row_centre(self):
+        item = self._sub_item()
+        ys = {round(ki.pos().y(), 3) for ki in item._keyframe_items if ki.isVisible()}
+        self.assertGreater(len(ys), 1, "curve style places keys by value")
+        self._compact()
+        centre = item.rect().center().y()
+        for ki in item._keyframe_items:
+            self.assertAlmostEqual(ki.pos().y(), centre, places=3)
+
+    def test_flat_keys_drop_the_tangent_handles(self):
+        item = self._sub_item()
+        item._keyframe_items[0].setSelected(True)
+        app.processEvents()
+        self.assertTrue(item._tangent_handle_items, "a selected spline key has handles")
+        self._compact()
+        self.assertEqual(item._tangent_handle_items, [])
+        self.assertTrue(item._keyframe_items[0].isSelected(), "selection survives")
+
+    def test_back_to_standard_restores_the_curve(self):
+        item = self._sub_item()
+        before = [ki.pos().y() for ki in item._keyframe_items]
+        self._compact()
+        self.w.row_metrics = self.RowMetrics.preset("standard")
+        app.processEvents()
+        self.assertEqual([ki.pos().y() for ki in item._keyframe_items], before)
+
+    # -- summary ticks ------------------------------------------------------
+
+    def _row_pixels(self, times, y_frac=0.85):
+        """The colour the scene renders at each of *times* on the object row,
+        *y_frac* of the way down it (the ticks sit in its bottom band)."""
+        from qtpy import QtCore, QtGui
+
+        item = self.w._clip_items[self.main_cid]
+        rect = item.rect()
+        image = QtGui.QImage(
+            int(rect.width()), int(rect.height()), QtGui.QImage.Format_ARGB32
+        )
+        image.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(image)
+        try:
+            self.w._timeline._scene.render(painter, QtCore.QRectF(image.rect()), rect)
+        finally:
+            painter.end()
+        tl = self.w._timeline
+        y = int(image.height() * y_frac)
+        return [
+            image.pixelColor(int(round(tl.time_to_x(t) - rect.left())), y).name()
+            for t in times
+        ]
+
+    def test_compact_object_row_draws_its_summary_ticks(self):
+        self.w.collapse_track(self.tid)
+        self._compact()
+        gap, *ticks = self._row_pixels([30.0, 10.0, 50.0, 90.0])
+        for t, colour in zip((10.0, 50.0, 90.0), ticks):
+            self.assertNotEqual(colour, gap, f"no tick at frame {t}")
+
+    def test_compact_ticks_leave_the_label_band_clear(self):
+        self.w.collapse_track(self.tid)
+        self._compact()
+        gap, tick = self._row_pixels([30.0, 50.0], y_frac=0.45)
+        self.assertEqual(tick, gap, "mid-row is the label's: no tick through it")
+
+    def test_standard_draws_no_summary_ticks(self):
+        self.w.collapse_track(self.tid)
+        gap, tick = self._row_pixels([30.0, 50.0])
+        self.assertEqual(tick, gap)
+
+    def test_summary_times_are_no_snap_target(self):
+        self.w.collapse_track(self.tid)  # the sub-row keys sit on 10/50/90 too
+        self._compact()
+        self.assertEqual(self.w.alignment_times(), [0.0, 100.0])
 
 
 # =========================================================================
@@ -3057,7 +5241,9 @@ class TestKeyframeItem(BaseTestCase):
     def _make_clip_with_keys(self, preview=None):
         """Create a sub-row clip with curve_preview and return (clip, item)."""
         if preview is None:
-            preview = self.SAMPLE_PREVIEW
+            # A copy: a key drag rewrites its clip's preview IN PLACE, and the
+            # class dict would carry one test's drag into every later test.
+            preview = copy.deepcopy(self.SAMPLE_PREVIEW)
         tid = self.w.add_track("obj_A")
         sub_data = [
             (
@@ -3101,7 +5287,9 @@ class TestKeyframeItem(BaseTestCase):
     def test_no_keyframe_items_on_main_row(self):
         """Main-row clips must not spawn KeyframeItem children."""
         tid = self.w.add_track("T")
-        cid = self.w.add_clip(tid, 0, 100, curve_preview=self.SAMPLE_PREVIEW)
+        cid = self.w.add_clip(
+            tid, 0, 100, curve_preview=copy.deepcopy(self.SAMPLE_PREVIEW)
+        )
         item = self.w._clip_items[cid]
         self.assertEqual(len(item._keyframe_items), 0)
 
@@ -3612,7 +5800,7 @@ class TestMarqueeSelection(BaseTestCase):
                         100,
                         "translateX",
                         "#FF6600",
-                        {"curve_preview": self.SAMPLE_PREVIEW},
+                        {"curve_preview": copy.deepcopy(self.SAMPLE_PREVIEW)},
                     )
                 ],
             ),
@@ -6418,6 +8606,14 @@ class TestShotBoundsDragFromTheRuler(BaseTestCase):
         self.assertAlmostEqual(end, 150.0, places=0)
         self.assertFalse(self.w.ctrl_held_at_press)
 
+    def test_alt_dragging_a_bound_resizes_about_the_centre(self):
+        """Alt: the other bound moves as far the other way (the graph's scale)."""
+        self._drag(120.0, 150.0, modifiers=self.C.Qt.AltModifier)
+        self.assertEqual(len(self.emitted), 1, self.emitted)
+        start, end = self.emitted[0]
+        self.assertAlmostEqual(end, 150.0, places=0)
+        self.assertAlmostEqual(start, 10.0, places=0, msg="mirrored about 80")
+
     def test_ctrl_dragging_the_end_bound_on_the_ruler_resizes_the_shot(self):
         self._drag(120.0, 150.0, modifiers=self.C.Qt.ControlModifier)
         self.assertEqual(len(self.emitted), 1, self.emitted)
@@ -8648,6 +10844,240 @@ class TestAMalformedCurveSegmentCannotCrashTheHost(BaseTestCase):
             item.paint(painter, QtWidgets.QStyleOptionGraphicsItem())
         finally:
             painter.end()
+
+
+class TestStepRisers(BaseTestCase):
+    """``build_curve_path(risers=...)``: a step span's vertical jump goes to
+    a path of its own, for a painter that draws it apart (the graph editor
+    dots it, as Maya's Graph Editor does); without one, it stays on the
+    path -- the track rows' mini curves draw as they did."""
+
+    @staticmethod
+    def _build(out_type, v1=5.0, risers=None):
+        from uitk.widgets.sequencer import CurveUtils
+
+        seg = {"t0": 0.0, "v0": 1.0, "t1": 10.0, "v1": v1, "out_type": out_type}
+        path = CurveUtils.build_curve_path([seg], float, float, risers)
+        return [
+            (path.elementAt(i).type, path.elementAt(i).x, path.elementAt(i).y)
+            for i in range(path.elementCount())
+        ]
+
+    @staticmethod
+    def _points(path):
+        return [
+            (path.elementAt(i).x, path.elementAt(i).y)
+            for i in range(path.elementCount())
+        ]
+
+    def test_a_step_jumps_onto_the_risers_at_the_next_key(self):
+        from qtpy import QtGui
+
+        risers = QtGui.QPainterPath()
+        elements = self._build("step", risers=risers)
+        self.assertEqual([(x, y) for _t, x, y in elements], [(0, 1), (10, 1), (10, 5)])
+        self.assertEqual(elements[-1][0], QtGui.QPainterPath.MoveToElement, "moved")
+        self.assertEqual(self._points(risers), [(10, 1), (10, 5)])
+
+    def test_a_stepnext_jumps_onto_the_risers_at_its_own_key(self):
+        from qtpy import QtGui
+
+        risers = QtGui.QPainterPath()
+        elements = self._build("stepnext", risers=risers)
+        self.assertEqual([(x, y) for _t, x, y in elements], [(0, 5), (10, 5)])
+        self.assertEqual(self._points(risers), [(0, 1), (0, 5)])
+
+    def test_without_risers_the_jump_stays_on_the_path(self):
+        from qtpy import QtGui
+
+        move = QtGui.QPainterPath.MoveToElement
+        line = QtGui.QPainterPath.LineToElement
+        self.assertEqual(
+            self._build("step"), [(move, 0, 1), (line, 10, 1), (line, 10, 5)]
+        )
+
+    def test_a_jump_of_no_height_draws_no_riser(self):
+        """Drawn apart, a zero-length riser is a stray dot on the hold."""
+        from qtpy import QtGui
+
+        risers = QtGui.QPainterPath()
+        self._build("step", v1=1.0, risers=risers)
+        self.assertTrue(risers.isEmpty())
+
+
+class TestFlatSpans(BaseTestCase):
+    """A span that holds one value draws dashed (``mark_flat_spans``), so one
+    that only nearly holds -- solid -- reads apart from it at any zoom, in
+    the graph and on the track rows alike.
+
+    2026-10-12: "how might we render flat sections ... so that they are
+    optionally easily distinguishable from a very slight curve?" -- "it
+    should probably be implemented in both the graph and the track views".
+    """
+
+    @staticmethod
+    def _seg(v1=0.0, cp1=(3.0, 0.0), cp2=(7.0, 0.0), **extra):
+        seg = {"t0": 0.0, "v0": 0.0, "t1": 10.0, "v1": v1, "cp1": cp1, "cp2": cp2}
+        seg.update(extra)
+        return seg
+
+    def test_which_spans_are_flat(self):
+        from uitk.widgets.sequencer import CurveUtils
+
+        flat = CurveUtils.segment_is_flat
+        self.assertTrue(flat(self._seg()), "level ends and handles")
+        self.assertTrue(flat(self._seg(v1=1e-6)), "within the tolerance")
+        # The hosts split a span within 1e-4 out as a hold clip (Show
+        # Internal Holds); its curve must not draw as moving beside it.
+        self.assertTrue(flat(self._seg(v1=5e-5)), "a span the hosts call a hold")
+        self.assertFalse(flat(self._seg(v1=1e-3)), "a slight drift moves")
+        self.assertFalse(flat(self._seg(cp1=(3.0, 0.5))), "equal ends overshoot")
+        self.assertTrue(flat(self._seg(v1=4.0, out_type="step")), "a step holds")
+        self.assertFalse(flat(self._seg(v1=4.0, out_type="linear")), "a ramp")
+        self.assertFalse(flat(self._seg(samples=[(5.0, 0.2)])), "an eased bump")
+
+    def test_flat_spans_go_to_their_own_path_as_one_run(self):
+        from qtpy import QtGui
+        from uitk.widgets.sequencer import CurveUtils
+
+        segs = [
+            self._seg(),  # 0..10 flat
+            dict(self._seg(), t0=10.0, t1=20.0),  # 10..20 flat: the same run
+            dict(self._seg(v1=2.0), t0=20.0, t1=30.0, cp1=None),  # moves
+        ]
+        flats = QtGui.QPainterPath()
+        path = CurveUtils.build_curve_path(segs, float, float, flats=flats)
+        runs = [flats.elementAt(i) for i in range(flats.elementCount())]
+        self.assertEqual([(e.x, e.y) for e in runs if e.isMoveTo()], [(0, 0)])
+        self.assertEqual(flats.currentPosition(), QtCore.QPointF(20, 0))
+        ends = [path.elementAt(i) for i in range(path.elementCount())]
+        self.assertEqual((ends[-1].x, ends[-1].y), (30, 2), "the moving span")
+        self.assertEqual(path.boundingRect().left(), 20, "the path holds no flat span")
+
+    def test_a_flat_steps_jump_stays_on_the_path(self):
+        from qtpy import QtGui
+        from uitk.widgets.sequencer import CurveUtils
+
+        seg = self._seg(v1=4.0, out_type="step")
+        flats = QtGui.QPainterPath()
+        path = CurveUtils.build_curve_path([seg], float, float, flats=flats)
+        self.assertEqual(flats.boundingRect(), QtCore.QRectF(0, 0, 10, 0))
+        line = path.elementAt(path.elementCount() - 1)
+        self.assertEqual((line.x, line.y), (10, 4))
+        self.assertTrue(line.isLineTo(), "the jump is drawn, solid")
+
+    # -- on screen -------------------------------------------------------------
+
+    @staticmethod
+    def _line(img, x, ys):
+        """Whether column *x* holds the red curve (#E06666) within rows *ys*
+        -- not the clip's own tint of it, nor grid or ground."""
+        from qtpy import QtGui
+
+        for y in ys:
+            c = QtGui.QColor(img.pixel(x, y))
+            if c.red() > 120 and c.red() - c.green() > 60:
+                return True
+        return False
+
+    def _columns(self, img, view, t0, t1, ys):
+        x0 = view.mapFromScene(view.time_to_x(t0), 0).x()
+        x1 = view.mapFromScene(view.time_to_x(t1), 0).x()
+        return [self._line(img, x, ys) for x in range(x0, x1)]
+
+    def test_the_graph_dashes_a_hold_and_draws_a_drift_solid(self):
+        import pythontk as ptk
+
+        w = SequencerWidget()
+        self.addCleanup(w.deleteLater)
+        self.addCleanup(w.close)
+        w.resize(800, 400)
+        w.show()
+        w.set_editor("graph")
+        g = w.active_editor
+        K = ptk.CurveKey
+        curve = ptk.KeyCurve(  # holds 0..10, drifts 0.02 over 10..20
+            [K(0.0, 5.0), K(10.0, 5.0), K(20.0, 5.02), K(30.0, 9.0)],
+            curve_id="tx",
+            weighted=False,
+        )
+        g.set_outline(
+            [{"id": "o", "children": [{"curve_id": "tx", "color": "#E06666"}]}]
+        )
+        g.set_curve_provider(lambda ids: [curve.copy()])
+        app.processEvents()
+        g.frame_all()
+        app.processEvents()
+        view = w._timeline
+
+        def columns(t0, t1):
+            img = view.viewport().grab().toImage()
+            y = view.mapFromScene(g._point("tx", t0, 5.0)).y()
+            return self._columns(img, view, t0, t1, range(y - 3, y + 4))
+
+        hold, drift = columns(1.0, 9.0), columns(11.0, 19.0)
+        self.assertTrue(any(hold) and not all(hold), "the hold is dashed")
+        self.assertTrue(all(drift), "the drift is solid")
+        w.mark_flat_spans = False
+        app.processEvents()
+        self.assertTrue(all(columns(1.0, 9.0)), "unmarked, the hold is solid")
+
+    def test_a_track_rows_curve_dashes_its_holds(self):
+        import pythontk as ptk
+
+        w = SequencerWidget()
+        self.addCleanup(w.deleteLater)
+        self.addCleanup(w.close)
+        w.resize(800, 400)
+        w.show()
+        K = ptk.CurveKey
+        curve = ptk.KeyCurve(
+            [K(0.0, 0.0), K(10.0, 0.0), K(20.0, 0.3), K(30.0, 10.0)],
+            weighted=False,
+        )
+        preview = {
+            "keys": [(k.time, k.value) for k in curve.keys],
+            "segments": curve.segments(),
+            "val_min": 0.0,
+            "val_max": 10.0,
+        }
+        tid = w.add_track("obj")
+        w.sub_row_provider = lambda _t, _n: [
+            ("tx", [(0, 30, "tx", "#E06666", {"curve_preview": preview})])
+        ]
+        w.expand_track(tid)
+        w.frame_time_range(-2.0, 32.0)
+        app.processEvents()
+        view = w._timeline
+        clip = next(i for i in w._clip_items.values() if i.clip_data.sub_row)
+        rect = view.mapFromScene(clip.sceneBoundingRect()).boundingRect()
+        rows = range(rect.top() + 1, rect.bottom())
+
+        def columns(t0, t1):
+            img = view.viewport().grab().toImage()
+            return self._columns(img, view, t0, t1, rows)
+
+        hold, drift = columns(1.0, 9.0), columns(11.0, 19.0)
+        self.assertTrue(any(hold) and not all(hold), "the hold is dashed")
+        self.assertTrue(all(drift), "the drift is solid")
+        w.mark_flat_spans = False
+        app.processEvents()
+        self.assertTrue(all(columns(1.0, 9.0)), "unmarked, the hold is solid")
+
+    def test_one_setting_offered_in_both_views(self):
+        """Mark Flat Spans sits in the tracks' and the graph's Display
+        options alike, and both rows read and write the one setting."""
+        w = SequencerWidget()
+        self.addCleanup(w.deleteLater)
+        rows = {
+            name: {o["key"]: o for o in w.editor(name).options()}["flat_spans"]
+            for name in ("tracks", "graph")
+        }
+        self.assertTrue(all(r["section"] == "Display" for r in rows.values()))
+        self.assertTrue(w.mark_flat_spans, "on by default")
+        rows["tracks"]["set"](False)
+        self.assertFalse(rows["graph"]["get"]())
+        self.assertFalse(w.mark_flat_spans)
 
 
 class TestTangentHandleSelectionDrag(BaseTestCase):

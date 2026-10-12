@@ -5,21 +5,24 @@
 Start/submenu UIs are stacked as non-window pages of the fullscreen
 overlay and centred on the gesture anchor; standalone windows are handed
 to the UI handler. Also the two persisted hosted-window themes and the
-scoped preload that makes the first activation behave like every later
-one.
+scoped preload that makes the first activation, and the first hover into
+each submenu, behave like every later one.
 
 One part of :class:`~uitk.widgets.marking_menu._marking_menu.MarkingMenu`,
 which inherits it; it holds no state of its own beyond the class-level
 defaults it declares, and is never instantiated alone.
 """
 
+import sys
 from contextlib import contextmanager
+from fnmatch import fnmatchcase
 from typing import Optional
 
 from qtpy import QtCore, QtGui, QtWidgets
 
 from uitk.managers.shortcut_manager import ShortcutManager
 from uitk.themes.style_sheet import StyleSheet
+from uitk.widgets.menuButton import MenuButton
 from ._resolver import _MARKING_MENU_TAGS
 
 
@@ -31,6 +34,22 @@ class _HostingMixin:
     # Remaining UI names of an in-flight scoped preload (see preload_menus);
     # None when no warm-up is running.
     _preload_queue: Optional[list] = None
+    # Pointer position at the warm-up's last tick: it warms only while the
+    # pointer rests (see _preload_next).
+    _preload_cursor: Optional[QtCore.QPoint] = None
+
+    #: fnmatch patterns of submenus the preload never warms: for a host whose
+    #: submenu init has a side effect it must not run unasked (a page that
+    #: builds one of the host's own menus), the first hover pays it instead.
+    #: ``("*",)`` limits the preload to the binding targets.
+    PRELOAD_EXCLUDE: tuple = ()
+
+    #: For a host whose own event loop is native code (Maya): the warm-up then
+    #: advances only from that loop, and waits while a Python caller is
+    #: beneath its timer -- a script pumping ``processEvents`` (a progress
+    #: loop, a ``QMenu.exec``, a test suite), where building a whole page lands
+    #: mid-script. Off for a host that pumps Qt from Python (Blender, tests).
+    PRELOAD_ONLY_FROM_HOST_LOOP: bool = False
 
     # ── Hosted-window themes ────────────────────────────────────────────
     # The two window styles this menu hosts were historically hard-pinned to
@@ -308,30 +327,34 @@ class _HostingMixin:
             # at runtime.
 
     def preload_menus(self, names=None, *, defer: bool = True) -> None:
-        """Warm the menus the bindings can reach so the FIRST activation
-        behaves exactly like every later one.
+        """Warm the menus the bindings can reach so the FIRST activation —
+        and the first hover into each submenu — behaves like every later one.
 
-        A cold page pays its entire initialization inside the first gesture:
-        the .ui load, slot-class instantiation and signal wiring
-        (``register_children``), QSS polish, and the content fit — and since
-        ``_show_marking_menu`` presents LAST, that first-show work lands
-        *after* the page was already centered on the gesture anchor, so the
-        menu visibly settles ("the first press feels uninitialized"). This
-        runs the same initialization up front through the real show path
-        (:meth:`_flush_first_show`), scoped to the distinct binding targets —
-        never the whole UI registry, whose standalone tool windows stay lazy.
+        A cold page pays its entire initialization inside the gesture that
+        first shows it: the .ui load, slot-class instantiation and signal
+        wiring (``register_children``), QSS polish, and the content fit. For a
+        start menu, ``_show_marking_menu`` presents LAST, so that work lands
+        *after* the page was centered on the gesture anchor and the menu
+        visibly settles ("the first press feels uninitialized"); for a
+        submenu, the first hover into it freezes the host (0.3-2.6 s apiece
+        in Maya 2025). This runs the same initialization up front through the
+        real show path (:meth:`_flush_first_show`): the distinct binding
+        targets first, then every stacked submenu their nav buttons open
+        (:meth:`_queue_submenus`) — never the whole UI registry, whose
+        standalone tool windows stay lazy.
 
         Parameters:
-            names: Iterable of UI names to warm. Defaults to the distinct
-                targets of the current bindings.
+            names: Iterable of UI names to warm, each followed to its
+                submenus. Defaults to the distinct targets of the current
+                bindings.
             defer: Warm one UI per event-loop tick (default) so a busy host
                 stays responsive during startup; ``False`` warms
                 synchronously (tests, or hosts preloading behind a splash).
 
         Idempotent — initialized pages are skipped — so it's safe to re-run
-        after a bindings change to warm only the new targets. A live gesture
-        owns the overlay: the deferred run waits and retries rather than
-        hiding/re-showing it out from under the user.
+        after a bindings change to warm only the new targets. The deferred run
+        yields to the user: it waits out a live gesture (which owns the
+        overlay) and a moving pointer, since each warm blocks the host.
         """
         if self._retired:
             return
@@ -347,6 +370,7 @@ class _HostingMixin:
             self._preload_queue = queue
         if defer:
             if not merging:  # an in-flight run already has a timer servicing it
+                self._preload_cursor = QtGui.QCursor.pos()
                 QtCore.QTimer.singleShot(0, self._preload_next)
             return
         # Synchronous drain — including anything an in-flight deferred run
@@ -372,8 +396,20 @@ class _HostingMixin:
             # instead of raising into the DCC event loop.
             self._preload_queue = None
             return
+        if not busy and self.PRELOAD_ONLY_FROM_HOST_LOOP:
+            try:
+                sys._getframe(1)  # a Python caller beneath this tick
+                busy = True
+            except ValueError:
+                pass  # straight from the host's native event loop
+        cursor = QtGui.QCursor.pos()
+        if cursor != self._preload_cursor:
+            busy = True
+        self._preload_cursor = cursor
         if busy:
-            # Mid-gesture: the overlay is the user's. Retry once it's idle.
+            # Mid-gesture (the overlay is the user's), mid-script, or the
+            # pointer moving -- a warm blocks the host for up to seconds, which
+            # would land under the user's hand: retry once it's idle.
             QtCore.QTimer.singleShot(1000, self._preload_next)
             return
         try:
@@ -389,35 +425,76 @@ class _HostingMixin:
                 self._preload_queue = None
 
     def _warm_menu(self, name: str) -> None:
-        """Warm a single stacked menu: resolve, ``_init_ui``, and flush its
-        first-show initialization while nothing paints. Failures are logged
-        and swallowed — preloading is an optimization and must never break
-        the host's startup (an unresolvable target simply stays lazy)."""
+        """Warm a single stacked menu — resolve, ``_init_ui``, and flush its
+        first-show initialization while nothing paints — then queue the
+        submenus it opens (:meth:`_queue_submenus`; also for a page a gesture
+        already initialized). Failures are logged and swallowed — preloading
+        is an optimization and must never break the host's startup (an
+        unresolvable target simply stays lazy)."""
         try:
             ui = self.sb.get_ui(name)
         except Exception as e:
             self.logger.debug(f"[preload] {name!r} did not resolve: {e}")
             return
-        if ui is None or getattr(ui, "is_initialized", False):
+        if ui is None:
             return
         if not (getattr(ui, "has_tags", None) and ui.has_tags(_MARKING_MENU_TAGS)):
             # Standalone windows (and anything without a tag surface) stay
             # lazy: their show is user-driven and positioned by the
             # ui_handler at launch time.
             return
-        if not self.isHidden():
-            # A live gesture owns the overlay (synchronous callers only — the
-            # deferred path already waits and retries). Warming now would
-            # half-run: _flush_first_show no-ops, is_initialized stays False,
-            # and the later real show() re-runs _init_ui, stacking a
-            # duplicate on_child_registered connection.
-            self.logger.debug(f"[preload] overlay visible; {name!r} stays lazy.")
+        if not getattr(ui, "is_initialized", False):
+            if not self.isHidden():
+                # A live gesture owns the overlay (synchronous callers only —
+                # the deferred path already waits and retries). Warming now
+                # would half-run: _flush_first_show no-ops, is_initialized
+                # stays False, and the later real show() re-runs _init_ui,
+                # stacking a duplicate on_child_registered connection.
+                self.logger.debug(f"[preload] overlay visible; {name!r} stays lazy.")
+                return
+            try:
+                self._init_ui(ui)
+                self._flush_first_show(ui)
+            except Exception as e:
+                self.logger.warning(f"[preload] warming {name!r} failed: {e}")
+                return
+        # Only a registered page is followed: registration is what applies the
+        # visibility policy that hides the launchers this context can't serve.
+        if getattr(ui, "is_initialized", False):
+            self._queue_submenus(ui)
+
+    def _queue_submenus(self, page) -> None:
+        """Append to the running warm-up each cold stacked submenu *page*'s
+        nav buttons open on hover.
+
+        Hover opens ``MenuButton.submenu_name()`` (``child_enterEvent``) — a
+        ``#submenu`` name, so always a stacked page, never a standalone tool —
+        and that is the name followed: from a launcher the context shows (the
+        visibility policy hid the rest at registration), to a page that
+        resolves the way hover resolves it (loaded, or a registered .ui).
+        Only cold pages are queued, so each is warmed and followed once, and a
+        submenu's anchor back to itself ends there; :attr:`PRELOAD_EXCLUDE`
+        pages never are. Appended, so every binding target warms before any
+        submenu.
+        """
+        queue = self._preload_queue
+        if queue is None:
             return
-        try:
-            self._init_ui(ui)
-            self._flush_first_show(ui)
-        except Exception as e:
-            self.logger.warning(f"[preload] warming {name!r} failed: {e}")
+        for button in page.findChildren(MenuButton):
+            if not button.target or button.isHidden():
+                continue
+            name = button.submenu_name()
+            if name in queue or any(
+                fnmatchcase(name, pattern) for pattern in self.PRELOAD_EXCLUDE
+            ):
+                continue
+            ui = self.sb.loaded_ui.peek(name)
+            if ui is not None:
+                if getattr(ui, "is_initialized", False):
+                    continue
+            elif not self.sb.is_registered_ui(name):
+                continue
+            queue.append(name)
 
     @contextmanager
     def _suppressed_present(self):
@@ -465,6 +542,28 @@ class _HostingMixin:
             screen = handle.screen() if handle is not None else self.screen()
             if screen is not None:
                 self._move_hidden_overlay(screen.geometry())
+
+    def _defer_past_warm_up(self, handler, *args) -> bool:
+        """Re-post an activation edge that arrived inside a warm-up; True if
+        it did.
+
+        A page whose init pumps the event loop (Maya's native-menu build) can
+        hand a pending key press to the activation while
+        :meth:`_suppressed_present` holds the overlay presented off-screen:
+        the show then skips its present (the overlay isn't hidden), and the
+        block's teardown hides it under the held key. Replayed once the
+        warm-up returns, in arrival order (a press before its release).
+        """
+        try:
+            warming = self.testAttribute(QtCore.Qt.WA_DontShowOnScreen)
+        except RuntimeError:
+            # C++ overlay destroyed without retire() while a replay was
+            # pending (host teardown / dev reload): drop the edge quietly.
+            return True
+        if not warming:
+            return False
+        QtCore.QTimer.singleShot(0, lambda: handler(*args))
+        return True
 
     def _move_hidden_overlay(self, rect: QtCore.QRect) -> None:
         """Move the hidden overlay to ``rect`` at BOTH layers — widget and

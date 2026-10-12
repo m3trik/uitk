@@ -524,7 +524,13 @@ class Overlay(QtWidgets.QWidget):
         super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event):
-        """ """
+        """Follow the cursor with the trail, repainting the whole overlay.
+
+        A full ``update()``, deliberately. Repainting only the trail's extent
+        cut a move's paint in Maya 2025 from ~4.4 to ~1.6 ms, but it was
+        reported glitching in live use, which no offscreen or fresh-Maya
+        backing-store probe reproduced; the saving is not worth that risk.
+        """
         self.draw_enabled = True
         self.mouseMovePos = event.pos()
         self.update()

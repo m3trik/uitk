@@ -44,7 +44,7 @@ import importlib
 from pythontk.core_utils.module_resolver import bootstrap_package
 
 __package__ = "uitk"
-__version__ = "1.7.1"
+__version__ = "1.7.2"
 
 
 DEFAULT_INCLUDE = {
@@ -192,8 +192,11 @@ DEFAULT_INCLUDE = {
         "SequencerWidget",
         "ClipData",
         "TrackData",
+        "RowMetrics",
         "AttributeColorDialog",
     ],
+    "widgets.sequencer._editor": ["SequencerEditor", "TrackEditor"],
+    "widgets.sequencer._graph_editor": ["GraphEditor"],
     "widgets.sequencer._keyframe": ["KeyframeItem"],
     # Widget mixins
     "widgets.mixins.attributes": "AttributesMixin",
