@@ -492,10 +492,30 @@ class TestHeaderDrag(QtBaseTestCase):
     def _rescale(window, size):
         """What the window system does as a dragged window crosses to a screen
         of another scale: a spontaneous resize, through the window's QWindow
-        (a plain ``resize()`` is the app's own). Settles the guard's undo."""
-        window.windowHandle().resize(size)
-        for _ in range(3):
-            QtWidgets.QApplication.processEvents()
+        (a plain ``resize()`` is the app's own). Waits for it to arrive -- on
+        X11 it comes back from the server some turns later, so a fixed few
+        turns read the old size (and an undo test passed with nothing to
+        undo) -- then settles the guard's undo and its round trip."""
+        arrived = []
+
+        class _Spy(QtCore.QObject):
+            def eventFilter(self, obj, event):
+                if event.type() == QtCore.QEvent.Resize and event.spontaneous():
+                    arrived.append(event.size())
+                return False
+
+        spy = _Spy()
+        window.installEventFilter(spy)
+        try:
+            window.windowHandle().resize(size)
+            for _ in range(400):  # at most ~2 s
+                if arrived:
+                    break
+                QtTest.QTest.qWait(5)
+        finally:
+            window.removeEventFilter(spy)
+        assert arrived, "the window system never resized the window"
+        QtTest.QTest.qWait(50)
 
     def _release(self, header):
         header.mouseReleaseEvent(
