@@ -573,6 +573,9 @@ class TreeWidget(
     item_selected = QtCore.Signal(QtWidgets.QTreeWidgetItem)
     item_data_changed = QtCore.Signal(QtWidgets.QTreeWidgetItem, int)
 
+    #: The item role (on column 0) holding a row's tooltip (:meth:`set_row_tooltip`).
+    ROW_TOOLTIP_ROLE = QtCore.Qt.UserRole + 101
+
     def __init__(
         self,
         parent=None,
@@ -700,17 +703,59 @@ class TreeWidget(
         )
 
     def item_tooltip(self, index, text: Optional[str]) -> Optional[str]:
-        """The tooltip of the cell at *index*: its own *text*, led by the
-        cell's full text when :attr:`elided_tooltips` is on and the cell shows
-        it cut short. ``TooltipPresenter`` calls this at hover time."""
-        if not self._elided_tooltips or not self.is_elided(index):
+        """The tooltip of the cell at *index*: its row's (:meth:`set_row_tooltip`),
+        then its own *text* -- led by the cell's full text when
+        :attr:`elided_tooltips` is on and the cell shows it cut short.
+        ``TooltipPresenter`` calls this at hover time."""
+        if self._elided_tooltips and self.is_elided(index):
+            full = index.data(QtCore.Qt.DisplayRole).strip()
+            if not text or full in text:
+                text = text or full
+            else:
+                text = self._join_tooltips(full, text)
+        row = index.siblingAtColumn(0).data(self.ROW_TOOLTIP_ROLE)
+        if not row:
             return text
-        full = index.data(QtCore.Qt.DisplayRole).strip()
-        if not text or full in text:
-            return text or full
-        if ptk.TooltipFormat.is_rich(text):
-            return f"{html.escape(full)}<br><br>{text}"
-        return f"{full}\n\n{text}"
+        return self._join_tooltips(row, text) if text else row
+
+    @staticmethod
+    def _join_tooltips(first: str, second: str) -> str:
+        """*first* above *second*, a blank line apart -- as rich text when
+        either is, the plain one escaped."""
+        is_rich = ptk.TooltipFormat.is_rich
+        if not (is_rich(first) or is_rich(second)):
+            return f"{first}\n\n{second}"
+        first, second = (
+            t if is_rich(t) else html.escape(t).replace("\n", "<br>")
+            for t in (first, second)
+        )
+        return f"{first}<br><br>{second}"
+
+    def set_row_tooltip(self, item, text: Optional[str]) -> None:
+        """Give *item*'s row a tooltip every cell shows ahead of its own -- a
+        status for the whole row -- or clear it (``None``).
+
+        Kept on the item (:attr:`ROW_TOOLTIP_ROLE`) and composed at hover
+        time (:meth:`item_tooltip`), so a cell tooltip set before or after it
+        stays its own.  Hands the tree to ``TooltipPresenter``.
+
+        Parameters:
+            item: The row's ``QTreeWidgetItem``.
+            text: Plain or rich text; ``None`` or ``""`` clears it.
+        """
+        item.setData(0, self.ROW_TOOLTIP_ROLE, text or None)
+        TooltipPresenter.manage(self)
+
+    def row_tooltip(self, item) -> Optional[str]:
+        """*item*'s row tooltip (:meth:`set_row_tooltip`).
+
+        Parameters:
+            item: The row's ``QTreeWidgetItem``.
+
+        Returns:
+            The row's tooltip as set, or ``None`` when it has none.
+        """
+        return item.data(0, self.ROW_TOOLTIP_ROLE) or None
 
     # -- header action bar --------------------------------------------------
 

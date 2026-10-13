@@ -524,6 +524,98 @@ class SetCurrentIndexNegativePreservesBlockState(QtBaseTestCase):
         self.assertFalse(combo.signalsBlocked())
 
 
+class WheelSelects(QtBaseTestCase):
+    """``wheel_selects``: a mouse wheel over the closed combo steps its item
+    (Qt's own) -- unless turned off, for a combo whose rows are actions run on
+    a pick, where a wheel passing over it ran one unseen (the Shot Manifest's
+    view row, 2026-10-12).  Off, the wheel goes on to the parent."""
+
+    def _wheel(self, widget, delta=-120):
+        from qtpy import QtGui
+
+        event = QtGui.QWheelEvent(
+            QtCore.QPointF(5, 5),
+            QtCore.QPointF(5, 5),
+            QtCore.QPoint(0, 0),
+            QtCore.QPoint(0, delta),
+            QtCore.Qt.NoButton,
+            QtCore.Qt.NoModifier,
+            QtCore.Qt.NoScrollPhase,
+            False,
+        )
+        QtWidgets.QApplication.sendEvent(widget, event)
+        return event
+
+    def _combo(self, parent=None):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = ComboBox(parent)
+        if parent is None:
+            self.track_widget(combo)
+        combo.add(["a", "b"], header="Pick")
+        return combo
+
+    def test_on_by_default_a_wheel_steps_the_item(self):
+        combo = self._combo()
+        self.assertTrue(combo.wheel_selects)
+        picked = []
+        combo.currentIndexChanged.connect(picked.append)
+        self._wheel(combo)
+        self.assertEqual(picked[:1], [0])
+
+    def test_off_the_wheel_picks_nothing_and_reaches_the_parent(self):
+        class Parent(QtWidgets.QWidget):
+            wheels = 0
+
+            def wheelEvent(self, event):
+                Parent.wheels += 1
+
+        parent = self.track_widget(Parent())
+        combo = self._combo(parent)
+        combo.wheel_selects = False
+        picked = []
+        combo.currentIndexChanged.connect(picked.append)
+        event = self._wheel(combo)
+        self.assertEqual(picked, [])
+        self.assertEqual(combo.currentIndex(), -1)
+        self.assertFalse(event.isAccepted())
+
+
+class WheelSelectsKeepsTheWheelsFocus(QtBaseTestCase):
+    """Off, ``wheel_selects`` also takes the focus a wheel gives: Qt's combo
+    takes it on a wheel (``WheelFocus``), and a later arrow key stepped the
+    combo it had only been scrolled past -- the same unseen pick.  Restored
+    when turned back on.
+
+    Bug: Key_Down on a closed combo with ``wheel_selects`` off, focused by a
+    wheel, emitted ``currentIndexChanged``.
+    Fixed: 2026-10-13
+    """
+
+    def test_off_a_wheel_gives_no_focus_and_on_restores_it(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        before = combo.focusPolicy()
+        self.assertEqual(before, QtCore.Qt.WheelFocus)
+        combo.wheel_selects = False
+        self.assertFalse(combo.wheel_selects)
+        self.assertEqual(combo.focusPolicy(), QtCore.Qt.StrongFocus)
+        combo.wheel_selects = False  # again: the policy before is kept
+        combo.wheel_selects = True
+        self.assertEqual(combo.focusPolicy(), before)
+
+    def test_a_custom_policy_is_restored(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.setFocusPolicy(QtCore.Qt.ClickFocus)
+        combo.wheel_selects = False
+        self.assertEqual(combo.focusPolicy(), QtCore.Qt.ClickFocus, "no wheel in it")
+        combo.wheel_selects = True
+        self.assertEqual(combo.focusPolicy(), QtCore.Qt.ClickFocus)
+
+
 class DoubleClickBodyStartsRename(QtBaseTestCase):
     """Double-clicking the combo BODY enters edit mode (``rename_on_double_click``).
 

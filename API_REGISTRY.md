@@ -1215,6 +1215,8 @@ A view's header menu of columns to show, hide and reorder, with the layout remem
   - `ComboBox.setAsCurrent(self, i: Union[str, int], blockSignals: bool = False, strict: bool = False, fallback_index: int = None) -> None` — Set the current item by value or index, with optional fallback if not found.
   - `ComboBox.setCurrentIndex(self, index)`
   - `ComboBox.check_index(self, index)`
+  - `ComboBox.wheel_selects(self) -> bool` *(property)* — Whether a mouse wheel over the closed combo steps its current item
+  - `ComboBox.wheelEvent(self, event)` — Step the current item (Qt's), unless :attr:`wheel_selects` is off:
   - `ComboBox.mousePressEvent(self, event)`
   - `ComboBox.mouseDoubleClickEvent(self, event)`
   - `ComboBox.begin_rename(self)` — Enter edit mode on the current item, text selected, ready to retype.
@@ -3407,7 +3409,9 @@ Scrollable rich-text viewer window.
   - `TreeWidget.selection_style(self) -> str` *(property)* — Visual style for selected items: ``"border"`` or ``"tint"``.
   - `TreeWidget.elided_tooltips(self) -> bool` *(property)* — Show a cell's full text in its tooltip while the cell shows it cut
   - `TreeWidget.is_elided(self, index) -> bool` — Whether the cell at *index* shows its text cut short: wider than its
-  - `TreeWidget.item_tooltip(self, index, text: Optional[str]) -> Optional[str]` — The tooltip of the cell at *index*: its own *text*, led by the
+  - `TreeWidget.item_tooltip(self, index, text: Optional[str]) -> Optional[str]` — The tooltip of the cell at *index*: its row's (:meth:`set_row_tooltip`),
+  - `TreeWidget.set_row_tooltip(self, item, text: Optional[str]) -> None` — Give *item*'s row a tooltip every cell shows ahead of its own -- a
+  - `TreeWidget.row_tooltip(self, item) -> Optional[str]` — *item*'s row tooltip (:meth:`set_row_tooltip`).
   - `TreeWidget.header_actions(self) -> _HeaderActionBar` *(property)* — Right-aligned icon-button strip overlaid on the tree header.
   - `TreeWidget.setChildRowColor(self, color) -> None` — Set the child-row background (Qt-property setter).
   - `TreeWidget.setParentRowColor(self, color) -> None` — Set the parent-row background (Qt-property setter).

@@ -211,13 +211,13 @@ class _OptionsBand(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.setStyleSheet("#sequencerOptionsBand { background: #2B2B2B; }")
         layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(4, 2, 4, 2)
+        # The combobox IS the band: edge to edge, no arrow (2026-10-12).
+        layout.setContentsMargins(0, 0, 0, 0)
         self.combo = _OptionsCombo(self)
         self.combo.setToolTip("This view's options")
-        self.combo.arrow_direction = "down"
         self.combo.item_spacing = 0  # the checkbox rows sit flush
         self.combo.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
         layout.addWidget(self.combo)
         self.rebuild()
@@ -262,7 +262,7 @@ class _OptionsBand(QtWidgets.QWidget):
             note = QtWidgets.QLabel("No options for this view")
             note.setEnabled(False)
             widgets.append(note)
-        self.combo.add(widgets, header="Options")
+        self.combo.add(widgets, header="Options:")
         model = self.combo.model()
         for i in range(model.rowCount()):  # a click acts on its widget, never picks
             model.item(i).setFlags(QtCore.Qt.ItemIsEnabled)

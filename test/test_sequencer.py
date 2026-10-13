@@ -4099,11 +4099,19 @@ class TestEditorOptions(BaseTestCase):
 
         band = self.w._options_band
         self.assertIsInstance(band.combo, WidgetComboBox)
-        self.assertEqual(band.combo.currentText() or band.combo.header_text, "Options")
-        margins = band.layout().contentsMargins()
-        self.assertEqual(
-            band.combo.width(), band.width() - margins.left() - margins.right()
-        )
+        self.assertEqual(band.combo.currentText() or band.combo.header_text, "Options:")
+
+    def test_the_combobox_fills_the_band_with_no_arrow(self):
+        """2026-10-12: "get rid of the spacing around the options combobox
+        ... the combobox can just fill the space entirely ... title it
+        'Options:' and get rid of the arrow"."""
+        band = self.w._options_band
+        self.w.resize(900, 400)
+        self.w.show()
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(band.combo.geometry(), band.rect())
+        self.assertIsNone(band.combo.arrow_direction)
+        self.assertIsNone(band.combo.arrow_icon)
 
     def test_opening_reads_the_values_set_elsewhere_and_a_click_toggles(self):
         state = {"on": False}
