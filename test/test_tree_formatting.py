@@ -77,6 +77,91 @@ if __name__ == "__main__":
     unittest.main()
 
 
+def _hover(tree, item, col) -> str:
+    """The tooltip a hover over *item*'s cell *col* shows (``""``: none)."""
+    import time
+    from qtpy import QtCore
+
+    QtWidgets.QToolTip.hideText()  # hides on a timer: wait it out
+    deadline = time.monotonic() + 2.0
+    while QtWidgets.QToolTip.isVisible() and time.monotonic() < deadline:
+        QtWidgets.QApplication.processEvents()
+        time.sleep(0.01)
+    index = tree.indexFromItem(item, col)
+    pos = tree.visualRect(index).center()
+    event = QtGui.QHelpEvent(
+        QtCore.QEvent.ToolTip, pos, tree.viewport().mapToGlobal(pos)
+    )
+    QtWidgets.QApplication.sendEvent(tree.viewport(), event)
+    return QtWidgets.QToolTip.text() if QtWidgets.QToolTip.isVisible() else ""
+
+
+class TestTreeRowTooltips(QtBaseTestCase):
+    """``TreeWidget.set_row_tooltip``: one tooltip for a whole row -- its
+    status -- shown on every cell ahead of the cell's own.  Composed at hover
+    time, so neither a cell tooltip set later nor the row's is lost."""
+
+    def _tree(self):
+        from uitk.widgets.treeWidget import TreeWidget
+
+        tree = self.track_widget(TreeWidget())
+        tree.setColumnCount(3)
+        tree.setHeaderLabels(["Step", "Description", "End"])
+        tree.resize(400, 120)
+        self.row = QtWidgets.QTreeWidgetItem(["A01", "Open", "40"])
+        self.child = QtWidgets.QTreeWidgetItem(["", "lid", ""])
+        self.row.addChild(self.child)
+        tree.addTopLevelItem(self.row)
+        self.row.setExpanded(True)
+        tree.show()
+        QtWidgets.QApplication.processEvents()
+        return tree
+
+    def test_every_cell_shows_it_ahead_of_its_own(self):
+        tree = self._tree()  # unmanaged: setting one hands it to the presenter
+        tree.set_row_tooltip(self.row, "Missing: lid")
+        self.row.setToolTip(1, "Sheet: Close")
+        self.assertEqual(_hover(tree, self.row, 0), "Missing: lid")
+        self.assertEqual(_hover(tree, self.row, 2), "Missing: lid")
+        self.assertEqual(_hover(tree, self.row, 1), "Missing: lid\n\nSheet: Close")
+        self.assertEqual(_hover(tree, self.child, 1), "", "a row of its own")
+
+    def test_a_rich_row_tooltip_escapes_a_plain_cell_tooltip(self):
+        tree = self._tree()
+        tree.set_row_tooltip(self.row, "<b>Missing</b>")
+        index = tree.indexFromItem(self.row, 1)
+        self.assertEqual(
+            tree.item_tooltip(index, "a < b\nc"), "<b>Missing</b><br><br>a &lt; b<br>c"
+        )
+
+    def test_none_clears_it(self):
+        tree = self._tree()
+        tree.set_row_tooltip(self.row, "Missing: lid")
+        tree.set_row_tooltip(self.row, None)
+        self.assertIsNone(tree.row_tooltip(self.row))
+        self.assertEqual(_hover(tree, self.row, 0), "")
+
+    def test_it_leads_an_elided_cells_full_text_and_its_own(self):
+        """A cell cut short shows its full text, then its own tooltip: the
+        row's status leads them both."""
+        tree = self._tree()
+        tree.elided_tooltips = True
+        long = "Selecting the top lock triggers the Top Lock Open animation " * 3
+        self.row.setText(1, long)
+        tree.header().resizeSection(1, 80)
+        QtWidgets.QApplication.processEvents()
+        self.assertTrue(tree.is_elided(tree.indexFromItem(self.row, 1)))
+        self.row.setToolTip(1, "Sheet: Close")
+        tree.set_row_tooltip(self.row, "Missing: lid")
+        shown = _hover(tree, self.row, 1)  # the presenter wraps a long line
+        self.assertTrue(shown.startswith("Missing: lid\n\n"), shown)
+        self.assertTrue(shown.endswith("\n\nSheet: Close"), shown)
+        self.assertEqual(
+            " ".join(shown.split()),
+            " ".join(f"Missing: lid {long} Sheet: Close".split()),
+        )
+
+
 class TestTreeElidedTooltips(QtBaseTestCase):
     """``TreeWidget.elided_tooltips``: a cell cut short shows its full text in
     its tooltip -- through ``TooltipPresenter``, whether the tree was managed
@@ -105,21 +190,7 @@ class TestTreeElidedTooltips(QtBaseTestCase):
         return tree
 
     def _hover(self, tree, item, col) -> str:
-        import time
-        from qtpy import QtCore
-
-        QtWidgets.QToolTip.hideText()  # hides on a timer: wait it out
-        deadline = time.monotonic() + 2.0
-        while QtWidgets.QToolTip.isVisible() and time.monotonic() < deadline:
-            QtWidgets.QApplication.processEvents()
-            time.sleep(0.01)
-        index = tree.indexFromItem(item, col)
-        pos = tree.visualRect(index).center()
-        event = QtGui.QHelpEvent(
-            QtCore.QEvent.ToolTip, pos, tree.viewport().mapToGlobal(pos)
-        )
-        QtWidgets.QApplication.sendEvent(tree.viewport(), event)
-        return QtWidgets.QToolTip.text() if QtWidgets.QToolTip.isVisible() else ""
+        return _hover(tree, item, col)
 
     def test_off_by_default(self):
         tree = self._tree(managed=True)

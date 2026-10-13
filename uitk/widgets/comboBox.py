@@ -917,6 +917,47 @@ class ComboBox(
         elif index == -1 and self.has_header:
             self.setEditText(self.header_text)
 
+    @property
+    def wheel_selects(self) -> bool:
+        """Whether a mouse wheel over the closed combo steps its current item
+        (Qt's own; on by default).
+
+        Off for a combo whose rows are actions run on a pick: a wheel turned
+        while passing over it ran one, unseen.  Off, the wheel goes on to the
+        parent (a scroll area scrolls; the open list still scrolls), and the
+        wheel no longer gives the combo focus (``WheelFocus`` loses its wheel:
+        an arrow key pressed later stepped the combo it had only been
+        scrolled past); on again, the focus policy it had comes back.
+        Mechanism: :meth:`wheelEvent`.
+        """
+        return getattr(self, "_wheel_selects", True)
+
+    @wheel_selects.setter
+    def wheel_selects(self, on: bool) -> None:
+        on = bool(on)
+        if on == self.wheel_selects:
+            return
+        self._wheel_selects = on
+        if on:
+            before = getattr(self, "_focus_before_wheel", None)
+            if before is not None:
+                self.setFocusPolicy(before)
+            self._focus_before_wheel = None
+            return
+        value = lambda policy: int(getattr(policy, "value", policy))  # noqa: E731
+        policy = self.focusPolicy()
+        self._focus_before_wheel = policy
+        wheel = value(QtCore.Qt.WheelFocus) & ~value(QtCore.Qt.StrongFocus)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy(value(policy) & ~wheel))
+
+    def wheelEvent(self, event):
+        """Step the current item (Qt's), unless :attr:`wheel_selects` is off:
+        the wheel is then left unaccepted, for the parent."""
+        if not self.wheel_selects:
+            event.ignore()
+            return
+        super().wheelEvent(event)
+
     def mousePressEvent(self, event):
         if self._is_replayed_second_click(event):
             event.accept()  # already acted on; would only re-open the popup
