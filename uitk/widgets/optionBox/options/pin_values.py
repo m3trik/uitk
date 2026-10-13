@@ -3,6 +3,7 @@
 """Pin Values option for OptionBox - allows pinning/saving widget values."""
 
 from qtpy import QtWidgets, QtCore
+from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.popup.dismissal import AncestorDismissal
 from ._options import ButtonOption
 from ._persistence import PersistedOption
@@ -278,6 +279,7 @@ class PinnedValuesPopup(QtCore.QObject):
     def _show_context_menu(self, pos, entry, stack, button):
         """Show context menu for a pinned value."""
         menu = QtWidgets.QMenu(self._menu)
+        StyleSheet.cast_shadow(menu)
 
         if entry.alias:
             set_alias_action = menu.addAction("Change Alias")

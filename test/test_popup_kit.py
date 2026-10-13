@@ -526,6 +526,16 @@ class TestPopupWindowUnits(QtBaseTestCase):
         self.assertFalse(w.testAttribute(QtCore.Qt.WA_TranslucentBackground))
         self.assertTrue(w.testAttribute(QtCore.Qt.WA_ShowWithoutActivating))
 
+    def test_a_popup_casts_the_theme_shadow_instead_of_the_native_one(self):
+        from uitk._window_shadow import _ShadowKeeper
+
+        host = self.track_widget(QtWidgets.QWidget())
+        for flags in (self.FLAGS, QtCore.Qt.Popup):
+            w = QtWidgets.QWidget(host)
+            PopupWindow.promote(w, flags)
+            self.assertIsNotNone(w.findChild(_ShadowKeeper, _ShadowKeeper.NAME))
+            self.assertTrue(w.windowFlags() & QtCore.Qt.NoDropShadowWindowHint)
+
     def test_a_failing_or_self_fallback_leaves_it_parentless(self):
         for fallback in (lambda: 1 / 0, None):
             w = self.track_widget(QtWidgets.QWidget())

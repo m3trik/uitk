@@ -7,6 +7,7 @@ from typing import Any, Callable, List, Optional, Union
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 from uitk.managers.cursor_manager import CursorManager
+from uitk.themes.style_sheet import StyleSheet
 
 
 class SwitchboardDialogsMixin:
@@ -673,6 +674,9 @@ class SwitchboardDialogsMixin:
         if parent is not None:
             ss = parent.styleSheet()
             if ss:
+                # Pinned first: a copied sheet otherwise draws what it leaves
+                # undefined (the button box, an indicator) in the host's style.
+                StyleSheet.pin_base_style(dlg)
                 dlg.setStyleSheet(ss)
 
         # Modal: suspend any slot busy-cursor so the line edit shows an
@@ -750,6 +754,9 @@ class SwitchboardDialogsMixin:
         if parent is not None:
             ss = parent.styleSheet()
             if ss:
+                # Pinned first: a copied sheet otherwise draws what it leaves
+                # undefined (the button box, an indicator) in the host's style.
+                StyleSheet.pin_base_style(dlg)
                 dlg.setStyleSheet(ss)
 
         # Modal: suspend any slot busy-cursor so the list shows a normal

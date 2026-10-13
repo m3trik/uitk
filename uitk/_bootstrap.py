@@ -10,11 +10,12 @@ or any widget module.
 
 import os
 import sys
-from typing import Callable, Union
+from typing import Callable, Optional, Union
 
 from qtpy import QtCore, QtGui, QtWidgets
 
 from uitk._window_blur import _WindowBlur
+from uitk._window_shadow import ShadowSpec, _WindowShadow
 
 
 class Bootstrap:
@@ -122,6 +123,50 @@ class Bootstrap:
             no native window yet (False where :meth:`blurs` is False).
         """
         return _WindowBlur.set(widget, on)
+
+    @staticmethod
+    def shadows() -> bool:
+        """Whether :meth:`set_shadow` draws anything here: on Windows (and on
+        the offscreen platform the test suite runs on). It is a no-op on
+        macOS, whose window server already shadows every frameless window,
+        and on native Wayland and X11."""
+        return _WindowShadow.available()
+
+    @staticmethod
+    def set_shadow(
+        widget: QtWidgets.QWidget,
+        shadow: Union[
+            ShadowSpec, None, Callable[[QtWidgets.QWidget], Optional[ShadowSpec]]
+        ],
+    ) -> bool:
+        """Cast a soft drop shadow beneath a frameless TOP-LEVEL window.
+
+        The shadow is a companion window directly beneath *widget*. It ignores
+        input and paints only outside the window's shape, so a translucent or
+        blurred window is not darkened, and the window's geometry, layout and
+        hit testing are untouched. It follows the window's geometry,
+        visibility, opacity and stacking. It is declarative, like
+        :meth:`set_blur`: set once, it survives hide/show and native-window
+        recreation, and waits for a window not yet shown. Framed windows (the
+        window manager shadows those) and windows that are minimized,
+        maximized, full screen or covering their screen cast none. On Windows
+        it replaces a popup's native drop shadow when set before the popup
+        first shows.
+
+        Parameters:
+            widget: The window (a child widget casts nothing).
+            shadow: ``(color, size, radius)`` -- a ``QColor`` or color name
+                whose alpha is the strength, the px it reaches beyond the
+                window edge, and the window's corner radius in px. Or None to
+                remove it, or a ``(widget) -> spec | None`` resolver read each
+                time the window shows (``StyleSheet.window_shadow`` reads the
+                theme).
+
+        Returns:
+            Whether the window casts a shadow as it stands (from its next show,
+            while hidden). Always False where :meth:`shadows` is False.
+        """
+        return _WindowShadow.set(widget, shadow)
 
     @staticmethod
     def screen_backdrop(widget) -> "QtGui.QPixmap | None":

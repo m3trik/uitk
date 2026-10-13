@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
+from uitk.themes.style_sheet import StyleSheet
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +214,11 @@ class MenuUtils:
     def _styled_menu(parent=None) -> QtWidgets.QMenu:
         """Create a QMenu with the sequencer's standard dark stylesheet."""
         menu = QtWidgets.QMenu(parent)
+        # Pinned first: a sheet of its own would otherwise draw its check
+        # marks and submenu arrows in the host's style.
+        StyleSheet.pin_base_style(menu)
         menu.setStyleSheet(_MENU_STYLESHEET)
+        StyleSheet.cast_shadow(menu)
         return menu
 
     @staticmethod

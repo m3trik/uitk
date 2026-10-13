@@ -160,13 +160,15 @@ class BaseHandler(ptk.SingletonMixin, ptk.LoggingMixin):
         """
         handler_name = self._sb_handler_name() or type(self).__name__
         if entry_name is None:
-            sig = getattr(self.sb, "on_handler_entries_changed", None)
-            if sig is not None:
-                sig.emit(handler_name)
+            signal, args = "on_handler_entries_changed", (handler_name,)
         else:
-            sig = getattr(self.sb, "on_handler_entry_changed", None)
-            if sig is not None:
-                sig.emit(handler_name, entry_name)
+            signal, args = "on_handler_entry_changed", (handler_name, entry_name)
+        sig = getattr(self.sb, signal, None)
+        if sig is not None:
+            try:
+                sig.emit(*args)
+            except RuntimeError:  # the switchboard is gone (teardown, a host
+                pass  # quitting) before a window it loaded hid: no one to tell
 
     def _sb_handler_name(self) -> Optional[str]:
         """Look up the attribute name this handler is bound to on ``sb.handlers``.

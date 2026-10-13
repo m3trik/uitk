@@ -177,8 +177,13 @@ class SaveUiTags(QtBaseTestCase):
 
     def test_atomic_write_no_temp_left(self):
         self.sb.save_ui_tags(self.path, ["one", "two"])
-        # No .tmp artifacts from atomic writes (.ui or _ui.py).
-        leftovers = [f for f in os.listdir(self.dir) if f.endswith(".tmp")]
+        # No partial file from atomic writes (.ui or _ui.py): FileUtils.atomic_write
+        # stages each in a sibling ``.atomic_<hex>.part`` (``.tmp`` before it).
+        leftovers = [
+            f
+            for f in os.listdir(self.dir)
+            if f.startswith(".atomic_") or f.endswith((".part", ".tmp"))
+        ]
         self.assertEqual(leftovers, [])
 
     def test_missing_file_raises(self):

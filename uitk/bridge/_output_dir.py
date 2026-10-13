@@ -5,7 +5,7 @@
 The optional "Output Dir" field above the parameters, its option-box buttons
 (persisted recent values + a directory browse), and the chain a send resolves it
 through: the typed value, a transient mode's own scratch, the host's
-``default_output_dir``, a self-cleaning session temp dir, then an error.
+``default_output_dir``, an age-swept temp dir, then an error.
 """
 
 from __future__ import annotations
@@ -24,18 +24,22 @@ class _OutputDirMixin(object):
     registry is a class attr, so every bridge panel in the process shares one.
     """
 
-    # One temp Output Dir per bridge tag per host process, removed at process exit.
-    # Values are ``(TempArtifacts store, path)`` -- the store so a killed host's
-    # leftovers have a swept namespace to be reclaimed from, the path so reading
-    # it back needs nothing private.
+    # One temp Output Dir per bridge tag per host process. It outlives the
+    # process (a launched app's project may still read it) and is reclaimed by
+    # the age sweep. Values are ``(TempArtifacts store, path)`` -- the store so
+    # the folder can be reclaimed early, the path so reading it back needs
+    # nothing private.
     _BRIDGE_TEMP_DIRS: Dict[str, Tuple[Any, str]] = {}
+    # Days past which the sweep reclaims a temp Output Dir, judged by the
+    # newest file in it.
+    _BRIDGE_TEMP_MAX_AGE_DAYS: float = 7
 
     @staticmethod
     def _remove_bridge_temp_dir(key: str) -> None:
         """Remove the temp Output Dir created for *key* (best-effort).
 
         Exposed for tests and for a host that wants to reclaim early; the
-        ordinary path is the store's own ``atexit``.
+        ordinary path is the age sweep.
         """
         entry = _OutputDirMixin._BRIDGE_TEMP_DIRS.pop(key, None)
         if entry is not None:
@@ -49,7 +53,7 @@ class _OutputDirMixin(object):
     # it unconditionally without a None guard.
     REQUIRE_OUTPUT_DIR: bool = True
 
-    # When True, ``require_output_dir()`` falls back to a self-cleaning temp
+    # When True, ``require_output_dir()`` falls back to an age-swept temp
     # directory (``ensure_bridge_temp_dir``) instead of erroring when neither the
     # user's value nor ``default_output_dir()`` resolves — so an unsaved scene can
     # still hand off. Opt-in: enabled for the file-staging hand-off bridges
@@ -83,20 +87,20 @@ class _OutputDirMixin(object):
     # one click away.
     OUTPUT_DIR_PERSISTS: bool = True
     OUTPUT_DIR_LABEL = "Output Dir:"
-    OUTPUT_DIR_PLACEHOLDER = "(defaults to scene dir / workspace)"
+    OUTPUT_DIR_PLACEHOLDER = "(blank: the bridge's default)"
     OUTPUT_DIR_TOOLTIP = (
         "Directory where the export artifacts (FBX, manifest, rendered\n"
-        "scripts, baked maps) all land. Leave blank to default to the\n"
-        "current scene's directory (or the active workspace if the\n"
-        "scene hasn't been saved)."
+        "scripts, baked maps) all land. Leave blank to let the bridge\n"
+        "choose: hand-off intermediates go to a temp folder, and what\n"
+        "is kept goes to the scene's project."
     )
 
     def default_output_dir(self) -> str:
         """Hook: fallback path when the user leaves Output Dir blank.
 
         Returns the empty string by default. DCC-specific subclasses
-        override -- e.g. ``MayaBridgeSlotsBase`` returns
-        ``EnvUtils.default_artifact_dir()`` (scene dir, then workspace).
+        override -- e.g. a photogrammetry bridge returns its profile's
+        output root.
         """
         return ""
 
@@ -106,22 +110,24 @@ class _OutputDirMixin(object):
 
         Backs :attr:`TEMP_OUTPUT_FALLBACK`: the last-resort Output Dir when neither the
         user's value nor the DCC scene/workspace default resolves (e.g. an unsaved scene with no
-        workspace), so a hand-off bridge can still export without forcing the user to pick a path. The
-        directory lives for the whole session (long enough for the launched external app to read the
-        exported files) and is removed at process exit. Reused across sends for the same *tag*.
+        workspace), so a hand-off bridge can still export without forcing the user to pick a path.
+        Reused across sends for the same *tag* within one host process.
 
-        Allocated through ``ptk.TempArtifacts`` (``session`` policy) rather than a hand-rolled
-        ``tempfile.gettempdir()`` join: the exit hook alone is not cleanup here. DCC hosts are
-        routinely killed, and an ``atexit`` that never fires used to leave the directory behind
-        with nothing left to reclaim it — one per killed session, forever. Every allocation now
-        joins a swept prefix namespace, so the worst case is delayed collection. The unique tag
-        also retires the PID that was keeping concurrent DCCs off a shared path."""
+        A ``detached`` ``ptk.TempArtifacts`` store: the folder OUTLIVES the host. A launched app's
+        project (Painter, Toolbag) keeps reading what the send wrote after the host exits, so
+        removing it at exit -- the old ``session`` policy -- broke that project. The age sweep
+        reclaims it once its newest file is :attr:`_BRIDGE_TEMP_MAX_AGE_DAYS` old, killed host or
+        not; :meth:`_remove_bridge_temp_dir` reclaims it early."""
         import pythontk as ptk
 
         key = tag or "bridge"
         entry = _OutputDirMixin._BRIDGE_TEMP_DIRS.get(key)
         if entry is None:
-            store = ptk.TempArtifacts(f"uitk_bridge_{key}", policy="session")
+            store = ptk.TempArtifacts(
+                f"uitk_bridge_{key}",
+                policy="detached",
+                max_age_days=_OutputDirMixin._BRIDGE_TEMP_MAX_AGE_DAYS,
+            )
             entry = (store, store.dir_path())
             _OutputDirMixin._BRIDGE_TEMP_DIRS[key] = entry
         return entry[1]
@@ -270,7 +276,7 @@ class _OutputDirMixin(object):
         3. :meth:`default_output_dir` (DCC-side fallback) -- on hit, the
            chosen path is written back into the line edit and announced
            in the log panel so the user sees where files landed.
-        4. When :attr:`TEMP_OUTPUT_FALLBACK` is set, a self-cleaning temp
+        4. When :attr:`TEMP_OUTPUT_FALLBACK` is set, an age-swept temp
            directory (:func:`ensure_bridge_temp_dir`) -- also written back
            and announced -- so an unsaved scene can still hand off.
         5. Log an error + focus the field, return ``None`` to signal
@@ -309,7 +315,8 @@ class _OutputDirMixin(object):
             self._apply_output_dir_fallback(
                 temp_dir,
                 "Output Dir not set and no scene/workspace default; using a "
-                "temporary folder (removed when this session exits): "
+                f"temporary folder (swept {self._BRIDGE_TEMP_MAX_AGE_DAYS:g} days "
+                "after its last write): "
                 f'<a href="action://open?path={temp_dir}">{temp_dir}</a>',
             )
             return temp_dir

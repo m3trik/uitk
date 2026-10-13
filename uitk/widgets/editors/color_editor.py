@@ -26,6 +26,7 @@ import time
 from typing import Callable, Dict, List, Optional, Sequence
 
 from qtpy import QtCore, QtGui, QtWidgets
+from uitk.themes.style_sheet import StyleSheet
 
 import pythontk as ptk
 from uitk.managers.color_model import ColorModel
@@ -1218,6 +1219,7 @@ class ColorEditorPopup(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setWindowFlags(QtCore.Qt.Popup)
+        StyleSheet.cast_shadow(self)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         self.editor = ColorEditor(color=color, parent=self, **editor_kwargs)

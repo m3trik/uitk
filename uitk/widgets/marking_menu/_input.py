@@ -14,7 +14,6 @@ defaults it declares, and is never instantiated alone.
 """
 
 import os
-import tempfile
 from typing import Optional
 
 from qtpy import QtCore, QtGui, QtWidgets
@@ -774,10 +773,16 @@ class _InputMixin:
         migration records emitted by ``MouseTracking`` are missed. Returns the log
         path; stop with :meth:`disable_input_logging`. Reproduce the issue, then
         read the file. Auto-enabled at construction when the ``UITK_INPUT_LOG``
-        environment variable names a path.
+        environment variable names a path. With no *path*, each process writes
+        its own pid-named file in a ``TempArtifacts`` store (detached: it is read
+        after the session, and the age sweep reclaims it).
         """
         if path is None:
-            path = os.path.join(tempfile.gettempdir(), "uitk_input_handoff.log")
+            import pythontk as ptk
+
+            path = ptk.TempArtifacts("uitk_input_handoff").path(
+                extension=".log", name=str(os.getpid())
+            )
         for cls in {type(self), type(self.mouse_tracking)}:
             cls.set_log_level(level)
             cls.set_log_file(path, level)

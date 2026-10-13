@@ -28,6 +28,7 @@ import re
 import logging
 from typing import Callable, Dict, List, Optional, Tuple
 from qtpy import QtWidgets, QtGui, QtCore
+from uitk.themes.style_sheet import StyleSheet
 import pythontk as ptk
 
 from uitk.widgets.mixins.shortcut_guard import ShortcutGuardMixin
@@ -591,6 +592,7 @@ class ScriptOutput(ShortcutGuardMixin, QtWidgets.QTextEdit):
         Maya's own Script Editor output pane.
         """
         menu = QtWidgets.QMenu(self)
+        StyleSheet.cast_shadow(menu)
         menu.addAction("Clear", self._do_clear)
         copy_action = menu.addAction("Copy", self._handle_copy_shortcut)
         copy_action.setShortcut(QtGui.QKeySequence.Copy)

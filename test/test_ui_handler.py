@@ -209,6 +209,31 @@ class TestLaunchDelegationIntegration(unittest.TestCase):
             ui.deleteLater()
 
 
+class TestEntryNoticeAfterSwitchboardGone(unittest.TestCase):
+    """A window can hide after its switchboard's C++ object is gone (a test's
+    teardown, a host quitting). Its entry-change notice, sent from the
+    window's ``on_hide``, then reaches no one and must not raise out of the
+    Qt slot ("Signal source has been deleted", seen in the full run)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from conftest import setup_qt_application
+
+        cls.app = setup_qt_application()
+
+    def test_a_notice_after_the_switchboard_is_deleted_is_dropped(self):
+        from qtpy import shiboken
+        from uitk.switchboard import Switchboard
+
+        with tempfile.TemporaryDirectory() as d:
+            write_ui_file(os.path.join(d, "tool.ui"), "tool")
+            sb = Switchboard(ui_source=d, log_level="WARNING")
+            handler = sb.handlers.ui
+            shiboken.delete(sb)
+            handler._notify_entries_changed("tool")
+            handler._notify_entries_changed()
+
+
 class TestUiEntryDescription(unittest.TestCase):
     """A .ui entry's description is its root's ``accessibleDescription``,
     read from the file -- listing the entry never loads the UI."""

@@ -1,13 +1,17 @@
 # uitk — API Changes
 
-_Diff vs the last release (origin/main @ 40c18d4)._
+_Diff vs the last release (origin/main @ bdde331)._
 
-## Added (4)
+## Added (8)
 
-- `widgets/comboBox.py::ComboBox.wheelEvent(self, event)`
-- `widgets/comboBox.py::ComboBox.wheel_selects(self) -> bool`
-- `widgets/treeWidget.py::TreeWidget.row_tooltip(self, item) -> Optional[str]`
-- `widgets/treeWidget.py::TreeWidget.set_row_tooltip(self, item, text: Optional[str]) -> None`
+- `_bootstrap.py::Bootstrap.set_shadow(widget: QtWidgets.QWidget, shadow: Union[ShadowSpec, None, Callable[[QtWidgets.QWidget], Optional[ShadowSpec]]]) -> bool`
+- `_bootstrap.py::Bootstrap.shadows() -> bool`
+- `themes/style_sheet.py::StyleSheet.base_style(cls) -> QtWidgets.QStyle`
+- `themes/style_sheet.py::StyleSheet.cast_shadow(cls, widget: QtWidgets.QWidget) -> bool`
+- `themes/style_sheet.py::StyleSheet.pin_base_style(cls, widget: QtWidgets.QWidget) -> None`
+- `themes/style_sheet.py::StyleSheet.window_shadow(cls, widget: QtWidgets.QWidget) -> Optional[Tuple[QtGui.QColor, int, int]]`
+- `widgets/editors/style_editor.py::EFFECT_SWITCHES(constant)`
+- `widgets/editors/style_editor.py::EFFECT_TOKENS(constant)`
 
 ## Deprecations (1)
 

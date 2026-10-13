@@ -14,6 +14,7 @@ from typing import Iterable, List, Optional, Set, TYPE_CHECKING, Union
 
 import pythontk as ptk
 from qtpy import QtCore, QtWidgets
+from uitk.themes.style_sheet import StyleSheet
 
 # ``EditorPanel`` is the base class — must be a real import. ``Switchboard``
 # is referenced at runtime only inside the no-arg ``__init__`` branch
@@ -351,6 +352,7 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         # browser still needs is zero item padding — the action columns
         # are exactly 22px wide and any inherited cell padding would
         # squeeze the icon buttons.
+        StyleSheet.pin_base_style(self._view)  # its header's sort arrow
         self._view.setStyleSheet("QTableView::item { padding: 0; }")
         # Mouse tracking is required for ``QStyle::State_MouseOver`` (and
         # therefore QSS ``:hover``) to fire on cursor moves without a
@@ -1139,6 +1141,7 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         # Free the menu (and its actions/lambda connections) when it closes;
         # otherwise it lingers as a child of self for the browser's lifetime.
         menu.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        StyleSheet.cast_shadow(menu)
         if tag in self.hidden_tags:
             act = menu.addAction(f"Unhide tag #{tag}")
             act.triggered.connect(lambda: self._toggle_hide_tag(tag, hide=False))
@@ -1173,6 +1176,7 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         # Free the menu (and its actions/lambda connections) when it closes;
         # otherwise it lingers as a child of self for the browser's lifetime.
         menu.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        StyleSheet.cast_shadow(menu)
 
         if path and path.lower().endswith(".ui") and os.path.isfile(path):
             designer_act = menu.addAction("Open in Designer")

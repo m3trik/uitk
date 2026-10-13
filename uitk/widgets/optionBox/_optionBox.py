@@ -800,7 +800,9 @@ class OptionBox:
                 self._hold_parent_wrapper(wrapped_widget, parent)
             if frameless:
                 container.setProperty("class", "frameless")
-                # Apply direct inline style for frameless - no selector needed
+                # Apply direct inline style for frameless - no selector needed.
+                # Pinned first: the wrapped widget inherits this sheet's style.
+                StyleSheet.pin_base_style(container)
                 container.setStyleSheet(
                     "border: none; background: transparent; margin: 0px; padding: 0px;"
                 )
@@ -972,6 +974,7 @@ class OptionBox:
         existing = widget.styleSheet()
         if fragment in existing:
             return
+        StyleSheet.pin_base_style(widget)
         widget.setStyleSheet(f"{existing}; {fragment}" if existing else fragment)
 
     def _apply_border_styling(self, wrapped_widget, option_widgets=None):

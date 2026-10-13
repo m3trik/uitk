@@ -630,6 +630,18 @@ class TestRegisterAndEnvironment(QtBaseTestCase):
             DesignerPlugin._icon_cache_dir("mayatk"),
         )
 
+    def test_icon_cache_lives_in_the_user_cache_root(self):
+        """A durable cache belongs in the per-user cache, never raw temp."""
+        from unittest import mock
+
+        import pythontk as ptk
+
+        # Resolution only: asking writes nothing, so the root need not exist.
+        root = os.path.join(ptk.TempArtifacts.root(), "designer_cache_probe")
+        with mock.patch.dict(os.environ, {ptk.UserConfig.CACHE_ROOT_ENV_VAR: root}):
+            folder = DesignerPlugin._icon_cache_dir("uitk")
+        self.assertTrue(ptk.FileUtils.is_under(folder, root), folder)
+
     def test_environment_carries_the_plugin_path_and_import_root(self):
         """Designer is a separate process: both must be handed to it."""
         env = DesignerPlugin.environment(env={})

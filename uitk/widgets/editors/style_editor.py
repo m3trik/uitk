@@ -41,6 +41,9 @@ BASIC_TOKENS = frozenset(
         # Effects
         "WINDOW_BLUR",
         "WINDOW_BLUR_OPACITY",
+        "WINDOW_SHADOW",
+        "WINDOW_SHADOW_SIZE",
+        "WINDOW_SHADOW_OPACITY",
     }
 )
 
@@ -54,14 +57,43 @@ LENGTH_TOKENS = {
     "BORDER_W": (0, 8),
     "COMBOBOX_ITEM_HEIGHT": (0, 64),
     "TEXT_INSET": (0, 16),
+    "WINDOW_SHADOW_SIZE": (0, 48),
 }
 
-# On/off tokens (see ``StyleSheet.is_on``), rendered as a check box.
-SWITCH_TOKENS = frozenset({"WINDOW_BLUR"})
+# The window effects, each an on/off switch (see ``StyleSheet.is_on``,
+# rendered as a check box) mapped to ``(settings, available, unavailable)``:
+# the tokens it governs (adjustable only while it is on), whether this
+# desktop draws the effect at all, and why not when it doesn't. *Effects*
+# lists each switch above its settings; a row that can't take effect is
+# disabled, with the reason as its tooltip. The blur's radius is the
+# system's, so it has none to set.
+EFFECT_SWITCHES = {
+    "WINDOW_BLUR": (
+        ("WINDOW_BLUR_OPACITY",),
+        Bootstrap.blurs,
+        "This desktop offers no window blur (Windows, macOS and KDE Plasma do).",
+    ),
+    "WINDOW_SHADOW": (
+        ("WINDOW_SHADOW_SIZE", "WINDOW_SHADOW_OPACITY"),
+        Bootstrap.shadows,
+        "uitk draws window shadows on Windows; macOS shadows every window "
+        "itself, and Linux desktops get none.",
+    ),
+}
+SWITCH_TOKENS = frozenset(EFFECT_SWITCHES)
+# Every token under *Effects*, in the order it lists them.
+EFFECT_TOKENS = tuple(
+    name
+    for switch, (settings, _, _) in EFFECT_SWITCHES.items()
+    for name in (switch, *settings)
+)
 
 # Percent tokens (see ``StyleSheet.percent``), mapped to their spinbox
-# ``(min, max)`` range; listed with the switches under *Effects*.
-PERCENT_TOKENS = {"WINDOW_BLUR_OPACITY": (0, 100)}
+# ``(min, max)`` range.
+PERCENT_TOKENS = {
+    "WINDOW_BLUR_OPACITY": (0, 100),
+    "WINDOW_SHADOW_OPACITY": (0, 100),
+}
 
 # Fixed 22px table rows (matches the UI Browser). The QSS QTableWidget::item
 # rule reserves a 1px (BORDER_W) border, and the grid another 1px, so the
@@ -98,7 +130,10 @@ class StyleEditor(EditorPanel):
     length tokens (see ``LENGTH_TOKENS``) get a ``QSpinBox`` with a ``" px"``
     suffix, clamped to each token's pixel range; switch tokens (see
     ``SWITCH_TOKENS``) get a check box; percent tokens (see
-    ``PERCENT_TOKENS``) a ``%`` spin box. The Basic/All tier combo
+    ``PERCENT_TOKENS``) a ``%`` spin box. The *Effects* section
+    (``EFFECT_SWITCHES``) lists each switch above its settings, and disables
+    the rows that can't take effect: one this desktop doesn't draw, and the
+    settings of a switch that is off. The Basic/All tier combo
     lives in the header's ⋯-menu ("Show:") and filters the table to either
     the most-edited tokens (``BASIC_TOKENS``) or every token.
     """
@@ -255,8 +290,9 @@ class StyleEditor(EditorPanel):
         """Populate the table with variables for the current theme + tier.
 
         Color tokens render first, then a section divider and the length
-        tokens, then another and the effect (switch and percent) tokens. ``setRowCount(0)`` + ``clearSpans()`` resets any prior
-        spans before re-rendering.
+        tokens, then another and the effect tokens (``EFFECT_TOKENS``).
+        ``setRowCount(0)`` + ``clearSpans()`` resets any prior spans before
+        re-rendering.
         """
         self.table.setRowCount(0)
         self.table.clearSpans()
@@ -269,12 +305,13 @@ class StyleEditor(EditorPanel):
         else:
             visible = list(all_vars)
 
-        effect_tokens = SWITCH_TOKENS.union(PERCENT_TOKENS)
         colors = sorted(
-            v for v in visible if v not in LENGTH_TOKENS and v not in effect_tokens
+            v for v in visible if v not in LENGTH_TOKENS and v not in EFFECT_TOKENS
         )
-        lengths = sorted(v for v in visible if v in LENGTH_TOKENS)
-        effects = sorted(v for v in visible if v in effect_tokens)
+        lengths = sorted(
+            v for v in visible if v in LENGTH_TOKENS and v not in EFFECT_TOKENS
+        )
+        effects = [v for v in EFFECT_TOKENS if v in visible]
 
         total_rows = (
             len(colors)
@@ -305,14 +342,15 @@ class StyleEditor(EditorPanel):
             for var_name in effects:
                 if var_name in SWITCH_TOKENS:
                     self._add_switch_row(row, var_name, current_theme)
-                else:
+                elif var_name in LENGTH_TOKENS or var_name in PERCENT_TOKENS:
                     self._add_spin_row(row, var_name, current_theme)
+                else:
+                    self._add_color_row(row, var_name, current_theme)
                 row += 1
+        self._gate_effects()
 
     def _add_color_row(self, row, var_name, theme):
-        name_item = QtWidgets.QTableWidgetItem(var_name)
-        name_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
-        self.table.setItem(row, 0, name_item)
+        self._add_name_cell(row, var_name)
 
         current_val = StyleSheet.get_variable(var_name, theme=theme)
 
@@ -335,9 +373,7 @@ class StyleEditor(EditorPanel):
 
     def _add_spin_row(self, row, var_name, theme):
         """A length (``" px"``) or percent (``"%"``) token's spin box."""
-        name_item = QtWidgets.QTableWidgetItem(var_name)
-        name_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
-        self.table.setItem(row, 0, name_item)
+        self._add_name_cell(row, var_name)
 
         percent = var_name in PERCENT_TOKENS
         spin = QtWidgets.QSpinBox()
@@ -354,24 +390,35 @@ class StyleEditor(EditorPanel):
         self._add_reset_button(row, var_name)
 
     def _add_switch_row(self, row, var_name, theme):
-        name_item = QtWidgets.QTableWidgetItem(var_name)
-        name_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
-        self.table.setItem(row, 0, name_item)
+        self._add_name_cell(row, var_name)
 
         check = QtWidgets.QCheckBox()
-        check.setFixedHeight(CELL_EDITOR_H)
-        check.setChecked(StyleSheet.is_on(StyleSheet.get_variable(var_name, theme)))
-        if var_name == "WINDOW_BLUR" and not Bootstrap.blurs():
-            check.setToolTip(
-                "This desktop offers no window blur (Windows, macOS and KDE Plasma do)."
-            )
+        check.setFixedSize(76, CELL_EDITOR_H)  # the spin boxes' size
+        self._show_switch(
+            check, StyleSheet.is_on(StyleSheet.get_variable(var_name, theme))
+        )
         self.table.setCellWidget(row, 1, self._centered_cell(check))
 
+        check.toggled.connect(lambda on, c=check: self._show_switch(c, on))
         check.toggled.connect(
             lambda on, name=var_name: self.on_switch_changed(name, on)
         )
 
         self._add_reset_button(row, var_name)
+
+    def _add_name_cell(self, row, var_name):
+        """Column 0: the token's name, selectable but not editable."""
+        item = QtWidgets.QTableWidgetItem(var_name)
+        item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
+        self.table.setItem(row, 0, item)
+
+    @staticmethod
+    def _show_switch(check, on: bool):
+        """Set a switch's check box to *on*, labelled with it: uitk draws no
+        check indicator (a check box shows its state by its fill), so one
+        without text would be a sliver."""
+        check.setChecked(on)
+        check.setText("On" if on else "Off")
 
     @staticmethod
     def _centered_cell(child, h_margin=0):
@@ -410,6 +457,47 @@ class StyleEditor(EditorPanel):
         self.table.setItem(row, 0, item)
         self.table.setSpan(row, 0, 1, 3)
 
+    def _row_of(self, name) -> int:
+        """The table row showing token *name*, or -1."""
+        for i in range(self.table.rowCount()):
+            item = self.table.item(i, 0)
+            if item and item.text() == name:
+                return i
+        return -1
+
+    def _gate_effects(self):
+        """Disable each effect row that can't take effect in the edited theme
+        (``EFFECT_SWITCHES``): every row of an effect this desktop doesn't
+        draw, and a switch's settings while it is off -- each with the reason
+        as its tooltip."""
+        for switch, (settings, available, unavailable) in EFFECT_SWITCHES.items():
+            drawn = available()
+            on = StyleSheet.is_on(StyleSheet.get_variable(switch, self._theme))
+            self._set_row_enabled(switch, drawn, "" if drawn else unavailable)
+            idle = "" if on else f"Used only while {switch} is on."
+            for name in settings:
+                self._set_row_enabled(
+                    name, drawn and on, idle if drawn else unavailable
+                )
+
+    def _set_row_enabled(self, name, enabled, reason=""):
+        """Enable or disable token *name*'s whole row (its name, value and
+        reset), *reason* its tooltip while disabled."""
+        row = self._row_of(name)
+        if row == -1:
+            return
+        item = self.table.item(row, 0)
+        if enabled:
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsEnabled)
+        else:
+            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)
+        item.setToolTip(reason)
+        for column in (1, 2):
+            cell = self.table.cellWidget(row, column)
+            if cell is not None:
+                cell.setEnabled(enabled)
+                cell.setToolTip(reason)
+
     # ------------------------------------------------------------------
     # Value change handlers
     # ------------------------------------------------------------------
@@ -439,6 +527,7 @@ class StyleEditor(EditorPanel):
         value = "on" if on else "off"
         StyleSheet.set_variable(name, value, theme=self._theme)
         self._preset_mgr.refresh_modified_state()
+        self._gate_effects()
         self.footer.setStatusText(f"{name} → {value}")
 
     def reset_variable(self, name):
@@ -446,6 +535,7 @@ class StyleEditor(EditorPanel):
         StyleSheet.set_variable(name, None, theme=self._theme)
         self._preset_mgr.refresh_modified_state()
         self.refresh_row(name)
+        self._gate_effects()
         self.footer.setStatusText(f"Reset {name}")
 
     def reset_all(self):
@@ -457,13 +547,7 @@ class StyleEditor(EditorPanel):
 
     def refresh_row(self, name):
         """Update the editor widget for a specific variable name."""
-        row = -1
-        for i in range(self.table.rowCount()):
-            item = self.table.item(i, 0)
-            if item and item.text() == name:
-                row = i
-                break
-
+        row = self._row_of(name)
         if row == -1:
             return
 
@@ -482,7 +566,7 @@ class StyleEditor(EditorPanel):
         check = container.findChild(QtWidgets.QCheckBox)
         if check:
             check.blockSignals(True)
-            check.setChecked(StyleSheet.is_on(val))
+            self._show_switch(check, StyleSheet.is_on(val))
             check.blockSignals(False)
             return
 

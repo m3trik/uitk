@@ -745,5 +745,233 @@ class TestWindowBlur(QtBaseTestCase):
             self.assertFalse(StyleSheet.is_on(value), value)
 
 
+class TestWindowShadow(QtBaseTestCase):
+    """``WINDOW_SHADOW`` (on/off), ``WINDOW_SHADOW_SIZE``,
+    and ``WINDOW_SHADOW_OPACITY``: the one source of
+    truth for the drop shadow under every floating surface
+    (``StyleSheet.cast_shadow``)."""
+
+    def tearDown(self):
+        StyleSheet.reset_overrides()
+        super().tearDown()
+
+    def _window(self, **style):
+        window = self.track_widget(
+            QtWidgets.QWidget(None, QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
+        )
+        StyleSheet().set(window, **style)
+        return window
+
+    def test_every_theme_defines_its_tokens(self):
+        for theme, tokens in StyleSheet.themes.items():
+            for name in (
+                "WINDOW_SHADOW",
+                "WINDOW_SHADOW_SIZE",
+                "WINDOW_SHADOW_OPACITY",
+            ):
+                self.assertIn(name, tokens, theme)
+
+    def test_the_resolver_reads_the_windows_theme(self):
+        window = self._window(theme="dark")
+        color, size, radius = StyleSheet.window_shadow(window)
+        self.assertEqual(color.getRgb(), (0, 0, 0, 209), "black at 82%")
+        self.assertEqual((size, radius), (18, 0), "square, like every uitk window")
+        StyleSheet.set_variable("WINDOW_SHADOW_SIZE", "24px", theme="dark")
+        self.assertEqual(StyleSheet.window_shadow(window)[1], 24)
+
+    def test_opacity_and_size_are_independent(self):
+        """A fainter shadow keeps its reach, and a wider one its darkness."""
+        faint = self._window(theme="dark", WINDOW_SHADOW_OPACITY="20%")
+        color, size, _radius = StyleSheet.window_shadow(faint)
+        self.assertEqual((color.alpha(), size), (51, 18))
+        wide = self._window(theme="dark", WINDOW_SHADOW_SIZE="40px")
+        color, size, _radius = StyleSheet.window_shadow(wide)
+        self.assertEqual((color.alpha(), size), (209, 40))
+
+    def test_a_popup_resolves_its_owners_theme(self):
+        owner = self._window(theme="light")
+        popup = QtWidgets.QWidget(owner, QtCore.Qt.Popup)
+        color, size, _radius = StyleSheet.window_shadow(popup)
+        self.assertEqual((color.alpha(), size), (171, 18))
+        self.assertIsNone(StyleSheet.window_shadow(QtWidgets.QWidget()), "unthemed")
+
+    def test_off_or_nothing_to_show_casts_none(self):
+        """high-contrast ships it off: its white outlines do the separating."""
+        self.assertIsNone(StyleSheet.window_shadow(self._window(theme="high-contrast")))
+        for tokens in (
+            {"WINDOW_SHADOW": "off"},
+            {"WINDOW_SHADOW_SIZE": "0px"},
+            {"WINDOW_SHADOW_OPACITY": "0%"},
+        ):
+            window = self._window(theme="dark", **tokens)
+            self.assertIsNone(StyleSheet.window_shadow(window), tokens)
+
+    def test_a_per_call_token_is_honored(self):
+        """MessageBox styles itself with WINDOW_SHADOW="off": its window is a
+        transparent host around an inset card."""
+        window = self._window(theme="dark", WINDOW_SHADOW="off")
+        self.assertIsNone(StyleSheet.window_shadow(window))
+        self.assertEqual(StyleSheet.resolve_variable("WINDOW_SHADOW", window), "off")
+
+    def test_a_surfaceless_window_casts_none(self):
+        """A gesture page's buttons float over the desktop; a shadow would
+        outline an invisible rectangle."""
+        for style_class in StyleSheet._shadowless_classes:
+            window = self._window(theme="dark", style_class=style_class)
+            self.assertIsNone(StyleSheet.window_shadow(window), style_class)
+
+    def test_a_context_menus_submenus_cast_it_too(self):
+        """A submenu is a popup of its own, over the menu and the window."""
+        from uitk._window_shadow import _ShadowKeeper
+
+        owner = self._window(theme="dark")
+        menu = QtWidgets.QMenu(owner)
+        StyleSheet.cast_shadow(menu)
+        sub = menu.addMenu("More")
+        sub.addAction("x")
+        menu.aboutToShow.emit()
+        self.assertIsNotNone(sub.findChild(_ShadowKeeper, _ShadowKeeper.NAME))
+        self.assertIsNotNone(StyleSheet.window_shadow(sub), "themed via its owner")
+
+    def test_a_styled_window_casts_it_and_follows_a_theme_change(self):
+        from uitk._window_shadow import _ShadowKeeper
+
+        window = self._window(theme="dark")
+        keeper = window.findChild(_ShadowKeeper, _ShadowKeeper.NAME)
+        self.assertIsNotNone(keeper)
+        window.show()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents()
+        self.assertTrue(keeper.window.isVisible())
+        StyleSheet.set_variable("WINDOW_SHADOW", "off", theme="dark")
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents()
+        self.assertFalse(keeper.window.isVisible())
+
+
+# Renders one styled window under a given HOST application style and palette,
+# in a child process (the application style is process-wide), and prints the
+# image's digest.
+_HOST_RENDER = r"""
+import hashlib, sys
+from qtpy import QtCore, QtGui, QtWidgets as W
+app = W.QApplication([])
+app.setStyle(W.QStyleFactory.create(sys.argv[1]))
+pal = app.style().standardPalette()
+if sys.argv[2] == "dark":
+    for role, c in (("Window", 68), ("WindowText", 200), ("Base", 43), ("Text", 200),
+                    ("Button", 93), ("ButtonText", 238), ("Highlight", 120), ("Mid", 50),
+                    ("Dark", 35), ("Light", 110), ("AlternateBase", 60)):
+        pal.setColor(getattr(QtGui.QPalette, role), QtGui.QColor(c, c, c))
+app.setPalette(pal)
+app.setFont(QtGui.QFont("Arial", 9))
+from uitk.themes.style_sheet import StyleSheet
+from uitk.widgets.treeWidget import TreeWidget
+from uitk.widgets.sequencer._data import MenuUtils
+win = W.QWidget(None, QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
+lay = W.QVBoxLayout(win)
+tabs = W.QTabWidget(); tabs.addTab(W.QLabel("one"), "One"); tabs.addTab(W.QLabel("two"), "Two")
+group = W.QGroupBox("Group"); group.setCheckable(True)
+line = W.QLineEdit(); line.setPlaceholderText("placeholder")
+bar = W.QProgressBar(); bar.setValue(60)
+table = W.QTableWidget(2, 2); table.setSortingEnabled(True)
+tree = TreeWidget(); tree.enable_hierarchy_icons(True)
+top = W.QTreeWidgetItem(["parent"]); top.addChild(W.QTreeWidgetItem(["child"]))
+tree.addTopLevelItem(top); top.setExpanded(True)
+for w in (tabs, group, line, bar, table, tree):
+    lay.addWidget(w)
+StyleSheet().set(win, theme="dark")
+win.resize(300, 420)
+images = [win.grab().toImage()]
+for menu in (W.QMenu(win), MenuUtils._styled_menu(win)):
+    act = menu.addAction("checked"); act.setCheckable(True); act.setChecked(True)
+    menu.addMenu("sub").addAction("x")
+    menu.ensurePolished(); menu.adjustSize()
+    images.append(menu.grab().toImage())
+digest = hashlib.md5()
+for img in images:
+    img = img.convertToFormat(QtGui.QImage.Format_ARGB32)
+    digest.update(bytes(img.constBits())[: img.sizeInBytes()])
+print("DIGEST", digest.hexdigest())
+"""
+
+
+class TestHostIndependence(QtBaseTestCase):
+    """What the sheet leaves undefined must not fall to the HOST: Maya runs its
+    own style and palette, Blender and a standalone app the OS's. The same
+    window renders pixel-identical under two different host styles and
+    palettes (``StyleSheet.pin_base_style`` + the root palette rule)."""
+
+    @staticmethod
+    def _render(style: str, tone: str) -> str:
+        import os
+        import subprocess
+        import sys
+
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+        env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
+        out = subprocess.run(
+            [sys.executable, "-c", _HOST_RENDER, style, tone],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=120,
+        )
+        digests = [
+            ln.split()[1] for ln in out.stdout.splitlines() if ln.startswith("DIGEST")
+        ]
+        if not digests:
+            raise AssertionError(
+                f"render failed (rc={out.returncode}): {out.stderr[-3000:]}"
+            )
+        return digests[0]
+
+    def test_a_styled_window_renders_the_same_under_any_host(self):
+        self.assertEqual(
+            self._render("Windows", "light"), self._render("Fusion", "dark")
+        )
+
+    def test_a_widget_drawn_by_the_sheet_takes_no_host_palette(self):
+        """The root rule sets every palette role a sheet can: text, selection
+        and alternate rows read the theme's, not the application's."""
+        app = QtWidgets.QApplication.instance()
+        original = app.palette()
+        try:
+            host = QtGui.QPalette(original)
+            for role in (
+                QtGui.QPalette.WindowText,
+                QtGui.QPalette.Text,
+                QtGui.QPalette.Highlight,
+            ):
+                host.setColor(role, QtGui.QColor(255, 0, 255))
+            app.setPalette(host)
+            window = self.track_widget(QtWidgets.QWidget())
+            child = QtWidgets.QTreeView(window)
+            StyleSheet().set(window, theme="dark")
+            child.ensurePolished()
+            pal = child.palette()
+            magenta = QtGui.QColor(255, 0, 255)
+            for role in (
+                QtGui.QPalette.WindowText,
+                QtGui.QPalette.Text,
+                QtGui.QPalette.Highlight,
+            ):
+                self.assertNotEqual(pal.color(role), magenta, role)
+        finally:
+            app.setPalette(original)
+
+    def test_a_styled_window_is_drawn_over_the_pinned_base_style(self):
+        window = self.track_widget(QtWidgets.QWidget())
+        StyleSheet().set(window, theme="dark")
+        self.assertTrue(window.testAttribute(QtCore.Qt.WA_SetStyle))
+        # A style a widget set itself is kept (ComboBox's Fusion proxy).
+        own = QtWidgets.QStyleFactory.create("Windows")
+        keeper = self.track_widget(QtWidgets.QWidget())
+        keeper.setStyle(own)
+        StyleSheet.pin_base_style(keeper)
+        self.assertTrue(keeper.testAttribute(QtCore.Qt.WA_SetStyle))
+        self.assertIs(StyleSheet.base_style(), StyleSheet.base_style())
+
+
 if __name__ == "__main__":
     unittest.main()

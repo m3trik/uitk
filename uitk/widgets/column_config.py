@@ -31,6 +31,7 @@ ticked and dragged.
 from typing import Iterable, List, Optional
 
 from qtpy import QtCore, QtGui, QtWidgets
+from uitk.themes.style_sheet import StyleSheet
 
 from uitk.managers.cursor_manager import CursorManager
 from uitk.managers.icon_manager import IconManager
@@ -417,6 +418,7 @@ class ColumnConfig(QtCore.QObject):
         header = self.header
         menu = QtWidgets.QMenu(header)
         menu.setToolTipsVisible(True)
+        StyleSheet.cast_shadow(menu)
         if self.reorderable:
             rows = _ColumnRows(menu)
             self._fill_rows(rows)

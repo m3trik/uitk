@@ -54,9 +54,15 @@ class PopupWindow:
                 fill does not reach. A translucent popup also blurs what is
                 behind it when its owner's theme has ``WINDOW_BLUR`` on.
 
+        Every popup also casts its owner's theme shadow
+        (:meth:`StyleSheet.cast_shadow`); where that shadow draws, Qt's native
+        popup shadow is dropped from *flags* so the two never stack.
+
         Returns:
             QtWidgets.QWidget or None: The popup's owner after the promotion.
         """
+        if Bootstrap.shadows():
+            flags |= QtCore.Qt.NoDropShadowWindowHint
         parent = widget.parentWidget()
         if parent is not None:
             widget.setParent(parent, flags)
@@ -80,6 +86,7 @@ class PopupWindow:
             # re-read at each show so a theme change reaches it.
             Bootstrap.set_blur(widget, StyleSheet.window_blur)
         widget.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
+        StyleSheet.cast_shadow(widget)
         return parent
 
     @staticmethod

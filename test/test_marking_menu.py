@@ -963,5 +963,48 @@ class TestOverlayGestureCursor(QtBaseTestCase):
         self.assertIsNone(self._override_shape(), "hide path left the cursor applied")
 
 
+class _LogDouble:
+    """Stands in for a MarkingMenu (and its MouseTracking) in the log tee."""
+
+    files = []
+
+    @classmethod
+    def set_log_level(cls, level):
+        pass
+
+    @classmethod
+    def set_log_file(cls, path, level=None):
+        cls.files.append(path)
+
+
+class TestInputLoggingPath(unittest.TestCase):
+    """The default input-handoff log is a swept, per-process temp entry."""
+
+    def test_default_log_is_a_pid_named_entry_in_a_swept_store(self):
+        """A fixed ``gettempdir()/uitk_input_handoff.log`` appended forever.
+
+        Each process now writes its own pid-named file in a TempArtifacts
+        store, which declares its age so the root's sweep reclaims it.
+        """
+        import os
+
+        import pythontk as ptk
+
+        double = _LogDouble()
+        double.mouse_tracking = _LogDouble()
+        double.logger = mock.Mock()
+        double._input_state = lambda: ""
+
+        path = MarkingMenu.enable_input_logging(double)
+
+        store = os.path.join(ptk.TempArtifacts.root(), "uitk_input_handoff")
+        self.assertEqual(os.path.dirname(path), store)
+        self.assertIn(str(os.getpid()), os.path.basename(path))
+        self.assertTrue(path.endswith(".log"))
+        self.assertTrue(
+            os.path.isfile(os.path.join(store, ptk.TempArtifacts.STORE_MARKER))
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,22 @@
 ﻿/* -- Core Widgets -- */
+/* The root defines every palette role a style sheet can set, so nothing
+   reads the HOST's palette: Maya's and Blender's (the OS's) differ, and a
+   color left to them shows as host-specific text, selection and alternate
+   rows. Under a style sheet Qt propagates no palette from parent to child;
+   each widget starts from the application's -- the host's. Shapes are kept
+   off the host by StyleSheet.pin_base_style. */
 QWidget {
     background-color: transparent;
     border: none;
+    color: {TEXT_COLOR};
+    selection-background-color: {SELECTION_BG};
+    selection-color: {SELECTION_FG};
+    alternate-background-color: {ALTERNATE_BACKGROUND};
+}
+/* A bare `color` fills the Disabled color group too: without this, disabled
+   text would no longer dim. */
+QWidget:disabled {
+    color: {TEXT_DISABLED};
 }
 /* Suppress Qt's native blue focus rectangle on inputs — without this,
    the focus indicator lingers visibly when the cursor leaves a focused
@@ -98,14 +113,60 @@ QGroupBox::title {
 QGroupBox[class="CollapsableGroup"]::title:hover {
     color: {TEXT_HOVER};
 }
+/* A checkable group box's indicator, drawn by the sheet rather than the
+   host style: filled when checked, uitk's check-box idiom. */
+QGroupBox::indicator {
+    width: 9px;
+    height: 9px;
+    border: 1px solid {INDICATOR_BORDER};
+    border-radius: {RADIUS};
+    background-color: {WIDGET_BACKGROUND};
+}
+QGroupBox::indicator:checked {
+    background-color: {BUTTON_CHECKED};
+}
 QGroupBox[class="CollapsableGroup"]::indicator {
     width: 0px;
     height: 0px;
+    border: none;
 }
 QGroupBox:disabled {
     color: {TEXT_DISABLED};
 }
 QGroupBox::title:disabled {
+    color: {TEXT_DISABLED};
+}
+
+/* -- Tabs -- */
+/* Left to the host style a tab bar drew per host (Maya flat, Windows 11
+   bevelled and see-through); here every part of one is the sheet's. */
+QTabWidget::pane {
+    background-color: {PANEL_BACKGROUND};
+    border: {BORDER_W} solid {BORDER_COLOR};
+    border-radius: {RADIUS};
+}
+QTabBar::tab {
+    background-color: {WIDGET_BACKGROUND};
+    color: {TEXT_COLOR};
+    border: {BORDER_W} solid {BORDER_COLOR};
+    border-top-left-radius: {RADIUS};
+    border-top-right-radius: {RADIUS};
+    padding: 2px 8px;
+    margin-right: 1px;
+}
+QTabBar::tab:hover {
+    background-color: {WIDGET_BACKGROUND_HOVER};
+    color: {TEXT_HOVER};
+}
+QTabBar::tab:selected {
+    background-color: {BUTTON_CHECKED};
+    color: {TEXT_CHECKED};
+}
+QTabBar::tab:selected:hover {
+    background-color: {BUTTON_CHECKED_TINT};
+}
+QTabBar::tab:disabled {
+    background-color: {DISABLED_BACKGROUND};
     color: {TEXT_DISABLED};
 }
 
@@ -256,7 +317,7 @@ QToolButton[popupMode="1"] {
     padding-right: 2px;
 }
 QToolButton:open {
-    background-color: dark gray;
+    background-color: {WIDGET_BACKGROUND_HOVER};
 }
 QToolButton::menu-indicator {
     image: none;
@@ -412,7 +473,7 @@ QAbstractSpinBox:disabled {
 QAbstractSpinBox:hover {
     border: {BORDER_W} solid {BORDER_HOVER};
 }
-QScrollBar:left-arrow,
+QScrollBar::left-arrow,
 QScrollBar::right-arrow,
 QScrollBar::up-arrow,
 QScrollBar::down-arrow {
@@ -456,10 +517,6 @@ QComboBox:disabled {
 QComboBox:hover {
     background-color: {WIDGET_BACKGROUND_HOVER};
     border: {BORDER_W} solid {BORDER_HOVER};
-}
-QComboBox::open {
-    selection-background-color: {WIDGET_BACKGROUND};
-    selection-color: {TEXT_CHECKED};
 }
 QComboBox:on {
     /* Popup open: tint the closed box with the hover background so it stays

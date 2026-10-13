@@ -14,6 +14,7 @@ from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.overflow_indicator import OverflowIndicator
 from uitk.widgets.row_tags import RowTags
 from uitk.managers.icon_manager import IconManager
+from uitk.themes.style_sheet import StyleSheet
 from uitk.switchboard import Signals
 from uitk.widgets.column_config import ColumnConfig
 
@@ -153,6 +154,10 @@ class HierarchyIconMixin:
         end = current.find(self._HIER_END)
         if start != -1 and end != -1:
             current = current[:start] + current[end + len(self._HIER_END) :]
+        # Pinned first: a sheet of its own would otherwise measure and draw
+        # what it leaves undefined -- the indent, branch and sort arrows --
+        # in the host's style.
+        StyleSheet.pin_base_style(self)
         self.setStyleSheet(current + tagged)
 
     def set_icon_style(self, style: str):
