@@ -6,6 +6,7 @@ import re
 from html import escape
 import pythontk as ptk
 from qtpy import QtWidgets, QtCore, QtGui, QtSvg
+from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.mixins.size_grip import SizeGripMixin
@@ -47,6 +48,7 @@ class _HelpCard(QtWidgets.QTextBrowser):
         self._poll = QtCore.QTimer(self)
         self._poll.setInterval(self.POLL_MS)
         self._poll.timeout.connect(self._check_pointer)
+        StyleSheet.cast_shadow(self)
 
     def popup(self, anchor, html: str, max_share: float) -> None:
         """Show *html* under *anchor*, at most *max_share* of its screen tall."""

@@ -7,7 +7,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `_bootstrap.py` — Standalone-process bootstrap helpers.
 - `class Bootstrap`
-  - methods: configure_platform, positions_windows, composites, set_translucent, blurs, set_blur, screen_backdrop, fades_windows, configure_high_dpi, detach_console, capture_output, report_uncaught, set_app_id
+  - methods: configure_platform, positions_windows, composites, set_translucent, blurs, set_blur, shadows, set_shadow, screen_backdrop, fades_windows, configure_high_dpi, detach_console, capture_output, report_uncaught, set_app_id
 
 ### `bridge/attribute_spec.py` — The Qt-free half of the parameter-panel contract: :class:`AttributeSpec`.
 - `class AttributeSpec`
@@ -246,7 +246,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `themes/style_sheet.py`
 - `class StyleSheet(QtCore.QObject, pythontk.LoggingMixin)`
-  - methods: repolish_tree, theme_changed, get_icon_color, resolve_variable, window_blur, set_theme, set_theme_overrides, apply_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, is_on, percent, get_variables, export_overrides, import_overrides, reset_overrides, set
+  - methods: repolish_tree, theme_changed, get_icon_color, resolve_variable, base_style, pin_base_style, window_blur, window_shadow, cast_shadow, set_theme, set_theme_overrides, apply_theme, reload, clear_caches, set_variable, get_variable, get_variable_px, is_on, percent, get_variables, export_overrides, import_overrides, reset_overrides, set
 
 ### `widgets/attribute_window.py` — Dynamic attribute editor -- :class:`AttributeWindow`, a ``Menu`` popup whose
 - `class AttributeWindow(Menu)`
@@ -358,7 +358,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: get_ui, convert_to_legal_name, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut
 
 ### `widgets/editors/style_editor.py`
-- constants: BUILTIN_THEMES_DIR, BASIC_TOKENS, LENGTH_TOKENS, SWITCH_TOKENS, PERCENT_TOKENS, ROW_H, CELL_EDITOR_H
+- constants: BUILTIN_THEMES_DIR, BASIC_TOKENS, LENGTH_TOKENS, EFFECT_SWITCHES, SWITCH_TOKENS, EFFECT_TOKENS, PERCENT_TOKENS, ROW_H, CELL_EDITOR_H
 - `class StyleEditor(EditorPanel)`
   - methods: theme, set_tier, export_preset_data, import_preset_data, populate, on_color_changed, on_length_changed, on_percent_changed, on_switch_changed, reset_variable, reset_all, refresh_row
 

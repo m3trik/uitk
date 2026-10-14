@@ -4,7 +4,7 @@ import logging
 import re
 import time
 from contextlib import contextmanager, nullcontext
-from typing import Union
+from typing import Optional, Union
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.events import EventFactoryFilter
 from uitk.switchboard import Signals
@@ -14,6 +14,7 @@ from uitk.widgets.mixins.menu_mixin import MenuMixin
 from uitk.widgets.mixins.option_box_mixin import OptionBoxMixin
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.overflow_indicator import OverflowIndicator
+from uitk.themes.style_sheet import StyleSheet
 
 logger = logging.getLogger(__name__)
 
@@ -712,7 +713,50 @@ class ComboBox(
     # arrives via the normal restore flow, matching add()'s behavior.
     def clear(self):
         with self._silenced():
+            self._release_items()
             super().clear()
+
+    def _release_items(self, first: int = 0, last: Optional[int] = None) -> None:
+        """Delete the items of rows *first* to *last* (inclusive; to the end
+        when None) of a ``QStandardItemModel`` through shiboken, before Qt
+        removes the rows.
+
+        Qt deletes a removed row's items natively, and shiboken never hears of
+        an item made in C++ (``addItem``'s) dying: a wrapper minted by any
+        ``model().item(row)`` stays registered at the freed address, and a C++
+        object later allocated there comes back to Python as that item. PySide
+        6.5.3 (Maya 2025) keeps each such wrapper alive itself, so every refill
+        that touched its rows left more, until a posted event reached an event
+        filter as a ``QStandardItem`` and crashed Maya. Taken out of the model
+        and deleted by ``shiboken.delete``, each item's wrapper is invalidated
+        with it: a reference a caller still holds raises ``RuntimeError``, as an
+        item made in Python does, instead of reading freed memory. (A take
+        alone leaves the item owned by no one.)
+
+        The model's signals are held meanwhile: each take signals a data change,
+        and a combo sized to its contents would re-measure every row on each.
+        The removal that follows signals the change once.
+        """
+        model = self.model()
+        if not isinstance(model, QtGui.QStandardItemModel):
+            return
+        if self.rootModelIndex().isValid():
+            return  # the rows shown are a sub-item's, not the model's top level
+        try:
+            from qtpy import shiboken
+        except ImportError:  # a binding without shiboken: no wrapper to strand
+            return
+        rows = model.rowCount()
+        last = rows - 1 if last is None else min(last, rows - 1)
+        was_blocked = model.blockSignals(True)
+        try:
+            for row in range(max(0, first), last + 1):
+                for column in range(model.columnCount()):
+                    item = model.takeItem(row, column)
+                    if item is not None:
+                        shiboken.delete(item)
+        finally:
+            model.blockSignals(was_blocked)
 
     def addItem(self, *args, **kwargs):
         with self._silenced():
@@ -1519,6 +1563,7 @@ class ComboBox(
         was_blocked = self.signalsBlocked()
         self.blockSignals(True)
         try:
+            self._release_items(index, index)
             super().removeItem(index)
         finally:
             self.blockSignals(was_blocked)
@@ -1571,6 +1616,9 @@ class ComboBox(
         # of view past it. Attached here rather than in __init__ because a
         # subclass may swap the view (WidgetComboBox does); idempotent.
         OverflowIndicator.attach(view)
+        # The dropdown floats over the window: the theme's shadow under it
+        # (idempotent; a swapped view brings a new container).
+        StyleSheet.cast_shadow(view.window())
         self.before_popup_shown.emit()
         with self._combo_animation_suppressed():
             super().showPopup()
@@ -1619,11 +1667,19 @@ class ComboBox(
         The container outlives a ``setView``, so its filter goes on once; the
         viewport's goes on every call, for a view swapped in since (Qt moves a
         filter already installed rather than adding it twice).
+
+        The container is read as ``view.window()`` (Qt makes it a ``Popup``
+        top-level), never ``parentWidget()`` or ``parent()``: on PySide 6.5.3
+        (Maya 2025) the wrapper those mint for the C++-made container, once
+        collected, invalidates the live view's own, so the view's next call
+        raised "already deleted" and a lone combo's first popup never opened.
+        Holding that wrapper instead outlives the container and crashes a
+        later combo built at its address.
         """
         if getattr(self, "_item_click_filter", None) is None:
             self._item_click_filter = _PopupItemClickCommitter(self)
             self._body_double_click_filter = self._mouse_press_filter("_popup_")
-            self._body_double_click_filter.install(view.parentWidget())
+            self._body_double_click_filter.install(view.window())
         view.viewport().installEventFilter(self._item_click_filter)
 
     def _mouse_press_filter(self, handler_prefix):

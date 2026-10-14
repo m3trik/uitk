@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from typing import Any, Dict, List, Mapping, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
+from uitk.themes.style_sheet import StyleSheet
 
 from uitk.widgets.editors.color_mapping_editor import (
     ColorMappingEditor,
@@ -1489,6 +1490,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # explicitly released — otherwise every right-click leaks one
         # QMenu child for the life of the panel.
         menu = QtWidgets.QMenu(self._header)
+        StyleSheet.cast_shadow(menu)
         try:
             # Let consumers add their own actions first
             self.header_menu_requested.emit(menu)

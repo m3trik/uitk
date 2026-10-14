@@ -9,13 +9,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from qtpy import QtWidgets
+from unittest import mock
+
+from qtpy import QtCore, QtWidgets
 from conftest import QtBaseTestCase, setup_qt_application
 from uitk.themes.style_sheet import StyleSheet
 from uitk.widgets.colorSwatch import ColorSwatch
 from uitk.widgets.editors.style_editor import (
     BASIC_TOKENS,
     BUILTIN_THEMES_DIR,
+    EFFECT_SWITCHES,
+    EFFECT_TOKENS,
     LENGTH_TOKENS,
     StyleEditor,
 )
@@ -654,6 +658,93 @@ class TestStyleEditorTheming(_PresetRootSandboxCase):
         )
         self.editor.reset_variable("WINDOW_BLUR_OPACITY")
         self.assertEqual(spin.value(), base)
+
+    def test_shadow_is_a_switch_over_its_size_and_opacity(self):
+        """The shadow joins the blur under *Effects*, each switch above its
+        settings: the shadow's size a px spin box, its opacity a ``%`` one."""
+        self.editor.set_tier("Basic")
+        names = [
+            self.editor.table.item(i, 0).text()
+            for i in range(self.editor.table.rowCount())
+            if self.editor.table.item(i, 0)
+        ]
+        effects = names[names.index("— Effects —") + 1 :]
+        self.assertEqual(effects, list(EFFECT_TOKENS))
+        self.assertIsNotNone(
+            self._cell_for("WINDOW_SHADOW").findChild(QtWidgets.QCheckBox)
+        )
+        spins = {
+            name: self._cell_for(name).findChild(QtWidgets.QSpinBox)
+            for name in ("WINDOW_SHADOW_SIZE", "WINDOW_SHADOW_OPACITY")
+        }
+        self.assertEqual([spin.suffix() for spin in spins.values()], [" px", "%"])
+        for spin, value in zip(spins.values(), (9, 40)):
+            spin.setValue(value)
+        self.assertEqual(
+            [StyleSheet.get_variable(name, theme=self.editor.theme) for name in spins],
+            ["9px", "40%"],
+        )
+
+    def test_a_switch_says_its_state_at_the_spin_boxes_width(self):
+        """uitk draws no check indicator (a check box's fill shows its state),
+        so the text-less switch was a 2px sliver: it reads On/Off instead."""
+        check = self._cell_for("WINDOW_SHADOW").findChild(QtWidgets.QCheckBox)
+        spin = self._cell_for("WINDOW_SHADOW_SIZE").findChild(QtWidgets.QSpinBox)
+        self.assertEqual((check.text(), check.width()), ("On", spin.width()))
+        check.setChecked(False)
+        self.assertEqual(check.text(), "Off")
+        self.editor.reset_variable("WINDOW_SHADOW")
+        self.assertEqual(check.text(), "On", "a refreshed row is relabelled too")
+
+    # Effect gating ------------------------------------------------------
+
+    def _with_effects(self, **available):
+        """Patch whether this desktop draws each effect, by its switch."""
+        patched = {}
+        for switch, (settings, _, why) in EFFECT_SWITCHES.items():
+            on = available.get(switch, True)
+            patched[switch] = (settings, lambda on=on: on, why)
+        patcher = mock.patch.dict(EFFECT_SWITCHES, patched)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.editor.populate()
+
+    def _row_state(self, name):
+        """``(enabled, tooltip)`` of token *name*'s row: its name item, value
+        and reset agreeing on ``enabled``."""
+        table = self.editor.table
+        row = self.editor._row_of(name)
+        item = table.item(row, 0)
+        enabled = bool(item.flags() & QtCore.Qt.ItemIsEnabled)
+        for column in (1, 2):
+            self.assertEqual(table.cellWidget(row, column).isEnabled(), enabled, name)
+        return enabled, item.toolTip()
+
+    def test_a_switched_off_effect_disables_its_settings(self):
+        """They can't take effect, so their rows grey out, saying why; turning
+        the switch back on (or resetting it) enables them again."""
+        self._with_effects()
+        check = self._cell_for("WINDOW_SHADOW").findChild(QtWidgets.QCheckBox)
+        check.setChecked(False)
+        for name in ("WINDOW_SHADOW_SIZE", "WINDOW_SHADOW_OPACITY"):
+            self.assertEqual(
+                self._row_state(name), (False, "Used only while WINDOW_SHADOW is on.")
+            )
+        self.assertEqual(self._row_state("WINDOW_SHADOW"), (True, ""))
+        self.assertTrue(self._row_state("WINDOW_BLUR_OPACITY")[0], "another effect")
+        check.setChecked(True)
+        self.assertEqual(self._row_state("WINDOW_SHADOW_SIZE"), (True, ""))
+        check.setChecked(False)
+        self.editor.reset_variable("WINDOW_SHADOW")  # dark ships it on
+        self.assertTrue(self._row_state("WINDOW_SHADOW_OPACITY")[0])
+
+    def test_an_effect_this_desktop_cant_draw_is_disabled_whole(self):
+        """Its switch too, with the reason as each row's tooltip."""
+        self._with_effects(WINDOW_BLUR=False)
+        why = EFFECT_SWITCHES["WINDOW_BLUR"][2]
+        for name in ("WINDOW_BLUR", "WINDOW_BLUR_OPACITY"):
+            self.assertEqual(self._row_state(name), (False, why))
+        self.assertTrue(self._row_state("WINDOW_SHADOW_SIZE")[0], "another effect")
 
     # Value-change handlers --------------------------------------------
 

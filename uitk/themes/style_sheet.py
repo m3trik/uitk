@@ -3,7 +3,7 @@
 import logging
 import re
 import importlib.resources
-from typing import Union
+from typing import Optional, Tuple, Union
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 from uitk._bootstrap import Bootstrap
@@ -145,6 +145,15 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             # under 100% shows more of the frosted desktop. The blur itself
             # has no strength to set; unblurred, the fill keeps its alpha.
             "WINDOW_BLUR_OPACITY": "60%",
+            # The soft drop shadow under every floating surface: windows,
+            # menus, flyouts, popups (StyleSheet.window_shadow), "on"/"off".
+            # SIZE is the px it fades out over past the window, dropped a
+            # quarter of that so the light reads as coming from above.
+            # OPACITY is how dark it is (CSS-like: half of it at the window
+            # edge); a fainter shadow keeps its reach.
+            "WINDOW_SHADOW": "on",
+            "WINDOW_SHADOW_SIZE": "18px",
+            "WINDOW_SHADOW_OPACITY": "67%",
         },
         "dark": {
             # Surfaces
@@ -197,6 +206,9 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "LINK_VISITED_COLOR": "rgb(160,150,190)",
             "WINDOW_BLUR": "on",
             "WINDOW_BLUR_OPACITY": "60%",
+            "WINDOW_SHADOW": "on",
+            "WINDOW_SHADOW_SIZE": "18px",
+            "WINDOW_SHADOW_OPACITY": "82%",
         },
         # Accessibility default: WCAG-minded high-contrast dark. Opaque
         # surfaces (no translucency — it degrades legibility over busy
@@ -255,6 +267,11 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "LINK_VISITED_COLOR": "rgb(204,153,255)",
             "WINDOW_BLUR": "off",  # opaque surfaces: nothing shows through to blur
             "WINDOW_BLUR_OPACITY": "100%",
+            # Separation here is the white outline every surface wears; a
+            # soft shadow would only blur that hard edge.
+            "WINDOW_SHADOW": "off",
+            "WINDOW_SHADOW_SIZE": "18px",
+            "WINDOW_SHADOW_OPACITY": "100%",
         },
     }
 
@@ -477,20 +494,133 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             default: Returned when no ancestor is themed or the value is empty.
 
         Returns:
-            The resolved value (overrides included), or *default*.
+            The resolved value, or *default*. Overrides are included, as is a
+            per-call token *widget* or its ancestor was styled with
+            (``style.set(..., WINDOW_BLUR="off")``), as :meth:`set` applies it.
         """
         w = widget
         while w is not None:
             if w in cls._widget_themes:
+                kwargs = cls._widget_configs.get(w, {}).get("kwargs", {})
+                if name in kwargs:
+                    return str(kwargs[name]) or default
                 return cls.get_variable(name, cls._widget_themes[w], w) or default
             w = w.parent() if hasattr(w, "parent") else None
         return default
+
+    #: The style uitk's style sheet draws over, in every host. Qt draws what a
+    #: sheet leaves undefined (an unstyled sub-control, a metric, a polish
+    #: side effect) with the widget's base style, which is otherwise the
+    #: HOST's: Maya's own style in Maya, ``windows11`` in Blender and in a
+    #: standalone app. So the same panel drew different corners, indicators,
+    #: tabs and indents per host. Fusion: the one Qt ships on every platform.
+    BASE_STYLE = "Fusion"
+    _base_style = None
+
+    @classmethod
+    def base_style(cls) -> QtWidgets.QStyle:
+        """The shared :attr:`BASE_STYLE` instance (made once, owned by the
+        application so it outlives every widget drawn with it)."""
+        from qtpy import shiboken
+
+        style = cls._base_style
+        if style is None or not shiboken.isValid(style):  # or gone with an app
+            style = QtWidgets.QStyleFactory.create(cls.BASE_STYLE)
+            app = QtWidgets.QApplication.instance()
+            if app is not None:
+                style.setParent(app)
+            cls._base_style = style
+        return style
+
+    @classmethod
+    def pin_base_style(cls, widget: QtWidgets.QWidget) -> None:
+        """Draw *widget* over :meth:`base_style` instead of the host's style.
+
+        Per widget, never the application's (that would restyle the host).
+        Its children inherit the pin through the style sheet's style, popups
+        included -- until one calls ``setStyleSheet`` itself: Qt then draws it
+        over the host style again. So a widget given a sheet of its own (or a
+        copy of its parent's) is pinned first, as ``TreeWidget``, the option
+        box, the flyout sublists and the switchboard dialogs do. A widget that
+        set a style of its own (``ComboBox``'s Fusion proxy) keeps it.
+        """
+        if not widget.testAttribute(QtCore.Qt.WA_SetStyle):
+            widget.setStyle(cls.base_style())
 
     @classmethod
     def window_blur(cls, widget: QtWidgets.QWidget) -> bool:
         """Whether *widget*'s ``WINDOW_BLUR`` is on, through its theme or its
         owner's -- the resolver a popup window hands ``Bootstrap.set_blur``."""
         return cls.is_on(cls.resolve_variable("WINDOW_BLUR", widget))
+
+    # Style classes whose window paints no surface -- a gesture page whose
+    # buttons float over the desktop. A shadow there would outline an
+    # invisible rectangle, so they cast none.
+    _shadowless_classes = ("transparentBgNoBorder", "translucentBgNoBorder")
+
+    @classmethod
+    def window_shadow(
+        cls, widget: QtWidgets.QWidget
+    ) -> Optional[Tuple[QtGui.QColor, int, int]]:
+        """The theme's drop shadow for *widget*'s window, through its theme or
+        its owner's -- the resolver :meth:`cast_shadow` hands
+        ``Bootstrap.set_shadow``.
+
+        Read from ``WINDOW_SHADOW`` (on/off), ``WINDOW_SHADOW_SIZE`` (its
+        reach in px) and ``WINDOW_SHADOW_OPACITY`` (the black's alpha, in
+        percent). Its corners are square, as every
+        uitk window is (no window rule rounds one; ``RADIUS`` rounds
+        controls): a rounded cut-out under a square, translucent window would
+        leave a sliver of shadow showing through each corner.
+
+        Returns:
+            ``(QColor, size_px, 0)``, or None for no shadow: it is off, its
+            size or opacity is 0, nothing above *widget* is themed, or
+            *widget* wears a surfaceless style class.
+        """
+        config = cls._widget_configs.get(widget)
+        if config and config.get("style_class") in cls._shadowless_classes:
+            return None
+        if not cls.is_on(cls.resolve_variable("WINDOW_SHADOW", widget)):
+            return None
+        size = cls._leading_int(cls.resolve_variable("WINDOW_SHADOW_SIZE", widget))
+        opacity = cls.percent(cls.resolve_variable("WINDOW_SHADOW_OPACITY", widget))
+        alpha = min(255, round(opacity * 255 / 100))
+        if size <= 0 or alpha <= 0:
+            return None
+        return QtGui.QColor(0, 0, 0, alpha), size, 0
+
+    @classmethod
+    def cast_shadow(cls, widget: QtWidgets.QWidget) -> bool:
+        """Give *widget*'s window the theme's drop shadow (:meth:`window_shadow`).
+
+        The one call for anything that floats over another window: a styled
+        window (:meth:`set` makes it), a promoted popup, a context menu, or a
+        combo box's dropdown. The theme is re-read each time the window shows,
+        so a theme change reaches it. A framed window, or one on a desktop
+        without shadows (``Bootstrap.shadows()``), casts none.
+
+        A ``QMenu``'s submenus are popups of their own: each casts it too,
+        found as the menu opens (so a submenu added up to then is included).
+
+        Returns:
+            Whether the window casts a shadow as it stands.
+        """
+        if isinstance(widget, QtWidgets.QMenu) and not widget.property(
+            cls._SHADOW_SUBMENUS
+        ):
+            widget.setProperty(cls._SHADOW_SUBMENUS, True)
+            widget.aboutToShow.connect(lambda: cls._cast_submenu_shadows(widget))
+        return Bootstrap.set_shadow(widget, cls.window_shadow)
+
+    #: Marks a ``QMenu`` whose submenus :meth:`cast_shadow` follows.
+    _SHADOW_SUBMENUS = "uitk_shadow_submenus"
+
+    @classmethod
+    def _cast_submenu_shadows(cls, menu: QtWidgets.QMenu) -> None:
+        """The shadow on *menu*'s submenus, as it opens."""
+        for sub in menu.findChildren(QtWidgets.QMenu):
+            cls.cast_shadow(sub)
 
     @classmethod
     def _stamp_theme(cls, theme: str, widget: QtWidgets.QWidget = None):
@@ -779,7 +909,13 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             widget: Context widget for checking overrides.
             default: Returned when the value is missing/unparseable.
         """
-        m = re.match(r"\s*(-?\d+)", cls.get_variable(name, theme, widget) or "")
+        return cls._leading_int(cls.get_variable(name, theme, widget), default)
+
+    @staticmethod
+    def _leading_int(value, default=0):
+        """The leading integer of a length token (``"19px"`` -> ``19``), or
+        *default* when it has none."""
+        m = re.match(r"\s*(-?\d+)", str(value or ""))
         return int(m.group(1)) if m else default
 
     @staticmethod
@@ -992,6 +1128,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             self.logger.debug(
                 f"Applying QSS to widget '{widget.objectName()}':\n---BEGIN QSS---\n{qss_final}\n---END QSS---"
             )
+            self.pin_base_style(widget)
             widget.setStyleSheet(qss_final)
             if widget.isWindow():
                 Bootstrap.set_blur(widget, self.is_on(theme_vars.get("WINDOW_BLUR")))
@@ -1022,6 +1159,9 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
                 "package": package,
                 "kwargs": kwargs,
             }
+            # After registering: the shadow resolves through this config.
+            if widget.isWindow():
+                self.cast_shadow(widget)
 
             # Update default icon color and refresh icons for this widget tree
             # Use resolved color from theme_vars to ensure overrides are respected

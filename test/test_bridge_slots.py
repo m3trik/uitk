@@ -347,10 +347,45 @@ class TestRequireOutputDir(BaseTestCase):
         # Reused across sends for the same tag (same process).
         s2 = self._make(default="", temp_fallback=True, tag=tag)
         self.assertEqual(s2.require_output_dir(), r)
-        # atexit-style cleanup removes the directory.
+        # An early reclaim removes the directory.
         _BridgeSlotsInternal._remove_bridge_temp_dir(tag)
         self.assertFalse(os.path.isdir(r))
         self.assertNotIn(tag, _BridgeSlotsInternal._BRIDGE_TEMP_DIRS)
+
+    def test_temp_fallback_outlives_the_host_process(self):
+        """The fallback folder must survive the host's exit.
+
+        Regression: it was a ``session`` store, removed when the host exited,
+        while the Painter / Toolbag project the send built still pointed into
+        it. It is now a detached store that the age sweep reclaims. The child
+        process is the host: it allocates the folder and exits normally, so
+        every exit hook runs.  Added: 2026-10-13
+        """
+        import os
+        import subprocess
+        import sys
+
+        tag = "test_bridge_outlives"
+        code = (
+            "from uitk.bridge._output_dir import _OutputDirMixin as M\n"
+            f"print(M.ensure_bridge_temp_dir({tag!r}))\n"
+        )
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
+        out = subprocess.run(
+            [sys.executable, "-c", code],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(out.returncode, 0, out.stderr)
+        path = out.stdout.strip().splitlines()[-1]
+        self.addCleanup(shutil.rmtree, path, True)
+        self.assertTrue(os.path.isdir(path), f"removed at host exit: {path}")
+        marker = os.path.join(os.path.dirname(path), ptk.TempArtifacts.STORE_MARKER)
+        with open(marker, encoding="utf-8") as fh:
+            age = json.load(fh)["max_age_days"]
+        self.assertIsNotNone(age, "the store must declare an age so it is swept")
 
     def test_bridge_temp_dir_survives_a_killed_host(self):
         """A host that dies skips ``atexit``; the leftover must still be reclaimable.
@@ -391,9 +426,7 @@ class TestRequireOutputDir(BaseTestCase):
         os.utime(path, (past, past))
 
         # A later run allocating the same namespace reclaims it by age.
-        swept = ptk.TempArtifacts(
-            f"uitk_bridge_{tag}", policy="session", max_age_days=1
-        ).sweep_stale()
+        swept = ptk.TempArtifacts(f"uitk_bridge_{tag}", max_age_days=1).sweep_stale()
         self.assertIn(os.path.normcase(path), [os.path.normcase(p) for p in swept])
         self.assertFalse(os.path.isdir(path))
 

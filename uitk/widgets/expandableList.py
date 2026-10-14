@@ -8,6 +8,7 @@ from uitk.widgets.mixins.attributes import AttributesMixin
 from uitk.widgets.popup.dismissal import OutsideClickDismissal
 from uitk.widgets.popup.placement import PopupPlacement
 from uitk.widgets.popup.window import PopupWindow
+from uitk.themes.style_sheet import StyleSheet
 
 logger = logging.getLogger(__name__)
 
@@ -893,6 +894,7 @@ class ExpandableList(QtWidgets.QWidget, AttributesMixin):
         # (reparenting to the window breaks normal CSS inheritance).
         ss = self._get_inherited_stylesheet()
         if ss:
+            StyleSheet.pin_base_style(sublist)  # see StyleSheet.pin_base_style
             sublist.setStyleSheet(ss)
 
         # Connect the signals of the sublist to the signals of the parent list
@@ -1963,8 +1965,6 @@ if __name__ == "__main__":
     print("\nitems:", lw.get_items())
 
     lw.on_item_interacted.connect(lambda x: print(x))
-
-    from uitk.themes.style_sheet import StyleSheet
 
     StyleSheet().set(widget=lw.get_items(), theme="dark")
 

@@ -836,11 +836,12 @@ class DoubleClickBodyStartsRename(QtBaseTestCase):
                 return False
 
         spy = PopupPressSpy()
-        combo.view().parentWidget().installEventFilter(spy)
+        container = combo.view().window()  # see ComboBox._ensure_popup_filters
+        container.installEventFilter(spy)
         try:
             self._double_click_body(combo)
         finally:
-            combo.view().parentWidget().removeEventFilter(spy)
+            container.removeEventFilter(spy)
         QtWait.until(combo.isEditable, "never entered edit mode")
         self.assertEqual(len(popup_presses), 1, "the 2nd click lands on the popup")
         line_edit = combo.lineEdit()
@@ -1605,6 +1606,108 @@ class CellRows(QtBaseTestCase):
         combo.addItem("plain")
         self.assertIsNone(combo.item_cells(0))
         self.assertEqual(combo._measure_cell_columns(), [])
+
+
+class PopupKeepsItsViewValid(QtBaseTestCase):
+    """A combo nothing else holds opens its popup, and the view it handed out
+    stays valid. On PySide 6.5.3 (Maya 2025), a collected wrapper of the
+    view's C++-made container invalidated the live view's: the first
+    ``showPopup`` raised "already deleted" from ``view.viewport()``. Red on
+    6.5.3 only (6.10 never invalidates it)."""
+
+    def test_a_lone_combo_opens_and_its_view_stays_valid(self):
+        import gc
+
+        import shiboken6
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItems(["a", "b"])
+        view = combo.view()
+        combo.show()
+        combo.showPopup()
+        combo.hidePopup()
+        gc.collect()
+        self.assertTrue(shiboken6.isValid(view))
+        view.viewport()
+
+
+class TouchedItemsNeverDangle(QtBaseTestCase):
+    """A row's item wrapped from Python (``model().item(row)``, how a row is
+    disabled or given a font or tooltip) never outlives the row as a wrapper
+    over freed memory.
+
+    ``QComboBox.clear`` / ``removeItem`` delete the model's items natively, and
+    shiboken never hears of a ``QStandardItem`` made in C++ dying: no QObject,
+    no wrapper class. Its wrapper stays registered at the freed address, and a
+    C++ object later allocated there comes back to Python as that item. Maya
+    2025's PySide 6.5.3 keeps every such wrapper alive itself (the model's
+    wrapper holds it), so each refill left more: a posted ``QEvent`` reached an
+    event filter as a ``QStandardItem`` and its ``type()`` called through the
+    event's vtable (Maya crashed opening the Shot Manifest's view combos, then
+    its header menu, 2026-10-13). A reference held across a clear dangles on
+    any version.
+    """
+
+    def _combo(self):
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItems(["a", "b", "c", "d"])
+        return combo
+
+    def _assert_released(self, item) -> None:
+        """*item*'s row is gone: its wrapper is invalidated with it, so reading
+        it raises rather than reaching freed memory."""
+        import shiboken6
+
+        self.assertFalse(shiboken6.isValid(item))
+        with self.assertRaises(RuntimeError):
+            item.text()
+
+    @staticmethod
+    def _registered_items() -> int:
+        import gc
+
+        import shiboken6
+        from qtpy import QtGui
+
+        gc.collect()
+        return sum(
+            type(w) is QtGui.QStandardItem
+            for w in shiboken6.Shiboken.getAllValidWrappers()
+        )
+
+    def test_an_item_held_across_clear_is_released_with_its_row(self):
+        combo = self._combo()
+        held = combo.model().item(2)
+        combo.clear()
+        self.assertEqual(combo.count(), 0)
+        self._assert_released(held)
+
+    def test_an_item_held_across_remove_item_is_released_with_its_row(self):
+        combo = self._combo()
+        held, kept = combo.model().item(1), combo.model().item(2)
+        combo.removeItem(1)
+        self.assertEqual([combo.itemText(i) for i in range(combo.count())], list("acd"))
+        self._assert_released(held)
+        self.assertEqual(kept.text(), "c")  # only the removed row's item
+
+    def test_refills_that_touch_their_rows_leave_no_wrapper_behind(self):
+        """The Shot Manifest's view combos: refilled on each open, every row's
+        enabled state set through its item. Red on PySide 6.5.3 only, where the
+        model's wrapper kept each touched item's wrapper."""
+        combo = self._combo()
+        before = self._registered_items()
+        for _ in range(3):
+            combo.add(["a", "b", "c", "d"], header="Pick")
+            for row in range(combo.count()):
+                combo.model().item(row).setEnabled(row != 1)
+        self.assertFalse(
+            combo.model().flags(combo.model().index(1, 0)) & QtCore.Qt.ItemIsEnabled
+        )
+        combo.clear()
+        self.assertEqual(self._registered_items(), before)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from qtpy import QtCore, QtWidgets
+from uitk.themes.style_sheet import StyleSheet
 
 # AttributeSpec (and the choice aliases) live in the Qt-free
 # ``attribute_spec`` so a registry can be declared without a binding; the
@@ -1033,6 +1034,7 @@ class _KindFactoryInternal(object):
         """
         menu = QtWidgets.QMenu(widget)
         menu.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        StyleSheet.cast_shadow(menu)
         menu.addAction(
             "Check All",
             lambda: _KindFactoryInternal._set_all_checked(widget, True),

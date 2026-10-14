@@ -48,9 +48,9 @@ A subclass **must** set / implement (from the `BridgeSlotsBase` docstring and bo
 Optional overrides:
 
 - `select_initial_template_index(pairs)` — bias the starting combo entry (default: index 0).
-- `default_output_dir()` — DCC-side fallback for a blank Output Dir (default `""`; mayatk's `MayaBridgeSlotsBase` overrides it to return `EnvUtils.default_artifact_dir()`).
+- `default_output_dir()` — DCC-side fallback for a blank Output Dir (default `""`, which mayatk's and blendertk's bridge-slots bases keep; a bridge with a natural output root overrides it).
 - `REQUIRE_OUTPUT_DIR` — set `False` for bridges with no user-visible output; the row is never built and `require_output_dir()` returns `""`.
-- `TEMP_OUTPUT_FALLBACK` — set `True` for file-staging bridges whose output is transient export artifacts; `require_output_dir()` then falls back to a self-cleaning per-tag temp dir (`ensure_bridge_temp_dir`, removed at process exit) instead of erroring, so an unsaved scene can still hand off.
+- `TEMP_OUTPUT_FALLBACK` — set `True` for file-staging bridges whose output is transient export artifacts; `require_output_dir()` then falls back to a per-tag temp dir (`ensure_bridge_temp_dir`: a detached `ptk.TempArtifacts` store that outlives the host -- a launched app's project may still read it -- and is swept 7 days after its last write) instead of erroring, so an unsaved scene can still hand off.
 - `resolve_scope_objects(scope)` — turn a `SCOPE` value into host objects; implemented once per DCC package on its bridge-slots base, which hands its scene reads (selection, whole scene, visible) to `pythontk.HandoffScope.resolve` — the words and their fallbacks (unknown → selected; a widening read that cannot answer → the selection) are pythontk's (default: empty list = no scope support). Slot code consumes it via `scoped_objects(params)`, which logs a scope-aware message when the set is empty.
 - `TEMPLATE_EXTENSION` — `.py` (default) or `.lua` etc.; locates the placeholder source for row visibility and dispatches the description extractor.
 - `make_preset_store()` — return a `pythontk.PresetStore` to switch presets to semantic mode (see [Panel services](#panel-services)).
@@ -186,7 +186,7 @@ On every combo change, `BridgeSlotsBase`:
 
 What every subclass gets for free from [`slots.py`](../uitk/bridge/slots.py):
 
-**Output Dir row** (`REQUIRE_OUTPUT_DIR`, default `True`) — a line edit inserted above the parameters, carrying uitk option-box buttons: a persisted recent-values history plus a directory-browse button by default (`_configure_output_dir_options` hook to swap them). `require_output_dir()` resolves in order: the typed value → `default_output_dir()` → (when `TEMP_OUTPUT_FALLBACK` is set) a self-cleaning temp dir from `ensure_bridge_temp_dir` — each fallback written back into the field and announced in the log with a clickable link — → log an error, focus the field, return `None` so the caller aborts. With `REQUIRE_OUTPUT_DIR = False` the row is never built and both `resolved_output_dir()` and `require_output_dir()` return `""`, so callers need no guard.
+**Output Dir row** (`REQUIRE_OUTPUT_DIR`, default `True`) — a line edit inserted above the parameters, carrying uitk option-box buttons: a persisted recent-values history plus a directory-browse button by default (`_configure_output_dir_options` hook to swap them). `require_output_dir()` resolves in order: the typed value → `default_output_dir()` → (when `TEMP_OUTPUT_FALLBACK` is set) an age-swept temp dir from `ensure_bridge_temp_dir` — each fallback written back into the field and announced in the log with a clickable link — → log an error, focus the field, return `None` so the caller aborts. With `REQUIRE_OUTPUT_DIR = False` the row is never built and both `resolved_output_dir()` and `require_output_dir()` return `""`, so callers need no guard.
 
 **Presets** — a preset combo plus a "Reset to Defaults" button, driven by `PresetManager` ([`preset_manager.py`](../uitk/managers/preset_manager.py)), in one of two modes chosen by `make_preset_store()`:
 

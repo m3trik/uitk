@@ -35,7 +35,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape, quoteattr
 
@@ -269,9 +268,13 @@ class _DesignerPluginInternal:
         """Directory holding one group's rasterised widget-box icons.
 
         Keyed by group so two packages publishing a same-named icon (uitk's
-        ``list`` and a downstream package's) can't overwrite each other's.
+        ``list`` and a downstream package's) can't overwrite each other's. In
+        the per-user cache root: regenerable, but read by a Designer process
+        long after this one returns, so never temp.
         """
-        return os.path.join(tempfile.gettempdir(), "uitk-designer-icons", group)
+        import pythontk as ptk
+
+        return str(ptk.UserConfig.cache_dir("uitk", "designer_icons", group))
 
     @classmethod
     def _icon_file(cls, name: str, group: str) -> str:
