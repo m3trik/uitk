@@ -269,6 +269,35 @@ class TestDetachConsole(_TempDirCase):
         self.assertTrue(detached)
         self.assertFalse(console_left)
 
+    def test_a_detached_process_still_starts_children(self):
+        """The std handles kept the closed console's values: a child started
+        with captured output inherited that dead stdin and ``DuplicateHandle``
+        failed (WinError 6, or 50 once the value was reused) -- measured as the
+        desktop-shortcut probe of a hub Explorer opened. Cleared, they read as
+        under pythonw, and the child gets a pipe."""
+        handles, output = self._in_own_console(
+            "\n".join(
+                [
+                    "import ctypes, json, os, subprocess, sys",
+                    "from uitk._bootstrap import Bootstrap",
+                    "assert Bootstrap.detach_console()",
+                    "get = ctypes.windll.kernel32.GetStdHandle",
+                    "get.restype = ctypes.c_void_p",
+                    "handles = [get(n) for n in (-10, -11, -12)]",
+                    "try:",
+                    "    output = subprocess.run([sys.executable, '-c', 'print(1)'],"
+                    " capture_output=True, text=True,"
+                    " creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip()",
+                    "except OSError as error:",
+                    "    output = str(error)",
+                    "with open(os.environ['RESULT_UNDER_TEST'], 'w') as f:",
+                    "    json.dump([handles, output], f)",
+                ]
+            )
+        )
+        self.assertEqual(handles, [None, None, None])
+        self.assertEqual(output, "1")
+
     def test_a_shared_console_is_left_alone(self):
         """A second process on the console stands in for the terminal."""
         detached, console_left = self._in_own_console(

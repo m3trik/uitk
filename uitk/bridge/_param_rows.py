@@ -5,7 +5,8 @@
 The "Parameters" group built from the registry's :class:`AttributeSpec` rows
 (sections, inline cells, action buttons), their tooltips (static and live), and
 the two per-row states a panel keeps current: visibility (does the selected
-template read the knob?) and enablement (is it in effect right now?).
+template read the knob?) and enablement (is it in effect right now?) -- plus
+the one the user keeps: which sections are folded.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from qtpy import QtCore, QtWidgets
 from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.separator import Separator
 from uitk.managers.field_visibility import FieldVisibility
+from uitk.managers.window_height import WindowHeight
 
 from uitk.bridge.spec import AttributeSpec, KindFactory
 from uitk.bridge.tooltip import Tooltip
@@ -48,6 +50,14 @@ class _ParamRowsMixin(object):
     # This class attr is the fallback for a panel whose registry declares none.
     PARAM_SUPERSESSIONS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = ()
 
+    # ------------------ Foldable sections -----------------------------
+    #: Whether a section's titled divider folds its rows (a disclosure). The
+    #: folded set is the user's and is remembered per panel through the
+    #: window's custom store; False keeps plain section captions.
+    FOLDABLE_SECTIONS: bool = True
+    #: The custom-store key the folded sections are kept under.
+    _FOLDED_SECTIONS_KEY = "bridge_folded_sections"
+
     def format_param_tooltip(self, spec: AttributeSpec) -> str:
         """Hook: build the rich-text tooltip for one parameter spec."""
         return Tooltip.format_param_tooltip(spec)
@@ -76,7 +86,10 @@ class _ParamRowsMixin(object):
             self._param_section[key] = section
             new_section = bool(section) and section not in self._section_separators
             if new_section:
-                sep = Separator(grp, title=section)
+                sep = Separator(grp, title=section, checkable=self.FOLDABLE_SECTIONS)
+                if self.FOLDABLE_SECTIONS:
+                    sep.setChecked(True)
+                    sep.setToolTip("Click to fold or unfold this section.")
                 vbox.addWidget(sep)
                 self._section_separators[section] = sep
 
@@ -113,6 +126,7 @@ class _ParamRowsMixin(object):
         insert_at = parent_layout.indexOf(self.ui.b000)
         parent_layout.insertWidget(insert_at, grp)
         self._param_group = grp
+        self._fit_label_column()
 
         # Everything the panel shows conditionally, in one registry. The
         # dividers and the group are registered WITH the rows rather than
@@ -124,6 +138,72 @@ class _ParamRowsMixin(object):
         for section, sep in self._section_separators.items():
             fields.divider(section, sep)
         self._param_fields = fields.group(grp)
+        self._build_section_folds()
+
+    def _build_section_folds(self) -> None:
+        """Wire each foldable divider to its rows, and fold what was folded."""
+        self._folded_sections = set()
+        if not self.FOLDABLE_SECTIONS:
+            return
+        store = getattr(self.ui, "state", None)
+        folded = store.load_custom(self._FOLDED_SECTIONS_KEY, []) if store else []
+        # A list as saved; anything else is no fold (a string would match by
+        # substring under ``in``).
+        folded = set(folded) if isinstance(folded, (list, tuple)) else set()
+        for section, sep in self._section_separators.items():
+            sep.toggled.connect(
+                lambda opened, s=section: self._fold_section(s, not opened)
+            )
+            if section in folded:
+                sep.setChecked(False)
+
+    def _fold_section(self, section: str, folded: bool) -> None:
+        """Fold or unfold *section*'s rows, remember it, and re-fit the window.
+
+        Unfolding brings back only the rows the panel shows: relevance is the
+        panel's (:meth:`_refresh_param_visibility`), the fold the user's. Rows
+        go through :meth:`FieldVisibility.set_widget_visible`, so a folded row
+        carries the mark a container that re-shows its children respects.
+        """
+        (self._folded_sections.add if folded else self._folded_sections.discard)(
+            section
+        )
+        shown = getattr(self, "_param_rows_shown", None)
+        for key, row in self._param_rows.items():
+            if self._param_section.get(key) == section:
+                FieldVisibility.set_widget_visible(
+                    row, not folded and (shown is None or key in shown)
+                )
+        store = getattr(self.ui, "state", None)
+        if store is not None:
+            store.save_custom(self._FOLDED_SECTIONS_KEY, sorted(self._folded_sections))
+        WindowHeight.fit_host_later(self._param_group)
+
+    def _fit_label_column(self) -> None:
+        """One label column: every row label takes the widest one's width.
+
+        :attr:`LABEL_MIN_WIDTH` is only the floor; a label past it used to size
+        itself, so the values of a panel with longer labels started at as many
+        x as it had lengths. Hidden rows count, so the column holds still as
+        rows come and go; an inline cell's label is a suffix, not a column, and
+        is left alone. The width is kept as the instance's
+        :attr:`LABEL_MIN_WIDTH`, so a row a subclass builds afterwards from it
+        (a Model File row, say) lines up too. Measured once: the theme sets no
+        row-label font, so a label keeps the font it is built with.
+        """
+        # A row hangs off the group; an inline cell off the row it joined.
+        labels = [
+            self._param_labels[key]
+            for key, row in self._param_rows.items()
+            if row.parent() is self._param_group and key in self._param_labels
+        ]
+        output_dir = getattr(self, "_output_dir_label", None)
+        if output_dir is not None:
+            labels.append(output_dir)
+        width = max([self.LABEL_MIN_WIDTH] + [lb.sizeHint().width() for lb in labels])
+        for label in labels:
+            label.setMinimumWidth(width)
+        self.LABEL_MIN_WIDTH = width
 
     def _make_param_widget(
         self,
@@ -483,8 +563,21 @@ class _ParamRowsMixin(object):
         :meth:`_relevant_param_keys` so subclasses can drive visibility from a
         template file (default) or a run mode; the row toggling, the dividers,
         the empty group and the height re-fit are :class:`FieldVisibility`.
+
+        A set already on screen is not applied again: a re-show re-fits the
+        window, and a panel refreshing off a live edit (a typed path) would
+        snap a height the user dragged back on every keystroke. The first
+        refresh always applies -- before it, every row shows.
         """
         used = self._relevant_param_keys()
         if used is None or self._param_fields is None:
             return
+        used = frozenset(used)
+        if used == getattr(self, "_param_rows_shown", None):
+            return
+        self._param_rows_shown = used
         self._param_fields.show(used)
+        # A folded section keeps its rows down; its divider stays to reopen it.
+        for key, row in self._param_rows.items():
+            if self._param_section.get(key) in self._folded_sections:
+                FieldVisibility.set_widget_visible(row, False)

@@ -10,6 +10,7 @@ docs link).
 
 from __future__ import annotations
 
+import html
 from typing import Callable, List
 
 import pythontk as ptk
@@ -92,6 +93,8 @@ class _LogPanelMixin(object):
         handled here with the cross-platform file-manager opener — this is what
         lets output-dir links work when a panel runs as a standalone external
         app (no Maya), which is the common case for the photogrammetry bridges.
+        So is ``copy`` (``log_link("[copy]", "copy", text=...)``): its *text*
+        goes on the clipboard, and the log says so.
         Node-based actions (``select`` / ``reveal``) are delegated to whatever
         handler the active DCC registered (see :func:`register_log_link_handler`),
         so uitk never imports a DCC package. Plain ``http(s)`` anchors (the
@@ -107,6 +110,11 @@ class _LogPanelMixin(object):
                 if path:
                     self._open_in_file_manager(path)
                 return
+            if url.scheme() == "action" and url.host() == "copy":
+                text = _LogPanelMixin._copy_link_text(url)
+                if text:
+                    self.panel_log(f"Copied to the clipboard: {html.escape(text)}")
+                return
         except Exception as e:  # noqa: BLE001
             self.bridge.logger.error(f"Could not open link: {e}")
             return
@@ -121,6 +129,26 @@ class _LogPanelMixin(object):
                     return
             except Exception as e:  # noqa: BLE001
                 self.bridge.logger.error(f"Could not open link: {e}")
+
+    @staticmethod
+    def _copy_link_text(url) -> str:
+        """Put a ``copy`` link's *text* on the clipboard; return it (``""``: none).
+
+        Read from the fully encoded URL -- the query exactly as ``log_link``
+        urlencoded it, which ``parse_qs`` inverts. A decoded rendering is not
+        that string: ``url.query()`` turns ``%23`` into ``#``, and
+        ``QUrl.FullyDecoded`` turns ``%2B`` into ``+``, which ``parse_qs``
+        then reads as a space.
+        """
+        from urllib.parse import parse_qs, urlsplit
+
+        from qtpy import QtWidgets
+
+        query = urlsplit(bytes(url.toEncoded()).decode("ascii")).query
+        text = parse_qs(query).get("text", [""])[0]
+        if text:
+            QtWidgets.QApplication.clipboard().setText(text)
+        return text
 
     def _show_startup_info(self) -> None:
         """Pipe the bridge's ``STARTUP_INFO`` into the log panel once.

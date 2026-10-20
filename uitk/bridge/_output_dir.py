@@ -161,6 +161,7 @@ class _OutputDirMixin(object):
         label = QtWidgets.QLabel(self.OUTPUT_DIR_LABEL, row)
         label.setMinimumWidth(self.LABEL_MIN_WIDTH)
         label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self._output_dir_label = label  # joins the label column (_param_rows)
 
         edit = QtWidgets.QLineEdit(row)
         edit.setObjectName(f"{self.LOG_TAG}_output_dir")

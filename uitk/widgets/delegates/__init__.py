@@ -10,5 +10,8 @@ the in-cell capture delegates build on it:
 * :mod:`uitk.widgets.delegates.choice_capture` — double-click a cell to pick
   from a dropdown.
 
+:class:`~uitk.widgets.delegates.value_bar.ValueBarDelegate` stands apart: a
+cell's number drawn as a bar over the view's own selection.
+
 Public API lives in the root ``uitk`` package via ``DEFAULT_INCLUDE``.
 """

@@ -1189,6 +1189,133 @@ class TestHeaderWindowActions(QtBaseTestCase):
         self.assertEqual(window.pos(), orig_pos)
         self.assertFalse(window.property("_header_minimized"))
 
+    # ---- strip vs window state (maximized / fullscreen) ----
+
+    def test_fullscreen_from_minimized_restores_content_first(self):
+        """Bug: fullscreen pressed on a minimized strip filled the screen with
+        the header alone -- the collapse (hidden content, fixed height)
+        survived into fullscreen, and leaving fullscreen dropped back to the
+        strip. Fullscreen now restores the window first.
+        Fixed: 2026-10-17
+        """
+        buttons = ("collapse", "minimize", "fullscreen", "hide")
+        window, header, body = self._make_header_window(buttons)
+        orig_geo = window.geometry()
+        header.minimize_window()
+        app.processEvents()
+        header.toggle_fullscreen()
+        app.processEvents()
+        self.assertTrue(window.isFullScreen())
+        self.assertFalse(header._minimized)
+        self.assertFalse(header._collapsed)
+        self.assertFalse(body.isHidden())
+        self.assertNotIn(header, Header._minimized_headers)
+        self.assertGreater(window.height(), header.height() * 2)
+        header.toggle_fullscreen()
+        app.processEvents()
+        self.assertFalse(window.isFullScreen())
+        self.assertEqual(window.geometry(), orig_geo)
+
+    def test_fullscreen_from_collapsed_expands_first(self):
+        """Fullscreen on a collapsed strip expands it first (same bug)."""
+        buttons = ("collapse", "fullscreen", "hide")
+        window, header, body = self._make_header_window(buttons)
+        header.toggle_collapse()
+        app.processEvents()
+        header.toggle_fullscreen()
+        app.processEvents()
+        self.assertTrue(window.isFullScreen())
+        self.assertFalse(header._collapsed)
+        self.assertFalse(body.isHidden())
+
+    def test_maximize_from_minimized_restores_content_first(self):
+        """Maximize on a minimized strip restores it first (same bug)."""
+        buttons = ("minimize", "maximize", "hide")
+        window, header, body = self._make_header_window(buttons)
+        header.minimize_window()
+        app.processEvents()
+        header.toggle_maximize()
+        app.processEvents()
+        self.assertTrue(window.isMaximized())
+        self.assertFalse(header._minimized)
+        self.assertFalse(body.isHidden())
+
+    def test_minimize_from_fullscreen_returns_to_fullscreen(self):
+        """Bug (reverse direction): minimizing a fullscreen window and
+        restoring it came back screen-sized but no longer fullscreen, with the
+        pre-fullscreen geometry lost. The strip now leaves fullscreen and the
+        restore returns to it -- the OS minimize/restore contract.
+        Fixed: 2026-10-17
+        """
+        buttons = ("minimize", "fullscreen", "hide")
+        window, header, body = self._make_header_window(buttons)
+        orig_geo = window.geometry()
+        header.toggle_fullscreen()
+        app.processEvents()
+        header.minimize_window()
+        app.processEvents()
+        self.assertFalse(window.isFullScreen())
+        self.assertEqual(window.width(), Header.MINIMIZE_WIDTH)
+        header.minimize_window()  # toggle: restore
+        app.processEvents()
+        self.assertTrue(window.isFullScreen())
+        self.assertFalse(body.isHidden())
+        header.toggle_fullscreen()
+        app.processEvents()
+        self.assertFalse(window.isFullScreen())
+        self.assertEqual(window.geometry(), orig_geo)
+
+    def test_collapse_from_maximized_returns_to_maximized(self):
+        """Collapse/expand round-trips a maximized window (reverse direction)."""
+        buttons = ("collapse", "maximize", "hide")
+        window, header, body = self._make_header_window(buttons)
+        orig_geo = window.geometry()
+        header.toggle_maximize()
+        app.processEvents()
+        header.toggle_collapse()
+        app.processEvents()
+        self.assertFalse(window.isMaximized())
+        self.assertTrue(body.isHidden())
+        header.toggle_collapse()
+        app.processEvents()
+        self.assertTrue(window.isMaximized())
+        self.assertFalse(body.isHidden())
+        header.toggle_maximize()
+        app.processEvents()
+        self.assertEqual(window.geometry(), orig_geo)
+
+    def test_strip_dragged_to_another_screen_reenters_there(self):
+        """A collapsed fullscreen strip dragged to another screen re-enters
+        fullscreen there, and leaving it lands on that screen -- the expand's
+        in-place contract, not a teleport back to the original screen.
+        Added: 2026-10-17
+        """
+        buttons = ("collapse", "fullscreen", "hide")
+        window, header, _ = self._make_header_window(buttons)
+        orig_geo = window.geometry()
+        header.toggle_fullscreen()
+        app.processEvents()
+        header.toggle_collapse()
+        app.processEvents()
+        # Two side-by-side 800px screens; drag the strip onto the right one.
+        left = MagicMock(**{"geometry.return_value": QtCore.QRect(0, 0, 800, 800)})
+        right = MagicMock(**{"geometry.return_value": QtCore.QRect(800, 0, 800, 800)})
+
+        def screen_at(point):
+            return right if point.x() >= 800 else left
+
+        window.move(1000, 300)
+        app.processEvents()
+        with patch.object(
+            QtWidgets.QApplication, "screenAt", new=staticmethod(screen_at)
+        ):
+            header.toggle_collapse()
+        app.processEvents()
+        self.assertTrue(window.isFullScreen())
+        header.toggle_fullscreen()
+        app.processEvents()
+        self.assertEqual(window.geometry(), orig_geo.translated(800, 0))
+
     def test_restore_clears_registry(self):
         """Restoring should remove header from _minimized_headers."""
         _, header, _ = self._make_header_window()

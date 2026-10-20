@@ -321,6 +321,9 @@ class Header(
         # between (re-deriving would strand the filter on the old container).
         self._collapse_watch = None
         self._minimized = False
+        # (fullscreen, maximized, normal geometry) of a window that became a
+        # strip from either state; the expand returns to it.
+        self._state_before_strip = None
         self._saved_size = None
         self._saved_min_size = None
         self._saved_max_size = None
@@ -813,6 +816,7 @@ class Header(
     def _do_minimize(self):
         """Internal: collapse + narrow + reposition to lower-left."""
         window = self.window()
+        self._leave_window_state()
 
         # Save position before collapse (collapse_window saves size)
         self._saved_pos = window.pos()
@@ -889,6 +893,78 @@ class Header(
             Header._minimized_headers.remove(self)
             Header._reflow_minimized()
 
+        self._reenter_window_state()
+
+    def _restore_from_strip(self):
+        """Undo a minimize or a collapse, whichever is active."""
+        if self._minimized:
+            self.restore_window()
+        elif self._collapsed:
+            self.expand_window()
+
+    def _leave_window_state(self):
+        """Drop a maximized or fullscreen window to normal before it becomes a
+        strip, recording the state for :meth:`_reenter_window_state`.
+
+        A strip sized inside either state is undefined: Qt silently drops the
+        state on the resize, and the expand then restores a screen-sized
+        normal window with the pre-maximize geometry lost. A window already
+        normal records nothing, so minimize's own collapse keeps its record.
+        """
+        window = self.window()
+        if not (window.isFullScreen() or window.isMaximized()):
+            return
+        self._state_before_strip = (
+            window.isFullScreen(),
+            window.isMaximized(),
+            window.normalGeometry(),
+        )
+        window.showNormal()
+        self._sync_window_state_icons()
+
+    def _reenter_window_state(self):
+        """Return a window to the state :meth:`_leave_window_state` recorded
+        -- the OS minimize/restore contract.
+
+        ``setWindowState`` rather than ``showFullScreen``: a hide resets the
+        strip too (:meth:`hideEvent`), and a show here would re-show the window
+        mid-hide.
+        """
+        record, self._state_before_strip = self._state_before_strip, None
+        if record is None:
+            return
+        fullscreen, maximized, normal_geometry = record
+        window = self.window()
+        # Leaving the state later lands on the recorded normal geometry, not
+        # on the size/position the strip saved (read while the OS may still
+        # have been delivering the showNormal) -- carried to the screen the
+        # window is on now, so a strip dragged to another screen re-enters
+        # the state there (expand_window's in-place contract).
+        here = QtWidgets.QApplication.screenAt(window.geometry().center())
+        home = QtWidgets.QApplication.screenAt(normal_geometry.center())
+        if here is not None and home is not None and here != home:
+            normal_geometry.translate(
+                here.geometry().topLeft() - home.geometry().topLeft()
+            )
+        window.setGeometry(normal_geometry)
+        state = window.windowState()
+        if maximized:
+            state |= QtCore.Qt.WindowMaximized
+        if fullscreen:
+            state |= QtCore.Qt.WindowFullScreen
+        window.setWindowState(state)
+        self._sync_window_state_icons()
+
+    def _sync_window_state_icons(self):
+        """Point the maximize and fullscreen icons at the window's state."""
+        window = self.window()
+        if "maximize" in self.buttons:
+            icon = "restore" if window.isMaximized() else "maximize"
+            self._set_button_icon(self.buttons["maximize"], icon)
+        if "fullscreen" in self.buttons:
+            icon = "restore" if window.isFullScreen() else "screen"
+            self._set_button_icon(self.buttons["fullscreen"], icon)
+
     def _compute_minimize_position(self, window, avail, slot):
         """Compute the screen position for a minimized window at the given slot.
 
@@ -951,30 +1027,32 @@ class Header(
         cls._minimized_headers = live
 
     def toggle_maximize(self):
-        """Toggle between maximized and normal window state."""
+        """Toggle between maximized and normal window state.
+
+        A minimized or collapsed window is restored first: maximizing the
+        strip would fill the screen with the header alone.
+        """
         window = self.window()
         if window.isMaximized():
             window.showNormal()
-            # Update icon to maximize
-            if "maximize" in self.buttons:
-                self._set_button_icon(self.buttons["maximize"], "maximize")
         else:
+            self._restore_from_strip()
             window.showMaximized()
-            # Update icon to restore (overlapping windows)
-            if "maximize" in self.buttons:
-                self._set_button_icon(self.buttons["maximize"], "restore")
+        self._sync_window_state_icons()
 
     def toggle_fullscreen(self):
-        """Toggle between fullscreen and normal window state."""
+        """Toggle between fullscreen and normal window state.
+
+        A minimized or collapsed window is restored first (see
+        :meth:`toggle_maximize`).
+        """
         window = self.window()
         if window.isFullScreen():
             window.showNormal()
-            if "fullscreen" in self.buttons:
-                self._set_button_icon(self.buttons["fullscreen"], "screen")
         else:
+            self._restore_from_strip()
             window.showFullScreen()
-            if "fullscreen" in self.buttons:
-                self._set_button_icon(self.buttons["fullscreen"], "restore")
+        self._sync_window_state_icons()
 
     def hide_window(self):
         """Hide the parent window, unpinning it first.
@@ -987,10 +1065,7 @@ class Header(
             self._set_pin_state(False)
 
         # Reset minimize/collapse state when hiding
-        if self._minimized:
-            self.restore_window()
-        elif self._collapsed:
-            self.expand_window()
+        self._restore_from_strip()
 
         self.window().hide()
 
@@ -1159,6 +1234,7 @@ class Header(
             return
 
         window = self.window()
+        self._leave_window_state()
 
         # Save current size and size constraints
         self._saved_size = window.size()
@@ -1300,6 +1376,9 @@ class Header(
             self._set_button_icon(self.buttons["collapse"], "chevron_up")
 
         self._collapsed = False
+        # A minimize's restore re-enters after its own move (restore_window).
+        if not self._minimized:
+            self._reenter_window_state()
 
     def toggle_pin(self, from_drag=False):
         """Toggle pinning of the window.
@@ -1522,10 +1601,7 @@ class Header(
             CursorManager.pop(self)
 
     def showEvent(self, event):
-        if self._minimized:
-            self.restore_window()
-        elif self._collapsed:
-            self.expand_window()
+        self._restore_from_strip()
         self._follow_window_pin()
         super().showEvent(event)
         # SYNCHRONOUS — both hooks read only flags/menu state (no post-layout
@@ -1656,10 +1732,7 @@ class Header(
         self._end_drag_cursor()
         if self._help_card is not None:
             self._help_card.hide()
-        if self._minimized:
-            self.restore_window()
-        elif self._collapsed:
-            self.expand_window()
+        self._restore_from_strip()
         super().hideEvent(event)
 
     # -- Qt Designer properties ----------------------------------------------
