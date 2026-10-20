@@ -37,6 +37,7 @@ from uitk.bridge.spec import (  # noqa: E402
 from uitk.bridge.formatters import Formatters  # noqa: E402
 from uitk.bridge.parameters import Parameters  # noqa: E402
 from uitk.managers.preset_manager import PresetManager  # noqa: E402
+from uitk.managers.field_visibility import FieldVisibility  # noqa: E402
 from uitk.managers.optional_package_manager import (  # noqa: E402
     OptionalPackageManager,
 )
@@ -584,6 +585,42 @@ class LogLinkDispatchTest(unittest.TestCase):
     def test_empty_registry_no_ops(self):
         # No DCC registered (standalone app): a node action is silently ignored.
         self._dispatch("action://select?node=x")  # no handler, no exception
+
+    def test_copy_action_puts_its_text_on_the_clipboard(self):
+        """A log line's [copy] link (``log_link(..., "copy", text=...)``) is
+        DCC-agnostic, like ``open``: handled here, said in the log, and never
+        handed to a DCC dispatcher. The text round-trips exactly, read the way
+        the pane reads it -- the link's HTML parsed by a QTextBrowser, its href
+        made a QUrl as ``anchorClicked`` makes it: a ``+``, ``&`` or ``=``, a
+        query and fragment of the link's own, ``%`` escapes, spaces and
+        non-ASCII all survive the query string."""
+        import types
+        from qtpy.QtCore import QUrl
+        from uitk.bridge.slots import BridgeSlotsBase
+
+        reached, said = [], []
+        BridgeSlotsBase.register_log_link_handler(
+            lambda u, log: (reached.append(1), True)[1]
+        )
+        slots = types.SimpleNamespace(
+            bridge=self._fake_slots().bridge,
+            panel_log=lambda message, level="info": said.append(message),
+        )
+        pane = QtWidgets.QTextBrowser()
+        for text in (
+            "https://share.example.test/a+b?x=1&y=café",
+            "https://share.example.test/p q/100%?k=a%20b&r=%2B;s=★#view=top",
+        ):
+            with self.subTest(text=text):
+                said.clear()
+                pane.setHtml(ptk.LoggingMixin.log_link("[copy]", "copy", text=text))
+                href = pane.document().find("[copy]").charFormat().anchorHref()
+                QtWidgets.QApplication.clipboard().setText("")
+                BridgeSlotsBase._on_log_link_clicked(slots, QUrl(href))
+                self.assertEqual(QtWidgets.QApplication.clipboard().text(), text)
+                self.assertEqual(len(said), 1, said)
+                self.assertIn("copied", said[0].lower())
+        self.assertEqual(reached, [], "a copy link reached a DCC dispatcher")
 
 
 class TestPathWidgetPresetPersistence(BaseTestCase):
@@ -1480,6 +1517,185 @@ class TestLiveParamTooltipBlocks(BaseTestCase):
         self.assertEqual(button.toolTip(), before)
 
 
+def _built_rows(params, state=None, **attrs):
+    """A bare slot whose parameter group is built from *params* over a stub ui
+    -- with *state* as the window's custom store, and *attrs* set first."""
+    slot = _bare_slot(type("_Registry", (), {"PARAMS": params}))
+    for name, value in attrs.items():
+        setattr(slot, name, value)
+    slot._param_widgets, slot._param_rows = {}, {}
+    slot._param_labels = {}
+    slot._param_section, slot._section_separators = {}, {}
+
+    slot.ui = QtWidgets.QWidget()
+    if state is not None:
+        slot.ui.state = state
+    slot.ui.grp_process = QtWidgets.QGroupBox(slot.ui)
+    QtWidgets.QVBoxLayout(slot.ui.grp_process)
+    slot.ui.b000 = QtWidgets.QPushButton(slot.ui.grp_process)
+    slot.ui.grp_process.layout().addWidget(slot.ui.b000)
+
+    slot._build_param_widgets()
+    return slot
+
+
+class TestOneLabelColumn(BaseTestCase):
+    """Every row's value starts at one x: the widest row label sets the column.
+
+    Each label used to size itself past the floor, so a panel whose labels ran
+    longer than :attr:`LABEL_MIN_WIDTH` read as a ragged staircase (the WebXR
+    preview's Textures rows started their values at four different x).
+    """
+
+    def _specs(self):
+        return {
+            "SHORT": AttributeSpec(key="SHORT", label="Size", kind="int", default=1),
+            "LONG": AttributeSpec(
+                key="LONG",
+                label="A Considerably Longer Row Label",
+                kind="int",
+                default=1,
+            ),
+            "AUTO": AttributeSpec(
+                key="AUTO", label="Auto", kind="bool", default=False, inline=True
+            ),
+        }
+
+    def test_row_labels_share_the_widest_labels_width(self):
+        slot = _built_rows(self._specs())
+        short, long = slot._param_labels["SHORT"], slot._param_labels["LONG"]
+        self.assertGreater(long.sizeHint().width(), BridgeSlotsBase.LABEL_MIN_WIDTH)
+        self.assertEqual(short.minimumWidth(), long.minimumWidth())
+        self.assertGreaterEqual(long.minimumWidth(), long.sizeHint().width())
+
+    def test_an_inline_label_stays_a_suffix(self):
+        slot = _built_rows(self._specs())
+        self.assertEqual(slot._param_labels["AUTO"].minimumWidth(), 0)
+
+    def test_a_row_a_subclass_adds_afterwards_lines_up(self):
+        """The fitted width is the instance's LABEL_MIN_WIDTH, which is what
+        the panels' own rows (Model File, Project Name) are built with."""
+        slot = _built_rows(self._specs())
+        self.assertGreater(slot.LABEL_MIN_WIDTH, BridgeSlotsBase.LABEL_MIN_WIDTH)
+        self.assertEqual(
+            slot.LABEL_MIN_WIDTH, slot._param_labels["LONG"].minimumWidth()
+        )
+        self.assertEqual(BridgeSlotsBase.LABEL_MIN_WIDTH, 90, "the class floor stays")
+
+    def test_short_labels_keep_the_floor(self):
+        slot = _built_rows({"A": AttributeSpec(key="A", label="A", kind="int")})
+        self.assertEqual(slot._param_labels["A"].minimumWidth(), 90)
+
+
+class _CustomStore:
+    """The window's ``save_custom`` / ``load_custom`` pair, in memory."""
+
+    def __init__(self):
+        self.saved = {}
+
+    def save_custom(self, key, value):
+        self.saved[key] = value
+
+    def load_custom(self, key, default=None):
+        return self.saved.get(key, default)
+
+
+class TestFoldableSections(BaseTestCase):
+    """A section's titled divider folds its rows, and the fold is remembered.
+
+    A panel is a stack of sections most of which are set once; folding the
+    ones not being worked on keeps the window to what is. Folding is the
+    user's, relevance the panel's: a row the panel hides stays hidden when its
+    section opens, and a folded section keeps its rows down across a refresh.
+    """
+
+    def _specs(self):
+        return {
+            key: AttributeSpec(key=key, kind="int", default=0, section=section)
+            for key, section in (("A", "One"), ("B", "One"), ("C", "Two"))
+        }
+
+    def _hidden(self, slot):
+        return {key for key, row in slot._param_rows.items() if row.isHidden()}
+
+    def test_a_section_header_folds_its_rows(self):
+        """Clicked on its caption, as a user does: the label lets it through."""
+        from qtpy.QtTest import QTest
+
+        slot = _built_rows(self._specs())
+        header = slot._section_separators["One"]
+        self.assertTrue(header.isCheckable())
+        self.assertTrue(header.isChecked(), "sections open by default")
+        caption = header._title_label.geometry().center()
+        QTest.mouseClick(header, QtCore.Qt.LeftButton, pos=caption)
+        self.assertEqual(self._hidden(slot), {"A", "B"})
+        self.assertTrue(
+            slot._param_rows["A"].property(FieldVisibility.HIDDEN_PROPERTY),
+            "folded as a field, so a re-showing container leaves it down",
+        )
+        QTest.mouseClick(header, QtCore.Qt.LeftButton, pos=caption)
+        self.assertEqual(self._hidden(slot), set())
+
+    def test_a_row_the_panel_hides_stays_hidden_when_its_section_opens(self):
+        slot = _built_rows(self._specs())
+        slot._relevant_param_keys = lambda: {"A", "C"}
+        slot._refresh_param_visibility()
+        header = slot._section_separators["One"]
+        header.setChecked(False)
+        header.setChecked(True)
+        self.assertEqual(self._hidden(slot), {"B"})
+
+    def test_a_folded_section_stays_folded_across_a_refresh(self):
+        slot = _built_rows(self._specs())
+        slot._section_separators["One"].setChecked(False)
+        slot._relevant_param_keys = lambda: {"A", "B"}
+        slot._refresh_param_visibility()
+        self.assertEqual(self._hidden(slot), {"A", "B", "C"})
+        self.assertFalse(
+            slot._section_separators["One"].isHidden(), "its header reopens it"
+        )
+
+    def test_the_fold_survives_the_next_session(self):
+        store = _CustomStore()
+        first = _built_rows(self._specs(), state=store)
+        first._section_separators["One"].setChecked(False)
+        reopened = _built_rows(self._specs(), state=store)
+        self.assertFalse(reopened._section_separators["One"].isChecked())
+        self.assertEqual(self._hidden(reopened), {"A", "B"})
+
+    def test_a_panel_can_keep_plain_headers(self):
+        slot = _built_rows(self._specs(), FOLDABLE_SECTIONS=False)
+        self.assertFalse(slot._section_separators["One"].isCheckable())
+
+
+class TestVisibilityRefreshOnlyWhenTheSetChanges(BaseTestCase):
+    """A refresh that changes nothing does nothing.
+
+    A re-show re-fits the window, and panels refresh off live edits (the
+    WebXR preview's Source Files, per keystroke): re-applying the same rows
+    snapped a height the user had dragged back on every character.
+    """
+
+    def test_an_unchanged_set_is_not_re_applied(self):
+        slot = _built_rows(
+            {k: AttributeSpec(key=k, kind="int", default=0) for k in ("A", "B")}
+        )
+        applied = []
+        real = slot._param_fields.show
+        slot._param_fields.show = lambda keys: (applied.append(set(keys)), real(keys))
+        wanted = {"A", "B"}
+        slot._relevant_param_keys = lambda: set(wanted)
+
+        slot._refresh_param_visibility()  # the first one always applies
+        slot._refresh_param_visibility()
+        self.assertEqual(applied, [{"A", "B"}])
+
+        wanted.discard("B")
+        slot._refresh_param_visibility()
+        self.assertEqual(applied, [{"A", "B"}, {"A"}])
+        self.assertTrue(slot._param_rows["B"].isHidden())
+
+
 class TestInlineParamRows(BaseTestCase):
     """``AttributeSpec.inline`` -- a compact modifier beside the value it governs.
 
@@ -1490,19 +1706,7 @@ class TestInlineParamRows(BaseTestCase):
     """
 
     def _built(self, params):
-        slot = _bare_slot(type("_Registry", (), {"PARAMS": params}))
-        slot._param_widgets, slot._param_rows = {}, {}
-        slot._param_labels = {}
-        slot._param_section, slot._section_separators = {}, {}
-
-        slot.ui = QtWidgets.QWidget()
-        slot.ui.grp_process = QtWidgets.QGroupBox(slot.ui)
-        QtWidgets.QVBoxLayout(slot.ui.grp_process)
-        slot.ui.b000 = QtWidgets.QPushButton(slot.ui.grp_process)
-        slot.ui.grp_process.layout().addWidget(slot.ui.b000)
-
-        slot._build_param_widgets()
-        return slot
+        return _built_rows(params)
 
     @staticmethod
     def _specs(**overrides):
@@ -2626,6 +2830,42 @@ class TestBridgeResetGrammar(BaseTestCase):
         self.assertEqual(slots._preset_mgr.active_preset, "p")
         self._click(slots)
         self.assertIsNone(slots._preset_mgr.active_preset)
+
+
+class TestModeComboHidesWithNothingToChoose(BaseTestCase):
+    """A mode combo (``TEMPLATE_MENU = False``) with one entry offers no choice.
+
+    The WebXR preview's Source combo opened standalone held File on Disk alone
+    -- a control the user could only read, above the Source Files row that
+    already says the same thing. A template combo keeps its context menu
+    (Refresh / Open Folder) however few entries it lists, so it stays.
+    """
+
+    def _populate(self, pairs, template_menu=False):
+        slot = _bare_slot()
+        slot.TEMPLATE_MENU = template_menu
+        slot.list_template_modes = lambda: list(pairs)
+        # Parented: a top-level widget never shown reads as hidden already.
+        self._panel = QtWidgets.QWidget()
+        self.addCleanup(self._panel.deleteLater)
+        combo = QtWidgets.QComboBox(self._panel)
+        slot._populate_template_combo(combo)
+        return slot, combo
+
+    def test_a_single_mode_hides_the_combo(self):
+        _slot, combo = self._populate([("file", "")])
+        self.assertTrue(combo.isHidden())
+        self.assertEqual(combo.count(), 1, "hidden, still selected and readable")
+
+    def test_two_modes_show_it_again(self):
+        slot, combo = self._populate([("file", "")])
+        slot.list_template_modes = lambda: [("selected", ""), ("file", "")]
+        slot._populate_template_combo(combo)
+        self.assertFalse(combo.isHidden())
+
+    def test_a_template_combo_with_one_entry_keeps_its_menu_on_screen(self):
+        _slot, combo = self._populate([("bake", "")], template_menu=True)
+        self.assertFalse(combo.isHidden())
 
 
 if __name__ == "__main__":

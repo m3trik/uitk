@@ -144,7 +144,7 @@
               "kind": "staticmethod",
               "signature": "(log_file: str, force: bool = False) -> 'str | None'",
               "summary": "Send this process's output to *log_file* when nothing would show it.",
-              "line": 270,
+              "line": 280,
               "deprecated": false
             },
             {
@@ -153,7 +153,7 @@
               "kind": "staticmethod",
               "signature": "(title: str, log_file: 'str | None' = None) -> None",
               "summary": "Show an uncaught error in a message box, not only in a log.",
-              "line": 321,
+              "line": 331,
               "deprecated": false
             },
             {
@@ -162,7 +162,7 @@
               "kind": "staticmethod",
               "signature": "(app_id: str) -> bool",
               "summary": "Give this process its own identity on the Windows taskbar.",
-              "line": 376,
+              "line": 386,
               "deprecated": false
             }
           ]
@@ -423,7 +423,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "",
-              "line": 132,
+              "line": 135,
               "deprecated": false
             },
             {
@@ -432,7 +432,7 @@
               "kind": "property",
               "signature": "(self) -> Path",
               "summary": "",
-              "line": 136,
+              "line": 139,
               "deprecated": false
             },
             {
@@ -441,7 +441,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return a fresh bridge instance.",
-              "line": 139,
+              "line": 142,
               "deprecated": false
             },
             {
@@ -450,7 +450,7 @@
               "kind": "method",
               "signature": "(self) -> List[Tuple[str, str]]",
               "summary": "",
-              "line": 143,
+              "line": 146,
               "deprecated": false
             },
             {
@@ -459,7 +459,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Implement the per-bridge send action.",
-              "line": 146,
+              "line": 149,
               "deprecated": false
             },
             {
@@ -468,7 +468,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "This panel's :class:`OptionalPackageManager` (built once, lazily).",
-              "line": 155,
+              "line": 158,
               "deprecated": false
             },
             {
@@ -477,7 +477,7 @@
               "kind": "staticmethod",
               "signature": "(spec: str, import_name: str = None) -> bool",
               "summary": "Is an optional package importable in THIS interpreter? Silent.",
-              "line": 174,
+              "line": 177,
               "deprecated": false
             },
             {
@@ -486,7 +486,7 @@
               "kind": "method",
               "signature": "(self, spec: str, import_name: str = None, *, feature: str = None) -> bool",
               "summary": "Make an optional package importable, offering to install it on demand.",
-              "line": 185,
+              "line": 188,
               "deprecated": false
             },
             {
@@ -495,7 +495,7 @@
               "kind": "method",
               "signature": "(self, scope: str)",
               "summary": "Hook: turn a ``SCOPE`` value into host objects.",
-              "line": 208,
+              "line": 211,
               "deprecated": false
             },
             {
@@ -504,7 +504,7 @@
               "kind": "staticmethod",
               "signature": "(scope: str) -> str",
               "summary": "The message shown when a scope resolves to nothing.",
-              "line": 224,
+              "line": 227,
               "deprecated": false
             },
             {
@@ -513,7 +513,7 @@
               "kind": "method",
               "signature": "(self, params, warn: bool = True)",
               "summary": "Objects for the ``SCOPE`` in *params*;",
-              "line": 239,
+              "line": 242,
               "deprecated": false
             },
             {
@@ -522,7 +522,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-instantiated bridge (caches a single instance per slot).",
-              "line": 312,
+              "line": 315,
               "deprecated": false
             },
             {
@@ -531,7 +531,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "The bridge if it can be built, else ``None`` — never raises.",
-              "line": 333,
+              "line": 336,
               "deprecated": false
             },
             {
@@ -540,7 +540,7 @@
               "kind": "method",
               "signature": "(self, message: str, level: str = 'info') -> None",
               "summary": "Log to the panel, working whether or not the engine exists.",
-              "line": 356,
+              "line": 359,
               "deprecated": false
             },
             {
@@ -567,7 +567,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Return the current Output Dir text trimmed of whitespace.",
-              "line": 257,
+              "line": 258,
               "deprecated": false
             },
             {
@@ -576,7 +576,7 @@
               "kind": "method",
               "signature": "(self, mode: Optional[str] = None) -> Optional[str]",
               "summary": "Return the Output Dir for a run in *mode*, or log an error on empty.",
-              "line": 267,
+              "line": 268,
               "deprecated": false
             },
             {
@@ -585,7 +585,7 @@
               "kind": "method",
               "signature": "(self, spec: AttributeSpec) -> str",
               "summary": "Hook: build the rich-text tooltip for one parameter spec.",
-              "line": 51,
+              "line": 61,
               "deprecated": false
             },
             {
@@ -594,7 +594,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Callable[[], str]]",
               "summary": "Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.",
-              "line": 183,
+              "line": 263,
               "deprecated": false
             },
             {
@@ -603,7 +603,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Callable[[], str]]",
               "summary": "Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.",
-              "line": 212,
+              "line": 292,
               "deprecated": false
             },
             {
@@ -612,7 +612,7 @@
               "kind": "method",
               "signature": "(self, key: str, enabled: bool, reason: str = '') -> None",
               "summary": "Grey out (or re-enable) one parameter row, with *reason* as its tooltip.",
-              "line": 337,
+              "line": 417,
               "deprecated": false
             },
             {
@@ -621,7 +621,7 @@
               "kind": "method",
               "signature": "(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]",
               "summary": "The ``(trigger, governed, reason)`` triples in effect for this panel.",
-              "line": 397,
+              "line": 477,
               "deprecated": false
             },
             {
@@ -630,7 +630,7 @@
               "kind": "method",
               "signature": "(self) -> Dict[str, Any]",
               "summary": "Snapshot every widget's current value, regardless of visibility.",
-              "line": 447,
+              "line": 527,
               "deprecated": false
             },
             {
@@ -675,7 +675,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Re-scan disk and rebuild the template combo + parameter UI.",
-              "line": 120,
+              "line": 129,
               "deprecated": false
             },
             {
@@ -684,7 +684,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Reveal :attr:`template_dir` in the OS file manager.",
-              "line": 172,
+              "line": 181,
               "deprecated": false
             },
             {
@@ -693,7 +693,7 @@
               "kind": "staticmethod",
               "signature": "(handler: Callable) -> None",
               "summary": "Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel",
-              "line": 57,
+              "line": 58,
               "deprecated": false
             },
             {
@@ -702,7 +702,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Hook: the panel's documentation URL, or ``\"\"`` for no docs link.",
-              "line": 155,
+              "line": 183,
               "deprecated": false
             },
             {
@@ -711,7 +711,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear the log panel (wired by subclass header menus).",
-              "line": 162,
+              "line": 190,
               "deprecated": false
             },
             {
@@ -2107,6 +2107,58 @@
               "signature": "(self, ui_path: str) -> None",
               "summary": "Invalidate cached metadata after .ui content has changed.",
               "line": 112,
+              "deprecated": false
+            }
+          ]
+        }
+      ],
+      "constants": []
+    },
+    {
+      "relpath": "managers/background_task.py",
+      "summary": "Work on a background thread, its outcome read back on the UI thread.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "BackgroundTask",
+          "summary": "Runs *work* on a daemon thread;",
+          "line": 11,
+          "bases": [],
+          "members": [
+            {
+              "name": "done",
+              "qualname": "BackgroundTask.done",
+              "kind": "property",
+              "signature": "(self) -> bool",
+              "summary": "Whether *work* has ended (returned or raised).",
+              "line": 45,
+              "deprecated": false
+            },
+            {
+              "name": "wait",
+              "qualname": "BackgroundTask.wait",
+              "kind": "method",
+              "signature": "(self, seconds: float) -> None",
+              "summary": "Block up to *seconds* for *work* to end (a test, a shutdown).",
+              "line": 49,
+              "deprecated": false
+            },
+            {
+              "name": "result",
+              "qualname": "BackgroundTask.result",
+              "kind": "method",
+              "signature": "(self) -> Any",
+              "summary": "What *work* returned;",
+              "line": 53,
+              "deprecated": false
+            },
+            {
+              "name": "when_done",
+              "qualname": "BackgroundTask.when_done",
+              "kind": "method",
+              "signature": "(self, parent: QtCore.QObject, callback: Callable[[], None], poll_ms: Optional[int] = None) -> None",
+              "summary": "*callback* on the UI thread once *work* ends, off a timer *parent*",
+              "line": 59,
               "deprecated": false
             }
           ]
@@ -7311,6 +7363,133 @@
       "constants": []
     },
     {
+      "relpath": "widgets/compare_view.py",
+      "summary": "Two images compared: wiped, side by side, blinked, or one at a time.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "CompareView",
+          "summary": "Image A against image B, the ways a compositor's viewer compares them.",
+          "line": 13,
+          "bases": [
+            "QtWidgets.QWidget",
+            "AttributesMixin"
+          ],
+          "members": [
+            {
+              "name": "set_images",
+              "qualname": "CompareView.set_images",
+              "kind": "method",
+              "signature": "(self, a: Any, b: Any) -> None",
+              "summary": "Image A and image B (either may be ``None``).",
+              "line": 76,
+              "deprecated": false
+            },
+            {
+              "name": "set_labels",
+              "qualname": "CompareView.set_labels",
+              "kind": "method",
+              "signature": "(self, a: str, b: str) -> None",
+              "summary": "What each image is called, in the captions.",
+              "line": 83,
+              "deprecated": false
+            },
+            {
+              "name": "set_mode",
+              "qualname": "CompareView.set_mode",
+              "kind": "method",
+              "signature": "(self, mode: str) -> None",
+              "summary": "One of :attr:`MODES`.",
+              "line": 88,
+              "deprecated": false
+            },
+            {
+              "name": "mode",
+              "qualname": "CompareView.mode",
+              "kind": "method",
+              "signature": "(self) -> str",
+              "summary": "",
+              "line": 103,
+              "deprecated": false
+            },
+            {
+              "name": "blink",
+              "qualname": "CompareView.blink",
+              "kind": "method",
+              "signature": "(self, showing_b: bool) -> None",
+              "summary": "In ``blink`` mode, show B (True) or A (False).",
+              "line": 106,
+              "deprecated": false
+            },
+            {
+              "name": "split_position",
+              "qualname": "CompareView.split_position",
+              "kind": "method",
+              "signature": "(self) -> float",
+              "summary": "Where the ``split`` mode's line is (0..1 of the width).",
+              "line": 112,
+              "deprecated": false
+            },
+            {
+              "name": "set_split_position",
+              "qualname": "CompareView.set_split_position",
+              "kind": "method",
+              "signature": "(self, position: float) -> None",
+              "summary": "",
+              "line": 116,
+              "deprecated": false
+            },
+            {
+              "name": "set_overlays",
+              "qualname": "CompareView.set_overlays",
+              "kind": "method",
+              "signature": "(self, overlays: Sequence[Mapping[str, Any]]) -> None",
+              "summary": "Draw *overlays* over both images (see :meth:`ImageView.set_overlays`).",
+              "line": 121,
+              "deprecated": false
+            },
+            {
+              "name": "fit",
+              "qualname": "CompareView.fit",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "",
+              "line": 126,
+              "deprecated": false
+            },
+            {
+              "name": "keyPressEvent",
+              "qualname": "CompareView.keyPressEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 178,
+              "deprecated": false
+            },
+            {
+              "name": "keyReleaseEvent",
+              "qualname": "CompareView.keyReleaseEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 189,
+              "deprecated": false
+            },
+            {
+              "name": "focusOutEvent",
+              "qualname": "CompareView.focusOutEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 200,
+              "deprecated": false
+            }
+          ]
+        }
+      ],
+      "constants": []
+    },
+    {
       "relpath": "widgets/context_menu.py",
       "summary": "A popup context menu whose rows can expand into sub-rows.",
       "functions": [],
@@ -7744,6 +7923,60 @@
             "RowSelectionBorderDelegate"
           ],
           "members": []
+        }
+      ],
+      "constants": []
+    },
+    {
+      "relpath": "widgets/delegates/value_bar.py",
+      "summary": "A number in an item-view cell drawn as a bar: how much, at a glance.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "ValueBarDelegate",
+          "summary": "Draws a cell's number as a bar between *minimum* and *maximum*, its value as text.",
+          "line": 13,
+          "bases": [
+            "QtWidgets.QStyledItemDelegate"
+          ],
+          "members": [
+            {
+              "name": "fraction",
+              "qualname": "ValueBarDelegate.fraction",
+              "kind": "method",
+              "signature": "(self, value: float) -> float",
+              "summary": "Where *value* sits along the bar, 0..1.",
+              "line": 71,
+              "deprecated": false
+            },
+            {
+              "name": "value_of",
+              "qualname": "ValueBarDelegate.value_of",
+              "kind": "method",
+              "signature": "(self, index: QtCore.QModelIndex, role: Optional[int] = None) -> Optional[float]",
+              "summary": "The number *index* holds in *role* (default: :attr:`value_role`, then",
+              "line": 82,
+              "deprecated": false
+            },
+            {
+              "name": "text_of",
+              "qualname": "ValueBarDelegate.text_of",
+              "kind": "method",
+              "signature": "(self, value: float) -> str",
+              "summary": "",
+              "line": 96,
+              "deprecated": false
+            },
+            {
+              "name": "paint",
+              "qualname": "ValueBarDelegate.paint",
+              "kind": "method",
+              "signature": "(self, painter, option, index) -> None",
+              "summary": "",
+              "line": 100,
+              "deprecated": false
+            }
+          ]
         }
       ],
       "constants": []
@@ -10729,7 +10962,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether a pin-button click dismisses the window instead of pinning it.",
-              "line": 377,
+              "line": 380,
               "deprecated": false
             },
             {
@@ -10738,7 +10971,7 @@
               "kind": "classmethod",
               "signature": "(cls, value: bool) -> None",
               "summary": "Set the process-wide pin-click mode for default-following headers.",
-              "line": 399,
+              "line": 402,
               "deprecated": false
             },
             {
@@ -10747,7 +10980,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether a just-shown window pins itself instead of auto-hiding.",
-              "line": 411,
+              "line": 414,
               "deprecated": false
             },
             {
@@ -10756,7 +10989,7 @@
               "kind": "classmethod",
               "signature": "(cls, value: bool) -> None",
               "summary": "Set the process-wide tap-to-pin behavior for default-following headers.",
-              "line": 431,
+              "line": 434,
               "deprecated": false
             },
             {
@@ -10765,7 +10998,7 @@
               "kind": "method",
               "signature": "(self, elapsed_ms) -> bool",
               "summary": "Pin the window open instead of letting an auto-hide request through.",
-              "line": 441,
+              "line": 444,
               "deprecated": false
             },
             {
@@ -10774,7 +11007,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "",
-              "line": 479,
+              "line": 482,
               "deprecated": false
             },
             {
@@ -10783,7 +11016,7 @@
               "kind": "method",
               "signature": "(self, icon_filename)",
               "summary": "Get the full path to an icon file in the uitk/icons directory.",
-              "line": 498,
+              "line": 501,
               "deprecated": false
             },
             {
@@ -10792,7 +11025,7 @@
               "kind": "method",
               "signature": "(self, icon_filename, size=16)",
               "summary": "Create a QIcon from an SVG file.",
-              "line": 506,
+              "line": 509,
               "deprecated": false
             },
             {
@@ -10801,7 +11034,7 @@
               "kind": "method",
               "signature": "(self, icon_filename, callback, button_type=None)",
               "summary": "Create a button with the given icon and callback.",
-              "line": 526,
+              "line": 529,
               "deprecated": false
             },
             {
@@ -10810,7 +11043,7 @@
               "kind": "method",
               "signature": "(self, button_type=None)",
               "summary": "Check if the header has a specific button type or any button.",
-              "line": 555,
+              "line": 558,
               "deprecated": false
             },
             {
@@ -10819,7 +11052,7 @@
               "kind": "method",
               "signature": "(self, *button_list)",
               "summary": "Configure header buttons from a list and align them to the right.",
-              "line": 576,
+              "line": 579,
               "deprecated": false
             },
             {
@@ -10828,7 +11061,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 656,
+              "line": 659,
               "deprecated": false
             },
             {
@@ -10837,7 +11070,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 661,
+              "line": 664,
               "deprecated": false
             },
             {
@@ -10846,7 +11079,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 667,
+              "line": 670,
               "deprecated": false
             },
             {
@@ -10855,7 +11088,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 673,
+              "line": 676,
               "deprecated": false
             },
             {
@@ -10864,7 +11097,7 @@
               "kind": "method",
               "signature": "(self, title)",
               "summary": "Set the title of the header.",
-              "line": 690,
+              "line": 693,
               "deprecated": false
             },
             {
@@ -10873,7 +11106,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Get the title of the header (without any version suffix).",
-              "line": 698,
+              "line": 701,
               "deprecated": false
             },
             {
@@ -10882,7 +11115,7 @@
               "kind": "method",
               "signature": "(self, version)",
               "summary": "Set an optional version string appended to the title.",
-              "line": 706,
+              "line": 709,
               "deprecated": false
             },
             {
@@ -10891,7 +11124,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the current version suffix (without the ``v`` prefix).",
-              "line": 718,
+              "line": 721,
               "deprecated": false
             },
             {
@@ -10900,7 +11133,7 @@
               "kind": "method",
               "signature": "(self, text)",
               "summary": "Override to remember the untruncated title for elision.",
-              "line": 736,
+              "line": 739,
               "deprecated": false
             },
             {
@@ -10909,7 +11142,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Minimize the window: collapse to header-only, narrow to a fixed width,",
-              "line": 801,
+              "line": 804,
               "deprecated": false
             },
             {
@@ -10918,7 +11151,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Restore a minimized window to its original size and position.",
-              "line": 857,
+              "line": 861,
               "deprecated": false
             },
             {
@@ -10927,7 +11160,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Toggle between maximized and normal window state.",
-              "line": 953,
+              "line": 1029,
               "deprecated": false
             },
             {
@@ -10936,7 +11169,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Toggle between fullscreen and normal window state.",
-              "line": 967,
+              "line": 1043,
               "deprecated": false
             },
             {
@@ -10945,7 +11178,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Hide the parent window, unpinning it first.",
-              "line": 979,
+              "line": 1057,
               "deprecated": false
             },
             {
@@ -10954,7 +11187,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Unhide the parent window.",
-              "line": 997,
+              "line": 1072,
               "deprecated": false
             },
             {
@@ -10963,7 +11196,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Emit the refresh_requested signal.",
-              "line": 1003,
+              "line": 1078,
               "deprecated": false
             },
             {
@@ -10972,7 +11205,7 @@
               "kind": "method",
               "signature": "(self, text, url=None)",
               "summary": "Set the tool's help/instruction text and ensure the help button is shown.",
-              "line": 1012,
+              "line": 1087,
               "deprecated": false
             },
             {
@@ -10981,7 +11214,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the current help text, or ``\"\"``.",
-              "line": 1052,
+              "line": 1127,
               "deprecated": false
             },
             {
@@ -10990,7 +11223,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Return the help's documentation link, or ``\"\"``.",
-              "line": 1056,
+              "line": 1131,
               "deprecated": false
             },
             {
@@ -10999,7 +11232,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "The help card's content: the help text, then the documentation link.",
-              "line": 1060,
+              "line": 1135,
               "deprecated": false
             },
             {
@@ -11008,7 +11241,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Show the help card at the help button.",
-              "line": 1076,
+              "line": 1151,
               "deprecated": false
             },
             {
@@ -11017,7 +11250,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Show the menu.",
-              "line": 1091,
+              "line": 1166,
               "deprecated": false
             },
             {
@@ -11026,7 +11259,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Toggle between collapsed (header only) and expanded window states.",
-              "line": 1095,
+              "line": 1170,
               "deprecated": false
             },
             {
@@ -11035,7 +11268,7 @@
               "kind": "method",
               "signature": "(self, fixed_width=None)",
               "summary": "Collapse the parent window to show only the header.",
-              "line": 1151,
+              "line": 1226,
               "deprecated": false
             },
             {
@@ -11044,7 +11277,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Expand the window back to its original size.",
-              "line": 1223,
+              "line": 1299,
               "deprecated": false
             },
             {
@@ -11053,7 +11286,7 @@
               "kind": "method",
               "signature": "(self, from_drag=False)",
               "summary": "Toggle pinning of the window.",
-              "line": 1304,
+              "line": 1383,
               "deprecated": false
             },
             {
@@ -11062,7 +11295,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Force the header into an unpinned state without hiding the window.",
-              "line": 1350,
+              "line": 1429,
               "deprecated": false
             },
             {
@@ -11071,7 +11304,7 @@
               "kind": "method",
               "signature": "(self, watched, event)",
               "summary": "Track pin-button hover, show the help card for the help button's",
-              "line": 1418,
+              "line": 1497,
               "deprecated": false
             },
             {
@@ -11080,7 +11313,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the mouse press event.",
-              "line": 1456,
+              "line": 1535,
               "deprecated": false
             },
             {
@@ -11089,7 +11322,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1466,
+              "line": 1545,
               "deprecated": false
             },
             {
@@ -11098,7 +11331,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Handle the mouse move event.",
-              "line": 1475,
+              "line": 1554,
               "deprecated": false
             },
             {
@@ -11107,7 +11340,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1494,
+              "line": 1573,
               "deprecated": false
             },
             {
@@ -11116,7 +11349,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1524,
+              "line": 1603,
               "deprecated": false
             },
             {
@@ -11125,7 +11358,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Attach this header to the top of a QWidget or QMainWindow's centralWidget if appropriate.",
-              "line": 1597,
+              "line": 1673,
               "deprecated": false
             },
             {
@@ -11134,7 +11367,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Reset minimize/collapse state when header (and window) is hidden.",
-              "line": 1654,
+              "line": 1730,
               "deprecated": false
             },
             {
@@ -11143,7 +11376,7 @@
               "kind": "method",
               "signature": "(self, value: str) -> None",
               "summary": "Set the help text (Qt-property setter for :meth:`set_help_text`).",
-              "line": 1676,
+              "line": 1749,
               "deprecated": false
             },
             {
@@ -11152,7 +11385,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Set the pin-click mode (Qt-property setter for the attribute).",
-              "line": 1680,
+              "line": 1753,
               "deprecated": false
             },
             {
@@ -11161,7 +11394,7 @@
               "kind": "method",
               "signature": "(self) -> str",
               "summary": "Return the configured header buttons as a space-separated string.",
-              "line": 1684,
+              "line": 1757,
               "deprecated": false
             },
             {
@@ -11170,7 +11403,7 @@
               "kind": "method",
               "signature": "(self, value: str) -> None",
               "summary": "Configure header buttons from a comma- or space-separated string.",
-              "line": 1688,
+              "line": 1761,
               "deprecated": false
             },
             {
@@ -11179,7 +11412,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Whether the header hides itself beside a native OS title bar.",
-              "line": 1697,
+              "line": 1770,
               "deprecated": false
             },
             {
@@ -11188,7 +11421,341 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Set whether the header hides itself beside a native OS title bar.",
-              "line": 1701,
+              "line": 1774,
+              "deprecated": false
+            }
+          ]
+        }
+      ],
+      "constants": []
+    },
+    {
+      "relpath": "widgets/image_view.py",
+      "summary": "An image to look at closely: zoom about the cursor, pan, and shapes drawn over it.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "ImageTool",
+          "summary": "A way to draw a shape on an :class:`ImageView`, point by point in image pixels.",
+          "line": 67,
+          "bases": [],
+          "members": [
+            {
+              "name": "press",
+              "qualname": "ImageTool.press",
+              "kind": "method",
+              "signature": "(self, point: Tuple[float, float]) -> bool",
+              "summary": "",
+              "line": 87,
+              "deprecated": false
+            },
+            {
+              "name": "move",
+              "qualname": "ImageTool.move",
+              "kind": "method",
+              "signature": "(self, point: Tuple[float, float]) -> None",
+              "summary": "",
+              "line": 90,
+              "deprecated": false
+            },
+            {
+              "name": "release",
+              "qualname": "ImageTool.release",
+              "kind": "method",
+              "signature": "(self, point: Tuple[float, float]) -> bool",
+              "summary": "",
+              "line": 93,
+              "deprecated": false
+            },
+            {
+              "name": "finish",
+              "qualname": "ImageTool.finish",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "",
+              "line": 96,
+              "deprecated": false
+            },
+            {
+              "name": "preview",
+              "qualname": "ImageTool.preview",
+              "kind": "method",
+              "signature": "(self) -> List[Tuple[float, float]]",
+              "summary": "The points the dashed preview runs through.",
+              "line": 99,
+              "deprecated": false
+            },
+            {
+              "name": "result",
+              "qualname": "ImageTool.result",
+              "kind": "method",
+              "signature": "(self) -> List[Tuple[float, float]]",
+              "summary": "What the drawn shape is, in image pixels.",
+              "line": 103,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "ImageView",
+          "summary": "An image to inspect: the wheel zooms about the cursor, the middle button",
+          "line": 179,
+          "bases": [
+            "QtWidgets.QGraphicsView",
+            "AttributesMixin",
+            "_ImageViewInternal"
+          ],
+          "members": [
+            {
+              "name": "set_image",
+              "qualname": "ImageView.set_image",
+              "kind": "method",
+              "signature": "(self, image: Any) -> None",
+              "summary": "Show *image* (see :meth:`to_pixmap`; ``None`` clears).",
+              "line": 281,
+              "deprecated": false
+            },
+            {
+              "name": "image_size",
+              "qualname": "ImageView.image_size",
+              "kind": "method",
+              "signature": "(self) -> Tuple[int, int]",
+              "summary": "``(width, height)`` of the image in pixels (``(0, 0)`` with none).",
+              "line": 291,
+              "deprecated": false
+            },
+            {
+              "name": "zoom",
+              "qualname": "ImageView.zoom",
+              "kind": "method",
+              "signature": "(self) -> float",
+              "summary": "Screen pixels per image pixel.",
+              "line": 302,
+              "deprecated": false
+            },
+            {
+              "name": "fit",
+              "qualname": "ImageView.fit",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Frame the whole image (and keep it framed as the view resizes).",
+              "line": 306,
+              "deprecated": false
+            },
+            {
+              "name": "fitting",
+              "qualname": "ImageView.fitting",
+              "kind": "method",
+              "signature": "(self) -> bool",
+              "summary": "Whether the view keeps the whole image framed (until the user frames it).",
+              "line": 314,
+              "deprecated": false
+            },
+            {
+              "name": "actual_size",
+              "qualname": "ImageView.actual_size",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "One image pixel to one screen pixel, about the view's centre.",
+              "line": 318,
+              "deprecated": false
+            },
+            {
+              "name": "view_state",
+              "qualname": "ImageView.view_state",
+              "kind": "method",
+              "signature": "(self) -> Dict[str, Any]",
+              "summary": "``{\"zoom\", \"center\": [x, y]}`` (image pixels): what :meth:`set_view_state` takes.",
+              "line": 326,
+              "deprecated": false
+            },
+            {
+              "name": "set_view_state",
+              "qualname": "ImageView.set_view_state",
+              "kind": "method",
+              "signature": "(self, state: Mapping[str, Any]) -> None",
+              "summary": "Frame the view as *state* says (emits no :attr:`view_changed`).",
+              "line": 331,
+              "deprecated": false
+            },
+            {
+              "name": "set_wipe",
+              "qualname": "ImageView.set_wipe",
+              "kind": "method",
+              "signature": "(self, image: Any, position: float = 0.5) -> None",
+              "summary": "Show *image* over the first right of a vertical line at *position*",
+              "line": 351,
+              "deprecated": false
+            },
+            {
+              "name": "wipe_position",
+              "qualname": "ImageView.wipe_position",
+              "kind": "method",
+              "signature": "(self) -> Optional[float]",
+              "summary": "Where the wipe line is (0..1), or ``None`` with no wipe.",
+              "line": 359,
+              "deprecated": false
+            },
+            {
+              "name": "set_wipe_position",
+              "qualname": "ImageView.set_wipe_position",
+              "kind": "method",
+              "signature": "(self, position: float) -> None",
+              "summary": "",
+              "line": 363,
+              "deprecated": false
+            },
+            {
+              "name": "set_overlays",
+              "qualname": "ImageView.set_overlays",
+              "kind": "method",
+              "signature": "(self, overlays: Sequence[Mapping[str, Any]]) -> None",
+              "summary": "Draw *overlays* over the image: each ``{\"key\", \"points\": [(x, y), ...]",
+              "line": 385,
+              "deprecated": false
+            },
+            {
+              "name": "overlays",
+              "qualname": "ImageView.overlays",
+              "kind": "method",
+              "signature": "(self) -> List[Dict[str, Any]]",
+              "summary": "What :meth:`set_overlays` was given.",
+              "line": 415,
+              "deprecated": false
+            },
+            {
+              "name": "overlay_at",
+              "qualname": "ImageView.overlay_at",
+              "kind": "method",
+              "signature": "(self, view_pos: QtCore.QPointF) -> Any",
+              "summary": "The key of the topmost overlay at *view_pos* (viewport pixels), or ``None``.",
+              "line": 419,
+              "deprecated": false
+            },
+            {
+              "name": "register_tool",
+              "qualname": "ImageView.register_tool",
+              "kind": "classmethod",
+              "signature": "(cls, name: str, tool: Type[ImageTool]) -> None",
+              "summary": "Add (or replace) draw tool *name*.",
+              "line": 439,
+              "deprecated": false
+            },
+            {
+              "name": "set_tool",
+              "qualname": "ImageView.set_tool",
+              "kind": "method",
+              "signature": "(self, name: Optional[str]) -> None",
+              "summary": "Draw with tool *name* (one shape), or ``None`` to stop drawing.",
+              "line": 443,
+              "deprecated": false
+            },
+            {
+              "name": "tool",
+              "qualname": "ImageView.tool",
+              "kind": "method",
+              "signature": "(self) -> Optional[str]",
+              "summary": "The draw tool in use, or ``None``.",
+              "line": 458,
+              "deprecated": false
+            },
+            {
+              "name": "wheelEvent",
+              "qualname": "ImageView.wheelEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 487,
+              "deprecated": false
+            },
+            {
+              "name": "mousePressEvent",
+              "qualname": "ImageView.mousePressEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 509,
+              "deprecated": false
+            },
+            {
+              "name": "mouseMoveEvent",
+              "qualname": "ImageView.mouseMoveEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 536,
+              "deprecated": false
+            },
+            {
+              "name": "mouseReleaseEvent",
+              "qualname": "ImageView.mouseReleaseEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 566,
+              "deprecated": false
+            },
+            {
+              "name": "mouseDoubleClickEvent",
+              "qualname": "ImageView.mouseDoubleClickEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 589,
+              "deprecated": false
+            },
+            {
+              "name": "leaveEvent",
+              "qualname": "ImageView.leaveEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 600,
+              "deprecated": false
+            },
+            {
+              "name": "keyPressEvent",
+              "qualname": "ImageView.keyPressEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 604,
+              "deprecated": false
+            },
+            {
+              "name": "keyReleaseEvent",
+              "qualname": "ImageView.keyReleaseEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 618,
+              "deprecated": false
+            },
+            {
+              "name": "resizeEvent",
+              "qualname": "ImageView.resizeEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "",
+              "line": 623,
+              "deprecated": false
+            },
+            {
+              "name": "to_pixmap",
+              "qualname": "ImageView.to_pixmap",
+              "kind": "staticmethod",
+              "signature": "(image: Any) -> Optional[QtGui.QPixmap]",
+              "summary": "*image* as a QPixmap: a QPixmap, a QImage, or an ``(h, w)`` /",
+              "line": 17,
+              "deprecated": false
+            },
+            {
+              "name": "path_of",
+              "qualname": "ImageView.path_of",
+              "kind": "staticmethod",
+              "signature": "(points: Sequence[Sequence[float]], closed: bool) -> QtGui.QPainterPath",
+              "summary": "A painter path through *points* (image pixels), closed or not.",
+              "line": 54,
               "deprecated": false
             }
           ]

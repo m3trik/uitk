@@ -354,6 +354,8 @@ class TestExternalAppDescription(unittest.TestCase):
         path -- one inside a zip, or one an editable install remaps
         (setuptools' ``package_dir``, found by a ``sys.meta_path`` finder)
         -- is found the way an import would find it, still unimported."""
+        import gc
+        import importlib.metadata
         import importlib.util
         import zipfile
 
@@ -361,6 +363,23 @@ class TestExternalAppDescription(unittest.TestCase):
 
         tmp = ptk.TempArtifacts("uitk_test_app_description", policy="scoped")
         self.addCleanup(tmp.cleanup)
+
+        def release_archive():
+            # The handler's entry-point scan (importlib.metadata) caches a
+            # FastPath per sys.path entry, and a zip entry's holds the archive
+            # open for the process's life: the cleanup above then failed on
+            # Windows (WinError 32). On 3.11 (3.11.0, 3.11.4 checked)
+            # ``importlib.invalidate_caches`` never reaches this cache, and
+            # the finder's own ``invalidate_caches`` lacks ``@classmethod``
+            # (callable on an instance only). The FastPath sits in a cycle:
+            # collect to close the zip.
+            finder = importlib.metadata.MetadataPathFinder()
+            invalidate = getattr(finder, "invalidate_caches", None)
+            if invalidate is not None:
+                invalidate()
+            gc.collect()
+
+        self.addCleanup(release_archive)  # LIFO: after sys.path, before tmp
         root = tmp.dir_path()
         archive = os.path.join(root, "desc_zip.zip")
         with zipfile.ZipFile(archive, "w") as zf:

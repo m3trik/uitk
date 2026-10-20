@@ -103,7 +103,15 @@ class _TemplateComboMixin(object):
         self._on_template_changed()
 
     def _populate_template_combo(self, widget) -> None:
-        """Fill cmb000 with ``"<template> (<mode>)"`` entries."""
+        """Fill cmb000 with ``"<template> (<mode>)"`` entries.
+
+        A mode combo (:attr:`TEMPLATE_MENU` off) with one entry or none offers
+        nothing to choose, so it hides -- still holding its entry, so the
+        selection reads as before -- and comes back when a repopulate brings a
+        second (the WebXR preview's Source: File on Disk alone standalone, a
+        host's scopes once one is injected). A template combo stays: its
+        context menu is reachable however few templates it lists.
+        """
         pairs = self.list_template_modes()
         widget.blockSignals(True)
         try:
@@ -116,6 +124,7 @@ class _TemplateComboMixin(object):
                 widget.setCurrentIndex(self.select_initial_template_index(pairs))
         finally:
             widget.blockSignals(False)
+        widget.setVisible(self.TEMPLATE_MENU or len(pairs) > 1)
 
     def refresh_templates(self) -> None:
         """Re-scan disk and rebuild the template combo + parameter UI."""

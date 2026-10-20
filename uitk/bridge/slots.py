@@ -123,7 +123,10 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
 
     # ------------------ Cosmetics -------------------------------------
 
-    # Label column width, shared by the Output Dir row and the parameter rows.
+    # The label column's floor, shared by the Output Dir row and the parameter
+    # rows. A built panel widens it to its widest row label and keeps that as
+    # the instance's value (``_fit_label_column``), so rows a subclass builds
+    # from it afterwards line up with the rest.
     LABEL_MIN_WIDTH = 90
 
     # ------------------ Subclass hooks --------------------------------

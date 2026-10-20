@@ -93,6 +93,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class RuntimeLoader`
   - methods: load, read_ui_tags, on_tags_written
 
+### `managers/background_task.py` — Work on a background thread, its outcome read back on the UI thread.
+- `class BackgroundTask`
+  - methods: done, wait, result, when_done
+
 ### `managers/cancel_manager.py` — Host strategy for cancelling long-running slots.
 - `class CancelProvider`
   - methods: install, report_warning, report_info, open_bracket, close_bracket, current_bracket, create_sources, begin, tick, end, pump
@@ -276,6 +280,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class ComboBox(AlignedComboBox, MenuMixin, OptionBoxMixin, AttributesMixin, RichText, TextOverlay)`
   - methods: clear, addItem, addItems, insertItem, insertItems, current_text_suffix, current_text_prefix, setCurrentTextPrefix, setCurrentTextSuffix, items, currentData, setCurrentData, currentText, setCurrentText, setItemText, setAsCurrent, setCurrentIndex, check_index, wheel_selects, wheelEvent, mousePressEvent, mouseDoubleClickEvent, begin_rename, set_cells, cell_spec, format_cell, cell_text, add_cells, item_cells, set_item_cells, begin_cell_edit, cell_editing, resizeEvent, focusOutEvent, editable, setEditable, force_header_display, add_header, add_single, add, removeItem, showPopup, keyPressEvent
 
+### `widgets/compare_view.py` — Two images compared: wiped, side by side, blinked, or one at a time.
+- `class CompareView(QtWidgets.QWidget, AttributesMixin)`
+  - methods: set_images, set_labels, set_mode, mode, blink, split_position, set_split_position, set_overlays, fit, keyPressEvent, keyReleaseEvent, focusOutEvent
+
 ### `widgets/context_menu.py` — A popup context menu whose rows can expand into sub-rows.
 - `class MenuRow(QtWidgets.QPushButton, OptionBoxMixin)`
   - methods: has_flyout, add_option_menu, option_menu, resizeEvent, sizeHint, paintEvent
@@ -302,6 +310,10 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class ShortcutCaptureDelegate(QtWidgets.QStyledItemDelegate)`
   - methods: createEditor, setEditorData, setModelData, install_shortcut_capture
 - `class BorderedShortcutCaptureDelegate(ShortcutCaptureDelegate, RowSelectionBorderDelegate)`
+
+### `widgets/delegates/value_bar.py` — A number in an item-view cell drawn as a bar: how much, at a glance.
+- `class ValueBarDelegate(QtWidgets.QStyledItemDelegate)`
+  - methods: fraction, value_of, text_of, paint
 
 ### `widgets/doubleSpinBox.py`
 - `class DoubleSpinBox(WheelStepMixin, SpinBoxAdjustingMixin, FeedbackMixin, SpinBoxTextColorMixin, PrefixColumnMixin, QtWidgets.QDoubleSpinBox, MenuMixin, AttributesMixin)`
@@ -414,6 +426,12 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 ### `widgets/header.py`
 - `class Header(QtWidgets.QLabel, AttributesMixin, RichText, TextOverlay, pythontk.LoggingMixin)`
   - methods: pin_on_drag_only, set_default_pin_on_drag_only, pin_on_tap, set_default_pin_on_tap, claim_hide_as_tap, menu, get_icon_path, create_svg_icon, create_button, has_buttons, config_buttons, trigger_resize_event, resizeEvent, resize_buttons, update_font_size, setTitle, title, setVersion, version, setText, minimize_window, restore_window, toggle_maximize, toggle_fullscreen, hide_window, unhide_window, trigger_refresh, set_help_text, help_text, help_url, help_html, show_help, show_menu, toggle_collapse, collapse_window, expand_window, toggle_pin, reset_pin_state, eventFilter, mousePressEvent, event, mouseMoveEvent, mouseReleaseEvent, showEvent, attach_to, hideEvent, setHelpText, setPinOnDragOnly, getConfigButtons, setConfigButtons, getAutoHideWithOsFrame, setAutoHideWithOsFrame
+
+### `widgets/image_view.py` — An image to look at closely: zoom about the cursor, pan, and shapes drawn over it.
+- `class ImageTool`
+  - methods: press, move, release, finish, preview, result
+- `class ImageView(QtWidgets.QGraphicsView, AttributesMixin, _ImageViewInternal)`
+  - methods: set_image, image_size, zoom, fit, fitting, actual_size, view_state, set_view_state, set_wipe, wipe_position, set_wipe_position, set_overlays, overlays, overlay_at, register_tool, set_tool, tool, wheelEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, mouseDoubleClickEvent, leaveEvent, keyPressEvent, keyReleaseEvent, resizeEvent, to_pixmap, path_of
 
 ### `widgets/label.py`
 - `class Label(QtWidgets.QLabel, MenuMixin, OptionBoxMixin, AttributesMixin)`

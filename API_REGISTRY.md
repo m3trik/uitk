@@ -23,6 +23,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`handlers/ui_handler.py`](#handlers--ui_handler)
 - [`loaders/compiled.py`](#loaders--compiled) — Switchboard delegate that loads UIs via compiled _ui.py modules.
 - [`loaders/runtime.py`](#loaders--runtime) — Switchboard delegate that loads UIs at runtime via QUiLoader.
+- [`managers/background_task.py`](#managers--background_task) — Work on a background thread, its outcome read back on the UI thread.
 - [`managers/cancel_manager.py`](#managers--cancel_manager) — Host strategy for cancelling long-running slots.
 - [`managers/color_model.py`](#managers--color_model) — The observable colour value a picker and its widgets share.
 - [`managers/cursor_manager.py`](#managers--cursor_manager) — One owner for every cursor change in uitk.
@@ -64,11 +65,13 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/colorSwatch.py`](#widgets--colorSwatch)
 - [`widgets/column_config.py`](#widgets--column_config) — A view's header menu of columns to show, hide and reorder, with the layout remembered.
 - [`widgets/comboBox.py`](#widgets--comboBox)
+- [`widgets/compare_view.py`](#widgets--compare_view) — Two images compared: wiped, side by side, blinked, or one at a time.
 - [`widgets/context_menu.py`](#widgets--context_menu) — A popup context menu whose rows can expand into sub-rows.
 - [`widgets/delegates/centered_icon.py`](#widgets--delegates--centered_icon) — Centered icon painting for item-view cells.
 - [`widgets/delegates/choice_capture.py`](#widgets--delegates--choice_capture) — In-cell choice (dropdown) capture for item views.
 - [`widgets/delegates/row_selection.py`](#widgets--delegates--row_selection) — Opt-in delegate for views whose cells carry their own background.
 - [`widgets/delegates/shortcut_capture.py`](#widgets--delegates--shortcut_capture) — In-cell key-combination capture for item views.
+- [`widgets/delegates/value_bar.py`](#widgets--delegates--value_bar) — A number in an item-view cell drawn as a bar: how much, at a glance.
 - [`widgets/doubleSpinBox.py`](#widgets--doubleSpinBox)
 - [`widgets/editors/color_editor.py`](#widgets--editors--color_editor) — An embeddable colour editor, and the popup that is merely one of its hosts.
 - [`widgets/editors/color_mapping_editor.py`](#widgets--editors--color_mapping_editor) — Reusable color-mapping editor widget.
@@ -93,6 +96,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/form_rows.py`](#widgets--form_rows) — A form any layout can hold: labelled rows built the way a Menu is built.
 - [`widgets/gradient_slider.py`](#widgets--gradient_slider) — A slider whose track shows the colour it is about to set.
 - [`widgets/header.py`](#widgets--header)
+- [`widgets/image_view.py`](#widgets--image_view) — An image to look at closely: zoom about the cursor, pan, and shapes drawn over it.
 - [`widgets/label.py`](#widgets--label)
 - [`widgets/lineEdit.py`](#widgets--lineEdit)
 - [`widgets/mainWindow.py`](#widgets--mainWindow)
@@ -501,6 +505,17 @@ Switchboard delegate that loads UIs at runtime via QUiLoader.
   - `RuntimeLoader.load(self, ui_file: str) -> QtWidgets.QWidget` — Build a widget tree from a .ui path via QUiLoader.
   - `RuntimeLoader.read_ui_tags(self, ui_path: str) -> set` — Return the uitk_tags set for a .ui file via direct XML parse.
   - `RuntimeLoader.on_tags_written(self, ui_path: str) -> None` — Invalidate cached metadata after .ui content has changed.
+
+<a id="managers--background_task"></a>
+### `managers/background_task.py`
+
+Work on a background thread, its outcome read back on the UI thread.
+
+- **[`class BackgroundTask`](uitk/uitk/managers/background_task.py#L11)** — Runs *work* on a daemon thread;
+  - `BackgroundTask.done(self) -> bool` *(property)* — Whether *work* has ended (returned or raised).
+  - `BackgroundTask.wait(self, seconds: float) -> None` — Block up to *seconds* for *work* to end (a test, a shutdown).
+  - `BackgroundTask.result(self) -> Any` — What *work* returned;
+  - `BackgroundTask.when_done(self, parent: QtCore.QObject, callback: Callable[[], None], poll_ms: Optional[int] = None) -> None` — *callback* on the UI thread once *work* ends, off a timer *parent*
 
 <a id="managers--cancel_manager"></a>
 ### `managers/cancel_manager.py`
@@ -1247,6 +1262,25 @@ A view's header menu of columns to show, hide and reorder, with the layout remem
   - `ComboBox.showPopup(self)`
   - `ComboBox.keyPressEvent(self, event)`
 
+<a id="widgets--compare_view"></a>
+### `widgets/compare_view.py`
+
+Two images compared: wiped, side by side, blinked, or one at a time.
+
+- **[`class CompareView(QtWidgets.QWidget, AttributesMixin)`](uitk/uitk/widgets/compare_view.py#L13)** — Image A against image B, the ways a compositor's viewer compares them.
+  - `CompareView.set_images(self, a: Any, b: Any) -> None` — Image A and image B (either may be ``None``).
+  - `CompareView.set_labels(self, a: str, b: str) -> None` — What each image is called, in the captions.
+  - `CompareView.set_mode(self, mode: str) -> None` — One of :attr:`MODES`.
+  - `CompareView.mode(self) -> str`
+  - `CompareView.blink(self, showing_b: bool) -> None` — In ``blink`` mode, show B (True) or A (False).
+  - `CompareView.split_position(self) -> float` — Where the ``split`` mode's line is (0..1 of the width).
+  - `CompareView.set_split_position(self, position: float) -> None`
+  - `CompareView.set_overlays(self, overlays: Sequence[Mapping[str, Any]]) -> None` — Draw *overlays* over both images (see :meth:`ImageView.set_overlays`).
+  - `CompareView.fit(self) -> None`
+  - `CompareView.keyPressEvent(self, event) -> None`
+  - `CompareView.keyReleaseEvent(self, event) -> None`
+  - `CompareView.focusOutEvent(self, event) -> None`
+
 <a id="widgets--context_menu"></a>
 ### `widgets/context_menu.py`
 
@@ -1319,6 +1353,17 @@ In-cell key-combination capture for item views.
   - `ShortcutCaptureDelegate.setModelData(self, editor, model, index)`
   - `ShortcutCaptureDelegate.install_shortcut_capture(table: QtWidgets.QTableWidget, column: int, on_capture, *, bordered: bool = False) -> ShortcutCaptureDelegate` *(static)* — Wire in-cell shortcut capture onto a table column.
 - **[`class BorderedShortcutCaptureDelegate(ShortcutCaptureDelegate, RowSelectionBorderDelegate)`](uitk/uitk/widgets/delegates/shortcut_capture.py#L196)** — :class:`ShortcutCaptureDelegate` that paints the row-spanning
+
+<a id="widgets--delegates--value_bar"></a>
+### `widgets/delegates/value_bar.py`
+
+A number in an item-view cell drawn as a bar: how much, at a glance.
+
+- **[`class ValueBarDelegate(QtWidgets.QStyledItemDelegate)`](uitk/uitk/widgets/delegates/value_bar.py#L13)** — Draws a cell's number as a bar between *minimum* and *maximum*, its value as text.
+  - `ValueBarDelegate.fraction(self, value: float) -> float` — Where *value* sits along the bar, 0..1.
+  - `ValueBarDelegate.value_of(self, index: QtCore.QModelIndex, role: Optional[int] = None) -> Optional[float]` — The number *index* holds in *role* (default: :attr:`value_role`, then
+  - `ValueBarDelegate.text_of(self, value: float) -> str`
+  - `ValueBarDelegate.paint(self, painter, option, index) -> None`
 
 <a id="widgets--doubleSpinBox"></a>
 ### `widgets/doubleSpinBox.py`
@@ -1811,6 +1856,48 @@ A slider whose track shows the colour it is about to set.
   - `Header.setConfigButtons(self, value: str) -> None` — Configure header buttons from a comma- or space-separated string.
   - `Header.getAutoHideWithOsFrame(self) -> bool` — Whether the header hides itself beside a native OS title bar.
   - `Header.setAutoHideWithOsFrame(self, value: bool) -> None` — Set whether the header hides itself beside a native OS title bar.
+
+<a id="widgets--image_view"></a>
+### `widgets/image_view.py`
+
+An image to look at closely: zoom about the cursor, pan, and shapes drawn over it.
+
+- **[`class ImageTool`](uitk/uitk/widgets/image_view.py#L67)** — A way to draw a shape on an :class:`ImageView`, point by point in image pixels.
+  - `ImageTool.press(self, point: Tuple[float, float]) -> bool`
+  - `ImageTool.move(self, point: Tuple[float, float]) -> None`
+  - `ImageTool.release(self, point: Tuple[float, float]) -> bool`
+  - `ImageTool.finish(self) -> bool`
+  - `ImageTool.preview(self) -> List[Tuple[float, float]]` — The points the dashed preview runs through.
+  - `ImageTool.result(self) -> List[Tuple[float, float]]` — What the drawn shape is, in image pixels.
+- **[`class ImageView(QtWidgets.QGraphicsView, AttributesMixin, _ImageViewInternal)`](uitk/uitk/widgets/image_view.py#L179)** — An image to inspect: the wheel zooms about the cursor, the middle button
+  - `ImageView.set_image(self, image: Any) -> None` — Show *image* (see :meth:`to_pixmap`; ``None`` clears).
+  - `ImageView.image_size(self) -> Tuple[int, int]` — ``(width, height)`` of the image in pixels (``(0, 0)`` with none).
+  - `ImageView.zoom(self) -> float` — Screen pixels per image pixel.
+  - `ImageView.fit(self) -> None` — Frame the whole image (and keep it framed as the view resizes).
+  - `ImageView.fitting(self) -> bool` — Whether the view keeps the whole image framed (until the user frames it).
+  - `ImageView.actual_size(self) -> None` — One image pixel to one screen pixel, about the view's centre.
+  - `ImageView.view_state(self) -> Dict[str, Any]` — ``{"zoom", "center": [x, y]}`` (image pixels): what :meth:`set_view_state` takes.
+  - `ImageView.set_view_state(self, state: Mapping[str, Any]) -> None` — Frame the view as *state* says (emits no :attr:`view_changed`).
+  - `ImageView.set_wipe(self, image: Any, position: float = 0.5) -> None` — Show *image* over the first right of a vertical line at *position*
+  - `ImageView.wipe_position(self) -> Optional[float]` — Where the wipe line is (0..1), or ``None`` with no wipe.
+  - `ImageView.set_wipe_position(self, position: float) -> None`
+  - `ImageView.set_overlays(self, overlays: Sequence[Mapping[str, Any]]) -> None` — Draw *overlays* over the image: each ``{"key", "points": [(x, y), ...]
+  - `ImageView.overlays(self) -> List[Dict[str, Any]]` — What :meth:`set_overlays` was given.
+  - `ImageView.overlay_at(self, view_pos: QtCore.QPointF) -> Any` — The key of the topmost overlay at *view_pos* (viewport pixels), or ``None``.
+  - `ImageView.register_tool(cls, name: str, tool: Type[ImageTool]) -> None` *(class)* — Add (or replace) draw tool *name*.
+  - `ImageView.set_tool(self, name: Optional[str]) -> None` — Draw with tool *name* (one shape), or ``None`` to stop drawing.
+  - `ImageView.tool(self) -> Optional[str]` — The draw tool in use, or ``None``.
+  - `ImageView.wheelEvent(self, event) -> None`
+  - `ImageView.mousePressEvent(self, event) -> None`
+  - `ImageView.mouseMoveEvent(self, event) -> None`
+  - `ImageView.mouseReleaseEvent(self, event) -> None`
+  - `ImageView.mouseDoubleClickEvent(self, event) -> None`
+  - `ImageView.leaveEvent(self, event) -> None`
+  - `ImageView.keyPressEvent(self, event) -> None`
+  - `ImageView.keyReleaseEvent(self, event) -> None`
+  - `ImageView.resizeEvent(self, event) -> None`
+  - `ImageView.to_pixmap(image: Any) -> Optional[QtGui.QPixmap]` *(static)* — *image* as a QPixmap: a QPixmap, a QImage, or an ``(h, w)`` /
+  - `ImageView.path_of(points: Sequence[Sequence[float]], closed: bool) -> QtGui.QPainterPath` *(static)* — A painter path through *points* (image pixels), closed or not.
 
 <a id="widgets--label"></a>
 ### `widgets/label.py`

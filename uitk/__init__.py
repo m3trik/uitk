@@ -97,6 +97,9 @@ DEFAULT_INCLUDE = {
     "widgets.collapsableGroup": "CollapsableGroup",
     "widgets.colorSwatch": "ColorSwatch",
     "widgets.gradient_slider": "GradientSlider",
+    # An image to inspect (zoom, pan, overlays, a wipe, draw tools) and two compared.
+    "widgets.image_view": ["ImageView", "ImageTool"],
+    "widgets.compare_view": "CompareView",
     "widgets.editors.color_editor": [
         "ColorEditor",
         "ColorEditorPopup",
@@ -172,6 +175,8 @@ DEFAULT_INCLUDE = {
         "ChoiceCaptureDelegate",
         "BorderedChoiceCaptureDelegate",
     ],
+    # A cell's number as a bar (linear or log; a gradient track; a ghost value).
+    "widgets.delegates.value_bar": "ValueBarDelegate",
     "widgets.separator": "Separator",
     "widgets.slider": "Slider",
     "widgets.tableWidget": "TableWidget",
@@ -210,6 +215,7 @@ DEFAULT_INCLUDE = {
         "TextOverlay",
     ],
     # Standalone services (uitk.managers / uitk.themes)
+    "managers.background_task": "BackgroundTask",
     "managers.cancel_manager": ["CancelManager", "CancelProvider"],
     "managers.cursor_manager": ["CursorManager", "OverrideCursorGuard"],
     "managers.color_model": "ColorModel",

@@ -245,10 +245,13 @@ class Bootstrap:
         ``python.exe``; see ``ptk.AppLauncher.windowless_python``), so a
         shortcut into one does exactly that. When this process is its
         console's only client -- nothing started it from a terminal -- it
-        detaches (``FreeConsole``) and the console closes: the process then
-        runs as it would under ``pythonw``. A console shared with a terminal is
-        left alone. Pass the result to :meth:`capture_output`, whose streams
-        would otherwise write into the closed console.
+        detaches (``FreeConsole``) and the console closes, and its std handles
+        are cleared: the process then runs as it would under ``pythonw``. (Kept,
+        they hold the closed console's values, which later opens reuse; a child
+        started with captured output inherited that stdin and failed to start.)
+        A console shared with a terminal is left alone. Pass the result to
+        :meth:`capture_output`, whose streams would otherwise write into the
+        closed console.
 
         Returns:
             ``True`` when it detached (Windows only).
@@ -264,7 +267,14 @@ class Bootstrap:
         clients = (ctypes.c_uint32 * 2)()
         if kernel32.GetConsoleProcessList(clients, 2) != 1:
             return False  # a terminal (or a launcher) shares it: not ours
-        return bool(kernel32.FreeConsole())
+        if not kernel32.FreeConsole():
+            return False
+        set_std = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_int32, ctypes.c_void_p)(
+            ("SetStdHandle", kernel32)
+        )
+        for std in (-10, -11, -12):  # STD_INPUT/OUTPUT/ERROR_HANDLE
+            set_std(std, None)
+        return True
 
     @staticmethod
     def capture_output(log_file: str, force: bool = False) -> "str | None":

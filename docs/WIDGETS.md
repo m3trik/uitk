@@ -206,6 +206,7 @@ HostExitGuard.release()  # what aboutToQuit runs; returns how many it cleared
 | [`TextViewBox`](#textviewbox) | Read-only rich-text viewer window |
 | [`TextEditLogHandler`](#texteditloghandler) | Python `logging.Handler` routing logs into a TextEdit |
 | [`ScriptOutput`](#scriptoutput) | Host-agnostic syntax-highlighted console |
+| [`ImageView`, `CompareView`](#imageview-and-compareview) | An image to inspect (zoom about the cursor, pan, overlays, a wipe); two images compared (split, side by side, blink, one alone) |
 | [`MenuButton`](MARKING_MENU.md) | Marking-menu navigation button — covered in [MARKING_MENU.md](MARKING_MENU.md) |
 
 Complex packages:
@@ -214,7 +215,7 @@ Complex packages:
 |:---|:---|
 | [`sequencer/`](#sequencer-package) | Full video/animation timeline — `SequencerWidget`, `ClipData`, `TrackData`, `ScrubPlayer`, keyframes, markers, transport controls |
 | [`editors/`](#editors-package) | `EditorPanel`, `StyleEditor`, `ColorMappingEditor`, `ShortcutEditor`, `SwitchboardBrowser`, `PresetEditor` — exposed via `sb.editors` |
-| [`delegates/`](#delegates) | Item delegates — icon centering, in-cell choice/shortcut capture, row-selection border |
+| [`delegates/`](#delegates) | Item delegates — icon centering, in-cell choice/shortcut capture, row-selection border, a number as a bar |
 | [`marking_menu/`](MARKING_MENU.md) | Radial gesture menu — see dedicated doc |
 | [`optionBox/`](#option-box-system) | Pluggable option system — `ClearOption`, `BrowseOption`, `PinValuesOption`, `RecentValuesOption`, `OptionMenuOption`, `ContextMenuOption`, `ActionOption`, `MenuOption` |
 
@@ -716,6 +717,28 @@ The attribute is **inert in any other host** — deliberately. Adding an option 
 
 Enhanced `QToolBox`. `.add(widget, text, icon=None)`.
 
+## ImageView and CompareView
+
+`ImageView` ([image_view.py](../uitk/widgets/image_view.py)) is an image to inspect: the wheel zooms
+about the cursor, the middle button (or Space and the left button) pans, a double-click fits.
+`set_image` takes a `QImage`, a `QPixmap`, or a numpy array (`uint8`, or float 0..1). Shapes drawn
+over it are plain values in image pixels -- `set_overlays([{"key", "points", "closed", "color",
+"label", "selected"}])` -- and a click names the one it lands on (`overlay_clicked(key)`, `None` for
+the image). `hovered(x, y)` reports the image pixel under the cursor; `set_wipe(image, position)`
+shows a second image past a vertical line the user drags (`wipe_moved`). Two views lock together
+through `view_state()` / `set_view_state()` and `view_changed` (user zoom or pan only).
+`set_tool("rect" | "ellipse" | "polygon" | "line")` turns the left button into drawing one shape
+(the middle button still pans; Esc drops the tool; a polygon closes on a double-click or Enter):
+it arrives as `shape_drawn(name, points)` in image pixels -- a box's corners, a line's ends, a
+polygon's corners. A new tool subclasses `ImageTool` (`press` / `move` / `release` / `finish`
+answering True when the shape is done, `preview`, `result`) and registers with
+`ImageView.register_tool(name, tool)`.
+
+`CompareView` ([compare_view.py](../uitk/widgets/compare_view.py)) compares image A with image B:
+`set_images(a, b)`, `set_labels(...)`, `set_mode()` one of `split` (B wiped over A), `side` (zoomed
+and panned together), `blink` (B while Space is held), `a`, `b`. A third picture -- a difference --
+is the caller's to make and show as A.
+
 ## WindowPanel
 
 Themed top-level window shell with a `Header` / body / `Footer` layout — the base for standalone uitk windows (the [`EditorPanel` family](#editors-package) extends it). Subclasses populate `body_layout`; the header buttons, status text, and size-gripped footer come standard. `persist_geometry(settings)` opts in to saving/restoring window geometry; `WindowPanel.icon_button(...)` is a static icon-button helper (disabled, only its glyph fades; `closes=True` hovers red, like the header's own close button). Rows are added the way a `Menu` adds items: `panel.add(...)` places one in the panel's form (`panel.form`, a `FormRows`) and exposes it as `panel.<objectName>`; `clear_rows()` drops them and their names.
@@ -824,6 +847,7 @@ See [uitk/widgets/optionBox/README.md](../uitk/widgets/optionBox/README.md) for 
 | `CenteredIconActionDelegate` | Centers an icon-only "action cell" while preserving the row-selection border — Qt's default decoration placement is left-aligned and offset by `::item` padding ([centered_icon.py](../uitk/widgets/delegates/centered_icon.py)) |
 | `ChoiceCaptureDelegate` | Edits a cell via an in-cell dropdown; `ChoiceCaptureDelegate.install_choice_capture(table, column, choices, on_capture)` wires it in one call ([choice_capture.py](../uitk/widgets/delegates/choice_capture.py)) |
 | `ShortcutCaptureDelegate` | Edits a cell via in-cell key-chord capture; `ShortcutCaptureDelegate.install_shortcut_capture(table, column, on_capture)` wires it ([shortcut_capture.py](../uitk/widgets/delegates/shortcut_capture.py)) |
+| `ValueBarDelegate` | Draws a cell's number as a bar between `minimum` and `maximum` -- `scale="linear"` or `"log"` (equal ratios, equal lengths), a solid `color` or a `gradient` track the value marks, a `ghost_role` holding a second value drawn as a dashed marker (a proposed value beside the current); the view's own selection is drawn under it, and a double-click still types a value ([value_bar.py](../uitk/widgets/delegates/value_bar.py)) |
 
 Both capture delegates emit `captured(int, int, str)` (row, column, value) and have `Bordered*` variants that mix in the row-selection border.
 
