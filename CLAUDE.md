@@ -22,10 +22,13 @@ Hand-written docs are ledgered in [`docs/DOCMAP.md`](docs/DOCMAP.md) (status, mo
 ## Test
 
 ```powershell
-$env:QT_QPA_PLATFORM = "offscreen"; & python o:\Cloud\Code\_scripts\uitk\test\run_tests.py
+& python o:\Cloud\Code\_scripts\uitk\test\run_tests.py --modules menu -k popup   # pointed: modules, -k
+& python o:\Cloud\Code\_scripts\uitk\test\run_tests.py                           # full suite: review / release
 ```
 
-**`offscreen` is not optional.** Without it the suite runs under the platform's NATIVE style and system palette (`windows11`, dark) and the pixel-rendering tests fail against a widget stack they were never written for -- `TestShortcutOverlay.test_the_card_stays_translucent_under_the_theme` draws a 344x202 card of pale cyan where offscreen/Fusion gives 380x336 of translucent dark. Same tree: 0 failures offscreen, 2 native. The runner warns when the variable is unset.
+What a change reaches: `python m3trik/scripts/affected_tests.py <files> --run` (root Testing).
+
+**`offscreen` is the default** (runner and conftest set it unless `QT_QPA_PLATFORM` is given). The suite is written against it: under the NATIVE style and palette (`windows11`, dark) the pixel-rendering tests fail against a widget stack they were never written for -- `TestShortcutOverlay.test_the_card_stays_translucent_under_the_theme` draws a 344x202 card of pale cyan where offscreen/Fusion gives 380x336 of translucent dark. `--native` opts out to see the real look; it never stamps the badge.
 
 **Never patch a QObject subclass's attribute with a bare `MagicMock`** (`mock.patch.object(BrowseOption, "browse")`): the next bound-method `connect` on an instance makes PySide build that class's dynamic meta-object from its class dict, and it faults natively on the mock -- no Python frame, no traceback (PySide 6.10.1, backtraced). Use `autospec=True` or `new=<function>`.
 

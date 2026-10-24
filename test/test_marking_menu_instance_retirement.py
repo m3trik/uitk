@@ -66,6 +66,25 @@ class MarkingMenuInstanceIsolation(QtBaseTestCase):
         self.assertFalse(mm2._retired)
         self.assertIsNotNone(mm2._shortcut_instance)
 
+    def test_a_previous_instance_qt_already_deleted_is_retired_quietly(self):
+        """The previous menu's C++ side can be gone while its wrapper lives on
+        (a host window closed under it; tentacle's suite builds a TclMaya per
+        panel class): retiring it must not touch its dead chord timer.
+        Measured: ``RuntimeError: Internal C++ object (PySide6.QtCore.QTimer)
+        already deleted`` out of the next instance's constructor. Added:
+        2026-10-24"""
+        from qtpy import shiboken
+
+        mm1 = MarkingMenu(parent=self.parent, log_level="ERROR")
+        mm1.hide()
+        mm1._ensure_chord_release_timer()
+        shiboken.delete(mm1)
+        self.assertFalse(shiboken.isValid(mm1))
+
+        mm2 = self._make(self.parent)
+        self.assertTrue(mm1._retired)
+        self.assertFalse(mm2._retired)
+
     def test_retired_instance_ignores_activation(self):
         mm1 = self._make(self.parent)
         self._make(self.parent)  # retires mm1

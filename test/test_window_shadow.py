@@ -108,6 +108,30 @@ class TestSetShadow(_Case):
         _settle()
         self.assertTrue(shadow.isVisible())
 
+    def test_a_grown_window_repaints_its_whole_new_shadow(self):
+        """Bug: a header collapse/expand left the shadow cut off at the
+        strip's size. ``update()`` marks the window's CURRENT rect dirty, and
+        ``fit`` marked it before resizing; a layered window (Windows) gets no
+        expose when it grows, so the area it gained was never painted.
+        Fixed: 2026-10-23
+        """
+        window = self._window()
+        shadow = self._shown(window)
+        marked = []
+        original = _ShadowWindow.update
+
+        def update(self, *args):
+            marked.append(self.size())
+            original(self, *args)
+
+        with patch.object(_ShadowWindow, "update", update):
+            window.resize(200, 38)
+            window.resize(320, 243)
+        self.assertEqual(marked[-1], shadow.size())
+        self.assertEqual(
+            shadow.size(), window.size().grownBy(_ShadowWindow.margins(SPEC[1]))
+        )
+
     def test_it_hides_when_the_native_window_hides_without_a_hide_event(self):
         """A shadow left behind is a dark rectangle over the desktop, so the
         native window's visibility is followed, not just ``hideEvent``."""

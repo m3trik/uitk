@@ -101,6 +101,28 @@ class TestApplyColorMapShape(QtBaseTestCase):
         self.assertIsNone(settings.value("nonexistent/fg"))
 
 
+class TestColorMappingDialogLifetime(QtBaseTestCase):
+    """A dialog opened per click must not outlive its click.
+
+    Every consumer (the shot sequencer's and manifest's Colors buttons, in
+    mayatk and blendertk) builds a new dialog parented to a long-lived panel,
+    ``exec_()``s it and drops the reference -- so a dialog that only HIDES on
+    done() stayed alive under its anchor for the panel's whole life, one per
+    click, each re-styled by every theme reload (measured 2026-10-21: six such
+    dialogs left by a test module made uitk's style-editor tests 4x slower).
+    """
+
+    def test_a_finished_modal_dialog_is_destroyed_not_hidden(self):
+        from qtpy import QtCore, QtWidgets
+
+        anchor = self.track_widget(QtWidgets.QWidget())
+        dlg = ColorMappingDialog(defaults=PAIR_DEFAULTS, parent=anchor)
+        QtCore.QTimer.singleShot(0, dlg.accept)
+        dlg.exec_()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.assertEqual(anchor.findChildren(ColorMappingDialog), [])
+
+
 class TestColorMappingDialogPresets(QtBaseTestCase):
     """End-to-end preset round-trip via the dialog."""
 

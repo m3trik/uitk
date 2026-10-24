@@ -178,7 +178,11 @@ class TextViewBox(WindowPanel):
         word_wrap: bool = True,
         link_handler=None,
     ):
-        super().__init__(title=title, parent=parent)
+        # Fullscreen: a long report reads whole on demand (also F11; Esc
+        # leaves -- :meth:`keyPressEvent`). Frameless, so the OS offers none.
+        super().__init__(
+            title=title, header_buttons=["fullscreen", "hide"], parent=parent
+        )
         self.align = align
         self._result_name = None
         self.link_handler = link_handler
@@ -221,6 +225,19 @@ class TextViewBox(WindowPanel):
         self.footer.add_widget(self.button_box, side="right", background=True)
 
         self.setProperty("class", self.__class__.__name__)
+
+    def keyPressEvent(self, event):
+        """F11 toggles fullscreen and Esc leaves it -- the header button's
+        keys, the convention every browser and viewer follows. Esc outside
+        fullscreen is left to the base (the window stays open)."""
+        key = event.key()
+        if key == QtCore.Qt.Key_F11 or (
+            key == QtCore.Qt.Key_Escape and self.isFullScreen()
+        ):
+            self.header.toggle_fullscreen()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _fit_to_content(self):
         """Skip the table-aware sizing in the base class.

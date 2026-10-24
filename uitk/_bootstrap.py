@@ -74,7 +74,9 @@ class Bootstrap:
         return ptk.X11.has_compositor() is not False
 
     @staticmethod
-    def set_translucent(widget, on: bool = True) -> bool:
+    def set_translucent(
+        widget, on: bool = True, opaque_full_screen: bool = True
+    ) -> bool:
         """``WA_TranslucentBackground`` on a TOP-LEVEL window, where it shows.
 
         Without a compositor (see :meth:`composites`) a translucent window's
@@ -82,11 +84,21 @@ class Bootstrap:
         square corners on its own background. (A child widget's translucency
         is drawn within its parent and needs none of this.)
 
+        Parameters:
+            widget: The window.
+            on: Translucent or not.
+            opaque_full_screen: While the window is full screen, paint its
+                background color at full alpha under its content: a window
+                that is the whole screen has no edge to float by, only the
+                desktop showing through it. False for a full-screen overlay
+                whose see-through is the point.
+
         Returns:
             Whether the window is now translucent.
         """
         on = bool(on) and Bootstrap.composites()
         widget.setAttribute(QtCore.Qt.WA_TranslucentBackground, on)
+        _OpaqueFullScreen.set(widget, on and opaque_full_screen)
         return on
 
     @staticmethod
@@ -409,3 +421,51 @@ class Bootstrap:
         except AttributeError:
             return False
         return set_id(ctypes.c_wchar_p(app_id)) == 0
+
+
+class _OpaqueFullScreen(QtCore.QObject):
+    """Paints a translucent window's background color at full alpha beneath
+    it while it is full screen (see :meth:`Bootstrap.set_translucent`).
+
+    A filter on the window, and its child: it sees each ``Paint`` before the
+    window's own ``paintEvent`` and fills the exposed rect, so the window's
+    style-sheet fill and every translucent surface above it composite onto
+    that ground instead of the desktop. The color is the palette's
+    background role -- the style sheet's ``background-color`` once polished --
+    so it follows the theme. Out of full screen it paints nothing.
+    """
+
+    NAME = "uitk_opaque_full_screen"
+
+    def __init__(self, widget: QtWidgets.QWidget):
+        super().__init__(widget)
+        self.setObjectName(self.NAME)
+        widget.installEventFilter(self)
+
+    @classmethod
+    def set(cls, widget: QtWidgets.QWidget, on: bool) -> None:
+        """Install the filter on *widget*, or remove it; idempotent."""
+        keeper = widget.findChild(
+            QtCore.QObject, cls.NAME, QtCore.Qt.FindDirectChildrenOnly
+        )
+        if on == (keeper is not None):
+            return
+        if on:
+            cls(widget)
+        else:
+            widget.removeEventFilter(keeper)
+            keeper.setParent(None)
+            keeper.deleteLater()
+        widget.update()
+
+    def eventFilter(self, obj, event):  # noqa: N802 -- Qt override
+        t = event.type()
+        if t == QtCore.QEvent.WindowStateChange:
+            obj.update()
+        elif t == QtCore.QEvent.Paint and obj.isFullScreen():
+            color = QtGui.QColor(obj.palette().color(obj.backgroundRole()))
+            color.setAlpha(255)
+            painter = QtGui.QPainter(obj)
+            painter.fillRect(event.rect(), color)
+            painter.end()
+        return False

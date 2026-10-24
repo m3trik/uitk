@@ -34,6 +34,9 @@ class MainWindow(
     on_close = QtCore.Signal()
     on_focus_in = QtCore.Signal()
     on_focus_out = QtCore.Signal()
+    #: The window became the active one -- a click anywhere in it, unlike
+    #: on_focus_in, which needs the window itself (not a child) to take focus.
+    on_activated = QtCore.Signal()
     on_child_registered = QtCore.Signal(object)
     on_child_changed = QtCore.Signal(object, object)
     on_pinned_changed = QtCore.Signal(bool)
@@ -1101,6 +1104,14 @@ class MainWindow(
     def focusOutEvent(self, event) -> None:
         super().focusOutEvent(event)
         self.on_focus_out.emit()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if (
+            event.type() == QtCore.QEvent.ActivationChange
+            and self.isActiveWindow()
+        ):
+            self.on_activated.emit()
 
     def resizeEvent(self, event) -> None:
         """Save geometry on resize so pinned/non-hidden windows persist size."""

@@ -101,6 +101,55 @@ class TestCapabilities(BaseTestCase):
                 self.assertIs(Bootstrap.composites(), expected)
 
 
+class TestOpaqueFullScreen(BaseTestCase):
+    """A translucent window shown full screen paints opaque: nothing is beside
+    it to see through to, only the desktop behind its content."""
+
+    FILL = "rgba(100,100,100,125)"
+
+    def _window(self, **kwargs):
+        window = QtWidgets.QWidget()
+        self.addCleanup(window.deleteLater)
+        window.setStyleSheet(f"background-color: {self.FILL};")
+        window.resize(120, 80)
+        self.assertTrue(Bootstrap.set_translucent(window, **kwargs))
+        return window
+
+    def _pixel(self, window):
+        QtWidgets.QApplication.processEvents()
+        image = window.grab().toImage()
+        return image.pixelColor(image.width() // 2, image.height() // 2)
+
+    def test_full_screen_paints_the_window_fill_opaque(self):
+        window = self._window()
+        window.showFullScreen()
+        pixel = self._pixel(window)
+        self.assertEqual(pixel.alpha(), 255)
+        self.assertEqual(pixel.getRgb()[:3], (100, 100, 100))
+
+    def test_a_normal_window_keeps_its_translucency(self):
+        window = self._window()
+        window.show()
+        self.assertLess(self._pixel(window).alpha(), 255)
+
+    def test_leaving_full_screen_restores_the_translucency(self):
+        window = self._window()
+        window.showFullScreen()
+        self.assertEqual(self._pixel(window).alpha(), 255)
+        window.showNormal()
+        self.assertLess(self._pixel(window).alpha(), 255)
+
+    def test_an_overlay_can_stay_translucent_full_screen(self):
+        window = self._window(opaque_full_screen=False)
+        window.showFullScreen()
+        self.assertLess(self._pixel(window).alpha(), 255)
+
+    def test_turning_translucency_off_drops_the_filter(self):
+        window = self._window()
+        Bootstrap.set_translucent(window, False)
+        self.assertFalse(window.findChildren(QtCore.QObject, "uitk_opaque_full_screen"))
+
+
 @unittest.skipUnless(
     QtGui.QGuiApplication.platformName() == "xcb" and ptk.X11.has_compositor() is False,
     "a real X server without a compositor (e.g. Xvfb)",

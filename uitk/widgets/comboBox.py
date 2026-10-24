@@ -1594,13 +1594,6 @@ class ComboBox(
         # replace the view (``setView`` deletes the old one).
         self._activate_host_window()
         view = self.view()
-        view.setMinimumWidth(view.sizeHintForColumn(0))
-        self._cell_columns = self._measure_cell_columns()
-        if self._cell_columns:
-            total = self.CELL_INSET * 2 + _CurrentItemIndicatorDelegate._STRIP_WIDTH
-            total += sum(w for _s, w in self._cell_columns)
-            total += self.CELL_GAP * (len(self._cell_columns) - 1)
-            view.setMinimumWidth(max(view.minimumWidth(), total))
         # Popup view defaults vary by Qt version / platform style; force
         # both so QSS ``::item:hover`` fires reliably for every row.
         view.setMouseTracking(True)
@@ -1611,6 +1604,20 @@ class ComboBox(
         # tests and inspection.
         if not isinstance(view.itemDelegate(), _CurrentItemIndicatorDelegate):
             view.setItemDelegate(_CurrentItemIndicatorDelegate(self))
+        # Wide enough for the widest item, measured by the delegate and style
+        # it is drawn with, plus the view's own frame and a scrollbar it shows:
+        # a minimum of the items' width alone left a box sized to its text
+        # (AdjustToContents) opening a list its frame clipped by that much.
+        chrome = view.frameWidth() * 2
+        if self.count() > self.maxVisibleItems():
+            chrome += view.verticalScrollBar().sizeHint().width()
+        view.setMinimumWidth(view.sizeHintForColumn(0) + chrome)
+        self._cell_columns = self._measure_cell_columns()
+        if self._cell_columns:
+            total = self.CELL_INSET * 2 + _CurrentItemIndicatorDelegate._STRIP_WIDTH
+            total += sum(w for _s, w in self._cell_columns)
+            total += self.CELL_GAP * (len(self._cell_columns) - 1)
+            view.setMinimumWidth(max(view.minimumWidth(), total + chrome))
         self._ensure_popup_filters(view)
         # Arrows at the popup's top/bottom edge while rows are scrolled out
         # of view past it. Attached here rather than in __init__ because a

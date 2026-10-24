@@ -84,6 +84,43 @@ class TestNonInteractiveStateSuppressesHover(unittest.TestCase):
         item = self.table.item(0, 1)
         self.assertTrue(item.data(ACTION_NONINTERACTIVE_ROLE))
 
+    def test_clear_takes_a_state_down(self):
+        """A flag that no longer applies: no icon, no tooltip, an inert click.
+        Added: 2026-10-22"""
+        clicked = []
+        self.table.actions.add(
+            1, states={"active": {"icon": "grid", "tooltip": "tip",
+                                  "action": lambda r, c: clicked.append(r)}},
+        )
+        self.table.actions.set(0, 1, "active")
+        self.table.actions.clear(0, 1)
+        item = self.table.item(0, 1)
+        self.assertIsNone(self.table.actions.get(0, 1))
+        self.assertTrue(item.icon().isNull())
+        self.assertEqual(item.toolTip(), "")
+        self.assertTrue(item.data(ACTION_NONINTERACTIVE_ROLE))
+        self.table.actions._on_click(0, 1)
+        self.assertEqual(clicked, [])
+
+    def test_clear_resets_style_and_an_unflagged_cell(self):
+        """A cleared cell keeps none of its state's colors, and a cell that
+        never held a state is made inert too, so a blank cell never reads as
+        clickable beside a cleared one. Added: 2026-10-24"""
+        self.table.actions.add(
+            1, states={"warn": {"icon": "grid", "background": "#330000",
+                                "foreground": "#ff0000",
+                                "action": lambda r, c: None}},
+        )
+        self.table.actions.set(0, 1, "warn")
+        self.table.actions.clear(0, 1)
+        item = self.table.item(0, 1)
+        self.assertIsNone(item.data(QtCore.Qt.BackgroundRole))
+        self.assertIsNone(item.data(QtCore.Qt.ForegroundRole))
+        self.table.setRowCount(2)
+        self.table.setItem(1, 1, QtWidgets.QTableWidgetItem())
+        self.table.actions.clear(1, 1)
+        self.assertTrue(self.table.item(1, 1).data(ACTION_NONINTERACTIVE_ROLE))
+
     def test_action_state_clears_the_flag(self):
         # Reusing a cell that was previously inert must restore interactivity.
         self.table.actions.set(0, 1, "unavailable")

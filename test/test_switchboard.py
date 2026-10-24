@@ -2654,6 +2654,25 @@ class TestDialogsYieldToBusyCursor(QtBaseTestCase):
         finally:
             dlg.close()
 
+    def test_text_view_dialog_on_refresh_is_the_headers_refresh_button(self):
+        """``on_refresh`` puts the header's own refresh button before the
+        viewer's others and calls it when clicked -- a report reads itself
+        again from the header, never a footer button. Added: 2026-10-23"""
+        sb = Switchboard()
+        calls = []
+        plain = sb.text_view_dialog(text="report")
+        dlg = sb.text_view_dialog(text="report", on_refresh=lambda: calls.append(1))
+        try:
+            self.assertNotIn("refresh", plain.header.buttons)
+            self.assertEqual(
+                list(dlg.header.buttons), ["refresh"] + list(plain.header.buttons)
+            )
+            dlg.header.buttons["refresh"].click()
+            self.assertEqual(calls, [1])
+        finally:
+            plain.close()
+            dlg.close()
+
     def test_text_view_dialog_logs_a_readable_preview(self):
         """The log preview drops tags AND entities: an escaped JSON report
         logs as ``"key"``, not ``&quot;key&quot;``."""

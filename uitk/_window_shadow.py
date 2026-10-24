@@ -266,11 +266,18 @@ class _ShadowWindow(QtGui.QRasterWindow):
         return QtCore.QMargins(reach, reach - drop, reach, reach + drop)
 
     def fit(self, target: QtCore.QRect, spec: _Spec) -> None:
-        """Cover *target* (global geometry) plus the shadow *spec* reaches."""
-        if spec != self.spec or target.size() != self._target:
-            self.spec, self._target = spec, target.size()
-            self.update()
+        """Cover *target* (global geometry) plus the shadow *spec* reaches.
+
+        Resized first, then marked dirty: ``update()`` marks the window's
+        current rect, and a layered window (Windows) gets no expose when it
+        grows, so a mark taken before the resize leaves the area it gained
+        unpainted -- the shadow cut off at its old size.
+        """
+        changed = spec != self.spec or target.size() != self._target
+        self.spec, self._target = spec, target.size()
         self.setGeometry(target.marginsAdded(self.margins(spec[1])))
+        if changed:
+            self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802 -- Qt override
         painter = QtGui.QPainter(self)

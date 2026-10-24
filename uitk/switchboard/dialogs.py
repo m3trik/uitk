@@ -237,6 +237,7 @@ class SwitchboardDialogsMixin:
         background=False,
         parent=None,
         link_handler=None,
+        on_refresh: Optional[Callable[[], Any]] = None,
     ):
         """Spawn a scrollable text-viewer window with optional buttons.
 
@@ -277,6 +278,9 @@ class SwitchboardDialogsMixin:
                 link first (see :class:`TextViewBox`) -- pass a DCC's
                 ``UiUtils.dispatch_log_link`` so a report's
                 ``action://select`` links select what they name.
+            on_refresh: Called by the header's refresh button, shown first
+                when given -- a report that reads itself again (the caller
+                sets the new text). ``None``: no refresh button.
 
         Returns:
             The :class:`TextViewBox` instance — the caller can stream
@@ -305,6 +309,9 @@ class SwitchboardDialogsMixin:
             dlg.setText(text, background=background)
         if buttons:
             dlg.setStandardButtons(*buttons)
+        if on_refresh is not None:
+            dlg.header.config_buttons("refresh", *dlg.header.buttons)
+            dlg.header.refresh_requested.connect(on_refresh)
 
         # Keep alive via the existing gc_protect helper so the caller
         # can return without the window being collected.
