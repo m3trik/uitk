@@ -108,6 +108,11 @@ class TestOpaqueFullScreen(BaseTestCase):
     FILL = "rgba(100,100,100,125)"
 
     def _window(self, **kwargs):
+        # No compositor (a bare X server: CI's "X11, no compositor" job) means
+        # no translucency to make opaque -- TestOnX11WithoutCompositor covers
+        # that display; everywhere else set_translucent must succeed.
+        if not Bootstrap.composites():
+            self.skipTest("no compositor: windows are never translucent here")
         window = QtWidgets.QWidget()
         self.addCleanup(window.deleteLater)
         window.setStyleSheet(f"background-color: {self.FILL};")
