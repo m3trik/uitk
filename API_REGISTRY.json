@@ -12548,7 +12548,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse release: dispatch click action or sync menu state.",
-              "line": 601,
+              "line": 603,
               "deprecated": false
             },
             {
@@ -12557,7 +12557,7 @@
               "kind": "method",
               "signature": "(self, path: Optional[str] = None, level='DEBUG') -> str",
               "summary": "Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.",
-              "line": 768,
+              "line": 770,
               "deprecated": false
             },
             {
@@ -12566,7 +12566,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Stop the file logging started by :meth:`enable_input_logging`.",
-              "line": 794,
+              "line": 796,
               "deprecated": false
             },
             {
