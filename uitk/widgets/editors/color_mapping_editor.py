@@ -425,6 +425,11 @@ class ColorMappingDialog(QtWidgets.QDialog):
             anchor = parent.window() or parent
             self.setParent(anchor, _dialog_flags)
             Bootstrap.set_translucent(self)
+        # Opened per click and dropped after ``exec_()`` by every consumer, so
+        # it must go when it closes: hidden, it stayed under its long-lived
+        # anchor for the panel's life -- one per click, each re-styled by every
+        # theme reload. ``done()`` honours this as ``close()`` does.
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
         self.setMinimumWidth(280)
 
         # Inner frame paints the semi-transparent background

@@ -201,6 +201,27 @@ class TooltipPresenter:
             return _wrapped
         return fn
 
+    @staticmethod
+    def _shared_rect(view, index) -> "QtCore.QRect":
+        """The run of cells around *index*, in its row, that carry its tip.
+
+        Qt hides an item's tip 300 ms after the pointer leaves the rect it was
+        shown for -- one cell, so a tip describing the whole row went as the
+        pointer drifted into the next column.
+        """
+        rect = view.visualRect(index)
+        tip = index.data(QtCore.Qt.ToolTipRole) if index.isValid() else None
+        if not tip:  # nothing shown: no run to walk
+            return rect
+        for step in (-1, 1):
+            # Walked to the first invalid sibling: a list model's columnCount
+            # is private in PySide, and a raise here faults the event filter.
+            sibling = index.siblingAtColumn(index.column() + step)
+            while sibling.isValid() and sibling.data(QtCore.Qt.ToolTipRole) == tip:
+                rect = rect.united(view.visualRect(sibling))
+                sibling = sibling.siblingAtColumn(sibling.column() + step)
+        return rect
+
     @classmethod
     def _on_tooltip(cls, obj, event, provider) -> bool:
         """Show *obj*'s tooltip for *event*; ``False`` leaves it to Qt."""
@@ -215,7 +236,7 @@ class TooltipPresenter:
             refine = getattr(view, "item_tooltip", None)
             if index.isValid() and callable(refine):
                 text = refine(index, text)
-            rect = view.visualRect(index)
+            rect = cls._shared_rect(view, index)
         elif isinstance(view, QtWidgets.QGraphicsView) and view.viewport() is obj:
             # The topmost item under the pointer that has one, as the scene picks.
             tips = (item.toolTip() for item in view.items(event.pos()))

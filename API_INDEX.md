@@ -444,7 +444,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/mainWindow.py`
 - `class MainWindow(QtWidgets.QMainWindow, AttributesMixin, TooltipMixin, pythontk.LoggingMixin)`
-  - methods: setCentralWidget, initialize_window_flags, edit_tags, pinned, set_pinned, is_pinned, visible_duration_ms, request_hide, slots, presets, is_stacked_widget, is_current_ui, register_widget, register_menu, menus, trigger_deferred, run_when_ready, perform_restore_state, sync_widget_values, eventFilter, adjust_height_by, fit_height_to_content, save_window_geometry, restore_window_geometry, clear_saved_geometry, setVisible, show, showEvent, register_children, focusInEvent, focusOutEvent, resizeEvent, moveEvent, hideEvent, closeEvent, setStyleSheet, reset_style
+  - methods: setCentralWidget, initialize_window_flags, edit_tags, pinned, set_pinned, is_pinned, visible_duration_ms, request_hide, slots, presets, is_stacked_widget, is_current_ui, register_widget, register_menu, menus, trigger_deferred, run_when_ready, perform_restore_state, sync_widget_values, eventFilter, adjust_height_by, fit_height_to_content, save_window_geometry, restore_window_geometry, clear_saved_geometry, setVisible, show, showEvent, register_children, focusInEvent, focusOutEvent, changeEvent, resizeEvent, moveEvent, hideEvent, closeEvent, setStyleSheet, reset_style
 
 ### `widgets/marking_menu/_marking_menu.py`
 - `class MarkingMenu(_BindingsMixin, _HostingMixin, _NavigationMixin, _InputMixin, _PresentationMixin, QtWidgets.QWidget, pythontk.SingletonMixin, pythontk.LoggingMixin, pythontk.HelpMixin)`
@@ -813,7 +813,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/table_actions.py` — Reusable action-column management for :class:`TableWidget`.
 - `class TableActions`
-  - methods: add, set, get, update_for_row_height
+  - methods: add, set, get, clear, update_for_row_height
 
 ### `widgets/textEdit.py`
 - `class TextEdit(ShortcutGuardMixin, QtWidgets.QTextEdit, MenuMixin, AttributesMixin, TextValidationMixin)`
@@ -825,7 +825,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/textViewBox.py` — Scrollable rich-text viewer window.
 - `class TextViewBox(WindowPanel)`
-  - methods: format_data, setStandardButtons, setText, append_text, clear_text, clicked_button, bind_preview, preview_text, refresh_preview
+  - methods: format_data, keyPressEvent, setStandardButtons, setText, append_text, clear_text, clicked_button, bind_preview, preview_text, refresh_preview
 
 ### `widgets/toolBox.py`
 - `class HoverSwitcher(QtCore.QObject)`

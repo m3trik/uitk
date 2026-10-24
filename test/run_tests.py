@@ -6,11 +6,20 @@ This module discovers and runs all tests in the UITK test suite,
 collecting results and outputting to a log file.
 
 Usage:
-    python run_all_tests.py              # Run all tests with console output
-    python run_all_tests.py --log        # Run all tests and save to log file
-    python run_all_tests.py --verbose    # Run with verbose output
-    python run_all_tests.py --quiet      # Run with minimal output
-    python run_all_tests.py --no-badge   # Skip updating the README badge
+    python run_tests.py                          # the full suite (review / release)
+    python run_tests.py --modules sequencer menu # named modules only
+    python run_tests.py --modules menu -k popup  # ...and only tests matching "popup"
+    python run_tests.py --log                    # Run all tests and save to log file
+    python run_tests.py --verbose                # Run with verbose output
+    python run_tests.py --quiet                  # Minimal output (failures still print)
+    python run_tests.py --no-badge               # Skip updating the README badge
+    python run_tests.py --native                 # the platform's own style, not offscreen
+
+Headless by default: ``QT_QPA_PLATFORM`` defaults to ``offscreen`` (the platform
+the suite is written against); an explicit value is honored, and ``--native``
+leaves it unset. A scoped (``--modules`` / ``-k``) or native run never stamps
+the badge. For the modules a change reaches:
+``python m3trik/scripts/affected_tests.py <files> --run``.
 """
 
 import sys
@@ -19,6 +28,7 @@ import unittest
 import logging
 import argparse
 import faulthandler
+import time
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
@@ -91,8 +101,12 @@ class TestSuiteRunner:
         log_to_file: bool = False,
         update_badge: bool = True,
         modules: Optional[Sequence[str]] = None,
+        patterns: Optional[Sequence[str]] = None,
     ):
         self.verbosity = verbosity
+        # ``-k``: unittest's own semantics -- a pattern without ``*`` matches as
+        # a substring of the test id.
+        self.patterns = [p if "*" in p else f"*{p}*" for p in (patterns or [])]
         self.log_to_file = log_to_file
         self.update_badge = update_badge
         # Bare stems, `test_` prefix optional: {"sequencer", "test_sequencer"}
@@ -164,6 +178,8 @@ class TestSuiteRunner:
         self.logger.info(f"Discovering tests in: {TEST_DIR}")
 
         loader = unittest.TestLoader()
+        if self.patterns:
+            loader.testNamePatterns = list(self.patterns)
         suite = loader.discover(
             start_dir=str(TEST_DIR),
             pattern="test_*.py",
@@ -337,6 +353,7 @@ class TestSuiteRunner:
         self.logger.info(f"Failed:  {failed}")
         self.logger.info(f"Errors:  {errors}")
         self.logger.info(f"Skipped: {skipped}")
+        self._report_slowest(getattr(result, "durations", ()))
 
         # A DELIBERATELY GATED test is not an ordinary skip: it is a test that
         # could not run because a resource this process does not own was
@@ -395,22 +412,57 @@ class TestSuiteRunner:
                     "QT_QPA_PLATFORM=offscreen before believing the list below."
                 )
 
+            # --quiet sends unittest's own report to a buffer, which took the
+            # tracebacks with it: the console said WHICH tests failed and never
+            # why. Print them here in that case (the log has them either way).
+            quiet = self.verbosity == 0
             if result.failures:
                 self.logger.info("")
                 self.logger.info("FAILURES:")
-                for test, _ in result.failures:
+                for test, trace in result.failures:
                     self.logger.info(f"  - {test}")
+                    if quiet:
+                        self.logger.info(trace.rstrip())
 
             if result.errors:
                 self.logger.info("")
                 self.logger.info("ERRORS:")
-                for test, _ in result.errors:
+                for test, trace in result.errors:
                     self.logger.info(f"  - {test}")
+                    if quiet:
+                        self.logger.info(trace.rstrip())
 
         self.logger.info("=" * 70)
 
         if self.log_file_path:
             self.logger.info(f"Log file: {self.log_file_path}")
+
+    #: How many of the slowest tests / modules the summary names.
+    SLOWEST_TESTS = 15
+    SLOWEST_MODULES = 10
+
+    def _report_slowest(self, durations):
+        """Name where the run's time went: the slowest tests and modules.
+
+        The suite's cost per test doubled between July and October (0.24 s ->
+        0.46 s) with no per-test timing to say why -- fixed sleeps were ruled
+        out, so the cost hides in what the tests do. Python 3.12 grew
+        ``unittest --durations``; this runner's interpreter is 3.11, so the
+        result class times each test itself (:class:`_DetailedTestResult`).
+        """
+        if not durations:
+            return
+        by_module = {}
+        for test_id, seconds in durations:
+            module = test_id.split(".", 1)[0]
+            by_module[module] = by_module.get(module, 0.0) + seconds
+        self.logger.info("")
+        self.logger.info(f"SLOWEST TESTS (of {len(durations)}):")
+        for test_id, seconds in sorted(durations, key=lambda d: d[1], reverse=True)[: self.SLOWEST_TESTS]:
+            self.logger.info(f"  {seconds:8.2f}s  {test_id}")
+        self.logger.info("SLOWEST MODULES:")
+        for module, seconds in sorted(by_module.items(), key=lambda d: d[1], reverse=True)[: self.SLOWEST_MODULES]:
+            self.logger.info(f"  {seconds:8.1f}s  {module}")
 
     def _update_readme_badge(self, result: unittest.TestResult):
         """Update the test badge in the README file.
@@ -432,6 +484,16 @@ class TestSuiteRunner:
         total = result.testsRun
         passed = total - len(result.failures) - len(result.errors) - len(result.skipped)
         failed = len(result.failures) + len(result.errors)
+
+        # A -k run can touch every module and still be partial; a native-platform
+        # run measures a widget stack the rendering tests were not written for.
+        # Neither is the suite's number.
+        if self.patterns:
+            self.logger.warning("Badge not updated (scoped run: -k).")
+            return
+        if os.environ.get("QT_QPA_PLATFORM", "").lower() != "offscreen":
+            self.logger.warning("Badge not updated (not an offscreen run).")
+            return
 
         # Never stamp a run the environment scoped down (see above).
         allowed, reason = ptk.StatusBadge.gate(
@@ -525,6 +587,10 @@ class _DetailedTestResult(unittest.TextTestResult):
     def __init__(self, stream, descriptions, verbosity):
         super().__init__(stream, descriptions, verbosity)
         self.successes = []  # test NAMES -- see addSuccess
+        #: ``(test id, seconds)`` per finished test -- ids, not instances, for
+        #: the same reason as ``successes``.
+        self.durations = []
+        self._started = None
         self.modules_ran = set()  # imported, and its cases were run
         self.modules_executed = set()  # produced at least one non-skipped case
 
@@ -538,6 +604,16 @@ class _DetailedTestResult(unittest.TextTestResult):
         self.modules_ran.add(name)
         if executed:
             self.modules_executed.add(name)
+
+    def startTest(self, test):
+        self._started = time.perf_counter()
+        super().startTest(test)
+
+    def stopTest(self, test):
+        super().stopTest(test)
+        if self._started is not None:
+            self.durations.append((test.id(), time.perf_counter() - self._started))
+            self._started = None
 
     def addSuccess(self, test):
         super().addSuccess(test)
@@ -601,6 +677,21 @@ def parse_args():
         help="Skip updating the README badge",
     )
     parser.add_argument(
+        "-k",
+        dest="patterns",
+        action="append",
+        default=[],
+        help="Only tests whose id matches (substring, or a * pattern); repeatable",
+    )
+    parser.add_argument(
+        "--native",
+        action="store_true",
+        help=(
+            "Run on the platform's own Qt style instead of offscreen (to see how "
+            "the widgets really look); the rendering tests expect offscreen"
+        ),
+    )
+    parser.add_argument(
         "--modules",
         nargs="+",
         metavar="NAME",
@@ -614,9 +705,9 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
+def main(args=None):
     """Main entry point for the test runner."""
-    args = parse_args()
+    args = args or parse_args()
 
     # Determine verbosity
     if args.quiet:
@@ -632,6 +723,7 @@ def main():
         log_to_file=args.log,
         update_badge=not args.no_badge,
         modules=args.modules,
+        patterns=args.patterns,
     )
 
     success = runner.run()
@@ -686,15 +778,19 @@ if __name__ == "__main__":
     # of translucent dark. Same tree, 0 failures offscreen and 2 native -- and
     # nothing in the output says why, which is a whole debugging session.
     #
-    # Warn rather than force it: a deliberate native run is a legitimate way to
-    # check how the widgets actually look, and silently overriding the caller's
-    # platform would make THAT impossible to ask for.
-    if not os.environ.get("QT_QPA_PLATFORM"):
+    # So offscreen is the DEFAULT (tests run headless unless a GUI is the point:
+    # CODE_STANDARD section 9), set before the QApplication below reads it. A
+    # deliberate native run is still a legitimate way to check how the widgets
+    # actually look -- ask for it with --native (or an explicit
+    # QT_QPA_PLATFORM, which is always honored); it gets the warning instead.
+    cli = parse_args()
+    if not cli.native:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    elif not os.environ.get("QT_QPA_PLATFORM"):
         print(
-            "[WARN] QT_QPA_PLATFORM is unset, so this runs on the NATIVE "
-            "platform style. The suite's rendering tests expect 'offscreen' "
-            "(Fusion + light palette) and will report failures that are not "
-            "in the code. Set QT_QPA_PLATFORM=offscreen for a clean run.",
+            "[WARN] --native: this runs on the NATIVE platform style. The "
+            "suite's rendering tests expect 'offscreen' (Fusion + light "
+            "palette) and will report failures that are not in the code.",
             flush=True,
         )
 
@@ -709,4 +805,4 @@ if __name__ == "__main__":
     except ImportError:
         pass
 
-    main()
+    main(cli)

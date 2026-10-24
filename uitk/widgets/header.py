@@ -278,7 +278,7 @@ class Header(
             config_buttons (list, optional): List of button names to show in order.
                 Example: ['refresh', 'menu', 'pin']
                 Available buttons: 'refresh', 'menu', 'help', 'collapse',
-                'minimize', 'maximize', 'hide', 'pin'
+                'minimize', 'maximize', 'fullscreen', 'hide', 'pin'
             pin_on_drag_only (bool, optional): If True, clicking the pin button hides
                 the window outright (and hovering it shows the red hide affordance);
                 the window is pinned by dragging the header. If False,
@@ -588,7 +588,7 @@ class Header(
                     config_buttons('refresh', 'menu', 'pin')
                     config_buttons(['refresh', 'menu', 'pin'])
                 Available: 'refresh', 'menu', 'help', 'collapse', 'minimize',
-                'maximize', 'hide', 'pin'
+                'maximize', 'fullscreen', 'hide', 'pin'
         """
         # Support both styles: config_buttons('a', 'b') and config_buttons(['a', 'b'])
         if len(button_list) == 1 and isinstance(button_list[0], (list, tuple)):

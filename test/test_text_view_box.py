@@ -192,5 +192,42 @@ class TestTextViewBoxPreview(QtBaseTestCase):
         self.assertTrue(box.isVisible())
 
 
+class TestTextViewBoxFullScreen(QtBaseTestCase):
+    """A report fills the screen on demand: the header's fullscreen button,
+    F11 to toggle, Esc to leave. The window is frameless, so without these it
+    had no way to grow past a drag of its size grip (a long bake report,
+    2026-10-22)."""
+
+    def shown(self):
+        box = self.track_widget(TextViewBox(title="Report"))
+        box.setText("report")
+        box.show()
+        QtWidgets.QApplication.processEvents()
+        return box
+
+    def key(self, box, key):
+        from qtpy import QtTest
+
+        QtTest.QTest.keyClick(box.text_edit, key)
+        QtWidgets.QApplication.processEvents()
+
+    def test_the_header_offers_fullscreen_and_it_toggles(self):
+        box = self.shown()
+        button = box.header.buttons.get("fullscreen")
+        self.assertIsNotNone(button, "no fullscreen button on the header")
+        button.click()
+        self.assertTrue(box.isFullScreen())
+        button.click()
+        self.assertFalse(box.isFullScreen())
+
+    def test_f11_toggles_and_escape_leaves(self):
+        box = self.shown()
+        self.key(box, QtCore.Qt.Key_F11)
+        self.assertTrue(box.isFullScreen())
+        self.key(box, QtCore.Qt.Key_Escape)
+        self.assertFalse(box.isFullScreen())
+        self.assertTrue(box.isVisible(), "Esc left fullscreen, not the window")
+
+
 if __name__ == "__main__":
     unittest.main()

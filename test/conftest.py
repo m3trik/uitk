@@ -22,6 +22,13 @@ if str(PACKAGE_ROOT) not in sys.path:
 if str(TEST_DIR) not in sys.path:
     sys.path.insert(0, str(TEST_DIR))
 
+# Headless unless a GUI is the point (CODE_STANDARD section 9): a bare
+# ``pytest`` / ``python -m unittest`` run gets the platform the suite is written
+# against, as run_tests.py does, before any QApplication reads it. An explicit
+# value is honored; the opt-in interactive tests keep the native platform.
+if not os.environ.get("INTERACTIVE_TESTS"):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 
 # Keep the whole test process off the real QSettings + preset stores. The redirect itself lives in
 # the shipped package (``uitk.testing``) because those stores are process-wide and shared by every

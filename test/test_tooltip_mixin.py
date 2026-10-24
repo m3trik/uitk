@@ -392,6 +392,35 @@ class TestPresenter(unittest.TestCase):
         self._hover(view.viewport(), view.visualItemRect(view.item(0)).center())
         self.assertEqual(QtWidgets.QToolTip.text(), TooltipFormat.wrap(self.LONG))
 
+    def test_a_tip_a_row_shares_stays_up_across_that_row(self):
+        """Qt scopes an item's tip to its one cell, hiding it 300 ms after the
+        pointer leaves -- a row-wide tip (one table row described whole) went
+        as the pointer drifted into the next column. It stays up over the run
+        of cells that show it, and no further. Added: 2026-10-22"""
+        from qtpy import QtCore
+
+        from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
+
+        view = self._show(QtWidgets.QTableWidget(2, 4))
+        for row, col, tip in [(0, c, self.LONG) for c in range(3)] + [
+            (0, 3, "its own"),
+            (1, 0, self.LONG),
+        ]:
+            item = QtWidgets.QTableWidgetItem("x")
+            item.setToolTip(tip)
+            view.setItem(row, col, item)
+        TooltipPresenter.manage(view)
+        calls = self._capture_show_text()
+        cell = view.visualRect(view.model().index(0, 1))
+        self._hover(view.viewport(), cell.center())
+        expected = view.visualRect(view.model().index(0, 0)).united(
+            view.visualRect(view.model().index(0, 2))
+        )
+        self.assertEqual(calls[-1][3], expected)
+        self._hover(view.viewport(), view.visualRect(view.model().index(0, 3)).center())
+        self.assertEqual(calls[-1][3], view.visualRect(view.model().index(0, 3)))
+        self.assertIsInstance(calls[-1][3], QtCore.QRect)
+
     def test_a_window_panels_own_content_is_managed_once_shown(self):
         """``MainWindow`` registers every widget of a ``.ui``; a ``WindowPanel``
         subclass builds its body itself (the UI Browser's table), so its

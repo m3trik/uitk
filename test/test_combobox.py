@@ -297,6 +297,33 @@ class ComboBoxStyleConfiguration(QtBaseTestCase):
         finally:
             combo.hidePopup()
 
+    def test_the_popup_shows_its_widest_item_whole(self):
+        """The list fits its items -- delegate, style and the view's frame
+        counted -- not the box: a box sized to its text (AdjustToContents)
+        opened a list as wide as itself, its frame eating the room the
+        widest item needed (the Lightmap Baker footer's Select clipped
+        "Untracked" in Maya). Added: 2026-10-23"""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItems(["Select…", "Changed", "Split", "Untracked", "Missing", "All"])
+        combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        # A themed list: padded items in a bordered frame, as uitk's QSS draws it.
+        combo.setStyleSheet(
+            "QComboBox QAbstractItemView { border: 3px solid gray; }"
+            "QComboBox QAbstractItemView::item { padding: 0px 10px; }"
+        )
+        combo.show()
+        for attempt in ("first", "again"):
+            try:
+                combo.showPopup()
+                view = combo.view()
+                self.assertGreaterEqual(
+                    view.viewport().width(), view.sizeHintForColumn(0), attempt
+                )
+            finally:
+                combo.hidePopup()
+
     def test_current_item_indicator_delegate_installed(self):
         """``SH_ComboBox_Popup == 0`` killed the menu-style checkmark; we
         replace it with a custom delegate that paints a left-edge accent

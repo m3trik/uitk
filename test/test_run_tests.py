@@ -336,6 +336,20 @@ class TestBadgeWiring(RunnerTestCase):
         self.assertEqual(writer.call_count, len(self.runner.README_PATHS))
         self.assertEqual(writer.call_args[0][1:3], (5, 0))  # passed, failed
 
+    def test_a_k_run_never_writes_the_badge_even_touching_every_module(self):
+        modules = ptk.StatusBadge.discover_module_names(TEST_DIR)
+        runner = self.runner.TestSuiteRunner(verbosity=0, patterns=["anything"])
+        with mock.patch.object(ptk.StatusBadge, "update_test_badge") as writer:
+            runner._update_readme_badge(self.make_result(modules))
+        writer.assert_not_called()
+
+    def test_a_native_platform_run_never_writes_the_badge(self):
+        modules = ptk.StatusBadge.discover_module_names(TEST_DIR)
+        with mock.patch.dict("os.environ", {"QT_QPA_PLATFORM": "windows"}):
+            with mock.patch.object(ptk.StatusBadge, "update_test_badge") as writer:
+                self.make_runner()._update_readme_badge(self.make_result(modules))
+        writer.assert_not_called()
+
 
 class TestFlakyGatedReporting(RunnerTestCase):
     """A deliberately gated test must be countable, not buried in the skips.
@@ -435,6 +449,66 @@ class TestModuleScoping(RunnerTestCase):
         with self.assertRaises(SystemExit) as caught:
             runner.discover_tests()
         self.assertEqual(caught.exception.code, 2)
+
+    def test_k_narrows_a_module_to_the_matching_tests(self):
+        runner = self.runner.TestSuiteRunner(
+            verbosity=0, modules=["run_tests"], patterns=["unknown_module_name"]
+        )
+        ids = [t.id() for t in runner._iter_tests(runner.discover_tests())]
+        self.assertEqual(
+            [i.rsplit(".", 1)[-1] for i in ids],
+            ["test_an_unknown_module_name_is_a_hard_error"],
+        )
+
+    def test_each_test_is_timed_and_the_summary_names_the_slowest(self):
+        """Where a run's time went must be readable from the run itself."""
+        import io as _io
+        import time as _time
+
+        class Probe(unittest.TestCase):
+            def test_slow_probe(self):
+                _time.sleep(0.05)
+
+            def test_quick_probe(self):
+                pass
+
+        result = self.runner._DetailedTestResult(_io.StringIO(), True, 0)
+        unittest.TestLoader().loadTestsFromTestCase(Probe).run(result)
+        ids = [i.rsplit(".", 1)[-1] for i, _ in result.durations]
+        self.assertEqual(sorted(ids), ["test_quick_probe", "test_slow_probe"])
+        slow = dict((i.rsplit(".", 1)[-1], s) for i, s in result.durations)
+        self.assertGreater(slow["test_slow_probe"], slow["test_quick_probe"])
+
+        runner = self.runner.TestSuiteRunner(verbosity=0)
+        buffer = _io.StringIO()
+        handler = logging.StreamHandler(buffer)
+        handler.setLevel(logging.INFO)
+        saved = list(runner.logger.handlers)
+        runner.logger.handlers[:] = [handler]
+        self.addCleanup(lambda: runner.logger.handlers.__setitem__(slice(None), saved))
+        runner._report_slowest(result.durations)
+        report = buffer.getvalue()
+        self.assertIn("SLOWEST TESTS (of 2)", report)
+        self.assertLess(report.index("test_slow_probe"), report.index("test_quick_probe"))
+
+    def test_quiet_summary_still_prints_the_traceback(self):
+        """--quiet buffers unittest's report; the summary must carry the why."""
+        import io as _io
+
+        result = unittest.TestResult()
+        result.testsRun = 1
+        result.failures = [("test_x (m.T.test_x)", "Traceback...\nAssertionError: PROBE-WHY")]
+        runner = self.runner.TestSuiteRunner(verbosity=0)
+        buffer = _io.StringIO()
+        handler = logging.StreamHandler(buffer)
+        handler.setLevel(logging.INFO)
+        # Into the buffer ONLY: a probe "FAILURES" block on the real console
+        # reads as a failure of this run to anyone tailing it.
+        saved = list(runner.logger.handlers)
+        runner.logger.handlers[:] = [handler]
+        self.addCleanup(lambda: runner.logger.handlers.__setitem__(slice(None), saved))
+        runner._print_summary(result, 1.0)
+        self.assertIn("PROBE-WHY", buffer.getvalue())
 
 
 if __name__ == "__main__":

@@ -210,6 +210,25 @@ class TestMainWindowSignals(QtBaseTestCase):
         window = self.track_widget(MainWindow("TestWindow", self.sb))
         self.assertTrue(hasattr(window, "on_focus_out"))
 
+    def test_on_activated_fires_when_the_window_becomes_active(self):
+        """A click into a child (a table) activates the window without focusing
+        it, so on_focus_in never fires; on_activated does -- and only on the
+        change TO active. Added: 2026-10-22"""
+        from unittest import mock
+        from qtpy import QtCore, QtWidgets
+        from uitk.widgets.mainWindow import MainWindow
+
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        fired = []
+        window.on_activated.connect(lambda: fired.append(True))
+        change = QtCore.QEvent(QtCore.QEvent.ActivationChange)
+        with mock.patch.object(window, "isActiveWindow", return_value=False):
+            QtWidgets.QApplication.sendEvent(window, change)
+        self.assertEqual(fired, [], "deactivated: nothing")
+        with mock.patch.object(window, "isActiveWindow", return_value=True):
+            QtWidgets.QApplication.sendEvent(window, change)
+        self.assertEqual(fired, [True])
+
     def test_has_on_child_registered_signal(self):
         """Should have on_child_registered signal."""
         from uitk.widgets.mainWindow import MainWindow

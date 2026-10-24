@@ -194,7 +194,7 @@ Standalone-process bootstrap helpers.
   - `Bootstrap.configure_platform() -> bool` *(static)* — Run a standalone process's Qt on X11 when a Wayland session offers it.
   - `Bootstrap.positions_windows() -> bool` *(static)* — Whether this process may place its own top-level windows and read
   - `Bootstrap.composites() -> bool` *(static)* — Whether a translucent top-level actually shows what is behind it.
-  - `Bootstrap.set_translucent(widget, on: bool = True) -> bool` *(static)* — ``WA_TranslucentBackground`` on a TOP-LEVEL window, where it shows.
+  - `Bootstrap.set_translucent(widget, on: bool = True, opaque_full_screen: bool = True) -> bool` *(static)* — ``WA_TranslucentBackground`` on a TOP-LEVEL window, where it shows.
   - `Bootstrap.blurs() -> bool` *(static)* — Whether :meth:`set_blur` can blur what shows through a translucent
   - `Bootstrap.set_blur(widget: QtWidgets.QWidget, on: Union[bool, Callable[[QtWidgets.QWidget], bool]] = True) -> bool` *(static)* — Blur the desktop seen through a translucent TOP-LEVEL window.
   - `Bootstrap.shadows() -> bool` *(static)* — Whether :meth:`set_shadow` draws anything here: on Windows (and on
@@ -916,7 +916,7 @@ How a window follows the height of what it is holding.
   - `SwitchboardDialogsMixin.progress_adapter(update: Callable[..., bool]) -> Callable[..., bool]` *(static)* — Adapt the footer ``update`` callable to the shape downstream
   - `SwitchboardDialogsMixin.confirm(self, question, yes='Yes', no='No') -> bool` — Ask *question* in a modal :meth:`message_box` and answer True when
   - `SwitchboardDialogsMixin.message_box(self, string, *buttons, location='topMiddle', timeout='auto', background=0.75, default=None)` — Spawns a message box with the given text and optionally sets buttons.
-  - `SwitchboardDialogsMixin.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None, link_handler=None)` — Spawn a scrollable text-viewer window with optional buttons.
+  - `SwitchboardDialogsMixin.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None, link_handler=None, on_refresh: Optional[Callable[[], Any]] = None)` — Spawn a scrollable text-viewer window with optional buttons.
   - `SwitchboardDialogsMixin.preview_dialog(self, render: Callable[[dict], str], specs=(), *, values: Optional[dict] = None, on_change: Optional[Callable[[str, Any], None]] = None, actions: Optional[dict] = None, status: Optional[Callable[[dict, str], str]] = None, title: str = '', size=(960, 600), monospace: bool = True, word_wrap: bool = False, parent=None)` — A live preview of a tool's output: option rows beside the text,
   - `SwitchboardDialogsMixin.data_view_dialog(self, data: Any, *, title: str = '', save_path: Optional[str] = '', empty_message: str = 'Nothing to show.', size=(720, 560), parent=None)` — Show structured *data* as colour-coded JSON in a text viewer.
   - `SwitchboardDialogsMixin.save_data_dialog(self, data: Any, title: str = '', path: str = '', parent=None) -> Optional[str]` — Write *data* as indented JSON to a ``.json`` file the user picks.
@@ -1954,6 +1954,7 @@ An image to look at closely: zoom about the cursor, pan, and shapes drawn over i
   - `MainWindow.register_children(self, root_widget: Optional[QtWidgets.QWidget] = None) -> None` — Registers all child widgets starting from the given widget (or central widget if None).
   - `MainWindow.focusInEvent(self, event) -> None` — Override the focus event to set the current UI when this window gains focus.
   - `MainWindow.focusOutEvent(self, event) -> None`
+  - `MainWindow.changeEvent(self, event) -> None`
   - `MainWindow.resizeEvent(self, event) -> None` — Save geometry on resize so pinned/non-hidden windows persist size.
   - `MainWindow.moveEvent(self, event) -> None` — Save geometry on move so pinned/non-hidden windows persist position.
   - `MainWindow.hideEvent(self, event) -> None` — Reimplement hideEvent to emit custom signal when window is hidden.
@@ -2344,12 +2345,12 @@ Tooltip presentation for managed widgets: :class:`TooltipPresenter`, the
 - **[`class TooltipPresenter`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L66)** — The one path a managed widget's tooltip is shown through.
   - `TooltipPresenter.manage(cls, widget) -> '_TooltipFilter'` *(class)* — Show *widget*'s tooltips through the presenter.
   - `TooltipPresenter.show_text(cls, pos, text: str, widget=None, rect=None, duration=None) -> None` *(class)* — Show *text* as a tooltip the way every managed tooltip is shown.
-- **[`class TooltipProxy(pythontk.TooltipFormat)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L238)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
+- **[`class TooltipProxy(pythontk.TooltipFormat)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L259)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
   - `TooltipProxy.bind(self, provider) -> None` — Register a callable() -> str called lazily on QEvent.ToolTip hover.
-- **[`class TooltipNamespace(pythontk.TooltipFormat)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L285)** — The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
+- **[`class TooltipNamespace(pythontk.TooltipFormat)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L306)** — The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
   - `TooltipNamespace.bind(self, widgets, provider, ui=None) -> list` — Bind a lazy tooltip *provider* to one widget, several, or a name range.
   - `TooltipNamespace.manage(self, widgets, ui=None) -> list` — Show these widgets' tooltips through :class:`TooltipPresenter`.
-- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L368)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
+- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L389)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
 
 <a id="widgets--mixins--wheel_step"></a>
 ### `widgets/mixins/wheel_step.py`
@@ -3438,6 +3439,7 @@ Reusable action-column management for :class:`TableWidget`.
   - `TableActions.add(self, column: int, states: Dict[str, Dict[str, Any]], header_icon: str | None = None, square: bool = True, drag_action: Optional[Callable[[List[int], int], None]] = None) -> None` — Register an action column.
   - `TableActions.set(self, row: int, col: int, state_name: str) -> None` — Set a cell to a named state, updating its icon, tooltip, and style.
   - `TableActions.get(self, row: int, col: int) -> Optional[str]` — Return the current state name for a cell, or ``None``.
+  - `TableActions.clear(self, row: int, col: int) -> None` — Return a cell to no state: no icon, no tooltip, no state colors,
   - `TableActions.update_for_row_height(self) -> None` — Re-size action columns and icons to fit the current row height.
 
 <a id="widgets--textEdit"></a>
@@ -3465,6 +3467,7 @@ Scrollable rich-text viewer window.
 
 - **[`class TextViewBox(WindowPanel)`](uitk/uitk/widgets/textViewBox.py#L55)** — Read-only rich-text viewer with optional standard buttons.
   - `TextViewBox.format_data(cls, data, indent: int = 2) -> str` *(class)* — *data* as indented, colour-coded JSON HTML (one ``<pre>`` block).
+  - `TextViewBox.keyPressEvent(self, event)` — F11 toggles fullscreen and Esc leaves it -- the header button's
   - `TextViewBox.setStandardButtons(self, *buttons) -> None` — Configure the visible buttons by name.
   - `TextViewBox.setText(self, string: str, fontColor: str = 'white', background=False, fontSize=None) -> None` — Set the body text, replacing any existing content.
   - `TextViewBox.append_text(self, string: str, fontColor: str = 'white', fontSize=None) -> None` — Append a paragraph without clearing existing content.

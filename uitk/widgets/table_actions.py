@@ -274,6 +274,21 @@ class TableActions:
         """Return the current state name for a cell, or ``None``."""
         return self._cell_states.get((row, col))
 
+    def clear(self, row: int, col: int) -> None:
+        """Return a cell to no state: no icon, no tooltip, no state colors,
+        and a click on it does nothing -- a flag that no longer applies, taken
+        down. A cell that never held a state is made inert the same way, so
+        a blank cell never reads as clickable beside a cleared one."""
+        self._cell_states.pop((row, col), None)
+        item = self._table.item(row, col)
+        if item is None:
+            return
+        item.setIcon(QtGui.QIcon())
+        item.setToolTip("")
+        item.setData(QtCore.Qt.BackgroundRole, None)
+        item.setData(QtCore.Qt.ForegroundRole, None)
+        item.setData(ACTION_NONINTERACTIVE_ROLE, True)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

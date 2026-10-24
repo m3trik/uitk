@@ -16,7 +16,7 @@ defaults it declares, and is never instantiated alone.
 import os
 from typing import Optional
 
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets, shiboken
 
 from uitk.widgets.menuButton import MenuButton
 from ._resolver import MenuResolver, _MARKING_MENU_TAGS
@@ -458,9 +458,11 @@ class _InputMixin:
         self._ensure_chord_release_timer().start(self.CHORD_RELEASE_TOLERANCE_MS)
 
     def _cancel_chord_release_timer(self) -> None:
-        """Cancel a pending chord-release decision (the gesture resolved)."""
+        """Cancel a pending chord-release decision (the gesture resolved). A
+        timer Qt already deleted -- with its menu, when a host closed under a
+        menu that is then retired -- holds nothing pending."""
         timer = self._chord_release_timer
-        if timer is not None and timer.isActive():
+        if timer is not None and shiboken.isValid(timer) and timer.isActive():
             timer.stop()
         self._chord_pending_buttons = 0
 
