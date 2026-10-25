@@ -307,4 +307,4 @@ Rendered from the GitHub repository:
 
 ## License
 
-LGPL-3.0-or-later — see [COPYING.LESSER](https://github.com/m3trik/uitk/blob/main/COPYING.LESSER).
+LGPL-3.0-or-later — see [COPYING.LESSER](https://github.com/m3trik/uitk/blob/main/COPYING.LESSER) and [COPYING](https://github.com/m3trik/uitk/blob/main/COPYING).
