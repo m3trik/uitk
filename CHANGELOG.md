@@ -1,6 +1,8 @@
 # uitk — Changelog
 
 ## 2026
+- **2026-10-24 -- Ship the GPL-3.0 text the LGPL requires (`COPYING`, `MANIFEST.in`, README).** LGPL-3.0 is a set of additional permissions on top of GPL-3.0, so its text must travel with `COPYING.LESSER`; `MANIFEST.in` also named a `LICENSE` that does not exist.
+  - Test(s): none -- license files and packaging metadata only.
 - **2026-10-24 -- `TestOpaqueFullScreen` skips on a display that cannot composite (`test/test_bootstrap.py`).** CI's "Tests (X11, no compositor)" job failed all five: a bare X server has no translucency for the opaque-full-screen filter to undo, and `set_translucent` rightly refused it -- which blocked uitk 1.7.7's publish (`publish.yml` gates on the whole Tests workflow). The cases now skip where `Bootstrap.composites()` is False (`TestOnX11WithoutCompositor` covers that display) and still assert everywhere else.
   - Test(s): `test_bootstrap.py` 23 passed locally; with `composites` False the five skip, 0 failures.
 - **2026-10-24 -- A new marking menu retires a previous one Qt already deleted without raising (`widgets/marking_menu/_input.py` `_cancel_chord_release_timer`).** The previous instance's wrapper can outlive its C++ side (a host window closed under it): retiring it touched its chord-release timer, deleted with it, and the next `TclMaya` / `TclBlender` constructor raised `RuntimeError: Internal C++ object (PySide6.QtCore.QTimer) already deleted` (tentacle's full suite, `test_widget_state_persistence` setUpClass). A deleted timer now reads as nothing pending.

@@ -105,4 +105,4 @@ Doc changes follow the ledgered workflow in [docs/MAINTAINING.md](docs/MAINTAINI
 
 ## License
 
-LGPL-3.0-or-later — see [COPYING.LESSER](COPYING.LESSER).
+LGPL-3.0-or-later — see [COPYING.LESSER](COPYING.LESSER) and [COPYING](COPYING).
