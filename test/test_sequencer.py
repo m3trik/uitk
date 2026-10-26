@@ -626,53 +626,6 @@ class TestAttributeColorDialog(BaseTestCase):
         self.assertEqual(cmap["rotateZ"], "#000000")
         self.assertEqual(cmap["consolidated"], DISPLAY_COLORS["consolidated"])
 
-    def test_the_retired_channel_constants_warn_and_still_resolve(self):
-        """Published mayatk/blendertk import them at module load: one release
-        of aliases, pointing at pythontk, which owns the vocabulary now."""
-        import importlib
-
-        import pythontk as ptk
-
-        mod = importlib.import_module("uitk.widgets.sequencer._sequencer")
-        with self.assertWarns(DeprecationWarning):
-            common = mod._COMMON_ATTRIBUTES
-        with self.assertWarns(DeprecationWarning):
-            colors = mod._DEFAULT_ATTRIBUTE_COLORS
-        self.assertEqual(common, list(ptk.TRANSFORM_CHANNELS))
-        self.assertEqual(
-            colors["translateX"], str(ptk.Palette.channels()["translateX"])
-        )
-
-    def test_the_retired_channel_constants_warn_at_the_callers_line(self):
-        """The notice points at the line that used the alias -- reached through
-        the defining module, or through the package re-export the published
-        mayatk/blendertk import from -- never at uitk's own ``__getattr__``.
-
-        Regression: ``Deprecation.warn`` ran at its default ``stacklevel``, so
-        every notice named ``_sequencer.py``, and told a host nothing about
-        which of its lines to change.
-        """
-        import importlib
-        import os
-
-        package = importlib.import_module("uitk.widgets.sequencer")
-        module = importlib.import_module("uitk.widgets.sequencer._sequencer")
-        here = os.path.normcase(os.path.abspath(__file__))
-        for name in ("_COMMON_ATTRIBUTES", "_DEFAULT_ATTRIBUTE_COLORS"):
-            for via, owner in (("module", module), ("package", package)):
-                with self.subTest(name=name, via=via):
-                    # The package caches a resolved name: drop it, so the
-                    # re-export resolves (and warns) again, and leave no copy.
-                    package.__dict__.pop(name, None)
-                    try:
-                        with self.assertWarns(DeprecationWarning) as caught:
-                            getattr(owner, name)
-                    finally:
-                        package.__dict__.pop(name, None)
-                    self.assertEqual(
-                        os.path.normcase(os.path.abspath(caught.filename)), here
-                    )
-
     def test_dialog_shows_active_extras(self):
         dlg = AttributeColorDialog(active_attrs=["blendWeight", "envelope"])
         self.assertIn("blendWeight", dlg._swatches)

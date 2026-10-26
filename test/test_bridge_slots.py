@@ -2390,16 +2390,6 @@ class TestSharedSpecs(BaseTestCase):
     same knob — which only holds if each caller gets its OWN object.
     """
 
-    def test_the_retired_shader_spec_warns_and_still_builds(self):
-        """``shader_type_spec`` is Maya's shader vocabulary, so it moved out of
-        uitk (blendertk's Maya bridge owns it); one release of the alias."""
-        from uitk.bridge import Parameters
-
-        with self.assertWarns(DeprecationWarning):
-            spec = Parameters.shader_type_spec(default="open_pbr")
-        self.assertEqual(spec.key, "SHADER_TYPE")
-        self.assertEqual(spec.default, "open_pbr")
-
     def test_carrier_vocabulary_is_pythontk_s_own(self):
         """The carrier choice renders pythontk's CARRIER_EXTENSIONS vocabulary --
         the engine refuses any other spelling, so the panel may offer no other."""

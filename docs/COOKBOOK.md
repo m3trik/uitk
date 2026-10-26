@@ -10,37 +10,35 @@ Patterns extracted from real UITK consumers — primarily [mayatk](https://githu
 
 **Problem**: your tool should run inside the tentacle DCC shell when available, but also work standalone for `__main__` testing or when tentacle isn't installed.
 
-**Solution**: optional `sb` parameter on the launch function. If present, use the caller's Switchboard via the marking menu handler. If absent, build a private one.
+**Solution**: an optional `sb` parameter on a static `launch` method of the slots class. If present, use the caller's Switchboard via the marking menu handler. If absent, build a private one.
 
 *Maya-only as written* (the slot class imports `maya.cmds`) — the pattern itself is host-agnostic. Verified against the live mayatk source below.
 
 ```python
-# mayatk/node_utils/attributes/channels/__init__.py
+# mayatk/node_utils/attributes/channels/channels_slots.py
 
-def launch(sb=None, targets=None, filter=None, search=None):
-    """Open the Channels UI, optionally pre-targeted."""
-    if sb is None:
-        # Standalone: private Switchboard
-        from uitk import Switchboard
-        sb = Switchboard(
-            ui_source="channels.ui",
-            slot_source=ChannelsSlots,
-        )
-        ui = sb.loaded_ui.channels
-        ui.show(pos="screen")
-    else:
-        # Hosted: delegate to tentacle's marking menu
-        ui = sb.handlers.marking_menu.show("channels")
+class ChannelsSlots(...):
+    @staticmethod
+    def launch(sb=None, targets=None, filter=None, search=None):
+        """Open the Channels UI, optionally pre-targeted."""
+        if sb is None:
+            # Standalone: private Switchboard
+            from uitk import Switchboard
 
-    slots = sb.get_slots_instance(ui)
-    if slots is not None:
-        slots.apply_launch_config(targets=targets, filter=filter, search=search)
-    return ui
+            sb = Switchboard(ui_source="channels.ui", slot_source=ChannelsSlots)
+            ui = sb.loaded_ui.channels
+            ui.show(pos="screen")
+        else:
+            # Hosted: delegate to tentacle's marking menu
+            ui = sb.handlers.marking_menu.show("channels")
 
-
-if __name__ == "__main__":
-    launch()
+        slots = sb.get_slots_instance(ui)
+        if slots is not None:
+            slots.apply_launch_config(targets=targets, filter=filter, search=search)
+        return ui
 ```
+
+Callers use `ChannelsSlots.launch(sb=self.sb, targets=...)`.
 
 **Why this works**: `marking_menu.show()` knows how to reparent, style, and lifecycle-manage a standalone window inside the radial shell. `Switchboard(...)` does the same for a standalone app. The slot class sees the same `self.sb` in both paths.
 

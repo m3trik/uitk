@@ -98,7 +98,7 @@ class Tooltip(_TooltipInternal):
 
         Renders title + body + (type / range / step / default) rows + (for
         choice specs) a bullet list of available options. The output is
-        HTML produced by :func:`uitk.widgets.mixins.tooltip_mixin.fmt`, so
+        HTML produced by :meth:`pythontk.TooltipFormat.fmt`, so
         Qt's tooltip engine renders it as styled rich text rather than a
         flat string.
 

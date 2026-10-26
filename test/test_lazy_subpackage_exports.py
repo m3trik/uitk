@@ -31,9 +31,7 @@ from conftest import BaseTestCase, PACKAGE_ROOT
 # Public surface per subpackage, as published before the lazy conversion.
 # Underscore-prefixed sequencer entries are shared layout constants and
 # internal item classes this repo's own tests import by name; they are part of
-# the re-export surface even though ``import *`` never exported them.  The two
-# retired channel defaults (``_COMMON_ATTRIBUTES`` / ``_DEFAULT_ATTRIBUTE_COLORS``)
-# still resolve, with a warning, until 1.7.0 -- pinned in ``test_sequencer``.
+# the re-export surface even though ``import *`` never exported them.
 SEQUENCER_EXPORTS = (
     "AttributeColorDialog",
     "ClipData",
@@ -337,31 +335,22 @@ class TestSubpackageImportIsLazy(BaseTestCase):
 
 
 class TestRootImportStaysLight(BaseTestCase):
-    """``import uitk`` must not drag the three heavy trees in.
+    """``import uitk`` loads declarations only: no implementation module and no
+    third-party package -- Qt included -- of uitk or of pythontk below it.
 
     ``bootstrap_package`` walks the package with ``pkgutil.walk_packages``,
     which imports every subpackage ``__init__``. Eager re-exports there are
-    charged to every consumer of the root package.
+    charged to every consumer of the root package. A hand-picked list of five
+    heavy modules guarded this until 2026-10-25, while pythontk's root loaded
+    PIL and numpy into every ``import uitk``.
     """
 
-    HEAVY = (
-        "uitk.widgets.editors.switchboard_browser._switchboard_browser",
-        "uitk.widgets.sequencer._sequencer",
-        "uitk.widgets.sequencer._timeline",
-        "uitk.bridge.slots",
-        "uitk.widgets.editors.shortcut_editor.registry_editor",
-    )
+    def test_plain_import_uitk_loads_only_declarations(self):
+        from pythontk.core_utils.module_resolver import import_footprint
 
-    def test_plain_import_uitk_skips_heavy_trees(self):
-        """A bare ``import uitk`` loads none of the heavy implementation modules."""
-        out = _run_probe(
-            f"""
-            import sys
-            import uitk
-            print(",".join(m for m in {self.HEAVY!r} if m in sys.modules))
-            """
+        self.assertEqual(
+            import_footprint("uitk"), {"modules": [], "third_party": []}
         )
-        self.assertEqual(out, "", f"import uitk eagerly loaded: {out}")
 
 
 if __name__ == "__main__":

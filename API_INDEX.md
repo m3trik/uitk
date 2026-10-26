@@ -19,7 +19,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `bridge/parameters.py` — Registry helpers for bridge parameter dicts.
 - `class Parameters(_ParametersInternal)`
-  - methods: scope_spec, shader_type_spec, carrier_spec, rig_mode_spec, referenced_keys, defaults, affix_parts, render_context
+  - methods: scope_spec, carrier_spec, rig_mode_spec, referenced_keys, defaults, affix_parts, render_context
 - `class ParamRegistry(object)`
   - methods: referenced_keys, defaults, render_context, affix_parts
 
