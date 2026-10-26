@@ -1,6 +1,8 @@
 # uitk — Changelog
 
 ## 2026
+- **2026-10-25 -- `import uitk` is pinned to load declarations only (`test/test_lazy_subpackage_exports.py`).** pythontk's root no longer loads PIL and numpy, so `import uitk` loads no implementation module and no third-party package, Qt included (357 -> 138 ms, plain Python). `TestRootImportStaysLight` checks that whole footprint through `import_footprint` instead of five named modules.
+  - Test(s): `test_lazy_subpackage_exports.py` `test_plain_import_uitk_loads_only_declarations` (replaces `test_plain_import_uitk_skips_heavy_trees`).
 - **2026-10-24 -- Ship the GPL-3.0 text the LGPL requires (`COPYING`, `MANIFEST.in`, README).** LGPL-3.0 is a set of additional permissions on top of GPL-3.0, so its text must travel with `COPYING.LESSER`; `MANIFEST.in` also named a `LICENSE` that does not exist.
   - Test(s): none -- license files and packaging metadata only.
 - **2026-10-24 -- `TestOpaqueFullScreen` skips on a display that cannot composite (`test/test_bootstrap.py`).** CI's "Tests (X11, no compositor)" job failed all five: a bare X server has no translucency for the opaque-full-screen filter to undo, and `set_translucent` rightly refused it -- which blocked uitk 1.7.7's publish (`publish.yml` gates on the whole Tests workflow). The cases now skip where `Bootstrap.composites()` is False (`TestOnX11WithoutCompositor` covers that display) and still assert everywhere else.

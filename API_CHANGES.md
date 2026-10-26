@@ -1,8 +1,8 @@
 # uitk — API Changes
 
-_Diff vs the last release (origin/main @ 2f60c23)._
+_Diff vs the last release (origin/main @ 8929b2e)._
 
-No public API changes since the last release (origin/main @ 2f60c23).
+No public API changes since the last release (origin/main @ 8929b2e).
 
 ## Deprecations (1)
 
