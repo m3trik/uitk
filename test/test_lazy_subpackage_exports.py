@@ -31,9 +31,7 @@ from conftest import BaseTestCase, PACKAGE_ROOT
 # Public surface per subpackage, as published before the lazy conversion.
 # Underscore-prefixed sequencer entries are shared layout constants and
 # internal item classes this repo's own tests import by name; they are part of
-# the re-export surface even though ``import *`` never exported them.  The two
-# retired channel defaults (``_COMMON_ATTRIBUTES`` / ``_DEFAULT_ATTRIBUTE_COLORS``)
-# still resolve, with a warning, until 1.7.0 -- pinned in ``test_sequencer``.
+# the re-export surface even though ``import *`` never exported them.
 SEQUENCER_EXPORTS = (
     "AttributeColorDialog",
     "ClipData",

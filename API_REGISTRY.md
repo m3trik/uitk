@@ -235,14 +235,13 @@ Registry helpers for bridge parameter dicts.
 
 - **[`class Parameters(_ParametersInternal)`](uitk/uitk/bridge/parameters.py#L39)** — Registry helpers operating over a ``{key: AttributeSpec}`` PARAMS dict.
   - `Parameters.scope_spec(default: str = ptk.HandoffScope.SELECTED, section: str = 'Export') -> AttributeSpec` *(static)* — The shared **Scope** parameter every hand-off bridge exposes.
-  - `Parameters.shader_type_spec(default: str = 'stingray', section: str = '') -> AttributeSpec` *(static)* **DEPRECATED (remove in 1.7.0)** — The shared **Rebuild Shader** parameter a material-rebuilding bridge exposes.
   - `Parameters.carrier_spec(default: str = 'fbx', section: str = '') -> AttributeSpec` *(static)* — The shared **Format** parameter: which interchange carrier the payload
   - `Parameters.rig_mode_spec(default: str = 'auto', section: str = '') -> AttributeSpec` *(static)* — The shared **Rig** parameter: how a hand-off treats the rig logic that
   - `Parameters.referenced_keys(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]` *(static)* — Return registry keys whose ``__KEY__`` token appears in *script_text*.
   - `Parameters.defaults(params: Dict[str, AttributeSpec]) -> Dict[str, Any]` *(static)* — Return ``{key: default}`` for every registered parameter.
   - `Parameters.affix_parts(value: Any, *, default: str = 'prefix')` *(static)* — ``(prefix, suffix)`` for a collected ``affix``-kind parameter value.
   - `Parameters.render_context(values: Dict[str, Any], params: Dict[str, AttributeSpec], formatter: Callable[[AttributeSpec, Any], str] = Formatters.python_literal) -> Dict[str, str]` *(static)* — Format *values* through *formatter* for ``StrUtils.replace_delimited``.
-- **[`class ParamRegistry(object)`](uitk/uitk/bridge/parameters.py#L289)** — A bridge's parameter registry, declared as data: subclass it, set :attr:`PARAMS`.
+- **[`class ParamRegistry(object)`](uitk/uitk/bridge/parameters.py#L230)** — A bridge's parameter registry, declared as data: subclass it, set :attr:`PARAMS`.
   - `ParamRegistry.referenced_keys(cls, script_text: str) -> Set[str]` *(class)* — Registered keys whose ``__KEY__`` token appears in *script_text*.
   - `ParamRegistry.defaults(cls) -> Dict[str, Any]` *(class)* — ``{key: default}`` for every registered parameter.
   - `ParamRegistry.render_context(cls, values: Dict[str, Any], formatter: Optional[Callable[[AttributeSpec, Any], str]] = None) -> Dict[str, str]` *(class)* — Format *values* for ``StrUtils.replace_delimited``.
@@ -2342,15 +2341,15 @@ Validation feedback for a text field -- the red "refused" state.
 
 Tooltip presentation for managed widgets: :class:`TooltipPresenter`, the
 
-- **[`class TooltipPresenter`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L66)** — The one path a managed widget's tooltip is shown through.
+- **[`class TooltipPresenter`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L39)** — The one path a managed widget's tooltip is shown through.
   - `TooltipPresenter.manage(cls, widget) -> '_TooltipFilter'` *(class)* — Show *widget*'s tooltips through the presenter.
   - `TooltipPresenter.show_text(cls, pos, text: str, widget=None, rect=None, duration=None) -> None` *(class)* — Show *text* as a tooltip the way every managed tooltip is shown.
-- **[`class TooltipProxy(pythontk.TooltipFormat)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L259)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
+- **[`class TooltipProxy(pythontk.TooltipFormat)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L228)** — Per-widget tooltip namespace stamped on each registered MainWindow widget.
   - `TooltipProxy.bind(self, provider) -> None` — Register a callable() -> str called lazily on QEvent.ToolTip hover.
-- **[`class TooltipNamespace(pythontk.TooltipFormat)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L306)** — The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
+- **[`class TooltipNamespace(pythontk.TooltipFormat)`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L275)** — The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.
   - `TooltipNamespace.bind(self, widgets, provider, ui=None) -> list` — Bind a lazy tooltip *provider* to one widget, several, or a name range.
   - `TooltipNamespace.manage(self, widgets, ui=None) -> list` — Show these widgets' tooltips through :class:`TooltipPresenter`.
-- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L389)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
+- **[`class TooltipMixin`](uitk/uitk/widgets/mixins/tooltip_mixin.py#L358)** — Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.
 
 <a id="widgets--mixins--wheel_step"></a>
 ### `widgets/mixins/wheel_step.py`

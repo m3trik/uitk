@@ -12,37 +12,10 @@ lives below Qt where a headless engine surface can build its tooltips with it.
 import weakref
 
 import pythontk as ptk
-
-try:
-    from qtpy import QtCore, QtGui, QtWidgets
-except ImportError:
-    # ImportError, not ModuleNotFoundError: qtpy raises QtBindingsNotFoundError
-    # (RuntimeError + ImportError) when it is installed but finds no binding,
-    # which ModuleNotFoundError does not catch. Both cases mean the same thing
-    # here -- no Qt -- and a genuinely broken binding still fails loudly at the
-    # first real Qt import (mainWindow's own `from qtpy import QtWidgets`).
-    # The Qt-free DSL moved to ``pythontk.TooltipFormat``; until its alias
-    # below is removed, a headless caller still importing it from this path
-    # (a scene exporter's task definitions under a DCC's background mode, which
-    # ships no Qt binding) must reach it here without one. Everything below
-    # that actually touches Qt is inert without a binding, and nothing headless
-    # binds a live provider anyway.
-    QtCore = QtGui = QtWidgets = None
-
-# ``TooltipFormat`` moved to pythontk (``str_utils/tooltip_format.py``) on
-# 2026-09-26; the old import path serves it for one release.
-ptk.Deprecation.attributes(
-    globals(),
-    {"TooltipFormat": "pythontk.TooltipFormat"},
-    remove_in="1.7.0",
-    since="2026-09-26",
-)
-
-#: Base for the event filter — ``object`` when there is no binding to inherit from.
-_QObjectBase = QtCore.QObject if QtCore is not None else object
+from qtpy import QtCore, QtWidgets
 
 
-class _TooltipFilter(_QObjectBase):
+class _TooltipFilter(QtCore.QObject):
     """Hands a managed widget's ``QEvent.ToolTip`` to :class:`TooltipPresenter`.
 
     One per widget for the widget's lifetime (found again through
@@ -51,7 +24,7 @@ class _TooltipFilter(_QObjectBase):
     """
 
     #: Resolved once: this check runs for EVERY event a managed widget gets.
-    _TOOLTIP = QtCore.QEvent.Type.ToolTip if QtCore is not None else None
+    _TOOLTIP = QtCore.QEvent.Type.ToolTip
 
     def __init__(self, parent: "QtWidgets.QWidget"):
         super().__init__(parent)
@@ -103,11 +76,7 @@ class TooltipPresenter:
 
     #: Views whose tooltips belong to what is drawn in them -- items, graphics
     #: items -- and are shown over their viewport, which manage() covers too.
-    _VIEW_TYPES = (
-        (QtWidgets.QAbstractItemView, QtWidgets.QGraphicsView)
-        if QtWidgets is not None
-        else ()
-    )
+    _VIEW_TYPES = (QtWidgets.QAbstractItemView, QtWidgets.QGraphicsView)
 
     @classmethod
     def manage(cls, widget) -> "_TooltipFilter":
@@ -123,7 +92,7 @@ class TooltipPresenter:
         Returns:
             The widget's filter, or ``None`` when there is nothing to manage.
         """
-        if widget is None or QtCore is None:
+        if widget is None:
             return None
         filt = cls._install(widget)
         view = widget.view() if isinstance(widget, QtWidgets.QComboBox) else widget

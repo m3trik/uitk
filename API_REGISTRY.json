@@ -290,22 +290,12 @@
               "deprecated": false
             },
             {
-              "name": "shader_type_spec",
-              "qualname": "Parameters.shader_type_spec",
-              "kind": "staticmethod",
-              "signature": "(default: str = 'stingray', section: str = '') -> AttributeSpec",
-              "summary": "The shared **Rebuild Shader** parameter a material-rebuilding bridge exposes.",
-              "line": 89,
-              "deprecated": true,
-              "remove_in": "1.7.0"
-            },
-            {
               "name": "carrier_spec",
               "qualname": "Parameters.carrier_spec",
               "kind": "staticmethod",
               "signature": "(default: str = 'fbx', section: str = '') -> AttributeSpec",
               "summary": "The shared **Format** parameter: which interchange carrier the payload",
-              "line": 142,
+              "line": 82,
               "deprecated": false
             },
             {
@@ -314,7 +304,7 @@
               "kind": "staticmethod",
               "signature": "(default: str = 'auto', section: str = '') -> AttributeSpec",
               "summary": "The shared **Rig** parameter: how a hand-off treats the rig logic that",
-              "line": 193,
+              "line": 134,
               "deprecated": false
             },
             {
@@ -323,7 +313,7 @@
               "kind": "staticmethod",
               "signature": "(script_text: str, params: Dict[str, AttributeSpec]) -> Set[str]",
               "summary": "Return registry keys whose ``__KEY__`` token appears in *script_text*.",
-              "line": 235,
+              "line": 176,
               "deprecated": false
             },
             {
@@ -332,7 +322,7 @@
               "kind": "staticmethod",
               "signature": "(params: Dict[str, AttributeSpec]) -> Dict[str, Any]",
               "summary": "Return ``{key: default}`` for every registered parameter.",
-              "line": 247,
+              "line": 188,
               "deprecated": false
             },
             {
@@ -341,7 +331,7 @@
               "kind": "staticmethod",
               "signature": "(value: Any, *, default: str = 'prefix')",
               "summary": "``(prefix, suffix)`` for a collected ``affix``-kind parameter value.",
-              "line": 252,
+              "line": 193,
               "deprecated": false
             },
             {
@@ -350,7 +340,7 @@
               "kind": "staticmethod",
               "signature": "(values: Dict[str, Any], params: Dict[str, AttributeSpec], formatter: Callable[[AttributeSpec, Any], str] = Formatters.python_literal) -> Dict[str, str]",
               "summary": "Format *values* through *formatter* for ``StrUtils.replace_delimited``.",
-              "line": 263,
+              "line": 204,
               "deprecated": false
             }
           ]
@@ -358,7 +348,7 @@
         {
           "name": "ParamRegistry",
           "summary": "A bridge's parameter registry, declared as data: subclass it, set :attr:`PARAMS`.",
-          "line": 289,
+          "line": 230,
           "bases": [
             "object"
           ],
@@ -369,7 +359,7 @@
               "kind": "classmethod",
               "signature": "(cls, script_text: str) -> Set[str]",
               "summary": "Registered keys whose ``__KEY__`` token appears in *script_text*.",
-              "line": 324,
+              "line": 265,
               "deprecated": false
             },
             {
@@ -378,7 +368,7 @@
               "kind": "classmethod",
               "signature": "(cls) -> Dict[str, Any]",
               "summary": "``{key: default}`` for every registered parameter.",
-              "line": 336,
+              "line": 277,
               "deprecated": false
             },
             {
@@ -387,7 +377,7 @@
               "kind": "classmethod",
               "signature": "(cls, values: Dict[str, Any], formatter: Optional[Callable[[AttributeSpec, Any], str]] = None) -> Dict[str, str]",
               "summary": "Format *values* for ``StrUtils.replace_delimited``.",
-              "line": 341,
+              "line": 282,
               "deprecated": false
             },
             {
@@ -396,7 +386,7 @@
               "kind": "staticmethod",
               "signature": "(value: Any, *, default: str = 'prefix') -> Tuple[str, str]",
               "summary": "``(prefix, suffix)`` for an ``affix``-kind value (:meth:`Parameters.affix_parts`).",
-              "line": 361,
+              "line": 302,
               "deprecated": false
             }
           ]
@@ -14887,7 +14877,7 @@
         {
           "name": "TooltipPresenter",
           "summary": "The one path a managed widget's tooltip is shown through.",
-          "line": 66,
+          "line": 39,
           "bases": [],
           "members": [
             {
@@ -14896,7 +14886,7 @@
               "kind": "classmethod",
               "signature": "(cls, widget) -> '_TooltipFilter'",
               "summary": "Show *widget*'s tooltips through the presenter.",
-              "line": 113,
+              "line": 82,
               "deprecated": false
             },
             {
@@ -14905,7 +14895,7 @@
               "kind": "classmethod",
               "signature": "(cls, pos, text: str, widget=None, rect=None, duration=None) -> None",
               "summary": "Show *text* as a tooltip the way every managed tooltip is shown.",
-              "line": 135,
+              "line": 104,
               "deprecated": false
             }
           ]
@@ -14913,7 +14903,7 @@
         {
           "name": "TooltipProxy",
           "summary": "Per-widget tooltip namespace stamped on each registered MainWindow widget.",
-          "line": 259,
+          "line": 228,
           "bases": [
             "pythontk.TooltipFormat"
           ],
@@ -14924,7 +14914,7 @@
               "kind": "method",
               "signature": "(self, provider) -> None",
               "summary": "Register a callable() -> str called lazily on QEvent.ToolTip hover.",
-              "line": 287,
+              "line": 256,
               "deprecated": false
             }
           ]
@@ -14932,7 +14922,7 @@
         {
           "name": "TooltipNamespace",
           "summary": "The Switchboard's ``sb.tooltip`` namespace — owner of the tooltip surface.",
-          "line": 306,
+          "line": 275,
           "bases": [
             "pythontk.TooltipFormat"
           ],
@@ -14943,7 +14933,7 @@
               "kind": "method",
               "signature": "(self, widgets, provider, ui=None) -> list",
               "summary": "Bind a lazy tooltip *provider* to one widget, several, or a name range.",
-              "line": 329,
+              "line": 298,
               "deprecated": false
             },
             {
@@ -14952,7 +14942,7 @@
               "kind": "method",
               "signature": "(self, widgets, ui=None) -> list",
               "summary": "Show these widgets' tooltips through :class:`TooltipPresenter`.",
-              "line": 349,
+              "line": 318,
               "deprecated": false
             }
           ]
@@ -14960,7 +14950,7 @@
         {
           "name": "TooltipMixin",
           "summary": "Mixin for MainWindow — stamps ``widget.tooltip`` on every registered widget.",
-          "line": 389,
+          "line": 358,
           "bases": [],
           "members": []
         }

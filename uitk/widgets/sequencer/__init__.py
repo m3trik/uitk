@@ -74,14 +74,7 @@ lazy_exports(
             "TimelineScene",
             "TimelineView",
         ),
-        # The two retired channel defaults resolve through _sequencer's
-        # deprecation hook until uitk 1.7.0.
-        "_sequencer": (
-            "AttributeColorDialog",
-            "SequencerWidget",
-            "_COMMON_ATTRIBUTES",
-            "_DEFAULT_ATTRIBUTE_COLORS",
-        ),
+        "_sequencer": ("AttributeColorDialog", "SequencerWidget"),
         "_scrub_player": "ScrubPlayer",
         "_transport_controls": (
             "TransportControls",

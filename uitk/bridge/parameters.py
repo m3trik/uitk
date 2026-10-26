@@ -79,66 +79,6 @@ class Parameters(_ParametersInternal):
         )
 
     @staticmethod
-    @ptk.Deprecation.symbol(
-        "an AttributeSpec in the host bridge's own parameters "
-        "(blendertk.env_utils.maya_bridge.parameters.PARAMS['SHADER_TYPE'])",
-        remove_in="1.7.0",
-        since="2026-09-26",
-        reason="Its values are Maya's shader vocabulary; uitk carries no host's.",
-    )
-    def shader_type_spec(default: str = "stingray", section: str = "") -> AttributeSpec:
-        """The shared **Rebuild Shader** parameter a material-rebuilding bridge exposes.
-
-        Which shader a hand-off rebuilds materials as is a property of the
-        rebuild, not of the direction it travels or which app launched it: a
-        Blender->Maya *send* and a Maya-side *pull of a .blend* run the very
-        same rebuild. The spec lives here so every panel that grows this control
-        gets one label set, one choice vocabulary and one tooltip rather than a
-        copy that drifts. The values are the shader engine's own
-        (``mayatk.GameShader``), so no second spelling exists to keep in step.
-
-        Panel-side there is one consumer today (blendertk's Maya-bridge send);
-        the pull direction takes the same choice as an ``import_scene``
-        keyword, defaulted to match, because it has no parameter panel at all.
-
-        Unlike :meth:`scope_spec`, *section* defaults to EMPTY (no divider): a
-        titled separator claims every following spec until the next section, so
-        one sectioned param dropped into an otherwise unsectioned registry
-        re-labels its neighbours rather than grouping itself. Pass a section
-        only where the whole registry is organised into contiguous ones.
-
-        Default ``stingray``: Maya's game shader is the game-engine-bound
-        target, and it is the only family that DECLARES its texture slots --
-        which is what lets a material round-trip back out with its maps intact
-        instead of being re-guessed from filenames.
-
-        Returns a FRESH spec per call: the dataclass is frozen, but its
-        ``choices`` list is not — a single shared instance handed to several
-        registries would let one bridge's in-place choice refill leak into
-        the others.
-        """
-        return AttributeSpec(
-            key="SHADER_TYPE",
-            label="Rebuild Shader",
-            kind="choice",
-            default=default,
-            choices=[
-                ("Stingray PBS", "stingray"),
-                ("Standard Surface", "standard_surface"),
-                ("OpenPBR Surface", "open_pbr"),
-            ],
-            section=section,
-            tooltip=(
-                "Which Maya shader the materials are rebuilt as:\n"
-                "• Stingray PBS — the game shader; its declared texture slots\n"
-                "  round-trip back out intact. Needs the shaderFX plugin.\n"
-                "• Standard Surface — renders anywhere, no plugin needed.\n"
-                "• OpenPBR Surface — the open PBR standard; needs a recent Maya 2025+.\n"
-                "A type this Maya cannot build falls back to Standard Surface."
-            ),
-        )
-
-    @staticmethod
     def carrier_spec(default: str = "fbx", section: str = "") -> AttributeSpec:
         """The shared **Format** parameter: which interchange carrier the payload
         leaves as (FBX or USD).
@@ -161,10 +101,11 @@ class Parameters(_ParametersInternal):
         flattening the scene (the regression that reverted a USD default
         once). Order is append-only: combos persist by INDEX.
 
-        Like :meth:`shader_type_spec`, *section* defaults to EMPTY so the spec
-        can drop into an unsectioned registry without re-labelling its
-        neighbours. Returns a FRESH spec per call (the ``choices`` list is
-        mutable).
+        Unlike :meth:`scope_spec`, *section* defaults to EMPTY (no divider): a
+        titled separator claims every following spec until the next section,
+        so a sectioned spec dropped into an unsectioned registry would
+        re-label its neighbours. Returns a FRESH spec per call (the
+        ``choices`` list is mutable).
         """
         import pythontk as ptk
 
