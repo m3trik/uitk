@@ -48,7 +48,7 @@ from pythontk.core_utils.module_resolver import (
 )
 
 __package__ = "uitk"
-__version__ = "1.8.2"
+__version__ = "1.9.0"
 
 
 DEFAULT_INCLUDE = {
