@@ -1,6 +1,8 @@
 # uitk — Changelog
 
 ## 2026
+- **2026-10-27 -- A panel tag opens a UI sticky in any host (`handlers/ui_handler.py`).** `UiHandler.PANEL_TAG` (`"panel"`) names the tag a source registers its tool panels under, and `default_persistence` returns sticky for it; the hosts' handlers already defer to it, so a panel registered by an app other than mayatk or blendertk (tentacle's shared `ui/panels/`) opens sticky in Maya and Blender alike.
+  - Test(s): `test_ui_handler.py` +1 (`TestDefaultPersistence`).
 - **2026-10-27 -- The external-app handler reads entry points through `ptk.PackageManager.entry_points` (`handlers/external_app_handler.py`).** Its own importlib-version shim moved to pythontk, the one reader the record hooks use too.
   - Test(s): `test_external_app_handler.py`: the self-heal test's PackageManager stand-in answers entry points.
 - **2026-10-27 -- The package declares its moved-names table (`__init__.py`).** `MOVED_NAMES`, empty for now, goes to `bootstrap_package(moved=...)`: a name that leaves uitk for tentacle is listed there, and a read of it raises pythontk's `MovedNameError` naming the new home and version. Its `custom_getattr` passes a `MovedNameError` through instead of wrapping it.

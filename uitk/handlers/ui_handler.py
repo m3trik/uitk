@@ -458,6 +458,10 @@ class UiHandler(BaseHandler):
 
     # ── Window persistence (pin vs hide chrome) ──────────────────────────
 
+    #: The tag a source registers its tool panels under (``Switchboard.register(
+    #: ..., tags={PANEL_TAG})``): sticky by default (:meth:`default_persistence`).
+    PANEL_TAG = "panel"
+
     def default_persistence(self, ui) -> str:
         """The per-window default for *ui* — what it does with no user override.
 
@@ -468,8 +472,17 @@ class UiHandler(BaseHandler):
         overriding ``apply_styles`` to swap ``header_buttons`` is the wrong
         home, because a user override then has nothing to override.
 
+        A UI whose source registered it under :attr:`PANEL_TAG` -- a tool panel,
+        doing the work the user came for -- stays open (sticky) by default,
+        whichever package ships it; anything else is transient.
+
         Returns one of :attr:`PERSISTENCE_MODES` (never ``"context"``).
         """
+        try:
+            if ui.has_tags([self.PANEL_TAG]):
+                return self.PERSISTENCE_STICKY
+        except AttributeError:
+            pass
         return self.PERSISTENCE_TRANSIENT
 
     @property

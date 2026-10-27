@@ -61,6 +61,25 @@ class TestUiHandlerCanResolve(unittest.TestCase):
 # ── Launch delegation to a hosting handler ──────────────────────────────────
 
 
+class TestDefaultPersistence(unittest.TestCase):
+    """A source that registers its tool panels under the ``panel`` tag gets
+    them sticky by default, whichever package ships them; anything else stays
+    transient."""
+
+    @staticmethod
+    def _ui(*tags):
+        return types.SimpleNamespace(has_tags=lambda wanted: bool(set(wanted) & set(tags)))
+
+    def test_a_panel_tag_is_sticky_and_anything_else_transient(self):
+        handler = object.__new__(UiHandler)
+        self.assertEqual(handler.default_persistence(self._ui(UiHandler.PANEL_TAG)),
+                         UiHandler.PERSISTENCE_STICKY)
+        self.assertEqual(handler.default_persistence(self._ui("menu")),
+                         UiHandler.PERSISTENCE_TRANSIENT)
+        self.assertEqual(handler.default_persistence(object()),
+                         UiHandler.PERSISTENCE_TRANSIENT)
+
+
 class _HostingClaimStub:
     """Handler double implementing the hosting claim (``hosts_ui``/``show``).
 
