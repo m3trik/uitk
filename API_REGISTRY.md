@@ -183,8 +183,8 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 
 UITK - User Interface Toolkit for Qt/PySide applications.
 
-- [`DEFAULT_INCLUDE`](uitk/uitk/__init__.py#L50) — constant
-- [`MOVED_NAMES`](uitk/uitk/__init__.py#L270) — constant
+- [`DEFAULT_INCLUDE`](uitk/uitk/__init__.py#L54) — constant
+- [`MOVED_NAMES`](uitk/uitk/__init__.py#L274) — constant
 
 <a id="_bootstrap"></a>
 ### `_bootstrap.py`

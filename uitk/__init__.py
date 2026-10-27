@@ -41,7 +41,11 @@ Attributes:
 
 import importlib
 
-from pythontk.core_utils.module_resolver import MovedNameError, bootstrap_package
+from pythontk.core_utils.module_resolver import (
+    MovedImportError,
+    MovedNameError,
+    bootstrap_package,
+)
 
 __package__ = "uitk"
 __version__ = "1.8.1"
@@ -250,7 +254,7 @@ def _uitk_getattr(name: str):
     if resolver is not None:
         try:
             return resolver.resolve(name)
-        except MovedNameError:
+        except (MovedNameError, MovedImportError):
             raise  # names its new home already
         except Exception as e:
             # Provide a clearer error for ImportErrors during resolution
