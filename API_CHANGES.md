@@ -1,5 +1,7 @@
 # uitk — API Changes
 
-_Diff vs the last release (origin/main @ 6aeff06)._
+_Diff vs the last release (origin/main @ 68fc685)._
 
-No public API changes since the last release (origin/main @ 6aeff06).
+## Added (1)
+
+- `__init__.py::MOVED_NAMES(constant)`

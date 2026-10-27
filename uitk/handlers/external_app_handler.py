@@ -335,20 +335,10 @@ class ExternalAppHandler(BaseHandler):
 
     @staticmethod
     def _entry_points(group: str) -> list:
-        """Return the entry points in *group*, across importlib versions.
-
-        Centralises the Python 3.10+ ``entry_points(group=...)`` selector
-        vs the 3.8/3.9 ``entry_points().get(group, [])`` mapping form so
-        both :meth:`discover` and :meth:`_discover_providers` share one path.
-        """
-        try:
-            from importlib.metadata import entry_points
-        except ImportError:  # pragma: no cover — present on all 3.8+ runtimes
-            return []
-        try:
-            return list(entry_points(group=group))
-        except TypeError:  # pragma: no cover — Python 3.8/3.9 selector signature
-            return list(entry_points().get(group, []))
+        """The entry points in *group* (``ptk.PackageManager.entry_points``,
+        the one reader across importlib versions), so both :meth:`discover`
+        and :meth:`_discover_providers` share one path."""
+        return ptk.PackageManager.entry_points(group)
 
     @classmethod
     def _partition_extras(cls, extras: Iterable[str]) -> "tuple[set, set]":

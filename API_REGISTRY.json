@@ -14,7 +14,16 @@
           "kind": "constant",
           "signature": "",
           "summary": "",
-          "line": 50,
+          "line": 54,
+          "deprecated": false
+        },
+        {
+          "name": "MOVED_NAMES",
+          "qualname": "MOVED_NAMES",
+          "kind": "constant",
+          "signature": "",
+          "summary": "",
+          "line": 274,
           "deprecated": false
         }
       ]
@@ -1634,7 +1643,7 @@
               "kind": "method",
               "signature": "(self, install_spec: str, *, probe_module: Optional[str] = None, group: Optional[str] = None, python: Optional[str] = None) -> None",
               "summary": "Register a provider package that ships discoverable apps.",
-              "line": 440,
+              "line": 430,
               "deprecated": false
             },
             {
@@ -1643,7 +1652,7 @@
               "kind": "method",
               "signature": "(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None, description: Optional[str] = None) -> None",
               "summary": "Pre-register an app so it can be launched by name.",
-              "line": 554,
+              "line": 544,
               "deprecated": false
             },
             {
@@ -1652,7 +1661,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 626,
+              "line": 616,
               "deprecated": false
             },
             {
@@ -1661,7 +1670,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Remove an app.",
-              "line": 629,
+              "line": 619,
               "deprecated": false
             },
             {
@@ -1670,7 +1679,7 @@
               "kind": "method",
               "signature": "(self) -> Iterable[HandlerEntry]",
               "summary": "Yield one :class:`HandlerEntry` per registered app.",
-              "line": 638,
+              "line": 628,
               "deprecated": false
             },
             {
@@ -1679,7 +1688,7 @@
               "kind": "method",
               "signature": "(self, name: str, tags: Iterable[str]) -> None",
               "summary": "Persist *tags* for *name* in the handler's config branch.",
-              "line": 809,
+              "line": 799,
               "deprecated": false
             },
             {
@@ -1688,7 +1697,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Hide an in-process widget;",
-              "line": 833,
+              "line": 823,
               "deprecated": false
             },
             {
@@ -1697,7 +1706,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 858,
+              "line": 848,
               "deprecated": false
             },
             {
@@ -1706,7 +1715,7 @@
               "kind": "method",
               "signature": "(self, name: str, **_options) -> Optional[str]",
               "summary": "Python that launches app *name* standalone (optional contract method).",
-              "line": 875,
+              "line": 865,
               "deprecated": false
             },
             {
@@ -1715,7 +1724,7 @@
               "kind": "method",
               "signature": "(self, name: str)",
               "summary": "The ``ExternalAppHub`` that opens app *name* standalone, or None.",
-              "line": 923,
+              "line": 913,
               "deprecated": false
             },
             {
@@ -1724,7 +1733,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "Whether app *name* can get a desktop launcher here (its provider",
-              "line": 970,
+              "line": 960,
               "deprecated": false
             },
             {
@@ -1733,7 +1742,7 @@
               "kind": "method",
               "signature": "(self, name: str, location: str = 'desktop') -> str",
               "summary": "Put a launcher that opens app *name* standalone on the desktop or",
-              "line": 977,
+              "line": 967,
               "deprecated": false
             },
             {
@@ -1742,7 +1751,7 @@
               "kind": "method",
               "signature": "(self, name: Optional[str] = None, *, module: Optional[str] = None, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: Optional[str] = None, show: bool = True, **_options)",
               "summary": "Launch a registered app, or an ad-hoc app from kwargs.",
-              "line": 1032,
+              "line": 1022,
               "deprecated": false
             }
           ]

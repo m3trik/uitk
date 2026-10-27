@@ -1060,6 +1060,9 @@ class TestExternalAppHandlerLaunch(unittest.TestCase):
             patch("pythontk.PackageManager") as pm,
             patch.object(ExternalAppHandler, "_spawn", side_effect=fake_spawn),
         ):
+            # Discovery reads entry points through PackageManager's static
+            # reader; the patch stands in for the installer, not for that.
+            pm.entry_points.side_effect = lambda group: fake_eps(group=group)
             self.handler.launch("tool")
 
         pm.assert_not_called()

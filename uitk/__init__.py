@@ -41,10 +41,14 @@ Attributes:
 
 import importlib
 
-from pythontk.core_utils.module_resolver import bootstrap_package
+from pythontk.core_utils.module_resolver import (
+    MovedImportError,
+    MovedNameError,
+    bootstrap_package,
+)
 
 __package__ = "uitk"
-__version__ = "1.8.1"
+__version__ = "1.8.2"
 
 
 DEFAULT_INCLUDE = {
@@ -250,6 +254,8 @@ def _uitk_getattr(name: str):
     if resolver is not None:
         try:
             return resolver.resolve(name)
+        except (MovedNameError, MovedImportError):
+            raise  # names its new home already
         except Exception as e:
             # Provide a clearer error for ImportErrors during resolution
             # This helps debug issues in environments like Maya's deferred evaluation
@@ -262,8 +268,14 @@ def _uitk_getattr(name: str):
     raise AttributeError(f"module {__package__} has no attribute '{name}'")
 
 
+#: Public names that left this package (CODE_STANDARD section 5): no alias, so a
+#: read raises MovedNameError naming the new home. ``{name: (new home, version)}``;
+#: a move adds its names here in the same change set.
+MOVED_NAMES = {}
+
 bootstrap_package(
     globals(),
     include=DEFAULT_INCLUDE,
     custom_getattr=_uitk_getattr,
+    moved=MOVED_NAMES,
 )
