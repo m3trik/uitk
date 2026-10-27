@@ -1875,7 +1875,7 @@
               "kind": "method",
               "signature": "(self, ui) -> str",
               "summary": "The per-window default for *ui* — what it does with no user override.",
-              "line": 461,
+              "line": 465,
               "deprecated": false
             },
             {
@@ -1884,7 +1884,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Global default persistence: a mode, or ``\"context\"`` for per-window.",
-              "line": 476,
+              "line": 489,
               "deprecated": false
             },
             {
@@ -1893,7 +1893,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> Optional[str]",
               "summary": "The stored per-window override, or ``None`` if it follows the default.",
-              "line": 512,
+              "line": 525,
               "deprecated": false
             },
             {
@@ -1902,7 +1902,7 @@
               "kind": "method",
               "signature": "(self, name: str, mode: Optional[str]) -> None",
               "summary": "Set (a mode) or clear (``None``) a per-window override, and re-chrome",
-              "line": 519,
+              "line": 532,
               "deprecated": false
             },
             {
@@ -1911,7 +1911,7 @@
               "kind": "method",
               "signature": "(self, ui, name: Optional[str] = None, context_default: Optional[str] = None) -> str",
               "summary": "The effective persistence mode for *ui*: a concrete member of",
-              "line": 542,
+              "line": 555,
               "deprecated": false
             },
             {
@@ -1920,7 +1920,7 @@
               "kind": "method",
               "signature": "(self, ui, name: Optional[str] = None) -> bool",
               "summary": "Whether a *user* choice (per-window override or a non-context global)",
-              "line": 567,
+              "line": 580,
               "deprecated": false
             },
             {
@@ -1929,7 +1929,7 @@
               "kind": "method",
               "signature": "(self, name: Optional[str] = None) -> None",
               "summary": "Re-chrome loaded windows after a persistence preference change.",
-              "line": 578,
+              "line": 591,
               "deprecated": false
             },
             {
@@ -1938,7 +1938,7 @@
               "kind": "method",
               "signature": "(self, ui, style: Dict = None, theme: str = None)",
               "summary": "Apply default styles to the UI instance.",
-              "line": 689,
+              "line": 702,
               "deprecated": false
             },
             {
@@ -1947,7 +1947,7 @@
               "kind": "method",
               "signature": "(self) -> Iterable[HandlerEntry]",
               "summary": "Yield one :class:`HandlerEntry` per .ui registered with the Switchboard.",
-              "line": 776,
+              "line": 789,
               "deprecated": false
             },
             {
@@ -1956,7 +1956,7 @@
               "kind": "method",
               "signature": "(self, name: str)",
               "summary": "Return the registered handler that claims windowing ownership of *name*.",
-              "line": 835,
+              "line": 848,
               "deprecated": false
             },
             {
@@ -1965,7 +1965,7 @@
               "kind": "method",
               "signature": "(self, name: str, **options)",
               "summary": "Launch the named UI applying the browser's per-launch style options.",
-              "line": 874,
+              "line": 887,
               "deprecated": false
             },
             {
@@ -1974,7 +1974,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Hide the named UI as its own hide button would (:meth:`_dismiss`).",
-              "line": 1044,
+              "line": 1057,
               "deprecated": false
             },
             {
@@ -1983,7 +1983,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "",
-              "line": 1052,
+              "line": 1065,
               "deprecated": false
             },
             {
@@ -1992,7 +1992,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Raise the named, already-loaded UI.",
-              "line": 1059,
+              "line": 1072,
               "deprecated": false
             },
             {
@@ -2001,7 +2001,7 @@
               "kind": "method",
               "signature": "(self, name: str, **options) -> Optional[str]",
               "summary": "Python that launches UI *name* standalone.",
-              "line": 1072,
+              "line": 1085,
               "deprecated": false
             },
             {
@@ -2010,7 +2010,7 @@
               "kind": "method",
               "signature": "(self, sources: bool = False) -> Optional[Tuple[List[str], List[str], str]]",
               "summary": "How a fresh session gets an equivalent of this handler.",
-              "line": 1131,
+              "line": 1144,
               "deprecated": false
             },
             {
@@ -2019,7 +2019,7 @@
               "kind": "method",
               "signature": "(self, name: str, tags: Iterable[str]) -> None",
               "summary": "Persist ``<uitk_tags>`` XML for the named UI.",
-              "line": 1258,
+              "line": 1271,
               "deprecated": false
             }
           ]
