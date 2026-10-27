@@ -1,7 +1,5 @@
 # uitk — API Changes
 
-_Diff vs the last release (origin/main @ 8929b2e)._
+_Diff vs the last release (origin/main @ 6aeff06)._
 
-## Removed (1)
-
-- `bridge/parameters.py::Parameters.shader_type_spec` — was `(default: str = 'stingray', section: str = '') -> AttributeSpec`
+No public API changes since the last release (origin/main @ 6aeff06).
