@@ -467,10 +467,9 @@ class UiHandler(BaseHandler):
 
         This is the "context" in the UI Browser's ``Default (context)``: the
         behavior a window has always had, expressed as a persistence mode
-        instead of hardcoded header buttons. Subclasses override it to declare
-        their own defaults (mayatk / blendertk make their tool panels sticky);
-        overriding ``apply_styles`` to swap ``header_buttons`` is the wrong
-        home, because a user override then has nothing to override.
+        instead of hardcoded header buttons. A subclass overrides it to declare
+        its own defaults; overriding ``apply_styles`` to swap ``header_buttons``
+        is the wrong home, because a user override then has nothing to override.
 
         A UI whose source registered it under :attr:`PANEL_TAG` -- a tool panel,
         doing the work the user came for -- stays open (sticky) by default,

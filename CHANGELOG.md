@@ -1,6 +1,7 @@
 # uitk — Changelog
 
 ## 2026
+- **2026-10-28 -- Docstrings name tentacle's `HostBridge` as the host seam (`bridge/slots.py`) and drop the per-library sticky rule (`handlers/ui_handler.py`).**
 - **2026-10-28 -- Fixed: a Slots class built while a window's central widget registers sees the `.ui`'s embedded footer (`widgets/mainWindow.py`).** `setCentralWidget` adopts it before the children register; a Slots `__init__` that read `ui.footer` got `None`.
   - Test(s): `test_mainwindow.py` (`TestEmbeddedFooterBeforeSlots`).
 - **2026-10-28 -- `TransportControls` is a root export (`__init__.py`); `docs/WIDGETS.md` cites tentacle's Shot Sequencer as the integration example.**

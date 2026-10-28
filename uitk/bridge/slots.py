@@ -198,8 +198,8 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     def _install_optional_package(self, spec: str) -> None:
         """Install *spec* so it is importable in THIS interpreter.
 
-        The DCC-specific seam: ``blendertk``'s :class:`BlenderBridgeSlotsBase`
-        overrides this because Blender's bundled interpreter keeps user-site off
+        The DCC-specific seam: tentacle's ``HostBridge`` overrides
+        this (``BridgeHost.install_package``) because Blender's bundled interpreter keeps user-site off
         ``sys.path``, so the default ``pip install --user`` would succeed and stay
         unimportable.
         """
@@ -211,8 +211,8 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     def resolve_scope_objects(self, scope: str):  # pragma: no cover - contract
         """Hook: turn a ``SCOPE`` value into host objects. DCC-specific.
 
-        Implemented once per package on the DCC bridge-slots base
-        (``MayaBridgeSlotsBase`` / ``BlenderBridgeSlotsBase``), so every bridge
+        Implemented once, on tentacle's ``HostBridge`` (over each host's
+        ``BridgeHost``), so every bridge
         that ships the shared :meth:`uitk.bridge.Parameters.scope_spec`
         parameter resolves it identically: it hands its scene reads to
         :meth:`pythontk.HandoffScope.resolve`, which owns the words and their
