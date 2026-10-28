@@ -882,7 +882,7 @@ How a window follows the height of what it is holding.
   - `Switchboard.prev_ui(self) -> Optional[QtWidgets.QWidget]` *(property)* — Get the previous UI from history — the one before the current UI.
   - `Switchboard.prev_slot(self) -> object` *(property)* — Get the last called slot.
   - `Switchboard.visible_windows(self) -> set` *(property)* — Return all currently visible MainWindow instances.
-  - `Switchboard.register(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None)` — Add new locations to the Switchboard registries.
+  - `Switchboard.register(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None, exclude=None)` — Add new locations to the Switchboard registries.
   - `Switchboard.load_all_ui(self) -> list` — Extends the 'load_ui' method to load all UI from a given path.
   - `Switchboard.load_ui(self, file: str) -> QtWidgets.QMainWindow` — Load a UI from the given .ui path via the configured loader delegate.
   - `Switchboard.add_ui(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow`

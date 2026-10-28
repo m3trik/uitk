@@ -1,6 +1,8 @@
 # uitk — Changelog
 
 ## 2026
+- **2026-10-28 -- `Switchboard.register(..., exclude=None)` (`switchboard/_core.py`).** File-name wildcards a call leaves out on top of each registry's own `exc_files` (a bare per-call `exc_files` would replace `*_ui.py` and let a slot scan pick up compiled UI modules). tentacle registers its shared tools minus the ones a host doesn't serve with it.
+  - Test(s): `test_switchboard_sources.py` +2.
 - **2026-10-28 -- `docs/COOKBOOK.md`: the hosted-vs-standalone launch recipe no longer cites mayatk's removed Channels panel as live source.**
 - **2026-10-28 -- `Tooltip` is on the root (`__init__.py`).** The bridge's parameter-tooltip formatter (`Tooltip.format_param_tooltip`) is a consumer's need, like `AttributeSpec` and `KindFactory`: tentacle's Shot Manifest panel reaches it as `self.sb.Tooltip`, its slots layer importing no deep path.
   - Test(s): uitk's affected suites (23 modules) pass.

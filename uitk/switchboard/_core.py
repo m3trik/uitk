@@ -714,6 +714,7 @@ class Switchboard(
         recursive: bool = False,
         validate=1,
         tags=None,
+        exclude=None,
     ):
         """Add new locations to the Switchboard registries.
 
@@ -730,6 +731,11 @@ class Switchboard(
             tags: Optional set/list of tags to apply to UIs loaded from ui_location.
                   When a UI file from this location is loaded via add_ui(), these
                   tags are automatically merged into its tag set.
+            exclude: File-name pattern(s) (shell wildcards) this call leaves out of
+                  every location it registers, on top of each registry's own
+                  exclusions: a host registering a shared folder minus the files it
+                  does not serve (``"light_rig.*"`` drops ``light_rig.ui`` from
+                  ui_location and ``light_rig.py`` from slot_location).
         """
         source_tags_changed = False
         if tags and ui_location:
@@ -812,6 +818,16 @@ class Switchboard(
                 else None
             )
 
+            # ``exclude`` adds to the registry's own exclusions: a per-call
+            # ``exc_files`` replaces the stored one in ``extend``, so passed bare
+            # it would let a slot scan pick up ``*_ui.py``.
+            options = {}
+            if exclude:
+                options["exc_files"] = [
+                    *ptk.make_iterable(registry.metadata.get("exc_files") or ()),
+                    *ptk.make_iterable(exclude),
+                ]
+
             # Forward validate/path_type: without them ``extend`` merges the registry's stored
             # metadata and re-resolves at whatever that carries, so the level computed above was
             # discarded — ``validate=1`` warned and then raised anyway, leaving only 0 and 2
@@ -822,6 +838,7 @@ class Switchboard(
                 recursive=recursive,
                 validate=validate,
                 path_type=type_name,
+                **options,
             )
             self.logger.debug(f"[register] {type_name} location added: {location}")
 

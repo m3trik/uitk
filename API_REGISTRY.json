@@ -4708,7 +4708,7 @@
               "name": "register",
               "qualname": "Switchboard.register",
               "kind": "method",
-              "signature": "(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None)",
+              "signature": "(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None, exclude=None)",
               "summary": "Add new locations to the Switchboard registries.",
               "line": 707,
               "deprecated": false
@@ -4719,7 +4719,7 @@
               "kind": "method",
               "signature": "(self) -> list",
               "summary": "Extends the 'load_ui' method to load all UI from a given path.",
-              "line": 837,
+              "line": 854,
               "deprecated": false
             },
             {
@@ -4728,7 +4728,7 @@
               "kind": "method",
               "signature": "(self, file: str) -> QtWidgets.QMainWindow",
               "summary": "Load a UI from the given .ui path via the configured loader delegate.",
-              "line": 846,
+              "line": 863,
               "deprecated": false
             },
             {
@@ -4737,7 +4737,7 @@
               "kind": "method",
               "signature": "(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow",
               "summary": "",
-              "line": 875,
+              "line": 892,
               "deprecated": false
             },
             {
@@ -4746,7 +4746,7 @@
               "kind": "method",
               "signature": "(self, ui=None) -> QtWidgets.QWidget",
               "summary": "Get a dynamic UI using its string name, or if no argument is given, return the current UI.",
-              "line": 951,
+              "line": 968,
               "deprecated": false
             },
             {
@@ -4755,7 +4755,7 @@
               "kind": "method",
               "signature": "(self, ui, upstream=False, exact=False, downstream=False, reverse=False)",
               "summary": "Get UIs related to the given UI via shared base name.",
-              "line": 978,
+              "line": 995,
               "deprecated": false
             },
             {
@@ -4764,7 +4764,7 @@
               "kind": "method",
               "signature": "(self, legal_name: str, unique_match: bool = False) -> Union[str, List[str], None]",
               "summary": "Convert the given legal name to its original name(s) by searching the UI files.",
-              "line": 1044,
+              "line": 1061,
               "deprecated": false
             },
             {
@@ -4773,7 +4773,7 @@
               "kind": "method",
               "signature": "(self, path: str, tags: Iterable[str]) -> None",
               "summary": "Persist tags into a .ui file as a Designer-safe dynamic property.",
-              "line": 1128,
+              "line": 1145,
               "deprecated": false
             },
             {
@@ -4782,7 +4782,7 @@
               "kind": "method",
               "signature": "(self, index=None, allow_duplicates=False, inc=None, exc=None)",
               "summary": "Get the UI history.",
-              "line": 1233,
+              "line": 1250,
               "deprecated": false
             },
             {
@@ -4791,7 +4791,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[QtWidgets.QWidget]",
               "summary": "Re-show the most-recent non-transient UI that isn't already on screen.",
-              "line": 1244,
+              "line": 1261,
               "deprecated": false
             },
             {
@@ -4800,7 +4800,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Re-invoke the last slot with the exact args it last ran with.",
-              "line": 1275,
+              "line": 1292,
               "deprecated": false
             }
           ]

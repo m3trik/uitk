@@ -139,6 +139,39 @@ class TestSwitchboardSources(QtBaseTestCase):
         )
         self.assertIn("test", [f.filename for f in sb.registry.ui_registry])
 
+    def test_register_leaves_out_the_excluded_files(self):
+        """``exclude`` drops a file from every location the call registers: the
+        .ui from ui_location, the module from slot_location."""
+        for name in ("kept", "dropped"):
+            with open(os.path.join(self.test_dir, f"{name}.ui"), "w") as f:
+                f.write("<?xml version='1.0'?><ui version='4.0'></ui>")
+            with open(os.path.join(self.test_dir, f"{name}.py"), "w") as f:
+                f.write(f"class {name.title()}Slots: pass")
+        sb = Switchboard(ui_source=None)
+
+        sb.register(
+            ui_location=self.test_dir, slot_location=self.test_dir, exclude=["dropped.*"]
+        )
+
+        uis = [f.filename for f in sb.registry.ui_registry]
+        self.assertIn("kept", uis)
+        self.assertNotIn("dropped", uis)
+        classes = [row.classname for row in sb.registry.slot_registry]
+        self.assertIn("KeptSlots", classes)
+        self.assertNotIn("DroppedSlots", classes)
+
+    def test_register_exclude_keeps_the_registrys_own_exclusions(self):
+        """A slot scan still skips a compiled ``*_ui.py`` when ``exclude`` is given."""
+        with open(os.path.join(self.test_dir, "panel_ui.py"), "w") as f:
+            f.write("class Ui_Panel: pass")
+        sb = Switchboard(ui_source=None)
+
+        sb.register(slot_location=self.test_dir, exclude="nothing.*")
+
+        classes = [row.classname for row in sb.registry.slot_registry]
+        self.assertIn("TestSlots", classes)
+        self.assertNotIn("Ui_Panel", classes)
+
     def test_register_icons(self):
         """Test registering icon locations."""
         sb = Switchboard(ui_source=None)
