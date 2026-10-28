@@ -1,6 +1,9 @@
 # uitk — Changelog
 
 ## 2026
+- **2026-10-28 -- Fixed: a Slots class built while a window's central widget registers sees the `.ui`'s embedded footer (`widgets/mainWindow.py`).** `setCentralWidget` adopts it before the children register; a Slots `__init__` that read `ui.footer` got `None`.
+  - Test(s): `test_mainwindow.py` (`TestEmbeddedFooterBeforeSlots`).
+- **2026-10-28 -- `TransportControls` is a root export (`__init__.py`); `docs/WIDGETS.md` cites tentacle's Shot Sequencer as the integration example.**
 - **2026-10-28 -- `docs/BRIDGE.md`'s walk-through points at tentacle's Blender Bridge tool.**
 - **2026-10-28 -- `Switchboard.register(..., exclude=None)` (`switchboard/_core.py`).** File-name wildcards a call leaves out on top of each registry's own `exc_files` (a bare per-call `exc_files` would replace `*_ui.py` and let a slot scan pick up compiled UI modules). tentacle registers its shared tools minus the ones a host doesn't serve with it.
   - Test(s): `test_switchboard_sources.py` +2.

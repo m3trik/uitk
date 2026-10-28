@@ -23,7 +23,7 @@
           "kind": "constant",
           "signature": "",
           "summary": "",
-          "line": 275,
+          "line": 278,
           "deprecated": false
         }
       ]
@@ -11918,7 +11918,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or…",
-              "line": 207,
+              "line": 210,
               "deprecated": false
             },
             {
@@ -11927,7 +11927,7 @@
               "kind": "method",
               "signature": "(self, central_widget: QtWidgets.QWidget) -> None",
               "summary": "Initializes the window flags based on the central widget.",
-              "line": 218,
+              "line": 225,
               "deprecated": false
             },
             {
@@ -11936,7 +11936,7 @@
               "kind": "method",
               "signature": "(self, target: Union[str, QtWidgets.QWidget] = None, add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]",
               "summary": "Edit tags on a widget or a tag string.",
-              "line": 226,
+              "line": 233,
               "deprecated": false
             },
             {
@@ -11945,7 +11945,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the window is pinned (resists hide requests).",
-              "line": 283,
+              "line": 290,
               "deprecated": false
             },
             {
@@ -11954,7 +11954,7 @@
               "kind": "method",
               "signature": "(self, value: bool) -> None",
               "summary": "Set pin state (method form for signal connections).",
-              "line": 292,
+              "line": 299,
               "deprecated": false
             },
             {
@@ -11963,7 +11963,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Alias for pinned property.",
-              "line": 297,
+              "line": 304,
               "deprecated": false
             },
             {
@@ -11972,7 +11972,7 @@
               "kind": "method",
               "signature": "(self) -> int",
               "summary": "Milliseconds since this window last became visible on screen.",
-              "line": 309,
+              "line": 316,
               "deprecated": false
             },
             {
@@ -11981,7 +11981,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Request to hide, respecting pin state.",
-              "line": 319,
+              "line": 326,
               "deprecated": false
             },
             {
@@ -11990,7 +11990,7 @@
               "kind": "property",
               "signature": "(self) -> list",
               "summary": "Returns a list of the slots connected to the widget's signals.",
-              "line": 346,
+              "line": 353,
               "deprecated": false
             },
             {
@@ -11999,7 +11999,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Lazy-initialized PresetManager for saving/loading named presets.",
-              "line": 355,
+              "line": 362,
               "deprecated": false
             },
             {
@@ -12008,7 +12008,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Checks if the parent of the widget is a QStackedWidget.",
-              "line": 373,
+              "line": 380,
               "deprecated": false
             },
             {
@@ -12017,7 +12017,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Returns True if the widget is the currently active UI, False otherwise.",
-              "line": 378,
+              "line": 385,
               "deprecated": false
             },
             {
@@ -12026,7 +12026,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, **kwargs: Any) -> None",
               "summary": "Registers a widget with the main window, initializing it and connecting its signals.",
-              "line": 396,
+              "line": 403,
               "deprecated": false
             },
             {
@@ -12035,7 +12035,7 @@
               "kind": "method",
               "signature": "(self, menu: QtWidgets.QWidget) -> None",
               "summary": "Track a child Menu under this window.",
-              "line": 546,
+              "line": 553,
               "deprecated": false
             },
             {
@@ -12044,7 +12044,7 @@
               "kind": "method",
               "signature": "(self, *, visible: Optional[bool] = None, pinned: Optional[bool] = None, persistent: Optional[bool] = None) -> List[QtWidgets.QWidget]",
               "summary": "Return this window's tracked child menus, filtered by status.",
-              "line": 557,
+              "line": 564,
               "deprecated": false
             },
             {
@@ -12053,7 +12053,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Executes all deferred methods, in priority order.",
-              "line": 660,
+              "line": 667,
               "deprecated": false
             },
             {
@@ -12062,7 +12062,7 @@
               "kind": "method",
               "signature": "(self, callback: Callable[[], Any]) -> None",
               "summary": "Run *callback* once this window's child widgets are registered.",
-              "line": 672,
+              "line": 679,
               "deprecated": false
             },
             {
@@ -12071,7 +12071,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, force=False) -> None",
               "summary": "Restores the state of a given widget if it has a restore_state attribute.",
-              "line": 690,
+              "line": 697,
               "deprecated": false
             },
             {
@@ -12080,7 +12080,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, value: Any) -> None",
               "summary": "Persist a widget's value and mirror it across related surfaces.",
-              "line": 720,
+              "line": 727,
               "deprecated": false
             },
             {
@@ -12089,7 +12089,7 @@
               "kind": "method",
               "signature": "(self, watched, event) -> bool",
               "summary": "Override the event filter to register widgets when they are polished.",
-              "line": 811,
+              "line": 818,
               "deprecated": false
             },
             {
@@ -12098,7 +12098,7 @@
               "kind": "method",
               "signature": "(self, delta: int, baseline: Optional[int] = None) -> None",
               "summary": "Apply a signed pixel delta to the window's height.",
-              "line": 837,
+              "line": 844,
               "deprecated": false
             },
             {
@@ -12107,7 +12107,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Snap the window's height to its layout's natural content size.",
-              "line": 855,
+              "line": 862,
               "deprecated": false
             },
             {
@@ -12116,7 +12116,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Save the current window geometry (size and position) to settings.",
-              "line": 866,
+              "line": 873,
               "deprecated": false
             },
             {
@@ -12125,7 +12125,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Restore the window geometry (size and position) from settings.",
-              "line": 889,
+              "line": 896,
               "deprecated": false
             },
             {
@@ -12134,7 +12134,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Clear any saved window geometry from settings.",
-              "line": 936,
+              "line": 943,
               "deprecated": false
             },
             {
@@ -12143,7 +12143,7 @@
               "kind": "method",
               "signature": "(self, visible: bool) -> None",
               "summary": "Override setVisible to respect pin state when hiding.",
-              "line": 952,
+              "line": 959,
               "deprecated": false
             },
             {
@@ -12152,7 +12152,7 @@
               "kind": "method",
               "signature": "(self, pos=None, app_exec=False) -> None",
               "summary": "Show the MainWindow.",
-              "line": 958,
+              "line": 965,
               "deprecated": false
             },
             {
@@ -12161,7 +12161,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the show event to initialize untracked widgets and restore their states.",
-              "line": 979,
+              "line": 986,
               "deprecated": false
             },
             {
@@ -12170,7 +12170,7 @@
               "kind": "method",
               "signature": "(self, root_widget: Optional[QtWidgets.QWidget] = None) -> None",
               "summary": "Registers all child widgets starting from the given widget (or central widget if None).",
-              "line": 1063,
+              "line": 1070,
               "deprecated": false
             },
             {
@@ -12179,7 +12179,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Override the focus event to set the current UI when this window gains focus.",
-              "line": 1098,
+              "line": 1105,
               "deprecated": false
             },
             {
@@ -12188,7 +12188,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 1104,
+              "line": 1111,
               "deprecated": false
             },
             {
@@ -12197,7 +12197,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 1108,
+              "line": 1115,
               "deprecated": false
             },
             {
@@ -12206,7 +12206,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on resize so pinned/non-hidden windows persist size.",
-              "line": 1116,
+              "line": 1123,
               "deprecated": false
             },
             {
@@ -12215,7 +12215,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Save geometry on move so pinned/non-hidden windows persist position.",
-              "line": 1122,
+              "line": 1129,
               "deprecated": false
             },
             {
@@ -12224,7 +12224,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement hideEvent to emit custom signal when window is hidden.",
-              "line": 1128,
+              "line": 1135,
               "deprecated": false
             },
             {
@@ -12233,7 +12233,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Reimplement closeEvent to save window geometry and emit custom signal.",
-              "line": 1152,
+              "line": 1159,
               "deprecated": false
             },
             {
@@ -12242,7 +12242,7 @@
               "kind": "method",
               "signature": "(self, style: str) -> None",
               "summary": "Overrides the setStyleSheet method to respect locking.",
-              "line": 1160,
+              "line": 1167,
               "deprecated": false
             },
             {
@@ -12251,7 +12251,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Resets the window's stylesheet to its original state.",
-              "line": 1174,
+              "line": 1181,
               "deprecated": false
             }
           ]

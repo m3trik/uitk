@@ -4941,7 +4941,7 @@ class TestKeyboardDispatch(BaseTestCase):
         c0 = self.w.add_clip(tid, 0, 50, obj="pCube1", orig_start=0, orig_end=50)
         c1 = self.w.add_clip(tid, 60, 30, obj="pCube1", orig_start=60, orig_end=90)
 
-        # Register a Delete callback via the shortcut manager (as shot_sequencer_slots does)
+        # Register a Delete callback via the shortcut manager (as the Shot Sequencer panel does)
         mock_delete = MagicMock()
         self.w._shortcut_mgr.add_shortcut(
             "Delete",

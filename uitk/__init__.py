@@ -208,6 +208,9 @@ DEFAULT_INCLUDE = {
     "widgets.sequencer._editor": ["SequencerEditor", "TrackEditor"],
     "widgets.sequencer._graph_editor": ["GraphEditor"],
     "widgets.sequencer._keyframe": ["KeyframeItem"],
+    # The transport row (play / step / range) a host panel docks on its footer
+    # -- the Shot Sequencer's, reached as ``self.sb.TransportControls``.
+    "widgets.sequencer._transport_controls": ["TransportControls"],
     # Widget mixins
     "widgets.mixins.attributes": "AttributesMixin",
     "widgets.mixins.convert": "ConvertMixin",

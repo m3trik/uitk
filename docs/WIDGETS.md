@@ -880,7 +880,7 @@ from uitk import SequencerWidget, ClipData, TrackData
 from uitk.widgets.sequencer import SequencerWidget, ClipData, TrackData, ScrubPlayer
 ```
 
-Real-world integration: [mayatk's shot_sequencer_slots.py](https://github.com/m3trik/mayatk/blob/main/mayatk/anim_utils/shots/shot_sequencer/shot_sequencer_slots.py).
+Real-world integration: [tentacle's Shot Sequencer panel](https://github.com/m3trik/tentacle/blob/main/tentacle/slots/tools/shot_sequencer.py) and its controller package (`slots/tools/_shot_sequencer/`).
 
 ---
 

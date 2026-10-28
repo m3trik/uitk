@@ -175,7 +175,7 @@ class MainWindow(
 
         self._resolve_footer()
 
-    def _resolve_footer(self) -> None:
+    def _resolve_footer(self, central: Optional[QtWidgets.QWidget] = None) -> None:
         """Adopt an embedded Footer if present, or lazily build one when opted in.
 
         Resolution order:
@@ -183,11 +183,14 @@ class MainWindow(
             2. If the central widget contains a child named "footer", adopt it.
             3. If add_footer=True (opt-in), construct a Footer with size grip.
             4. Otherwise, leave the window without a Footer or size grip.
+
+        Parameters:
+            central: The central widget to read; defaults to the current one.
         """
         if getattr(self, "footer", None):
             return
 
-        central = self.centralWidget()
+        central = central if central is not None else self.centralWidget()
         if not central:
             return
 
@@ -206,6 +209,10 @@ class MainWindow(
 
     def setCentralWidget(self, widget: QtWidgets.QWidget) -> None:
         """Overrides QMainWindow's setCentralWidget to handle initialization when the central widget is set or changed."""
+        # Adopt the embedded footer first: parenting a polished widget registers
+        # it at once, and the first ``*_init`` builds the Slots class, whose
+        # ``__init__`` may read ``ui.footer``.
+        self._resolve_footer(widget)
         # Set the new central widget
         super().setCentralWidget(widget)
 
