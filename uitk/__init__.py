@@ -97,6 +97,7 @@ DEFAULT_INCLUDE = {
     # resolves exactly this namespace.
     "bridge.parameters": ["Parameters", "ParamRegistry"],
     "bridge.slots": "BridgeSlotsBase",
+    "bridge.tooltip": "Tooltip",
     "widgets.checkBox": "CheckBox",
     "widgets.collapsableGroup": "CollapsableGroup",
     "widgets.colorSwatch": "ColorSwatch",
