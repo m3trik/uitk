@@ -17,7 +17,7 @@ Example
 
 import dataclasses
 from contextlib import contextmanager
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from qtpy import QtWidgets, QtGui, QtCore
 from uitk.themes.style_sheet import StyleSheet
@@ -38,14 +38,15 @@ from uitk.widgets.sequencer._data import (
     TrackData,
     MarkerData,
     RowMetrics,
-    _HEADER_HEIGHT,
+    _RULER_HEIGHT,
     DISPLAY_COLORS,
+    SELECTED_ACCENT,
 )
 from uitk.widgets.sequencer._clip import ClipItem
 from uitk.widgets.sequencer._editor import SequencerEditor, TrackEditor
+from uitk.widgets.sequencer._layer import SequencerLayer
 from uitk.widgets.sequencer._overlays import (
     _StaticRangeOverlay,
-    _GapOverlayItem,
     RangeHighlightItem,
 )
 from uitk.widgets.sequencer._markers import MarkerItem
@@ -196,7 +197,7 @@ class _OptionsCombo(WidgetComboBox):
 
 
 class _OptionsBand(QtWidgets.QWidget):
-    """The header pane's top strip, level with the ruler and the shot lane.
+    """The header pane's top strip, level with the ruler and the lanes under it.
 
     Pinned like them -- the rows scroll under it -- and holding one combobox
     the pane's full width: the active editor's Options
@@ -328,33 +329,16 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     marker_moved = QtCore.Signal(int, float)  # (marker_id, new_time)
     marker_changed = QtCore.Signal(int)  # (marker_id) after note/color edit
     marker_removed = QtCore.Signal(int)  # (marker_id)
-    shots_changed = QtCore.Signal()  # shot definitions added/removed/modified
     app_event = QtCore.Signal(str, object)  # (event_name, payload) generic bridge
     range_highlight_changed = QtCore.Signal(
         float, float
     )  # (start, end) after move/resize
-    gap_resized = QtCore.Signal(
-        float, float
-    )  # (original_next_shot_start, new_next_shot_start)
-    gap_left_resized = QtCore.Signal(
-        float, float
-    )  # (original_prev_shot_end, new_prev_shot_end)
-    gap_moved = QtCore.Signal(
-        float, float, float, float
-    )  # (old_start, old_end, new_start, new_end)
-    gap_lock_changed = QtCore.Signal(float, float, bool)  # (gap_start, gap_end, locked)
-    gap_lock_all_requested = QtCore.Signal()
-    gap_unlock_all_requested = QtCore.Signal()
     clip_menu_requested = QtCore.Signal(
         object, int
     )  # (QMenu, clip_id) — add actions before exec
-    gap_menu_requested = QtCore.Signal(
-        object, float, float
-    )  # (QMenu, gap_start, gap_end) — add actions before exec
-    shot_switch_requested = QtCore.Signal(float)  # (time) Ctrl+Shift+Click
-    zone_context_menu_requested = QtCore.Signal(
-        str, float, QtCore.QPoint
-    )  # (zone, time, global_pos)
+    #: (zone, time, global_pos): ``"ruler"``, ``"tracks"``, or a lane's layer
+    #: name (a layer may refine it: ``SequencerLayer.menu_zone``).
+    zone_context_menu_requested = QtCore.Signal(str, float, QtCore.QPoint)
     header_menu_requested = QtCore.Signal(
         object
     )  # (QMenu) right-click on header background
@@ -392,6 +376,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     #: data its own way (a graph editor) refreshes from.
     content_rebuilt = QtCore.Signal()
 
+    #: The accent every "this is selected" cue is drawn in: a layer draws its
+    #: own (a lane's selected band) in it, so the timeline's agree.
+    SELECTED_ACCENT = SELECTED_ACCENT
+
     def __init__(self, parent=None, **kwargs):
         super().__init__(QtCore.Qt.Horizontal, parent)
 
@@ -416,7 +404,13 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._sub_row_provider = None  # callable(track_id, track_name) → [(sub_name, [(start,dur,label,color), ...]), ...]
         self._range_highlight: Optional[RangeHighlightItem] = None
         self._range_overlays: List[QtWidgets.QGraphicsItem] = []
-        self._gap_overlays: List[QtWidgets.QGraphicsItem] = []
+        #: name -> layer (:meth:`add_layer`), in the order they were added.
+        self._layers: Dict[str, SequencerLayer] = {}
+        #: ``[(layer, lane height), ...]`` top to bottom under the ruler, and
+        #: the y the content starts at below them: read on every paint and
+        #: press, so kept rather than derived.
+        self._lane_stack: List[Tuple[SequencerLayer, int]] = []
+        self._header_height: float = float(_RULER_HEIGHT)
         self._shift_at_press: bool = False  # Shift held when last drag started
         # >0 while the widget is being rebuilt programmatically: the scene's
         # selectionChanged fires as items are torn down, and forwarding that
@@ -427,9 +421,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._snap_guides_enabled: bool = True  # draw alignment guides on drag
         self._snap_to_keys: bool = False  # also SNAP the drag to those frames
         self._align_capture_px: float = 6.0  # guide/snap capture radius, px
-        self._show_range_overlays: bool = True  # toggle for shot range overlays
-        self._show_gap_overlays: bool = True  # toggle for gap overlays
-        self._show_range_highlight: bool = True  # toggle for active shot highlight
+        self._show_range_overlays: bool = True  # toggle for the range overlays
+        self._show_range_highlight: bool = True  # toggle for the range highlight
         self._mark_flat_spans: bool = True  # see mark_flat_spans
         self._bg_curve_previews: Dict[tuple, dict] = {}  # (track_id, sub_row) → preview
         # Shift + a key selection raises a scale box around it; see
@@ -499,8 +492,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._header_stack = QtWidgets.QStackedWidget()
         self._header_stack.setMinimumWidth(0)
         self._header_stack.addWidget(self._header_scroll)
-        #: Pinned over the pane's top strip, level with the ruler and the
-        #: shot lane: the active editor's Options menu.
+        #: Pinned over the pane's top strip, level with the ruler and its
+        #: lanes: the active editor's Options menu.
         self._options_band = _OptionsBand(self, self._header_stack)
 
         self.addWidget(self._header_stack)
@@ -567,8 +560,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._shortcut_mgr.add_shortcuts_batch(
             [(k, fn, desc, _ctx) for k, fn, desc in _shortcut_defs]
         )
-        for group, keys, description in self.active_editor.gestures:
-            self._shortcut_mgr.add_gesture(group, keys, description)
+        #: The legend rows registered with the manager now
+        #: (:meth:`_apply_legend`): the active editor's, as the layers edit them.
+        self._legend: tuple = ()
+        self._apply_legend()
         self._shortcut_overlay = None  # built on first show (shortcut_overlay_visible)
         self._ctrl_at_press = False
         # Keep the ShortcutOverride sequences in sync with the manager
@@ -851,7 +846,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             color=color,
             text_color=text_color,
         )
-        self._refresh_extent()
+        self.refresh_extent()
         self._sync_row_bound_items()
         return tid
 
@@ -866,17 +861,20 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             self._range_highlight,
             self._snap_guide,
             *self._range_overlays,
-            *self._gap_overlays,
         ):
             if item is not None:
                 item.sync()
+        for layer in self._layers.values():
+            relayout = getattr(layer, "relayout", None)
+            if relayout is not None:
+                relayout()
 
-    def _refresh_extent(self) -> None:
+    def refresh_extent(self) -> None:
         """Recompute the scrollable extent unless a bulk rebuild is running.
 
-        Anything that changes HOW FAR the timeline reaches -- a clip, a shot
-        band, a range or gap overlay -- has to go through here, or the new
-        span is drawn but cannot be scrolled to.
+        Anything that changes HOW FAR the timeline reaches -- a clip, a
+        marker, a range overlay, what a layer draws -- has to go through
+        here, or the new span is drawn but cannot be scrolled to.
         """
         if not self._bulk_depth:
             self._timeline._update_scene_rect()
@@ -952,8 +950,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # create visual item
         item = ClipItem(cd, self._timeline)
         self._clip_items[cid] = item
-        self._add_track_item(item)
-        self._refresh_extent()
+        self.add_track_item(item)
+        self.refresh_extent()
         return cid
 
     def remove_clip(self, clip_id: int):
@@ -1210,8 +1208,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             if not keep_range_highlight:
                 self.clear_range_highlight()
             self.clear_range_overlays()
-            self.clear_gap_overlays()
-            self.clear_shot_blocks()
+            self._clear_layers()
             self.clear_snap_guides()
             self.clear_key_scale_box()
         finally:
@@ -1219,7 +1216,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._timeline._refresh_all()
 
     def clear_decorations(self, *, keep_range_highlight: bool = False):
-        """Remove markers, overlays, and shot lane without touching tracks or clips.
+        """Remove markers, overlays and what each layer shows, without touching
+        tracks or clips.
 
         Parameters
         ----------
@@ -1235,8 +1233,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             if not keep_range_highlight:
                 self.clear_range_highlight()
             self.clear_range_overlays()
-            self.clear_gap_overlays()
-            self.clear_shot_blocks()
+            self._clear_layers()
         finally:
             self._selection_suppressed -= 1
 
@@ -1336,7 +1333,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """
         if self._range_highlight is None:
             self._range_highlight = RangeHighlightItem(self._timeline)
-            self._add_track_item(self._range_highlight)
+            self.add_track_item(self._range_highlight)
         self._range_highlight.set_range(start, end)
         self._range_highlight.setVisible(self._show_range_highlight)
         if color is not None:
@@ -1345,7 +1342,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             self._range_highlight.color = c
         elif alpha != self._range_highlight.opacity_value:
             self._range_highlight.opacity_value = alpha
-        self._refresh_extent()
+        self.refresh_extent()
 
     def clear_range_highlight(self):
         """Remove the range highlight from the timeline."""
@@ -1360,12 +1357,12 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         color: str = "#888888",
         alpha: int = 15,
     ):
-        """Add a non-interactive range overlay (e.g. for non-active shots)."""
+        """Add a non-interactive range overlay (e.g. a host's inactive ranges)."""
         item = _StaticRangeOverlay(self._timeline, start, end, color, alpha)
         item.setVisible(self._show_range_overlays)
-        self._add_track_item(item)
+        self.add_track_item(item)
         self._range_overlays.append(item)
-        self._refresh_extent()
+        self.refresh_extent()
 
     def clear_range_overlays(self):
         """Remove all non-interactive range overlays."""
@@ -1373,93 +1370,126 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             ItemRetirement.retire(item)
         self._range_overlays.clear()
 
-    def add_gap_overlay(
-        self,
-        start: float,
-        end: float,
-        color: str = "#555555",
-        alpha: int = 120,
-        locked: bool = False,
-        tail: bool = False,
-        head: bool = False,
-    ):
-        """Add a diagonal-hatch overlay for a gap between shots.
-
-        ``tail=True`` places a left-edge-only handle (pass ``start == end``
-        at the last shot's end) so the final shot -- which has no following
-        shot to form a gap with -- still gets a drag handle; ``head=True``
-        is the right-edge-only twin at the first shot's start.  Both report
-        through ``gap_left_resized`` / ``gap_resized`` like a gap edge; the
-        consumer tells them apart by the shot having no neighbour there.
-        """
-        item = _GapOverlayItem(
-            self._timeline,
-            start,
-            end,
-            color,
-            alpha,
-            locked=locked,
-            tail=tail,
-            head=head,
-        )
-        item.setVisible(self._show_gap_overlays)
-        self._add_track_item(item)
-        self._gap_overlays.append(item)
-        self._refresh_extent()
-
-    def clear_gap_overlays(self):
-        """Remove all gap overlays."""
-        for item in self._gap_overlays:
-            ItemRetirement.retire(item)
-        self._gap_overlays.clear()
-
-    def set_all_gap_overlays_locked(self, locked: bool):
-        """Set the locked state on every gap overlay.
-
-        Head/tail handles are exempt: they are shot-bound handles, not gaps,
-        and a locked one would leave the first/last shot with no way to
-        resize.
-        """
-        for item in self._gap_overlays:
-            if item._tail or item._head:
-                continue
-            item._locked = locked
-            item._update_tooltip()
-            item.update()
-
-    # -- shot lane API ------------------------------------------------------
+    # -- the header and the content area ------------------------------------
 
     @property
     def _content_top(self) -> float:
-        """Y coordinate where track rows begin -- below the ruler AND the lane."""
-        return _HEADER_HEIGHT
+        """Y coordinate where track rows begin -- below the ruler AND its lanes."""
+        return self._header_height
 
-    def set_shot_blocks(self, blocks: list) -> None:
-        """Show coloured shot-block indicators on the ruler.
+    def content_span(self) -> Tuple[float, float]:
+        """``(top, height)`` of the content area an overlay spans in scene
+        units: from below the header (the ruler and every lane), every row
+        and at least the visible area under the header."""
+        top = self._header_height
+        return top, max(
+            self._total_row_height(), self._timeline.viewport().height() - top
+        )
 
-        Parameters
-        ----------
-        blocks : list of dict
-            Each dict has ``name``, ``start``, ``end``, and ``active`` keys.
-            An optional ``id`` is carried through untouched, so a consumer can
-            get its own identifier back from :meth:`selected_shot`.
+    @property
+    def timeline(self) -> TimelineView:
+        """The timeline view: time <-> x (``time_to_x``, ``x_to_time``,
+        ``pixels_per_unit``), the strip a point is in (``hit_zone``), and the
+        Qt view a layer maps and hit-tests with."""
+        return self._timeline
+
+    @property
+    def range_highlight_item(self) -> Optional[RangeHighlightItem]:
+        """The range highlight's scene item (:meth:`set_range_highlight`), or
+        ``None``: what a lane drives the highlight's grabs through
+        (``RangeHighlightItem.zone_at`` / ``begin_edge_drag``)."""
+        return self._range_highlight
+
+    # -- layers: a host's vocabulary on the timeline (``_layer.py``) ---------
+
+    def add_layer(self, layer: SequencerLayer) -> None:
+        """Plug *layer* into the timeline (``SequencerLayer``, ``_layer.py``).
+
+        Its lane (``lane_height`` > 0) stacks under the ruler and the lanes
+        added before it; the content area moves down to clear it, and the
+        legend takes the layer's edits.  Adding a layer under a name already
+        taken replaces that one in its place: its ``clear()`` runs first, so
+        a host's re-init re-registers without leaving the old one's items
+        behind.
         """
-        self._timeline._scene.ruler.set_shot_blocks(blocks)
-        self._refresh_extent()
+        previous = self._layers.get(layer.name)
+        if previous is not None and previous is not layer:
+            clear = getattr(previous, "clear", None)
+            if clear is not None:
+                clear()
+        self._layers[layer.name] = layer  # a taken name keeps its place
+        self._on_layers_changed()
 
-    def selected_shot(self) -> Optional[dict]:
-        """The shot block currently marked ``active``, or ``None``.
+    def layer(self, name: str) -> SequencerLayer:
+        """The layer added under *name*.
 
-        The widget does not own shot selection -- the consumer does, and says
-        so through :meth:`set_shot_blocks` -- but a shortcut or menu acting on
-        "the selected shot" needs to read it back without the consumer keeping
-        a parallel copy.
+        Raises:
+            KeyError: No layer is added under *name*.
         """
-        return self._timeline._scene.ruler.selected_block()
+        return self._layers[name]
 
-    def clear_shot_blocks(self) -> None:
-        """Remove all shot-block indicators from the ruler."""
-        self._timeline._scene.ruler.clear_shot_blocks()
+    def add_track_item(self, item: QtWidgets.QGraphicsItem) -> None:
+        """Put a scene item under the track editor's content root: it hides
+        while another editor shows, as the rows do (a layer's items too)."""
+        item.setParentItem(self.editor(TrackEditor.name).content_root)
+
+    def remove_track_item(self, item: QtWidgets.QGraphicsItem) -> None:
+        """Take *item* out of the scene, safely from inside its own event
+        handler (destroyed one event-loop pass later: ``ItemRetirement``)."""
+        ItemRetirement.retire(item)
+
+    def _on_layers_changed(self) -> None:
+        """Re-stack the lanes and re-lay the header, the content and the
+        legend out after a layer came or went."""
+        heights = (
+            (layer, int(getattr(layer, "lane_height", 0) or 0))
+            for layer in self._layers.values()
+        )
+        self._lane_stack = [(layer, h) for layer, h in heights if h > 0]
+        self._header_height = float(_RULER_HEIGHT) + sum(
+            h for _lyr, h in self._lane_stack
+        )
+        top = int(self._header_height)
+        self._header.set_top_margin(top)
+        self._timeline._scene.ruler.set_height(self._header_height)
+        self._options_band.sync_geometry()
+        self._apply_legend()
+        self._timeline._refresh_all()
+
+    def _clear_layers(self) -> None:
+        """Each layer drops what it shows (:meth:`clear`, :meth:`clear_decorations`)."""
+        for layer in self._layers.values():
+            clear = getattr(layer, "clear", None)
+            if clear is not None:
+                clear()
+
+    def _layer_claims_press(self, scene_pos) -> bool:
+        """Whether a layer keeps a press at *scene_pos* from the range
+        highlight's edge for an item of its own drawn there."""
+        for layer in self._layers.values():
+            claims = getattr(layer, "claims_press", None)
+            if claims is not None and claims(scene_pos):
+                return True
+        return False
+
+    def _legend_rows(self, editor: SequencerEditor) -> tuple:
+        """*editor*'s legend rows, as each layer edits them in turn."""
+        rows = tuple(editor.gestures)
+        for layer in self._layers.values():
+            legend = getattr(layer, "legend", None)
+            if legend is not None:
+                rows = tuple(legend(editor.name, rows))
+        return rows
+
+    def _apply_legend(self, editor: Optional[SequencerEditor] = None) -> None:
+        """Register *editor*'s legend (the active one's) in place of the
+        rows registered now."""
+        rows = self._legend_rows(editor or self.active_editor)
+        for group in dict.fromkeys(g for g, _k, _d in self._legend):
+            self._shortcut_mgr.remove_gesture_group(group)
+        for group, keys, description in rows:
+            self._shortcut_mgr.add_gesture(group, keys, description)
+        self._legend = rows
 
     def range_highlight(self) -> Optional[tuple]:
         """Return ``(start, end)`` of the active highlight, or ``None``."""
@@ -1473,13 +1503,13 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._header._hidden_track_names = list(names)
 
     def set_active_range(self, start: float, end: float):
-        """Set the active-shot time range painted as a column tint."""
+        """Set the active time range, painted as a column tint."""
         self._active_range = (start, end)
-        self._refresh_extent()
+        self.refresh_extent()
         self._timeline.viewport().update()
 
     def clear_active_range(self):
-        """Remove the active-shot column tint."""
+        """Remove the active range's column tint."""
         self._active_range = None
         self._timeline.viewport().update()
 
@@ -1845,16 +1875,6 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             item.setVisible(value)
 
     @property
-    def show_gap_overlays(self) -> bool:
-        return self._show_gap_overlays
-
-    @show_gap_overlays.setter
-    def show_gap_overlays(self, value: bool):
-        self._show_gap_overlays = value
-        for item in self._gap_overlays:
-            item.setVisible(value)
-
-    @property
     def show_range_highlight(self) -> bool:
         return self._show_range_highlight
 
@@ -1921,8 +1941,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def ctrl_held_at_press(self) -> bool:
         """Whether Ctrl was held when the last drag interaction started.
 
-        The consumers' "bound only" gate: a shot-bound handle grabbed with
-        Ctrl moves the bound and leaves the keys where they are.
+        The consumers' "bound only" gate: a range's bound handle grabbed
+        with Ctrl moves the bound and leaves the keys where they are.
         """
         return self._ctrl_at_press
 
@@ -1933,8 +1953,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def record_press_modifiers(self, modifiers) -> None:
         """Bank the modifiers a press carried, for the consumers' gates.
 
-        Every press site calls this -- clips, keys, both overlays, the ruler
-        band -- so a gesture never inherits what the LAST one left behind.
+        Every press site calls this -- clips, keys, the range highlight, a
+        layer's items and lanes -- so a gesture never inherits what the LAST
+        one left behind.
         """
         self._shift_at_press = bool(modifiers & QtCore.Qt.ShiftModifier)
         self._ctrl_at_press = bool(modifiers & QtCore.Qt.ControlModifier)
@@ -2135,7 +2156,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def set_editor(self, name: str) -> None:
         """Show the editor registered under *name* in the content area.
 
-        The ruler, shot lane, playhead, markers and every shortcut stay; the
+        The ruler and its lanes, playhead, markers and every shortcut stay; the
         previous editor's items hide (their selection is not reported as a
         user's deselection), the left pane shows the new editor's page, the
         legend its gestures, and its keys answer before the shortcut table.
@@ -2150,12 +2171,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._selection_suppressed += 1
         try:
             old.deactivate()
-            for group in dict.fromkeys(g for g, _k, _d in old.gestures):
-                self._shortcut_mgr.remove_gesture_group(group)
             self._active_editor_name = name
             new.activate()
-            for group, keys, description in new.gestures:
-                self._shortcut_mgr.add_gesture(group, keys, description)
+            self._apply_legend(new)
         finally:
             self._selection_suppressed -= 1
         page = new.header_widget() or self._header_scroll
@@ -2169,10 +2187,6 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._sync_shortcut_sequences()
         self._timeline._refresh_all()
         self.editor_changed.emit(name)
-
-    def _add_track_item(self, item: QtWidgets.QGraphicsItem) -> None:
-        """Put a track-rows scene item under the track editor's content root."""
-        item.setParentItem(self.editor(TrackEditor.name).content_root)
 
     # -- sub-row expansion --------------------------------------------------
     @property
@@ -2520,7 +2534,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         groups = self._editable_key_groups()
         if not groups:
             return False
-        menu = MenuUtils._styled_menu()
+        menu = MenuUtils.styled_menu()
         self.key_menu_requested.emit(menu, groups)
         if not menu.actions():
             return False
@@ -2588,7 +2602,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             return
         if box is None:
             box = self._key_scale_box = KeyScaleBoxItem(self)
-            self._add_track_item(box)
+            self.add_track_item(box)
         box.set_span(*span)
 
     def clear_key_scale_box(self) -> None:

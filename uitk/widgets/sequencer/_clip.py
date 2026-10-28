@@ -1109,9 +1109,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 return
             self._arm_drag(event)
 
-        if not getattr(self, "_undo_captured", False):
-            self._undo_captured = True
-            self._timeline.parent_sequencer._capture_undo()
+        self._capture_drag_undo()
 
         if self._align_times is None:
             sq = self._timeline.parent_sequencer
@@ -1430,7 +1428,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             selected_clips = [self]
         multi = len(selected_clips) > 1
 
-        menu = MenuUtils._styled_menu()
+        menu = MenuUtils.styled_menu()
 
         # Lock / Unlock — operates on all selected clips.
         all_locked = all(c._data.locked for c in selected_clips)
@@ -1451,7 +1449,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         # Extensibility hook — let consumers add domain-specific actions
         widget.clip_menu_requested.emit(menu, self._data.clip_id)
 
-        chosen = menu.exec_(MenuUtils._menu_exec_pos(event))
+        chosen = menu.exec_(MenuUtils.menu_exec_pos(event))
         if self.scene() is None:
             # A rebuild (keyframe debounce, store event, undo callback) ran
             # inside the menu's nested event loop and retired this item —

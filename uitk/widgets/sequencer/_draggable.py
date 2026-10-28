@@ -176,6 +176,19 @@ class DraggableItemMixin:
         tl = getattr(self, "_timeline", None)
         return tl.parent_sequencer if tl is not None else None
 
+    def _capture_drag_undo(self) -> None:
+        """Push the widget's undo snapshot on the drag's first real move, once.
+
+        The other half of the cancel paths below: a gesture that captured
+        sets ``_undo_captured``, and a cancel pops exactly that snapshot.
+        """
+        if self._undo_captured:
+            return
+        self._undo_captured = True
+        sq = self._drag_sequencer()
+        if sq is not None:
+            sq._capture_undo()
+
     def sceneEvent(self, event):
         """Cancel the drag when the mouse grab is stolen mid-gesture.
 

@@ -712,6 +712,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class RowMetrics`
   - methods: flat_keys, preset, preset_names
 - `class MenuUtils`
+  - methods: styled_menu, menu_exec_pos
 - `class CurveUtils`
   - methods: make_value_mapper, unmap_value, segment_is_flat, flat_pen, stroke_curve, build_curve_path
 - `class PatternRegistry`
@@ -748,11 +749,15 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem)`
   - methods: lo, hi, side, set_span, shape, boundingRect, paint, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent
 
+### `widgets/sequencer/_layer.py` — Layers: a host's vocabulary on the timeline -- the seam a domain plugs into.
+- `class SequencerLayer(Protocol)`
+  - methods: paint_lane, mouse_press, mouse_move, mouse_release, gesture_group_at, claims_press, legend, context_entries, menu_zone, time_bounds, relayout, clear
+
 ### `widgets/sequencer/_markers.py` — MarkerItem — named marker on the timeline with drag and context menu.
 - `class MarkerItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)`
   - methods: marker_data, boundingRect, shape, paint, hoverEnterEvent, hoverLeaveEvent, mousePressEvent, mouseMoveEvent, mouseReleaseEvent, mouseDoubleClickEvent, contextMenuEvent
 
-### `widgets/sequencer/_overlays.py` — Range-related overlay items: static ranges, gap hatching, and highlights.
+### `widgets/sequencer/_overlays.py` — Range-related overlay items: static ranges, snap guides, and the range highlight.
 - `class RangeHighlightItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)`
   - methods: start, end, set_range, color, opacity_value, boundingRect, paint, zone_at, begin_edge_drag, hoverMoveEvent, mousePressEvent, mouseMoveEvent, update_edge_drag, finish_edge_drag, mouseReleaseEvent
 
@@ -762,7 +767,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/sequencer/_ruler.py` — Ruler item for the timeline header area.
 - `class RulerItem(QtWidgets.QGraphicsItem)`
-  - methods: set_shot_blocks, clear_shot_blocks, selected_block, shot_block_at, set_content_width, set_key_ticks, set_content_left, boundingRect, paint
+  - methods: set_height, set_content_width, set_key_ticks, set_content_left, boundingRect, paint
 
 ### `widgets/sequencer/_scrub_player.py` — Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 - `class ScrubPlayer(QtCore.QObject)`
@@ -772,7 +777,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class AttributeColorDialog(ColorMappingDialog)`
   - methods: load_color_map
 - `class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`
-  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, shortcut_manager, context_entries, refresh, viewport_state, restore_viewport_state, clips, clip_attributes, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, add_gap_overlay, clear_gap_overlays, set_all_gap_overlays_locked, set_shot_blocks, selected_shot, clear_shot_blocks, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, frame_time_range, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_gap_overlays, show_range_highlight, mark_flat_spans, add_flat_spans_option, zone_menu_enabled, shift_held_at_press, ctrl_held_at_press, record_press_modifiers, shortcut_overlay, shortcut_overlay_visible, shortcut_overlay_mode, shortcut_overlay_tracking, attribute_colors, set_attribute_color, row_metrics, register_editor, editor, editor_names, active_editor, set_editor, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips, selected_keys, select_keys, show_key_menu, refresh_key_scale_box, clear_key_scale_box, set_shift_held, modifiers_held, set_modifiers_held
+  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, refresh_extent, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, shortcut_manager, context_entries, refresh, viewport_state, restore_viewport_state, clips, clip_attributes, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, content_span, timeline, range_highlight_item, add_layer, layer, add_track_item, remove_track_item, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, frame_time_range, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_range_highlight, mark_flat_spans, add_flat_spans_option, zone_menu_enabled, shift_held_at_press, ctrl_held_at_press, record_press_modifiers, shortcut_overlay, shortcut_overlay_visible, shortcut_overlay_mode, shortcut_overlay_tracking, attribute_colors, set_attribute_color, row_metrics, register_editor, editor, editor_names, active_editor, set_editor, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips, selected_keys, select_keys, show_key_menu, refresh_key_scale_box, clear_key_scale_box, set_shift_held, modifiers_held, set_modifiers_held
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`
@@ -780,7 +785,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class TimelineScene(QtWidgets.QGraphicsScene)`
   - methods: ruler, playhead
 - `class TimelineView(QtWidgets.QGraphicsView)`
-  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, focusOutEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, zoom_at, mousePressEvent, mouseMoveEvent, leaveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, default_context_entries, add_default_context_actions, content_time_bounds, drawBackground
+  - methods: event, keyPressEvent, keyReleaseEvent, enterEvent, focusOutEvent, pixels_per_unit, time_to_x, x_to_time, resizeEvent, wheelEvent, zoom_at, hit_zone, mousePressEvent, mouseMoveEvent, leaveEvent, mouseReleaseEvent, mouseDoubleClickEvent, paintEvent, contextMenuEvent, default_context_entries, add_default_context_actions, content_time_bounds, drawBackground
 
 ### `widgets/sequencer/_transport_controls.py` — Reusable Maya-style transport controls for :class:`SequencerWidget`.
 - `class PlayController(Protocol)`

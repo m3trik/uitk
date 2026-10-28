@@ -87,24 +87,6 @@ class EditorsProperty(_Base):
                 header = self.sb.editors.get(name)._header.title()
                 self.assertEqual(header.lower().replace(" ", "_"), name)
 
-    def test_a_retired_name_warns_and_reaches_the_same_editor(self):
-        import warnings
-
-        for old, new in (
-            ("style", "style_editor"),
-            ("shortcut", "shortcut_editor"),
-            ("browser", "ui_browser"),
-            ("presets", "preset_editor"),
-        ):
-            with self.subTest(old=old):
-                with warnings.catch_warnings(record=True) as caught:
-                    warnings.simplefilter("always")
-                    editor = self.sb.editors.get(old)
-                self.assertIs(editor, self.sb.editors.peek(new))
-                self.assertTrue(
-                    any(issubclass(w.category, DeprecationWarning) for w in caught)
-                )
-
 
 class EditorsGet(_Base):
     def test_get_browser_returns_switchboard_browser(self):

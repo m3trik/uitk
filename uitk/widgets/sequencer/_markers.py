@@ -300,7 +300,7 @@ class MarkerItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)
 
     def contextMenuEvent(self, event):
         widget = self._timeline.parent_sequencer
-        menu = MenuUtils._styled_menu()
+        menu = MenuUtils.styled_menu()
 
         # Inline note editor
         note_edit = QtWidgets.QLineEdit(self._data.note)

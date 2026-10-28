@@ -27,7 +27,6 @@ because the Switchboard itself is the ambient host.
 
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional
 
-import pythontk as ptk
 
 if TYPE_CHECKING:  # pragma: no cover
     from qtpy import QtWidgets
@@ -91,21 +90,6 @@ class _EditorRegistry:
         "preset_editor": "Browse, lock, hide and share every tool's presets in one tree.",
     }
 
-    #: The names the editors had before they took their titles'.
-    _canonical = staticmethod(
-        ptk.Deprecation.values(
-            {
-                "style": "style_editor",
-                "shortcut": "shortcut_editor",
-                "browser": "ui_browser",
-                "presets": "preset_editor",
-            },
-            what="Switchboard editor name",
-            remove_in="1.8.0",
-            since="2026-09-28",
-            reason="An editor is named for its window title.",
-        )
-    )
 
     def __init__(self, sb):
         self._sb = sb
@@ -123,7 +107,7 @@ class _EditorRegistry:
 
     def description(self, name: str) -> str:
         """What editor *name* does, in one sentence (``""`` when unknown)."""
-        return self._DESCRIPTIONS.get(self._canonical(name), "")
+        return self._DESCRIPTIONS.get(name, "")
 
     def add_post_build_hook(self, name: str, hook: Callable) -> None:
         """Register a callable to run when *name* editor is first built.
@@ -164,7 +148,7 @@ class _EditorRegistry:
         Never builds -- the probe for "is this editor open" questions that
         must not construct a window to answer them.
         """
-        cached = self._cache.get(self._canonical(name))
+        cached = self._cache.get(name)
         if cached is not None and self._sb._widget_is_alive(cached):
             return cached
         return None
@@ -247,12 +231,11 @@ class _EditorRegistry:
     # ── Internal ────────────────────────────────────────────────────────────
 
     def _known(self, name: str) -> str:
-        """*name* as the registry keys it (a retired name warns and resolves).
+        """*name*, checked against the editors this registry knows.
 
         Raises:
             KeyError: *name* is not an editor this registry knows.
         """
-        name = self._canonical(name)
         if name not in self._EDITORS:
             raise KeyError(
                 f"Unknown editor {name!r}. Available: {', '.join(self.names())}"

@@ -303,6 +303,9 @@ class GraphEditor(SequencerEditor):
 
     def relayout(self) -> None:
         self._canvas.sync()
+        page = getattr(self, "_page", None)  # None while __init__ builds it
+        if page is not None:
+            page.follow_header()
 
     def draw_background(self, painter, rect) -> bool:
         # The canvas paints the whole content area opaque: the track rows
@@ -890,7 +893,7 @@ class GraphEditor(SequencerEditor):
 
     def build_context_menu(self) -> QtWidgets.QMenu:
         """The right-click menu: tangents, weighting, infinity, keys, view."""
-        menu = MenuUtils._styled_menu()
+        menu = MenuUtils.styled_menu()
         has_sel = bool(self._sel)
         if self._tangent_types:
             sub = menu.addMenu("Tangents")
@@ -1911,7 +1914,7 @@ class _GraphPage(QtWidgets.QWidget):
         self._hidden: Set[str] = set()
         self.setMinimumWidth(0)
         layout = QtWidgets.QVBoxLayout(self)
-        # Below the Options band (level with the ruler and the shot lane).
+        # Below the Options band (level with the ruler and its lanes).
         layout.setContentsMargins(2, int(editor.sequencer._content_top) + 1, 2, 2)
         layout.setSpacing(2)
 
@@ -1929,6 +1932,16 @@ class _GraphPage(QtWidgets.QWidget):
         self.tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_menu)
         layout.addWidget(self.tree, 1)
+
+    def follow_header(self) -> None:
+        """Keep the page under the Options band as the header's lanes come
+        and go (``SequencerWidget.add_layer``): the editor may be built
+        before a host adds its layer."""
+        layout = self.layout()
+        m = layout.contentsMargins()
+        top = int(self._editor.sequencer._content_top) + 1
+        if m.top() != top:
+            layout.setContentsMargins(m.left(), top, m.right(), m.bottom())
 
     # -- outline -----------------------------------------------------------------
 
@@ -2070,7 +2083,7 @@ class _GraphPage(QtWidgets.QWidget):
         their outline ``id``); a curve row's hides curves, with the host's
         track rows (``track_menu_requested``) for the curves' objects.
         """
-        menu = MenuUtils._styled_menu(self)
+        menu = MenuUtils.styled_menu(self)
         header = self._editor.sequencer._header
         if item is None:
             self._add_show_hidden(menu)

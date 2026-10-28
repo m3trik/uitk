@@ -155,8 +155,9 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/sequencer/_editor.py`](#widgets--sequencer--_editor) — Editors: what the sequencer's content area shows -- the seam a view plugs into.
 - [`widgets/sequencer/_graph_editor.py`](#widgets--sequencer--_graph_editor) — The graph editor: animation curves in value space, edited like Maya's.
 - [`widgets/sequencer/_keyframe.py`](#widgets--sequencer--_keyframe) — The interactive items of an expanded attribute sub-row.
+- [`widgets/sequencer/_layer.py`](#widgets--sequencer--_layer) — Layers: a host's vocabulary on the timeline -- the seam a domain plugs into.
 - [`widgets/sequencer/_markers.py`](#widgets--sequencer--_markers) — MarkerItem — named marker on the timeline with drag and context menu.
-- [`widgets/sequencer/_overlays.py`](#widgets--sequencer--_overlays) — Range-related overlay items: static ranges, gap hatching, and highlights.
+- [`widgets/sequencer/_overlays.py`](#widgets--sequencer--_overlays) — Range-related overlay items: static ranges, snap guides, and the range highlight.
 - [`widgets/sequencer/_playhead.py`](#widgets--sequencer--_playhead) — PlayheadItem — vertical playhead line with frame-number badge.
 - [`widgets/sequencer/_ruler.py`](#widgets--sequencer--_ruler) — Ruler item for the timeline header area.
 - [`widgets/sequencer/_scrub_player.py`](#widgets--sequencer--_scrub_player) — Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
@@ -184,7 +185,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 UITK - User Interface Toolkit for Qt/PySide applications.
 
 - [`DEFAULT_INCLUDE`](uitk/uitk/__init__.py#L54) — constant
-- [`MOVED_NAMES`](uitk/uitk/__init__.py#L278) — constant
+- [`MOVED_NAMES`](uitk/uitk/__init__.py#L287) — constant
 
 <a id="_bootstrap"></a>
 ### `_bootstrap.py`
@@ -934,7 +935,7 @@ How a window follows the height of what it is holding.
 
 Mixin that exposes the bundled editor windows on the Switchboard.
 
-- **[`class SwitchboardEditorsMixin`](uitk/uitk/switchboard/editors.py#L312)** — Adds an ``editors`` property to Switchboard exposing the bundled editors.
+- **[`class SwitchboardEditorsMixin`](uitk/uitk/switchboard/editors.py#L295)** — Adds an ``editors`` property to Switchboard exposing the bundled editors.
   - `SwitchboardEditorsMixin.editors(self) -> _EditorRegistry` *(property)* — Cached editor registry — see :class:`_EditorRegistry`.
 
 <a id="switchboard--event_loop"></a>
@@ -2869,8 +2870,8 @@ Data models and shared constants for the sequencer widget.
 - [`HATCH_DENSE`](uitk/uitk/widgets/sequencer/_data.py#L17) — constant
 - [`HATCH_MEDIUM`](uitk/uitk/widgets/sequencer/_data.py#L18) — constant
 - [`HATCH_SPARSE`](uitk/uitk/widgets/sequencer/_data.py#L19) — constant
-- [`SELECTED_ACCENT`](uitk/uitk/widgets/sequencer/_data.py#L196) — constant
-- [`DISPLAY_COLORS`](uitk/uitk/widgets/sequencer/_data.py#L203) — constant
+- [`SELECTED_ACCENT`](uitk/uitk/widgets/sequencer/_data.py#L194) — constant
+- [`DISPLAY_COLORS`](uitk/uitk/widgets/sequencer/_data.py#L201) — constant
 - **[`class PatternSpec`](uitk/uitk/widgets/sequencer/_data.py#L23)** — Declarative, hashable description of a tiled background pattern.
   - `PatternSpec.brush(self) -> QtGui.QBrush`
 - **[`class ClipData`](uitk/uitk/widgets/sequencer/_data.py#L44)** — Lightweight data record for a single clip on a track.
@@ -2879,11 +2880,13 @@ Data models and shared constants for the sequencer widget.
   - `ClipData.shown_key_times(self) -> List[float]` — The curve preview's key times that are drawn as dots.
 - **[`class TrackData`](uitk/uitk/widgets/sequencer/_data.py#L84)** — Lightweight data record for a track row.
 - **[`class MarkerData`](uitk/uitk/widgets/sequencer/_data.py#L102)** — Lightweight data record for a timeline marker.
-- **[`class RowMetrics`](uitk/uitk/widgets/sequencer/_data.py#L138)** — How tall the track rows are and how their keys are drawn: one density.
+- **[`class RowMetrics`](uitk/uitk/widgets/sequencer/_data.py#L135)** — How tall the track rows are and how their keys are drawn: one density.
   - `RowMetrics.flat_keys(self) -> bool` *(property)* — True when keys are drawn on the row's centre line.
   - `RowMetrics.preset(cls, name: str) -> 'RowMetrics'` *(class)* — The named density: ``"standard"`` (today's rows) or ``"compact"``.
   - `RowMetrics.preset_names(cls) -> tuple` *(class)* — The preset names, in display order.
-- **[`class MenuUtils`](uitk/uitk/widgets/sequencer/_data.py#L210)** — Construction/placement helpers for the sequencer's context menus.
+- **[`class MenuUtils`](uitk/uitk/widgets/sequencer/_data.py#L208)** — Construction/placement helpers for the sequencer's context menus --
+  - `MenuUtils.styled_menu(parent=None) -> QtWidgets.QMenu` *(static)* — Create a QMenu with the sequencer's standard dark stylesheet.
+  - `MenuUtils.menu_exec_pos(event) -> QtCore.QPoint` *(static)* — Return a screen position suitable for ``QMenu.exec_``.
 - **[`class CurveUtils`](uitk/uitk/widgets/sequencer/_data.py#L235)** — Shared value→pixel mapping + curve-segment path builder.
   - `CurveUtils.make_value_mapper(rect_top: float, rect_height: float, val_min: float, val_max: float)` *(static)* — Return ``(map_y, is_flat)`` — the canonical value→pixel mapping.
   - `CurveUtils.unmap_value(rect_top: float, rect_height: float, val_min: float, val_max: float, y: float) -> float` *(static)* — The value a pixel row *y* stands for -- :meth:`make_value_mapper`
@@ -2948,7 +2951,7 @@ Editors: what the sequencer's content area shows -- the seam a view plugs into.
   - `SequencerEditor.time_bounds(self) -> Optional[Tuple[float, float]]` — ``(t0, t1)`` this editor's content spans beyond the kernel's own
   - `SequencerEditor.key_times(self) -> Optional[List[float]]` — The sorted key times next / previous key steps through, or
   - `SequencerEditor.frame_values(self) -> None` — Fit the vertical axis to what the framed time range shows (the
-- **[`class TrackEditor(SequencerEditor)`](uitk/uitk/widgets/sequencer/_editor.py#L186)** — The track rows: clips, expanded attribute rows, keys and shot overlays.
+- **[`class TrackEditor(SequencerEditor)`](uitk/uitk/widgets/sequencer/_editor.py#L186)** — The track rows: clips, expanded attribute rows, keys and range overlays.
 
 <a id="widgets--sequencer--_graph_editor"></a>
 ### `widgets/sequencer/_graph_editor.py`
@@ -3058,6 +3061,25 @@ The interactive items of an expanded attribute sub-row.
   - `KeyScaleBoxItem.mouseMoveEvent(self, event)`
   - `KeyScaleBoxItem.mouseReleaseEvent(self, event)`
 
+<a id="widgets--sequencer--_layer"></a>
+### `widgets/sequencer/_layer.py`
+
+Layers: a host's vocabulary on the timeline -- the seam a domain plugs into.
+
+- **[`class SequencerLayer(Protocol)`](uitk/uitk/widgets/sequencer/_layer.py#L43)** — What :meth:`SequencerWidget.add_layer` reads off a layer (module docstring).
+  - `SequencerLayer.paint_lane(self, painter: QtGui.QPainter, rect: QtCore.QRectF) -> None` — Paint the lane into *rect*: its strip, in scene coordinates, as wide
+  - `SequencerLayer.mouse_press(self, event) -> bool` — A press on the timeline (view coordinates);
+  - `SequencerLayer.mouse_move(self, event) -> bool` — A taken gesture's move, or a hover (after the active editor's);
+  - `SequencerLayer.mouse_release(self, event) -> bool` — A taken gesture's release;
+  - `SequencerLayer.gesture_group_at(self, viewport_pos) -> Optional[str]` — The legend group under the pointer, or ``None`` for the widget's.
+  - `SequencerLayer.claims_press(self, scene_pos) -> bool` — Whether a press at *scene_pos* on the range highlight's edge belongs
+  - `SequencerLayer.legend(self, editor: str, rows: Tuple[Gesture, ...]) -> Sequence[Gesture]` — The legend rows to show while the *editor* named is active, given
+  - `SequencerLayer.context_entries(self, time: float, entries: List[Optional[dict]]) -> List[Optional[dict]]` — The timeline menu's entries at *time*, given the widget's
+  - `SequencerLayer.menu_zone(self, zone: str, time: float) -> str` — The zone a right-click at *time* reports, given the strip it landed
+  - `SequencerLayer.time_bounds(self) -> Optional[Tuple[float, float]]` — ``(t0, t1)`` of what this layer draws, so the scroll extent reaches
+  - `SequencerLayer.relayout(self) -> None` — Re-place this layer's items: the zoom, the rows or the viewport
+  - `SequencerLayer.clear(self) -> None` — Drop what this layer shows: the widget was cleared
+
 <a id="widgets--sequencer--_markers"></a>
 ### `widgets/sequencer/_markers.py`
 
@@ -3079,9 +3101,9 @@ MarkerItem — named marker on the timeline with drag and context menu.
 <a id="widgets--sequencer--_overlays"></a>
 ### `widgets/sequencer/_overlays.py`
 
-Range-related overlay items: static ranges, gap hatching, and highlights.
+Range-related overlay items: static ranges, snap guides, and the range highlight.
 
-- **[`class RangeHighlightItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_overlays.py#L565)** — A semi-transparent rectangle highlighting a time range on the timeline.
+- **[`class RangeHighlightItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_overlays.py#L119)** — A semi-transparent rectangle highlighting a time range on the timeline.
   - `RangeHighlightItem.start(self) -> float` *(property)*
   - `RangeHighlightItem.end(self) -> float` *(property)*
   - `RangeHighlightItem.set_range(self, start: float, end: float)`
@@ -3090,7 +3112,7 @@ Range-related overlay items: static ranges, gap hatching, and highlights.
   - `RangeHighlightItem.boundingRect(self) -> QtCore.QRectF`
   - `RangeHighlightItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
   - `RangeHighlightItem.zone_at(self, scene_x: float) -> str` — ``"left"`` / ``"right"`` / ``"move"`` for *scene_x*, else ``""``.
-  - `RangeHighlightItem.begin_edge_drag(self, edge: str, scene_x: float) -> None` — Start a bound drag from outside the item (the shot lane's handles).
+  - `RangeHighlightItem.begin_edge_drag(self, edge: str, scene_x: float) -> None` — Start a bound drag from outside the item (a lane's handles).
   - `RangeHighlightItem.hoverMoveEvent(self, event)`
   - `RangeHighlightItem.mousePressEvent(self, event)`
   - `RangeHighlightItem.mouseMoveEvent(self, event)`
@@ -3113,11 +3135,8 @@ PlayheadItem — vertical playhead line with frame-number badge.
 
 Ruler item for the timeline header area.
 
-- **[`class RulerItem(QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_ruler.py#L36)** — Draws the timeline header: the frame ruler, and the shot lane below it.
-  - `RulerItem.set_shot_blocks(self, blocks: list) -> None`
-  - `RulerItem.clear_shot_blocks(self) -> None`
-  - `RulerItem.selected_block(self) -> Optional[dict]` — The block marked ``active``, or ``None`` when nothing is selected.
-  - `RulerItem.shot_block_at(self, time: float) -> Optional[dict]` — Return the shot block containing *time*, or ``None``.
+- **[`class RulerItem(QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_ruler.py#L31)** — Draws the timeline header: the frame ruler, and the layers' lanes below it.
+  - `RulerItem.set_height(self, height: float) -> None` — Set the header's height: the ruler and the lanes under it.
   - `RulerItem.set_content_width(self, width: float) -> None` — Set the horizontal extent the ruler covers (scene pixels).
   - `RulerItem.set_key_ticks(self, times) -> None` — Frames that carry a key, drawn as faint red ticks (Maya's idiom).
   - `RulerItem.set_content_left(self, left: float) -> None` — Set the left edge of the extent the ruler covers (scene pixels).
@@ -3146,9 +3165,9 @@ Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 
 An NLE-style timeline sequencer widget.
 
-- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L76)** — Dialog for configuring attribute-type color mappings.
+- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L77)** — Dialog for configuring attribute-type color mappings.
   - `AttributeColorDialog.load_color_map(defaults: Optional[Mapping[str, object]] = None) -> Dict[str, str]` *(static)* — The persisted attribute color map, without opening a dialog.
-- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L276)** — A split-view NLE sequencer widget.
+- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L277)** — A split-view NLE sequencer widget.
   - `SequencerWidget.window_shortcuts(self) -> bool` *(property)* — When ``True``, sequencer shortcuts are active whenever the
   - `SequencerWidget.showEvent(self, event: QtGui.QShowEvent) -> None`
   - `SequencerWidget.resizeEvent(self, event: QtGui.QResizeEvent) -> None`
@@ -3156,6 +3175,7 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.event(self, event: QtCore.QEvent) -> bool`
   - `SequencerWidget.keyPressEvent(self, event)` — Dispatch registered shortcuts when focus is on a non-timeline child.
   - `SequencerWidget.add_track(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: Optional[str] = None, text_color: Optional[str] = None) -> int` — Add a new track row.
+  - `SequencerWidget.refresh_extent(self) -> None` — Recompute the scrollable extent unless a bulk rebuild is running.
   - `SequencerWidget.bulk_updates(self)` — Suppress per-add scene-rect recomputation during a rebuild.
   - `SequencerWidget.add_clip(self, track_id: int, start: float, duration: float, label: str = '', color: Optional[str] = None, sub_row: str = '', locked: bool = False, **data) -> int` — Add a clip to an existing track.
   - `SequencerWidget.remove_clip(self, clip_id: int)` — Remove a clip by id.
@@ -3177,7 +3197,7 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.set_audio_source(self, path: str, fps: float = 24.0) -> bool` — Bind an audio file (typically a composite WAV) for scrub playback.
   - `SequencerWidget.clear_audio_source(self) -> None` — Drop the bound audio source and stop any in-flight scrub.
   - `SequencerWidget.clear(self, *, keep_range_highlight: bool = False)` — Remove all tracks, clips, and markers.
-  - `SequencerWidget.clear_decorations(self, *, keep_range_highlight: bool = False)` — Remove markers, overlays, and shot lane without touching tracks or clips.
+  - `SequencerWidget.clear_decorations(self, *, keep_range_highlight: bool = False)` — Remove markers, overlays and what each layer shows, without touching
   - `SequencerWidget.add_marker(self, time: float, note: str = '', color: Optional[str] = None, draggable: bool = True, style: str = 'triangle', line_style: str = 'dashed', opacity: float = 1.0, data: Optional[Dict[str, Any]] = None) -> int` — Add a marker at *time*.
   - `SequencerWidget.remove_marker(self, marker_id: int)` — Remove a marker by id.
   - `SequencerWidget.get_marker(self, marker_id: int) -> Optional[MarkerData]` — Return marker data, or None.
@@ -3187,16 +3207,17 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.clear_range_highlight(self)` — Remove the range highlight from the timeline.
   - `SequencerWidget.add_range_overlay(self, start: float, end: float, color: str = '#888888', alpha: int = 15)` — Add a non-interactive range overlay (e.g.
   - `SequencerWidget.clear_range_overlays(self)` — Remove all non-interactive range overlays.
-  - `SequencerWidget.add_gap_overlay(self, start: float, end: float, color: str = '#555555', alpha: int = 120, locked: bool = False, tail: bool = False, head: bool = False)` — Add a diagonal-hatch overlay for a gap between shots.
-  - `SequencerWidget.clear_gap_overlays(self)` — Remove all gap overlays.
-  - `SequencerWidget.set_all_gap_overlays_locked(self, locked: bool)` — Set the locked state on every gap overlay.
-  - `SequencerWidget.set_shot_blocks(self, blocks: list) -> None` — Show coloured shot-block indicators on the ruler.
-  - `SequencerWidget.selected_shot(self) -> Optional[dict]` — The shot block currently marked ``active``, or ``None``.
-  - `SequencerWidget.clear_shot_blocks(self) -> None` — Remove all shot-block indicators from the ruler.
+  - `SequencerWidget.content_span(self) -> Tuple[float, float]` — ``(top, height)`` of the content area an overlay spans in scene
+  - `SequencerWidget.timeline(self) -> TimelineView` *(property)* — The timeline view: time <-> x (``time_to_x``, ``x_to_time``,
+  - `SequencerWidget.range_highlight_item(self) -> Optional[RangeHighlightItem]` *(property)* — The range highlight's scene item (:meth:`set_range_highlight`), or
+  - `SequencerWidget.add_layer(self, layer: SequencerLayer) -> None` — Plug *layer* into the timeline (``SequencerLayer``, ``_layer.py``).
+  - `SequencerWidget.layer(self, name: str) -> SequencerLayer` — The layer added under *name*.
+  - `SequencerWidget.add_track_item(self, item: QtWidgets.QGraphicsItem) -> None` — Put a scene item under the track editor's content root: it hides
+  - `SequencerWidget.remove_track_item(self, item: QtWidgets.QGraphicsItem) -> None` — Take *item* out of the scene, safely from inside its own event
   - `SequencerWidget.range_highlight(self) -> Optional[tuple]` — Return ``(start, end)`` of the active highlight, or ``None``.
   - `SequencerWidget.set_hidden_tracks(self, names: List[str])` — Store a list of hidden track names for the 'show hidden' menu.
-  - `SequencerWidget.set_active_range(self, start: float, end: float)` — Set the active-shot time range painted as a column tint.
-  - `SequencerWidget.clear_active_range(self)` — Remove the active-shot column tint.
+  - `SequencerWidget.set_active_range(self, start: float, end: float)` — Set the active time range, painted as a column tint.
+  - `SequencerWidget.clear_active_range(self)` — Remove the active range's column tint.
   - `SequencerWidget.step_forward(self)` — Advance the playhead by one step (snap_interval or 1 frame).
   - `SequencerWidget.step_backward(self)` — Move the playhead back by one step (snap_interval or 1 frame).
   - `SequencerWidget.go_to_next_key(self)` — Jump the playhead to the next clip boundary.
@@ -3216,7 +3237,6 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.set_snap_guides(self, times) -> None` — Show vertical alignment guides at *times* (empty hides them).
   - `SequencerWidget.clear_snap_guides(self) -> None` — Remove the alignment guides.
   - `SequencerWidget.show_range_overlays(self) -> bool` *(property)*
-  - `SequencerWidget.show_gap_overlays(self) -> bool` *(property)*
   - `SequencerWidget.show_range_highlight(self) -> bool` *(property)*
   - `SequencerWidget.mark_flat_spans(self) -> bool` *(property)* — Draw a curve's flat spans apart (``CurveUtils.flat_pen``), so one
   - `SequencerWidget.add_flat_spans_option(self, editor: SequencerEditor) -> None` — Offer :attr:`mark_flat_spans` in *editor*'s Display options (an
@@ -3258,7 +3278,7 @@ An NLE-style timeline sequencer widget.
 
 Timeline view, scene, and track-header widgets.
 
-- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L96)** — Left-pane widget showing track labels, vertically synced to the timeline.
+- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L92)** — Left-pane widget showing track labels, vertically synced to the timeline.
   - `TrackHeaderWidget.set_top_margin(self, margin: int) -> None`
   - `TrackHeaderWidget.add_track_label(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: str = None, text_color: str = None)`
   - `TrackHeaderWidget.set_track_expanded(self, track_idx: int, sub_names: List[str], sub_height: int)`
@@ -3269,10 +3289,10 @@ Timeline view, scene, and track-header widgets.
   - `TrackHeaderWidget.selected_names(self) -> List[str]`
   - `TrackHeaderWidget.add_track_actions(self, menu: QtWidgets.QMenu, names: List[str]) -> None` — The track menu's rows onto *menu*: Hide and Delete *names*, the
   - `TrackHeaderWidget.clear_tracks(self)`
-- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L494)** — Scene that owns the ruler, playhead, and all clip items.
+- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L491)** — Scene that owns the ruler, playhead, and all clip items.
   - `TimelineScene.ruler(self) -> RulerItem` *(property)*
   - `TimelineScene.playhead(self) -> PlayheadItem` *(property)*
-- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L524)** — QGraphicsView providing zoom, pan, and coordinate mapping.
+- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L521)** — QGraphicsView providing zoom, pan, and coordinate mapping.
   - `TimelineView.event(self, event: QtCore.QEvent) -> bool`
   - `TimelineView.keyPressEvent(self, event)`
   - `TimelineView.keyReleaseEvent(self, event)`
@@ -3284,6 +3304,7 @@ Timeline view, scene, and track-header widgets.
   - `TimelineView.resizeEvent(self, event)`
   - `TimelineView.wheelEvent(self, event)`
   - `TimelineView.zoom_at(self, factor: float, view_x: float) -> None` — Zoom time by *factor*, keeping the frame under viewport *view_x* still.
+  - `TimelineView.hit_zone(self, viewport_y: float) -> str` — The strip *viewport_y* falls in: ``"ruler"``, a lane's layer name
   - `TimelineView.mousePressEvent(self, event)`
   - `TimelineView.mouseMoveEvent(self, event)`
   - `TimelineView.leaveEvent(self, event)` — The pointer has left: no gesture context, and Shift is no longer held.

@@ -23,7 +23,7 @@
           "kind": "constant",
           "signature": "",
           "summary": "",
-          "line": 278,
+          "line": 287,
           "deprecated": false
         }
       ]
@@ -5073,7 +5073,7 @@
         {
           "name": "SwitchboardEditorsMixin",
           "summary": "Adds an ``editors`` property to Switchboard exposing the bundled editors.",
-          "line": 312,
+          "line": 295,
           "bases": [],
           "members": [
             {
@@ -5082,7 +5082,7 @@
               "kind": "property",
               "signature": "(self) -> _EditorRegistry",
               "summary": "Cached editor registry — see :class:`_EditorRegistry`.",
-              "line": 321,
+              "line": 304,
               "deprecated": false
             }
           ]
@@ -18318,7 +18318,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1319,
+              "line": 1317,
               "deprecated": false
             },
             {
@@ -18327,7 +18327,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1416,
+              "line": 1414,
               "deprecated": false
             },
             {
@@ -18336,7 +18336,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1478,
+              "line": 1476,
               "deprecated": false
             }
           ]
@@ -18418,7 +18418,7 @@
         {
           "name": "RowMetrics",
           "summary": "How tall the track rows are and how their keys are drawn: one density.",
-          "line": 138,
+          "line": 135,
           "bases": [],
           "members": [
             {
@@ -18427,7 +18427,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "True when keys are drawn on the row's centre line.",
-              "line": 166,
+              "line": 163,
               "deprecated": false
             },
             {
@@ -18436,7 +18436,7 @@
               "kind": "classmethod",
               "signature": "(cls, name: str) -> 'RowMetrics'",
               "summary": "The named density: ``\"standard\"`` (today's rows) or ``\"compact\"``.",
-              "line": 171,
+              "line": 168,
               "deprecated": false
             },
             {
@@ -18445,17 +18445,36 @@
               "kind": "classmethod",
               "signature": "(cls) -> tuple",
               "summary": "The preset names, in display order.",
-              "line": 180,
+              "line": 177,
               "deprecated": false
             }
           ]
         },
         {
           "name": "MenuUtils",
-          "summary": "Construction/placement helpers for the sequencer's context menus.",
-          "line": 210,
+          "summary": "Construction/placement helpers for the sequencer's context menus --",
+          "line": 208,
           "bases": [],
-          "members": []
+          "members": [
+            {
+              "name": "styled_menu",
+              "qualname": "MenuUtils.styled_menu",
+              "kind": "staticmethod",
+              "signature": "(parent=None) -> QtWidgets.QMenu",
+              "summary": "Create a QMenu with the sequencer's standard dark stylesheet.",
+              "line": 214,
+              "deprecated": false
+            },
+            {
+              "name": "menu_exec_pos",
+              "qualname": "MenuUtils.menu_exec_pos",
+              "kind": "staticmethod",
+              "signature": "(event) -> QtCore.QPoint",
+              "summary": "Return a screen position suitable for ``QMenu.exec_``.",
+              "line": 225,
+              "deprecated": false
+            }
+          ]
         },
         {
           "name": "CurveUtils",
@@ -18531,7 +18550,7 @@
               "kind": "staticmethod",
               "signature": "(name: str, painter: PatternPainter) -> None",
               "summary": "Register (or override) a tile-painter for :meth:`pattern_brush`.",
-              "line": 476,
+              "line": 482,
               "deprecated": false
             },
             {
@@ -18540,7 +18559,7 @@
               "kind": "staticmethod",
               "signature": "(style: str, color: QtGui.QColor, spacing: int = HATCH_MEDIUM, line_width: float = 1.0) -> QtGui.QBrush",
               "summary": "Return a cached tiled brush for the registered ``style`` (``line_width`` doubles as dot radius for…",
-              "line": 523,
+              "line": 529,
               "deprecated": false
             },
             {
@@ -18549,7 +18568,7 @@
               "kind": "staticmethod",
               "signature": "(painter: QtGui.QPainter, rect: QtCore.QRectF, spec: PatternSpec) -> None",
               "summary": "Fill ``rect`` with ``spec``;",
-              "line": 556,
+              "line": 562,
               "deprecated": false
             }
           ]
@@ -18589,7 +18608,7 @@
           "kind": "constant",
           "signature": "",
           "summary": "",
-          "line": 196,
+          "line": 194,
           "deprecated": false
         },
         {
@@ -18598,7 +18617,7 @@
           "kind": "constant",
           "signature": "",
           "summary": "",
-          "line": 203,
+          "line": 201,
           "deprecated": false
         }
       ]
@@ -18724,7 +18743,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Cancel the drag when the mouse grab is stolen mid-gesture.",
-              "line": 179,
+              "line": 192,
               "deprecated": false
             },
             {
@@ -18733,7 +18752,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 201,
+              "line": 214,
               "deprecated": false
             }
           ]
@@ -18938,7 +18957,7 @@
         },
         {
           "name": "TrackEditor",
-          "summary": "The track rows: clips, expanded attribute rows, keys and shot overlays.",
+          "summary": "The track rows: clips, expanded attribute rows, keys and range overlays.",
           "line": 186,
           "bases": [
             "SequencerEditor"
@@ -19083,7 +19102,7 @@
               "kind": "method",
               "signature": "(self, painter, rect) -> bool",
               "summary": "",
-              "line": 307,
+              "line": 310,
               "deprecated": false
             },
             {
@@ -19092,7 +19111,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[Tuple[float, float]]",
               "summary": "The displayed curves' key extent: the timeline scrolls to it.",
-              "line": 312,
+              "line": 315,
               "deprecated": false
             },
             {
@@ -19101,7 +19120,7 @@
               "kind": "method",
               "signature": "(self) -> List[float]",
               "summary": "The displayed curves' keys (claimed samples aside): what the",
-              "line": 323,
+              "line": 326,
               "deprecated": false
             },
             {
@@ -19110,7 +19129,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Fit the value axis to what the framed time range shows.",
-              "line": 337,
+              "line": 340,
               "deprecated": false
             },
             {
@@ -19119,7 +19138,7 @@
               "kind": "method",
               "signature": "(self, entries: List[dict]) -> None",
               "summary": "The objects and their curves, for the left pane and the display.",
-              "line": 344,
+              "line": 347,
               "deprecated": false
             },
             {
@@ -19128,7 +19147,7 @@
               "kind": "method",
               "signature": "(self, provider) -> None",
               "summary": "``callable(curve_ids) -> [pythontk.KeyCurve, ...]`` -- the host's reader.",
-              "line": 361,
+              "line": 364,
               "deprecated": false
             },
             {
@@ -19137,7 +19156,7 @@
               "kind": "method",
               "signature": "(self, types: Iterable[Tuple[str, str]]) -> None",
               "summary": "The host's tangent types as ``[(type_id, label), ...]`` (menu order).",
-              "line": 366,
+              "line": 369,
               "deprecated": false
             },
             {
@@ -19146,7 +19165,7 @@
               "kind": "method",
               "signature": "(self, curve_ids: Optional[Iterable[str]] = None) -> None",
               "summary": "Re-read curves from the provider (every shown one, or *curve_ids*).",
-              "line": 370,
+              "line": 373,
               "deprecated": false
             },
             {
@@ -19155,7 +19174,7 @@
               "kind": "method",
               "signature": "(self, curve_ids: Iterable[str]) -> None",
               "summary": "Curves the host changed: the shown ones re-read now, the rest",
-              "line": 389,
+              "line": 392,
               "deprecated": false
             },
             {
@@ -19164,7 +19183,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Each curve drawn in [-1, 1] (edits still land in its own units).",
-              "line": 402,
+              "line": 405,
               "deprecated": false
             },
             {
@@ -19173,7 +19192,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "The curves drawn dashed past their first and last keys.",
-              "line": 412,
+              "line": 415,
               "deprecated": false
             },
             {
@@ -19182,7 +19201,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Follow the host's object selection (Maya's Auto Load Selected",
-              "line": 422,
+              "line": 425,
               "deprecated": false
             },
             {
@@ -19191,7 +19210,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Raise :attr:`curves_previewed` while a drag shapes the curves, so",
-              "line": 433,
+              "line": 436,
               "deprecated": false
             },
             {
@@ -19200,7 +19219,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Veil the time outside :attr:`focus_range` (the shots on screen).",
-              "line": 443,
+              "line": 446,
               "deprecated": false
             },
             {
@@ -19209,7 +19228,7 @@
               "kind": "property",
               "signature": "(self) -> Optional[Tuple[float, float]]",
               "summary": "``(t0, t1)`` the host is working in -- the shots its scope shows --",
-              "line": 453,
+              "line": 456,
               "deprecated": false
             },
             {
@@ -19218,7 +19237,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "",
-              "line": 463,
+              "line": 466,
               "deprecated": false
             },
             {
@@ -19227,7 +19246,7 @@
               "kind": "method",
               "signature": "(self, curve_id: str)",
               "summary": "The curve as drawn: the drag's preview, else the host's.",
-              "line": 466,
+              "line": 469,
               "deprecated": false
             },
             {
@@ -19236,7 +19255,7 @@
               "kind": "method",
               "signature": "(self) -> List[Tuple[str, List[float]]]",
               "summary": "``[(curve_id, [time, ...]), ...]`` in display order.",
-              "line": 483,
+              "line": 486,
               "deprecated": false
             },
             {
@@ -19245,7 +19264,7 @@
               "kind": "method",
               "signature": "(self, refs: Iterable[KeyRef], mode: str = 'replace') -> None",
               "summary": "Select keys by ``(curve_id, time)``;",
-              "line": 490,
+              "line": 493,
               "deprecated": false
             },
             {
@@ -19254,7 +19273,7 @@
               "kind": "method",
               "signature": "(self, object_ids: Iterable[str]) -> bool",
               "summary": "Show the curves of *object_ids* (their outline rows selected).",
-              "line": 504,
+              "line": 507,
               "deprecated": false
             },
             {
@@ -19263,7 +19282,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Select every key of the displayed curves.",
-              "line": 526,
+              "line": 529,
               "deprecated": false
             },
             {
@@ -19272,7 +19291,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Frame every displayed curve's keys, in time and value.",
-              "line": 532,
+              "line": 535,
               "deprecated": false
             },
             {
@@ -19281,7 +19300,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Frame the selected keys;",
-              "line": 542,
+              "line": 545,
               "deprecated": false
             },
             {
@@ -19290,7 +19309,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Delete the selected keys (:attr:`keys_deleted`), shown at once.",
-              "line": 563,
+              "line": 566,
               "deprecated": false
             },
             {
@@ -19299,7 +19318,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Key the selection's curves (every displayed one when none) at the",
-              "line": 578,
+              "line": 581,
               "deprecated": false
             },
             {
@@ -19308,7 +19327,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 586,
+              "line": 589,
               "deprecated": false
             },
             {
@@ -19317,7 +19336,7 @@
               "kind": "method",
               "signature": "(self, type_id: str) -> None",
               "summary": "",
-              "line": 610,
+              "line": 613,
               "deprecated": false
             },
             {
@@ -19326,7 +19345,7 @@
               "kind": "method",
               "signature": "(self, broken: bool) -> None",
               "summary": "",
-              "line": 615,
+              "line": 618,
               "deprecated": false
             },
             {
@@ -19335,7 +19354,7 @@
               "kind": "method",
               "signature": "(self, weighted: bool) -> None",
               "summary": "",
-              "line": 624,
+              "line": 627,
               "deprecated": false
             },
             {
@@ -19344,7 +19363,7 @@
               "kind": "method",
               "signature": "(self, side: str, mode: str) -> None",
               "summary": "",
-              "line": 629,
+              "line": 632,
               "deprecated": false
             },
             {
@@ -19353,7 +19372,7 @@
               "kind": "method",
               "signature": "(self, event) -> bool",
               "summary": "",
-              "line": 636,
+              "line": 639,
               "deprecated": false
             },
             {
@@ -19362,7 +19381,7 @@
               "kind": "method",
               "signature": "(self, event) -> bool",
               "summary": "",
-              "line": 703,
+              "line": 706,
               "deprecated": false
             },
             {
@@ -19371,7 +19390,7 @@
               "kind": "method",
               "signature": "(self, event) -> bool",
               "summary": "",
-              "line": 762,
+              "line": 765,
               "deprecated": false
             },
             {
@@ -19380,7 +19399,7 @@
               "kind": "method",
               "signature": "(self, curve_ids: Iterable[str]) -> None",
               "summary": "Select every drawn key of *curve_ids*, the rest deselected -- a",
-              "line": 833,
+              "line": 836,
               "deprecated": false
             },
             {
@@ -19389,7 +19408,7 @@
               "kind": "method",
               "signature": "(self, event) -> bool",
               "summary": "",
-              "line": 853,
+              "line": 856,
               "deprecated": false
             },
             {
@@ -19398,7 +19417,7 @@
               "kind": "method",
               "signature": "(self, event) -> bool",
               "summary": "",
-              "line": 862,
+              "line": 865,
               "deprecated": false
             },
             {
@@ -19407,7 +19426,7 @@
               "kind": "method",
               "signature": "(self, event) -> bool",
               "summary": "",
-              "line": 882,
+              "line": 885,
               "deprecated": false
             },
             {
@@ -19416,7 +19435,7 @@
               "kind": "method",
               "signature": "(self) -> QtWidgets.QMenu",
               "summary": "The right-click menu: tangents, weighting, infinity, keys, view.",
-              "line": 891,
+              "line": 894,
               "deprecated": false
             },
             {
@@ -19425,7 +19444,7 @@
               "kind": "method",
               "signature": "(self, viewport_pos) -> Optional[str]",
               "summary": "",
-              "line": 931,
+              "line": 934,
               "deprecated": false
             },
             {
@@ -19434,7 +19453,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[QtCore.QRectF]",
               "summary": "The scale frame around two or more selected keys (scene coords);",
-              "line": 1362,
+              "line": 1365,
               "deprecated": false
             }
           ]
@@ -19834,6 +19853,132 @@
       "constants": []
     },
     {
+      "relpath": "widgets/sequencer/_layer.py",
+      "summary": "Layers: a host's vocabulary on the timeline -- the seam a domain plugs into.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "SequencerLayer",
+          "summary": "What :meth:`SequencerWidget.add_layer` reads off a layer (module docstring).",
+          "line": 43,
+          "bases": [
+            "Protocol"
+          ],
+          "members": [
+            {
+              "name": "paint_lane",
+              "qualname": "SequencerLayer.paint_lane",
+              "kind": "method",
+              "signature": "(self, painter: QtGui.QPainter, rect: QtCore.QRectF) -> None",
+              "summary": "Paint the lane into *rect*: its strip, in scene coordinates, as wide",
+              "line": 54,
+              "deprecated": false
+            },
+            {
+              "name": "mouse_press",
+              "qualname": "SequencerLayer.mouse_press",
+              "kind": "method",
+              "signature": "(self, event) -> bool",
+              "summary": "A press on the timeline (view coordinates);",
+              "line": 58,
+              "deprecated": false
+            },
+            {
+              "name": "mouse_move",
+              "qualname": "SequencerLayer.mouse_move",
+              "kind": "method",
+              "signature": "(self, event) -> bool",
+              "summary": "A taken gesture's move, or a hover (after the active editor's);",
+              "line": 63,
+              "deprecated": false
+            },
+            {
+              "name": "mouse_release",
+              "qualname": "SequencerLayer.mouse_release",
+              "kind": "method",
+              "signature": "(self, event) -> bool",
+              "summary": "A taken gesture's release;",
+              "line": 67,
+              "deprecated": false
+            },
+            {
+              "name": "gesture_group_at",
+              "qualname": "SequencerLayer.gesture_group_at",
+              "kind": "method",
+              "signature": "(self, viewport_pos) -> Optional[str]",
+              "summary": "The legend group under the pointer, or ``None`` for the widget's.",
+              "line": 71,
+              "deprecated": false
+            },
+            {
+              "name": "claims_press",
+              "qualname": "SequencerLayer.claims_press",
+              "kind": "method",
+              "signature": "(self, scene_pos) -> bool",
+              "summary": "Whether a press at *scene_pos* on the range highlight's edge belongs",
+              "line": 74,
+              "deprecated": false
+            },
+            {
+              "name": "legend",
+              "qualname": "SequencerLayer.legend",
+              "kind": "method",
+              "signature": "(self, editor: str, rows: Tuple[Gesture, ...]) -> Sequence[Gesture]",
+              "summary": "The legend rows to show while the *editor* named is active, given",
+              "line": 78,
+              "deprecated": false
+            },
+            {
+              "name": "context_entries",
+              "qualname": "SequencerLayer.context_entries",
+              "kind": "method",
+              "signature": "(self, time: float, entries: List[Optional[dict]]) -> List[Optional[dict]]",
+              "summary": "The timeline menu's entries at *time*, given the widget's",
+              "line": 83,
+              "deprecated": false
+            },
+            {
+              "name": "menu_zone",
+              "qualname": "SequencerLayer.menu_zone",
+              "kind": "method",
+              "signature": "(self, zone: str, time: float) -> str",
+              "summary": "The zone a right-click at *time* reports, given the strip it landed",
+              "line": 90,
+              "deprecated": false
+            },
+            {
+              "name": "time_bounds",
+              "qualname": "SequencerLayer.time_bounds",
+              "kind": "method",
+              "signature": "(self) -> Optional[Tuple[float, float]]",
+              "summary": "``(t0, t1)`` of what this layer draws, so the scroll extent reaches",
+              "line": 94,
+              "deprecated": false
+            },
+            {
+              "name": "relayout",
+              "qualname": "SequencerLayer.relayout",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Re-place this layer's items: the zoom, the rows or the viewport",
+              "line": 99,
+              "deprecated": false
+            },
+            {
+              "name": "clear",
+              "qualname": "SequencerLayer.clear",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Drop what this layer shows: the widget was cleared",
+              "line": 103,
+              "deprecated": false
+            }
+          ]
+        }
+      ],
+      "constants": []
+    },
+    {
       "relpath": "widgets/sequencer/_markers.py",
       "summary": "MarkerItem — named marker on the timeline with drag and context menu.",
       "functions": [],
@@ -19954,13 +20099,13 @@
     },
     {
       "relpath": "widgets/sequencer/_overlays.py",
-      "summary": "Range-related overlay items: static ranges, gap hatching, and highlights.",
+      "summary": "Range-related overlay items: static ranges, snap guides, and the range highlight.",
       "functions": [],
       "classes": [
         {
           "name": "RangeHighlightItem",
           "summary": "A semi-transparent rectangle highlighting a time range on the timeline.",
-          "line": 565,
+          "line": 119,
           "bases": [
             "HeldGeometryMixin",
             "DraggableItemMixin",
@@ -19973,7 +20118,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "",
-              "line": 592,
+              "line": 149,
               "deprecated": false
             },
             {
@@ -19982,7 +20127,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "",
-              "line": 601,
+              "line": 158,
               "deprecated": false
             },
             {
@@ -19991,7 +20136,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float)",
               "summary": "",
-              "line": 609,
+              "line": 166,
               "deprecated": false
             },
             {
@@ -20000,7 +20145,7 @@
               "kind": "property",
               "signature": "(self) -> QtGui.QColor",
               "summary": "",
-              "line": 615,
+              "line": 172,
               "deprecated": false
             },
             {
@@ -20009,7 +20154,7 @@
               "kind": "property",
               "signature": "(self) -> int",
               "summary": "",
-              "line": 633,
+              "line": 190,
               "deprecated": false
             },
             {
@@ -20018,7 +20163,7 @@
               "kind": "method",
               "signature": "(self) -> QtCore.QRectF",
               "summary": "",
-              "line": 660,
+              "line": 217,
               "deprecated": false
             },
             {
@@ -20027,7 +20172,7 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, option, widget=None)",
               "summary": "",
-              "line": 663,
+              "line": 220,
               "deprecated": false
             },
             {
@@ -20036,7 +20181,7 @@
               "kind": "method",
               "signature": "(self, scene_x: float) -> str",
               "summary": "``\"left\"`` / ``\"right\"`` / ``\"move\"`` for *scene_x*, else ``\"\"``.",
-              "line": 689,
+              "line": 246,
               "deprecated": false
             },
             {
@@ -20044,8 +20189,8 @@
               "qualname": "RangeHighlightItem.begin_edge_drag",
               "kind": "method",
               "signature": "(self, edge: str, scene_x: float) -> None",
-              "summary": "Start a bound drag from outside the item (the shot lane's handles).",
-              "line": 709,
+              "summary": "Start a bound drag from outside the item (a lane's handles).",
+              "line": 266,
               "deprecated": false
             },
             {
@@ -20054,7 +20199,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 770,
+              "line": 326,
               "deprecated": false
             },
             {
@@ -20063,7 +20208,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 784,
+              "line": 340,
               "deprecated": false
             },
             {
@@ -20072,7 +20217,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 842,
+              "line": 384,
               "deprecated": false
             },
             {
@@ -20081,7 +20226,7 @@
               "kind": "method",
               "signature": "(self, scene_x: float, modifiers=None) -> None",
               "summary": "Advance a drag begun with :meth:`begin_edge_drag` (*modifiers*:",
-              "line": 870,
+              "line": 410,
               "deprecated": false
             },
             {
@@ -20090,7 +20235,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "End the drag and emit if a bound actually moved.",
-              "line": 896,
+              "line": 434,
               "deprecated": false
             },
             {
@@ -20099,7 +20244,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 948,
+              "line": 486,
               "deprecated": false
             }
           ]
@@ -20160,46 +20305,19 @@
       "classes": [
         {
           "name": "RulerItem",
-          "summary": "Draws the timeline header: the frame ruler, and the shot lane below it.",
-          "line": 36,
+          "summary": "Draws the timeline header: the frame ruler, and the layers' lanes below it.",
+          "line": 31,
           "bases": [
             "QtWidgets.QGraphicsItem"
           ],
           "members": [
             {
-              "name": "set_shot_blocks",
-              "qualname": "RulerItem.set_shot_blocks",
+              "name": "set_height",
+              "qualname": "RulerItem.set_height",
               "kind": "method",
-              "signature": "(self, blocks: list) -> None",
-              "summary": "",
-              "line": 69,
-              "deprecated": false
-            },
-            {
-              "name": "clear_shot_blocks",
-              "qualname": "RulerItem.clear_shot_blocks",
-              "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "",
-              "line": 73,
-              "deprecated": false
-            },
-            {
-              "name": "selected_block",
-              "qualname": "RulerItem.selected_block",
-              "kind": "method",
-              "signature": "(self) -> Optional[dict]",
-              "summary": "The block marked ``active``, or ``None`` when nothing is selected.",
-              "line": 77,
-              "deprecated": false
-            },
-            {
-              "name": "shot_block_at",
-              "qualname": "RulerItem.shot_block_at",
-              "kind": "method",
-              "signature": "(self, time: float) -> Optional[dict]",
-              "summary": "Return the shot block containing *time*, or ``None``.",
-              "line": 84,
+              "signature": "(self, height: float) -> None",
+              "summary": "Set the header's height: the ruler and the lanes under it.",
+              "line": 60,
               "deprecated": false
             },
             {
@@ -20208,7 +20326,7 @@
               "kind": "method",
               "signature": "(self, width: float) -> None",
               "summary": "Set the horizontal extent the ruler covers (scene pixels).",
-              "line": 96,
+              "line": 73,
               "deprecated": false
             },
             {
@@ -20217,7 +20335,7 @@
               "kind": "method",
               "signature": "(self, times) -> None",
               "summary": "Frames that carry a key, drawn as faint red ticks (Maya's idiom).",
-              "line": 111,
+              "line": 88,
               "deprecated": false
             },
             {
@@ -20226,7 +20344,7 @@
               "kind": "method",
               "signature": "(self, left: float) -> None",
               "summary": "Set the left edge of the extent the ruler covers (scene pixels).",
-              "line": 124,
+              "line": 101,
               "deprecated": false
             },
             {
@@ -20235,7 +20353,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 137,
+              "line": 114,
               "deprecated": false
             },
             {
@@ -20244,7 +20362,7 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, option, widget=None)",
               "summary": "",
-              "line": 145,
+              "line": 122,
               "deprecated": false
             }
           ]
@@ -20368,7 +20486,7 @@
         {
           "name": "AttributeColorDialog",
           "summary": "Dialog for configuring attribute-type color mappings.",
-          "line": 76,
+          "line": 77,
           "bases": [
             "ColorMappingDialog"
           ],
@@ -20379,7 +20497,7 @@
               "kind": "staticmethod",
               "signature": "(defaults: Optional[Mapping[str, object]] = None) -> Dict[str, str]",
               "summary": "The persisted attribute color map, without opening a dialog.",
-              "line": 157,
+              "line": 158,
               "deprecated": false
             }
           ]
@@ -20387,7 +20505,7 @@
         {
           "name": "SequencerWidget",
           "summary": "A split-view NLE sequencer widget.",
-          "line": 276,
+          "line": 277,
           "bases": [
             "QtWidgets.QSplitter",
             "AttributesMixin"
@@ -20399,7 +20517,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "When ``True``, sequencer shortcuts are active whenever the",
-              "line": 613,
+              "line": 608,
               "deprecated": false
             },
             {
@@ -20408,7 +20526,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QShowEvent) -> None",
               "summary": "",
-              "line": 642,
+              "line": 637,
               "deprecated": false
             },
             {
@@ -20417,7 +20535,7 @@
               "kind": "method",
               "signature": "(self, event: QtGui.QResizeEvent) -> None",
               "summary": "",
-              "line": 650,
+              "line": 645,
               "deprecated": false
             },
             {
@@ -20426,7 +20544,7 @@
               "kind": "method",
               "signature": "(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool",
               "summary": "Intercept ShortcutOverride on the window when window_shortcuts is on.",
-              "line": 714,
+              "line": 709,
               "deprecated": false
             },
             {
@@ -20435,7 +20553,7 @@
               "kind": "method",
               "signature": "(self, event: QtCore.QEvent) -> bool",
               "summary": "",
-              "line": 763,
+              "line": 758,
               "deprecated": false
             },
             {
@@ -20444,7 +20562,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Dispatch registered shortcuts when focus is on a non-timeline child.",
-              "line": 786,
+              "line": 781,
               "deprecated": false
             },
             {
@@ -20453,7 +20571,16 @@
               "kind": "method",
               "signature": "(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: Optional[str] = None, text_color: Optional[str] = None) -> int",
               "summary": "Add a new track row.",
-              "line": 810,
+              "line": 805,
+              "deprecated": false
+            },
+            {
+              "name": "refresh_extent",
+              "qualname": "SequencerWidget.refresh_extent",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Recompute the scrollable extent unless a bulk rebuild is running.",
+              "line": 872,
               "deprecated": false
             },
             {
@@ -20462,7 +20589,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Suppress per-add scene-rect recomputation during a rebuild.",
-              "line": 885,
+              "line": 883,
               "deprecated": false
             },
             {
@@ -20471,7 +20598,7 @@
               "kind": "method",
               "signature": "(self, track_id: int, start: float, duration: float, label: str = '', color: Optional[str] = None, sub_row: str = '', locked: bool = False, **data) -> int",
               "summary": "Add a clip to an existing track.",
-              "line": 908,
+              "line": 906,
               "deprecated": false
             },
             {
@@ -20480,7 +20607,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int)",
               "summary": "Remove a clip by id.",
-              "line": 959,
+              "line": 957,
               "deprecated": false
             },
             {
@@ -20489,7 +20616,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int, label: str)",
               "summary": "Set the display label for a clip.",
-              "line": 969,
+              "line": 967,
               "deprecated": false
             },
             {
@@ -20498,7 +20625,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int, locked: bool)",
               "summary": "Lock or unlock a clip, preventing drag/resize/rename/selection.",
-              "line": 979,
+              "line": 977,
               "deprecated": false
             },
             {
@@ -20507,7 +20634,7 @@
               "kind": "method",
               "signature": "(self, track_id: int)",
               "summary": "Remove a track and all its clips.",
-              "line": 990,
+              "line": 988,
               "deprecated": false
             },
             {
@@ -20516,7 +20643,7 @@
               "kind": "method",
               "signature": "(self, clip_id: int) -> Optional[ClipData]",
               "summary": "Return the data for a clip, or None.",
-              "line": 1038,
+              "line": 1036,
               "deprecated": false
             },
             {
@@ -20525,7 +20652,7 @@
               "kind": "method",
               "signature": "(self, track_id: int) -> Optional[TrackData]",
               "summary": "Return the data for a track, or None.",
-              "line": 1042,
+              "line": 1040,
               "deprecated": false
             },
             {
@@ -20534,7 +20661,7 @@
               "kind": "method",
               "signature": "(self) -> List[TrackData]",
               "summary": "Return a list of all track data.",
-              "line": 1049,
+              "line": 1047,
               "deprecated": false
             },
             {
@@ -20543,7 +20670,7 @@
               "kind": "property",
               "signature": "(self) -> ShortcutManager",
               "summary": "The sequencer's shortcut table: a host adds or re-points a key",
-              "line": 1054,
+              "line": 1052,
               "deprecated": false
             },
             {
@@ -20552,7 +20679,7 @@
               "kind": "method",
               "signature": "(self, t: float) -> list",
               "summary": "The timeline's own right-click entries at time *t*, as data",
-              "line": 1059,
+              "line": 1057,
               "deprecated": false
             },
             {
@@ -20561,7 +20688,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Re-lay every item out against the current zoom, rows and editor.",
-              "line": 1065,
+              "line": 1063,
               "deprecated": false
             },
             {
@@ -20570,7 +20697,7 @@
               "kind": "method",
               "signature": "(self) -> dict",
               "summary": "The view to put back after a rebuild.",
-              "line": 1069,
+              "line": 1067,
               "deprecated": false
             },
             {
@@ -20579,7 +20706,7 @@
               "kind": "method",
               "signature": "(self, state: dict) -> None",
               "summary": "Re-apply a :meth:`viewport_state`'s zoom and horizontal scroll.",
-              "line": 1088,
+              "line": 1086,
               "deprecated": false
             },
             {
@@ -20588,7 +20715,7 @@
               "kind": "method",
               "signature": "(self, track_id: Optional[int] = None) -> List[ClipData]",
               "summary": "Return clip data, optionally filtered by track.",
-              "line": 1093,
+              "line": 1091,
               "deprecated": false
             },
             {
@@ -20597,7 +20724,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "The attribute names the clips key (their ``attributes`` data), sorted",
-              "line": 1099,
+              "line": 1097,
               "deprecated": false
             },
             {
@@ -20606,7 +20733,7 @@
               "kind": "method",
               "signature": "(self, clip_id_a: int, clip_id_b: int) -> None",
               "summary": "Swap the timeline positions of two clips and emit ``clips_reordered``.",
-              "line": 1111,
+              "line": 1109,
               "deprecated": false
             },
             {
@@ -20615,7 +20742,7 @@
               "kind": "method",
               "signature": "(self, time: float)",
               "summary": "Move the playhead to a specific time.",
-              "line": 1149,
+              "line": 1147,
               "deprecated": false
             },
             {
@@ -20624,7 +20751,7 @@
               "kind": "method",
               "signature": "(self, path: str, fps: float = 24.0) -> bool",
               "summary": "Bind an audio file (typically a composite WAV) for scrub playback.",
-              "line": 1155,
+              "line": 1153,
               "deprecated": false
             },
             {
@@ -20633,7 +20760,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Drop the bound audio source and stop any in-flight scrub.",
-              "line": 1169,
+              "line": 1167,
               "deprecated": false
             },
             {
@@ -20642,7 +20769,7 @@
               "kind": "method",
               "signature": "(self, *, keep_range_highlight: bool = False)",
               "summary": "Remove all tracks, clips, and markers.",
-              "line": 1179,
+              "line": 1177,
               "deprecated": false
             },
             {
@@ -20650,8 +20777,8 @@
               "qualname": "SequencerWidget.clear_decorations",
               "kind": "method",
               "signature": "(self, *, keep_range_highlight: bool = False)",
-              "summary": "Remove markers, overlays, and shot lane without touching tracks or clips.",
-              "line": 1221,
+              "summary": "Remove markers, overlays and what each layer shows, without touching",
+              "line": 1218,
               "deprecated": false
             },
             {
@@ -20660,7 +20787,7 @@
               "kind": "method",
               "signature": "(self, time: float, note: str = '', color: Optional[str] = None, draggable: bool = True, style: str = 'triangle', line_style: str = 'dashed', opacity: float = 1.0, data: Optional[Dict[str, Any]] = None) -> int",
               "summary": "Add a marker at *time*.",
-              "line": 1245,
+              "line": 1242,
               "deprecated": false
             },
             {
@@ -20669,7 +20796,7 @@
               "kind": "method",
               "signature": "(self, marker_id: int)",
               "summary": "Remove a marker by id.",
-              "line": 1283,
+              "line": 1280,
               "deprecated": false
             },
             {
@@ -20678,7 +20805,7 @@
               "kind": "method",
               "signature": "(self, marker_id: int) -> Optional[MarkerData]",
               "summary": "Return marker data, or None.",
-              "line": 1302,
+              "line": 1299,
               "deprecated": false
             },
             {
@@ -20687,7 +20814,7 @@
               "kind": "method",
               "signature": "(self) -> List[MarkerData]",
               "summary": "Return all markers.",
-              "line": 1306,
+              "line": 1303,
               "deprecated": false
             },
             {
@@ -20696,7 +20823,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove all markers.",
-              "line": 1310,
+              "line": 1307,
               "deprecated": false
             },
             {
@@ -20705,7 +20832,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float, color: Optional[str] = None, alpha: int = 30)",
               "summary": "Show or update a translucent highlight over a time range.",
-              "line": 1319,
+              "line": 1316,
               "deprecated": false
             },
             {
@@ -20714,7 +20841,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove the range highlight from the timeline.",
-              "line": 1350,
+              "line": 1347,
               "deprecated": false
             },
             {
@@ -20723,7 +20850,7 @@
               "kind": "method",
               "signature": "(self, start: float, end: float, color: str = '#888888', alpha: int = 15)",
               "summary": "Add a non-interactive range overlay (e.g.",
-              "line": 1356,
+              "line": 1353,
               "deprecated": false
             },
             {
@@ -20732,61 +20859,70 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Remove all non-interactive range overlays.",
-              "line": 1370,
+              "line": 1367,
               "deprecated": false
             },
             {
-              "name": "add_gap_overlay",
-              "qualname": "SequencerWidget.add_gap_overlay",
+              "name": "content_span",
+              "qualname": "SequencerWidget.content_span",
               "kind": "method",
-              "signature": "(self, start: float, end: float, color: str = '#555555', alpha: int = 120, locked: bool = False, tail: bool = False, head: bool = False)",
-              "summary": "Add a diagonal-hatch overlay for a gap between shots.",
-              "line": 1376,
+              "signature": "(self) -> Tuple[float, float]",
+              "summary": "``(top, height)`` of the content area an overlay spans in scene",
+              "line": 1380,
               "deprecated": false
             },
             {
-              "name": "clear_gap_overlays",
-              "qualname": "SequencerWidget.clear_gap_overlays",
-              "kind": "method",
-              "signature": "(self)",
-              "summary": "Remove all gap overlays.",
-              "line": 1410,
+              "name": "timeline",
+              "qualname": "SequencerWidget.timeline",
+              "kind": "property",
+              "signature": "(self) -> TimelineView",
+              "summary": "The timeline view: time <-> x (``time_to_x``, ``x_to_time``,",
+              "line": 1390,
               "deprecated": false
             },
             {
-              "name": "set_all_gap_overlays_locked",
-              "qualname": "SequencerWidget.set_all_gap_overlays_locked",
-              "kind": "method",
-              "signature": "(self, locked: bool)",
-              "summary": "Set the locked state on every gap overlay.",
-              "line": 1416,
+              "name": "range_highlight_item",
+              "qualname": "SequencerWidget.range_highlight_item",
+              "kind": "property",
+              "signature": "(self) -> Optional[RangeHighlightItem]",
+              "summary": "The range highlight's scene item (:meth:`set_range_highlight`), or",
+              "line": 1397,
               "deprecated": false
             },
             {
-              "name": "set_shot_blocks",
-              "qualname": "SequencerWidget.set_shot_blocks",
+              "name": "add_layer",
+              "qualname": "SequencerWidget.add_layer",
               "kind": "method",
-              "signature": "(self, blocks: list) -> None",
-              "summary": "Show coloured shot-block indicators on the ruler.",
-              "line": 1437,
+              "signature": "(self, layer: SequencerLayer) -> None",
+              "summary": "Plug *layer* into the timeline (``SequencerLayer``, ``_layer.py``).",
+              "line": 1405,
               "deprecated": false
             },
             {
-              "name": "selected_shot",
-              "qualname": "SequencerWidget.selected_shot",
+              "name": "layer",
+              "qualname": "SequencerWidget.layer",
               "kind": "method",
-              "signature": "(self) -> Optional[dict]",
-              "summary": "The shot block currently marked ``active``, or ``None``.",
-              "line": 1450,
+              "signature": "(self, name: str) -> SequencerLayer",
+              "summary": "The layer added under *name*.",
+              "line": 1423,
               "deprecated": false
             },
             {
-              "name": "clear_shot_blocks",
-              "qualname": "SequencerWidget.clear_shot_blocks",
+              "name": "add_track_item",
+              "qualname": "SequencerWidget.add_track_item",
               "kind": "method",
-              "signature": "(self) -> None",
-              "summary": "Remove all shot-block indicators from the ruler.",
-              "line": 1460,
+              "signature": "(self, item: QtWidgets.QGraphicsItem) -> None",
+              "summary": "Put a scene item under the track editor's content root: it hides",
+              "line": 1431,
+              "deprecated": false
+            },
+            {
+              "name": "remove_track_item",
+              "qualname": "SequencerWidget.remove_track_item",
+              "kind": "method",
+              "signature": "(self, item: QtWidgets.QGraphicsItem) -> None",
+              "summary": "Take *item* out of the scene, safely from inside its own event",
+              "line": 1436,
               "deprecated": false
             },
             {
@@ -20795,7 +20931,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[tuple]",
               "summary": "Return ``(start, end)`` of the active highlight, or ``None``.",
-              "line": 1464,
+              "line": 1494,
               "deprecated": false
             },
             {
@@ -20804,7 +20940,7 @@
               "kind": "method",
               "signature": "(self, names: List[str])",
               "summary": "Store a list of hidden track names for the 'show hidden' menu.",
-              "line": 1470,
+              "line": 1500,
               "deprecated": false
             },
             {
@@ -20812,8 +20948,8 @@
               "qualname": "SequencerWidget.set_active_range",
               "kind": "method",
               "signature": "(self, start: float, end: float)",
-              "summary": "Set the active-shot time range painted as a column tint.",
-              "line": 1475,
+              "summary": "Set the active time range, painted as a column tint.",
+              "line": 1505,
               "deprecated": false
             },
             {
@@ -20821,8 +20957,8 @@
               "qualname": "SequencerWidget.clear_active_range",
               "kind": "method",
               "signature": "(self)",
-              "summary": "Remove the active-shot column tint.",
-              "line": 1481,
+              "summary": "Remove the active range's column tint.",
+              "line": 1511,
               "deprecated": false
             },
             {
@@ -20831,7 +20967,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Advance the playhead by one step (snap_interval or 1 frame).",
-              "line": 1516,
+              "line": 1546,
               "deprecated": false
             },
             {
@@ -20840,7 +20976,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Move the playhead back by one step (snap_interval or 1 frame).",
-              "line": 1521,
+              "line": 1551,
               "deprecated": false
             },
             {
@@ -20849,7 +20985,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to the next clip boundary.",
-              "line": 1555,
+              "line": 1585,
               "deprecated": false
             },
             {
@@ -20858,7 +20994,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to the previous clip boundary.",
-              "line": 1563,
+              "line": 1593,
               "deprecated": false
             },
             {
@@ -20867,7 +21003,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to frame 0.",
-              "line": 1571,
+              "line": 1601,
               "deprecated": false
             },
             {
@@ -20876,7 +21012,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Jump the playhead to the end of the last clip.",
-              "line": 1575,
+              "line": 1605,
               "deprecated": false
             },
             {
@@ -20885,7 +21021,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Add a marker at the current playhead position.",
-              "line": 1579,
+              "line": 1609,
               "deprecated": false
             },
             {
@@ -20894,7 +21030,7 @@
               "kind": "method",
               "signature": "(self) -> bool",
               "summary": "Zoom and scroll the timeline to frame the active shot range.",
-              "line": 1585,
+              "line": 1615,
               "deprecated": false
             },
             {
@@ -20903,7 +21039,7 @@
               "kind": "method",
               "signature": "(self, t_min: float, t_max: float, fit_values: bool = True)",
               "summary": "Zoom and scroll so ``[t_min, t_max]`` fills the timeline's width.",
-              "line": 1607,
+              "line": 1637,
               "deprecated": false
             },
             {
@@ -20912,7 +21048,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Revert to the previous clip state.",
-              "line": 1673,
+              "line": 1703,
               "deprecated": false
             },
             {
@@ -20921,7 +21057,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Re-apply a previously undone change.",
-              "line": 1686,
+              "line": 1716,
               "deprecated": false
             },
             {
@@ -20930,7 +21066,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "Time-snap interval.",
-              "line": 1699,
+              "line": 1729,
               "deprecated": false
             },
             {
@@ -20939,7 +21075,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Draw a guide (and tint the drag readout) when a drag lands on a",
-              "line": 1709,
+              "line": 1739,
               "deprecated": false
             },
             {
@@ -20948,7 +21084,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Also pull a drag onto a nearby key frame, not just highlight it.",
-              "line": 1721,
+              "line": 1751,
               "deprecated": false
             },
             {
@@ -20957,7 +21093,7 @@
               "kind": "method",
               "signature": "(self, exclude_clip_ids=(), exclude_times=(), exclude_spans=()) -> List[float]",
               "summary": "Sorted, de-duplicated frames that a drag can align to.",
-              "line": 1736,
+              "line": 1766,
               "deprecated": false
             },
             {
@@ -20966,7 +21102,7 @@
               "kind": "method",
               "signature": "(self, time: float, candidates, tolerance: Optional[float] = None) -> Optional[float]",
               "summary": "Return the entry of *candidates* within *tolerance* of *time*.",
-              "line": 1785,
+              "line": 1815,
               "deprecated": false
             },
             {
@@ -20975,7 +21111,7 @@
               "kind": "method",
               "signature": "(self, times) -> None",
               "summary": "Show vertical alignment guides at *times* (empty hides them).",
-              "line": 1807,
+              "line": 1837,
               "deprecated": false
             },
             {
@@ -20984,7 +21120,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove the alignment guides.",
-              "line": 1830,
+              "line": 1860,
               "deprecated": false
             },
             {
@@ -20993,16 +21129,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 1838,
-              "deprecated": false
-            },
-            {
-              "name": "show_gap_overlays",
-              "qualname": "SequencerWidget.show_gap_overlays",
-              "kind": "property",
-              "signature": "(self) -> bool",
-              "summary": "",
-              "line": 1848,
+              "line": 1868,
               "deprecated": false
             },
             {
@@ -21011,7 +21138,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "",
-              "line": 1858,
+              "line": 1878,
               "deprecated": false
             },
             {
@@ -21020,7 +21147,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Draw a curve's flat spans apart (``CurveUtils.flat_pen``), so one",
-              "line": 1868,
+              "line": 1888,
               "deprecated": false
             },
             {
@@ -21029,7 +21156,7 @@
               "kind": "method",
               "signature": "(self, editor: SequencerEditor) -> None",
               "summary": "Offer :attr:`mark_flat_spans` in *editor*'s Display options (an",
-              "line": 1880,
+              "line": 1900,
               "deprecated": false
             },
             {
@@ -21038,7 +21165,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "When ``True``, right-clicks emit :attr:`zone_context_menu_requested`",
-              "line": 1893,
+              "line": 1913,
               "deprecated": false
             },
             {
@@ -21047,7 +21174,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether Shift was held when the last drag interaction started.",
-              "line": 1912,
+              "line": 1932,
               "deprecated": false
             },
             {
@@ -21056,7 +21183,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether Ctrl was held when the last drag interaction started.",
-              "line": 1921,
+              "line": 1941,
               "deprecated": false
             },
             {
@@ -21065,7 +21192,7 @@
               "kind": "method",
               "signature": "(self, modifiers) -> None",
               "summary": "Bank the modifiers a press carried, for the consumers' gates.",
-              "line": 1933,
+              "line": 1953,
               "deprecated": false
             },
             {
@@ -21074,7 +21201,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "The corner legend (:class:`ShortcutOverlay`), or ``None`` until",
-              "line": 1945,
+              "line": 1966,
               "deprecated": false
             },
             {
@@ -21083,7 +21210,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Show a legend of the drag grammar and keys in the timeline's corner.",
-              "line": 1951,
+              "line": 1972,
               "deprecated": false
             },
             {
@@ -21092,7 +21219,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "When to show the legend: ``\"off\"``, ``\"on\"``, or ``\"modifier\"``.",
-              "line": 1969,
+              "line": 1990,
               "deprecated": false
             },
             {
@@ -21101,7 +21228,7 @@
               "kind": "property",
               "signature": "(self) -> bool",
               "summary": "Whether the group under the pointer is worth resolving: the legend",
-              "line": 1996,
+              "line": 2017,
               "deprecated": false
             },
             {
@@ -21110,7 +21237,7 @@
               "kind": "property",
               "signature": "(self) -> Dict[str, str]",
               "summary": "Mapping of attribute name to hex color string.",
-              "line": 2034,
+              "line": 2055,
               "deprecated": false
             },
             {
@@ -21119,7 +21246,7 @@
               "kind": "method",
               "signature": "(self, name: str, color: str) -> None",
               "summary": "Set a single attribute's color and repaint.",
-              "line": 2050,
+              "line": 2071,
               "deprecated": false
             },
             {
@@ -21128,7 +21255,7 @@
               "kind": "property",
               "signature": "(self) -> RowMetrics",
               "summary": "Row sizes and key style: a :class:`RowMetrics` (a density preset).",
-              "line": 2065,
+              "line": 2086,
               "deprecated": false
             },
             {
@@ -21137,7 +21264,7 @@
               "kind": "method",
               "signature": "(self, name: str, factory) -> None",
               "summary": "Offer an editor under *name*, built the first time it is asked for.",
-              "line": 2092,
+              "line": 2113,
               "deprecated": false
             },
             {
@@ -21146,7 +21273,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> SequencerEditor",
               "summary": "The editor registered under *name*, built on first use.",
-              "line": 2107,
+              "line": 2128,
               "deprecated": false
             },
             {
@@ -21155,7 +21282,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "The registered editors' names (``\"tracks\"``, ``\"graph\"``...).",
-              "line": 2126,
+              "line": 2147,
               "deprecated": false
             },
             {
@@ -21164,7 +21291,7 @@
               "kind": "property",
               "signature": "(self) -> SequencerEditor",
               "summary": "The editor the content area shows.",
-              "line": 2131,
+              "line": 2152,
               "deprecated": false
             },
             {
@@ -21173,7 +21300,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> None",
               "summary": "Show the editor registered under *name* in the content area.",
-              "line": 2135,
+              "line": 2156,
               "deprecated": false
             },
             {
@@ -21182,7 +21309,7 @@
               "kind": "property",
               "signature": "(self) -> int",
               "summary": "Pixel height of expanded attribute sub-rows (default half track height).",
-              "line": 2179,
+              "line": 2193,
               "deprecated": false
             },
             {
@@ -21191,7 +21318,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Callable providing sub-row data for track expansion.",
-              "line": 2190,
+              "line": 2204,
               "deprecated": false
             },
             {
@@ -21200,7 +21327,7 @@
               "kind": "method",
               "signature": "(self, track_id: int, sub_row_data=None)",
               "summary": "Expand *track_id* to show sub-rows beneath it.",
-              "line": 2205,
+              "line": 2219,
               "deprecated": false
             },
             {
@@ -21209,7 +21336,7 @@
               "kind": "method",
               "signature": "(self, track_id: int, sub_row: str, preview: dict, color: str = '#CCCCCC') -> None",
               "summary": "Set or clear a background curve preview for a sub-row.",
-              "line": 2261,
+              "line": 2275,
               "deprecated": false
             },
             {
@@ -21218,7 +21345,7 @@
               "kind": "method",
               "signature": "(self, track_id: int)",
               "summary": "Collapse a previously expanded track, removing its sub-row clips.",
-              "line": 2281,
+              "line": 2295,
               "deprecated": false
             },
             {
@@ -21227,7 +21354,7 @@
               "kind": "method",
               "signature": "(self, track_id: int) -> bool",
               "summary": "Return True if the track is currently expanded.",
-              "line": 2332,
+              "line": 2346,
               "deprecated": false
             },
             {
@@ -21236,7 +21363,7 @@
               "kind": "method",
               "signature": "(self, track_id: int)",
               "summary": "Toggle expansion state.",
-              "line": 2336,
+              "line": 2350,
               "deprecated": false
             },
             {
@@ -21245,7 +21372,7 @@
               "kind": "method",
               "signature": "(self) -> List[int]",
               "summary": "Return clip IDs for all currently selected clips.",
-              "line": 2411,
+              "line": 2425,
               "deprecated": false
             },
             {
@@ -21254,7 +21381,7 @@
               "kind": "method",
               "signature": "(self) -> List[dict]",
               "summary": "Selected keyframe dots grouped by clip: ``[{clip_id, times}, ...]``.",
-              "line": 2419,
+              "line": 2433,
               "deprecated": false
             },
             {
@@ -21263,7 +21390,7 @@
               "kind": "method",
               "signature": "(self, wanted: List[dict], replace: bool = True) -> int",
               "summary": "Select keyframe dots by clip data and time;",
-              "line": 2440,
+              "line": 2454,
               "deprecated": false
             },
             {
@@ -21272,7 +21399,7 @@
               "kind": "method",
               "signature": "(self, global_pos) -> bool",
               "summary": "Open the key menu for the current key selection;",
-              "line": 2496,
+              "line": 2510,
               "deprecated": false
             },
             {
@@ -21281,7 +21408,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Show or hide the Shift scale box around the current key selection.",
-              "line": 2568,
+              "line": 2582,
               "deprecated": false
             },
             {
@@ -21290,7 +21417,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Remove the scale box, cancelling a drag it still owns.",
-              "line": 2594,
+              "line": 2608,
               "deprecated": false
             },
             {
@@ -21299,7 +21426,7 @@
               "kind": "method",
               "signature": "(self, held: bool) -> None",
               "summary": "Record whether Shift is down -- the one-key face of",
-              "line": 2607,
+              "line": 2621,
               "deprecated": false
             },
             {
@@ -21308,7 +21435,7 @@
               "kind": "property",
               "signature": "(self) -> int",
               "summary": "The chord currently held over the timeline, as a plain int.",
-              "line": 2615,
+              "line": 2629,
               "deprecated": false
             },
             {
@@ -21317,7 +21444,7 @@
               "kind": "method",
               "signature": "(self, modifiers) -> None",
               "summary": "Record the chord held over the timeline;",
-              "line": 2619,
+              "line": 2633,
               "deprecated": false
             }
           ]
@@ -21333,7 +21460,7 @@
         {
           "name": "TrackHeaderWidget",
           "summary": "Left-pane widget showing track labels, vertically synced to the timeline.",
-          "line": 96,
+          "line": 92,
           "bases": [
             "QtWidgets.QWidget"
           ],
@@ -21344,7 +21471,7 @@
               "kind": "method",
               "signature": "(self, margin: int) -> None",
               "summary": "",
-              "line": 148,
+              "line": 145,
               "deprecated": false
             },
             {
@@ -21353,7 +21480,7 @@
               "kind": "method",
               "signature": "(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: str = None, text_color: str = None)",
               "summary": "",
-              "line": 152,
+              "line": 149,
               "deprecated": false
             },
             {
@@ -21362,7 +21489,7 @@
               "kind": "method",
               "signature": "(self, track_idx: int, sub_names: List[str], sub_height: int)",
               "summary": "",
-              "line": 238,
+              "line": 235,
               "deprecated": false
             },
             {
@@ -21371,7 +21498,7 @@
               "kind": "method",
               "signature": "(self, metrics: RowMetrics) -> None",
               "summary": "Re-size every label to *metrics* (the sequencer's row density).",
-              "line": 258,
+              "line": 255,
               "deprecated": false
             },
             {
@@ -21380,7 +21507,7 @@
               "kind": "method",
               "signature": "(self, track_idx: int)",
               "summary": "",
-              "line": 278,
+              "line": 275,
               "deprecated": false
             },
             {
@@ -21389,7 +21516,7 @@
               "kind": "method",
               "signature": "(self) -> List[tuple]",
               "summary": "``[(track_name, sub_name), ...]`` for the selected sub-rows.",
-              "line": 298,
+              "line": 295,
               "deprecated": false
             },
             {
@@ -21398,7 +21525,7 @@
               "kind": "method",
               "signature": "(self, obj, event)",
               "summary": "",
-              "line": 335,
+              "line": 332,
               "deprecated": false
             },
             {
@@ -21407,7 +21534,7 @@
               "kind": "method",
               "signature": "(self) -> List[str]",
               "summary": "",
-              "line": 401,
+              "line": 398,
               "deprecated": false
             },
             {
@@ -21416,7 +21543,7 @@
               "kind": "method",
               "signature": "(self, menu: QtWidgets.QMenu, names: List[str]) -> None",
               "summary": "The track menu's rows onto *menu*: Hide and Delete *names*, the",
-              "line": 445,
+              "line": 442,
               "deprecated": false
             },
             {
@@ -21425,7 +21552,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "",
-              "line": 472,
+              "line": 469,
               "deprecated": false
             }
           ]
@@ -21433,7 +21560,7 @@
         {
           "name": "TimelineScene",
           "summary": "Scene that owns the ruler, playhead, and all clip items.",
-          "line": 494,
+          "line": 491,
           "bases": [
             "QtWidgets.QGraphicsScene"
           ],
@@ -21444,7 +21571,7 @@
               "kind": "property",
               "signature": "(self) -> RulerItem",
               "summary": "",
-              "line": 511,
+              "line": 508,
               "deprecated": false
             },
             {
@@ -21453,7 +21580,7 @@
               "kind": "property",
               "signature": "(self) -> PlayheadItem",
               "summary": "",
-              "line": 515,
+              "line": 512,
               "deprecated": false
             }
           ]
@@ -21461,7 +21588,7 @@
         {
           "name": "TimelineView",
           "summary": "QGraphicsView providing zoom, pan, and coordinate mapping.",
-          "line": 524,
+          "line": 521,
           "bases": [
             "QtWidgets.QGraphicsView"
           ],
@@ -21472,7 +21599,7 @@
               "kind": "method",
               "signature": "(self, event: QtCore.QEvent) -> bool",
               "summary": "",
-              "line": 569,
+              "line": 565,
               "deprecated": false
             },
             {
@@ -21481,7 +21608,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 590,
+              "line": 586,
               "deprecated": false
             },
             {
@@ -21490,7 +21617,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 608,
+              "line": 604,
               "deprecated": false
             },
             {
@@ -21499,7 +21626,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 639,
+              "line": 635,
               "deprecated": false
             },
             {
@@ -21508,7 +21635,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 656,
+              "line": 652,
               "deprecated": false
             },
             {
@@ -21517,7 +21644,7 @@
               "kind": "property",
               "signature": "(self) -> float",
               "summary": "",
-              "line": 662,
+              "line": 658,
               "deprecated": false
             },
             {
@@ -21526,7 +21653,7 @@
               "kind": "method",
               "signature": "(self, t: float) -> float",
               "summary": "",
-              "line": 670,
+              "line": 666,
               "deprecated": false
             },
             {
@@ -21535,7 +21662,7 @@
               "kind": "method",
               "signature": "(self, x: float) -> float",
               "summary": "",
-              "line": 673,
+              "line": 669,
               "deprecated": false
             },
             {
@@ -21544,7 +21671,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 677,
+              "line": 673,
               "deprecated": false
             },
             {
@@ -21553,7 +21680,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 688,
+              "line": 684,
               "deprecated": false
             },
             {
@@ -21562,7 +21689,16 @@
               "kind": "method",
               "signature": "(self, factor: float, view_x: float) -> None",
               "summary": "Zoom time by *factor*, keeping the frame under viewport *view_x* still.",
-              "line": 698,
+              "line": 694,
+              "deprecated": false
+            },
+            {
+              "name": "hit_zone",
+              "qualname": "TimelineView.hit_zone",
+              "kind": "method",
+              "signature": "(self, viewport_y: float) -> str",
+              "summary": "The strip *viewport_y* falls in: ``\"ruler\"``, a lane's layer name",
+              "line": 711,
               "deprecated": false
             },
             {
@@ -21571,7 +21707,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 884,
+              "line": 822,
               "deprecated": false
             },
             {
@@ -21580,7 +21716,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1004,
+              "line": 933,
               "deprecated": false
             },
             {
@@ -21589,7 +21725,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "The pointer has left: no gesture context, and Shift is no longer held.",
-              "line": 1084,
+              "line": 1011,
               "deprecated": false
             },
             {
@@ -21598,7 +21734,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1101,
+              "line": 1028,
               "deprecated": false
             },
             {
@@ -21607,7 +21743,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1161,
+              "line": 1091,
               "deprecated": false
             },
             {
@@ -21616,7 +21752,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1189,
+              "line": 1119,
               "deprecated": false
             },
             {
@@ -21625,7 +21761,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 1203,
+              "line": 1133,
               "deprecated": false
             },
             {
@@ -21634,7 +21770,7 @@
               "kind": "method",
               "signature": "(self, t: float) -> list",
               "summary": "The timeline's own context-menu entries at time *t*, as data.",
-              "line": 1261,
+              "line": 1193,
               "deprecated": false
             },
             {
@@ -21643,7 +21779,7 @@
               "kind": "method",
               "signature": "(self, menu, t: float)",
               "summary": "Append the timeline's own actions to a QMenu;",
-              "line": 1314,
+              "line": 1253,
               "deprecated": false
             },
             {
@@ -21652,7 +21788,7 @@
               "kind": "method",
               "signature": "(self) -> tuple",
               "summary": "``(min_time, max_time)`` spanned by everything the scene draws.",
-              "line": 1407,
+              "line": 1350,
               "deprecated": false
             },
             {
@@ -21661,7 +21797,7 @@
               "kind": "method",
               "signature": "(self, painter: QtGui.QPainter, rect: QtCore.QRectF)",
               "summary": "",
-              "line": 1498,
+              "line": 1443,
               "deprecated": false
             }
           ]

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import types
 from typing import Dict, List, TYPE_CHECKING
 
 from qtpy import QtWidgets, QtGui, QtCore
@@ -14,7 +15,6 @@ if TYPE_CHECKING:
 from uitk.widgets.sequencer._data import (
     RowMetrics,
     _RULER_HEIGHT,
-    _HEADER_HEIGHT,
     MenuUtils,
     CurveUtils,
     PatternRegistry,
@@ -23,10 +23,6 @@ from uitk.widgets.sequencer._clip import ClipItem
 from uitk.widgets.sequencer._keyframe import KeyframeItem, TangentHandleItem
 from uitk.widgets.sequencer._draggable import HeldGeometryMixin
 from uitk.widgets.sequencer._editor import SequencerEditor
-from uitk.widgets.sequencer._overlays import (
-    _GapOverlayItem,
-    RangeHighlightItem,
-)
 from uitk.widgets.sequencer._ruler import RulerItem
 from uitk.widgets.sequencer._playhead import PlayheadItem
 from uitk.managers.cursor_manager import CursorManager
@@ -141,7 +137,8 @@ class TrackHeaderWidget(QtWidgets.QWidget):
         # Row sizes, shared with the scene's row layout (SequencerWidget).
         self._metrics: RowMetrics = RowMetrics.preset("standard")
         self._layout = QtWidgets.QVBoxLayout(self)
-        self._layout.setContentsMargins(0, _HEADER_HEIGHT, 0, 0)
+        # The ruler alone until a layer adds a lane (``set_top_margin``).
+        self._layout.setContentsMargins(0, _RULER_HEIGHT, 0, 0)
         self._layout.setSpacing(self._metrics.padding)
         self._layout.addStretch()
 
@@ -435,7 +432,7 @@ class TrackHeaderWidget(QtWidgets.QWidget):
     def _show_label_menu(self, widget, pos):
         # Selection is already adjusted by eventFilter (right-click path).
         # Parented for its style, so released: one QMenu leaked per click.
-        menu = MenuUtils._styled_menu(self)
+        menu = MenuUtils.styled_menu(self)
         try:
             self.add_track_actions(menu, self.selected_names())
             menu.exec_(widget.mapToGlobal(pos))
@@ -544,10 +541,9 @@ class TimelineView(QtWidgets.QGraphicsView):
         self._pan_active = False
         self._pan_start = QtCore.QPoint()
         self._ruler_drag = False
-        #: The range highlight, while one of its bounds is being dragged
-        #: from the ruler's shot lane (the item is not the mouse grabber
-        #: there, so the view forwards the drag to it).
-        self._range_edge_drag = None
+        #: The layer that took the current press (``SequencerLayer.mouse_press``):
+        #: its moves and its release go to the layer too.
+        self._layer_grab = None
         self._shortcut_sequences: List[QtGui.QKeySequence] = []
         # Custom marquee state
         self._marquee_active = False
@@ -688,7 +684,7 @@ class TimelineView(QtWidgets.QGraphicsView):
     def wheelEvent(self, event):
         pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
         editor = self.parent_sequencer.active_editor
-        if self._hit_zone(pos.y()) == "tracks" and editor.wheel(event):
+        if self.hit_zone(pos.y()) == "tracks" and editor.wheel(event):
             return
         factor = 1.15 if event.angleDelta().y() > 0 else 1.0 / 1.15
         view_x = event.position().x() if hasattr(event, "position") else event.pos().x()
@@ -710,81 +706,23 @@ class TimelineView(QtWidgets.QGraphicsView):
         scene_x_after = time_under_cursor * self._pixels_per_unit
         self.horizontalScrollBar().setValue(int(scene_x_after - view_x))
 
-    # -- shot-bound handles on the ruler ------------------------------------
-
-    def _sync_shot_bound_cursor(self, viewport_pos) -> bool:
-        """Show the resize cursor over a shot bound on the shot lane.
-
-        The affordance the item's own hover gives below the header; up here
-        the ruler item is topmost, so the cursor is the view's to set.
-        """
-        zone = self._shot_band_zone(viewport_pos)
-        if zone in ("left", "right"):
-            self.viewport().setCursor(QtCore.Qt.SplitHCursor)
-        elif zone == "move":
-            self.viewport().setCursor(QtCore.Qt.OpenHandCursor)
-        elif self.viewport().cursor().shape() in (
-            QtCore.Qt.SplitHCursor,
-            QtCore.Qt.OpenHandCursor,
-        ):
-            self.viewport().unsetCursor()
-        return bool(zone)
-
-    def _in_shot_lane(self, viewport_y: float) -> bool:
-        """True for the strip below the ruler where shot blocks are drawn.
-
-        Asks :meth:`_hit_zone` rather than re-deriving the band: the cursor
-        sync runs off this on every move while the press routes off the zone,
-        and two spellings of the same span disagree at its edge -- a resize
-        cursor over a pixel that presses as "tracks".
-        """
-        return self._hit_zone(viewport_y) == "shot_lane"
-
-    def _shot_bound_handle(self, viewport_pos, scene_x: float, modifiers=None):
-        """The range highlight, if *viewport_pos* is on one of its grabs.
-
-        Returns the item with its drag already begun, or ``None`` -- in
-        which case the ruler keeps its scrub.  *modifiers* are the press's
-        own (they decide the grab: move, bound-only or retime); the live
-        keyboard state is the fallback for a caller without an event.
-        """
-        zone = self._shot_band_zone(viewport_pos)
-        if not zone:
-            return None
-        sq = self.parent_sequencer
-        if modifiers is None:
-            modifiers = QtWidgets.QApplication.keyboardModifiers()
-        sq.record_press_modifiers(modifiers)
-        sq._range_highlight.begin_edge_drag(zone, scene_x)
-        return sq._range_highlight
-
-    def _shot_band_zone(self, viewport_pos) -> str:
-        """Which of the highlight's grabs *viewport_pos* is over, or ``""``.
-
-        The one answer both the cursor and the press ask for; asking twice
-        let them disagree, which is a wrong cursor sitting over a live
-        handle.  The band offers all three: the two bounds, and the body --
-        the ONE place the whole shot can be dragged, since the item's own
-        body passes presses through so the marquee keeps working inside the
-        shot (see ``RangeHighlightItem.mousePressEvent``).
-        """
-        sq = self.parent_sequencer
-        hl = sq._range_highlight
-        # Asked of the setting, not of the item: under another editor the
-        # track rows' items are hidden, and the shot lane still owns the grab.
-        if hl is None or not sq.show_range_highlight:
-            return ""
-        if not self._in_shot_lane(viewport_pos.y()):
-            return ""
-        return hl.zone_at(self.mapToScene(viewport_pos).x())
-
     # -- zone detection -----------------------------------------------------
 
-    def _hit_zone(self, viewport_y: float) -> str:
+    def hit_zone(self, viewport_y: float) -> str:
+        """The strip *viewport_y* falls in: ``"ruler"``, a lane's layer name
+        (``SequencerWidget.add_layer``), or ``"tracks"`` below the header.
+
+        The one answer the cursor, the press and the menu all ask: two
+        spellings of the same span disagreed at its edge (a resize cursor
+        over a pixel that pressed as the tracks).
+        """
         if viewport_y < _RULER_HEIGHT:
             return "ruler"
-        if viewport_y < _HEADER_HEIGHT:
-            return "shot_lane"
+        top = float(_RULER_HEIGHT)
+        for layer, height in self.parent_sequencer._lane_stack:
+            top += height
+            if viewport_y < top:
+                return layer.name
         return "tracks"
 
     # -- marquee helpers ----------------------------------------------------
@@ -886,11 +824,12 @@ class TimelineView(QtWidgets.QGraphicsView):
         # changes (a graph editor's middle drag moves keys), and everything it
         # declines falls through to the track rows' handling below.
         editor = self.parent_sequencer.active_editor
-        if self._editor_grab and not event.buttons() & ~event.button():
-            # A press with nothing else held starts a new gesture: an editor
-            # grab still set lost its release (a popup took it).
+        if not event.buttons() & ~event.button():
+            # A press with nothing else held starts a new gesture: a grab
+            # still set lost its release (a popup took it).
             self._editor_grab = False
-        if self._hit_zone(event.pos().y()) == "tracks" and editor.mouse_press(event):
+            self._layer_grab = None
+        if self.hit_zone(event.pos().y()) == "tracks" and editor.mouse_press(event):
             self._editor_grab = True
             event.accept()
             return
@@ -901,36 +840,26 @@ class TimelineView(QtWidgets.QGraphicsView):
             event.accept()
             return
 
-        # Ctrl+Shift+Click: request shot switch at clicked time
-        mods = event.modifiers()
-        if (
-            event.button() == QtCore.Qt.LeftButton
-            and mods & QtCore.Qt.ControlModifier
-            and mods & QtCore.Qt.ShiftModifier
-        ):
-            scene_pos = self.mapToScene(event.pos())
-            t = self.x_to_time(scene_pos.x())
-            self.parent_sequencer.shot_switch_requested.emit(t)
-            event.accept()
-            return
+        # The layers next, in the order they were added: one that takes the
+        # press owns the gesture (a lane's grabs, a click with a meaning of
+        # its own anywhere on the timeline).
+        for layer in self.parent_sequencer._layers.values():
+            press = getattr(layer, "mouse_press", None)
+            if press is not None and press(event):
+                self._layer_grab = layer
+                event.accept()
+                return
 
-        zone = self._hit_zone(event.pos().y())
-        if event.button() == QtCore.Qt.LeftButton and zone in ("ruler", "shot_lane"):
+        mods = event.modifiers()
+        zone = self.hit_zone(event.pos().y())
+        if event.button() == QtCore.Qt.LeftButton and zone != "tracks":
+            # The ruler and every lane under it scrub, where no layer took
+            # the press.
             item = self.itemAt(event.pos())
             if isinstance(item, MarkerItem):
                 super().mousePressEvent(event)
                 return
             scene_pos = self.mapToScene(event.pos())
-            # A shot bound is DRAWN on the shot lane, so it is grabbed
-            # there too -- and only there; the ruler proper scrubs, every row
-            # of it.  Driven directly rather than by extending the highlight's
-            # hit area up here: a view-dependent boundingRect re-enters the
-            # scene index on scroll and dies natively.
-            hl = self._shot_bound_handle(event.pos(), scene_pos.x(), event.modifiers())
-            if hl is not None:
-                self._range_edge_drag = hl
-                event.accept()
-                return
             self._ruler_drag = True
             self.parent_sequencer._move_playhead(round(self.x_to_time(scene_pos.x())))
             event.accept()
@@ -951,7 +880,7 @@ class TimelineView(QtWidgets.QGraphicsView):
                 pre_selection = {id(it) for it in self._scene.selectedItems()}
                 mods_int = int(getattr(mods, "value", mods))
                 # Forward to scene so non-selectable interactive overlays
-                # (gap, range-highlight) can accept edge drags.
+                # (the range highlight, a layer's items) can accept edge drags.
                 if item is not None:
                     super().mousePressEvent(event)
                     if self._scene.mouseGrabberItem() is not None:
@@ -1020,10 +949,8 @@ class TimelineView(QtWidgets.QGraphicsView):
             if hs.value() >= hs.maximum() - 10:
                 self._update_scene_rect()
             event.accept()
-        elif self._range_edge_drag is not None:
-            self._range_edge_drag.update_edge_drag(
-                self.mapToScene(event.pos()).x(), event.modifiers()
-            )
+        elif self._layer_grab is not None and event.buttons():
+            self._layer_grab.mouse_move(event)
             event.accept()
         elif self._ruler_drag:
             scene_pos = self.mapToScene(event.pos())
@@ -1042,11 +969,15 @@ class TimelineView(QtWidgets.QGraphicsView):
             self.viewport().update()
             event.accept()
         else:
+            self._layer_grab = None  # no button held: a hover again
             self._sync_gesture_context(event.pos())
             editor = self.parent_sequencer.active_editor
-            if self._hit_zone(event.pos().y()) == "tracks" and editor.mouse_move(event):
+            if self.hit_zone(event.pos().y()) == "tracks" and editor.mouse_move(event):
                 return  # the editor's hover (cursor, highlight)
-            self._sync_shot_bound_cursor(event.pos())
+            for layer in self.parent_sequencer._layers.values():
+                hover = getattr(layer, "mouse_move", None)
+                if hover is not None and hover(event):
+                    return  # a layer's hover (its lane's cursor)
             super().mouseMoveEvent(event)
 
     def _sync_gesture_context(self, viewport_pos) -> None:
@@ -1054,31 +985,27 @@ class TimelineView(QtWidgets.QGraphicsView):
         sq = self.parent_sequencer
         if not sq.shortcut_overlay_tracking:
             return  # nobody is reading: skip the per-move scene query
-        zone = self._hit_zone(viewport_pos.y())
-        editor_group = None
+        zone = self.hit_zone(viewport_pos.y())
+        group = None
         if zone == "tracks":
-            editor_group = sq.active_editor.gesture_group_at(viewport_pos)
-        if editor_group is not None:
-            group = editor_group
-        elif zone in ("ruler", "shot_lane"):
-            group = "Shot bounds" if self._shot_band_zone(viewport_pos) else "Timeline"
-        else:
-            item = self.itemAt(viewport_pos)
+            group = sq.active_editor.gesture_group_at(viewport_pos)
+        if group is None:
+            # A layer's own groups (its lane, its items) before the kernel's.
+            for layer in sq._layers.values():
+                ask = getattr(layer, "gesture_group_at", None)
+                group = ask(viewport_pos) if ask is not None else None
+                if group is not None:
+                    break
+        if group is None:
+            item = self.itemAt(viewport_pos) if zone == "tracks" else None
             if isinstance(item, TangentHandleItem):
                 # The handle reads the three modifiers differently from the
                 # dot it hangs off: its own rows, under its own heading.
                 group = "Tangents"
             elif isinstance(item, (ClipItem, KeyframeItem)):
                 group = "Clips & keys"
-            elif isinstance(item, _GapOverlayItem):
-                # A head/tail cap is the first/last shot's own bound.
-                group = "Shot bounds" if (item._tail or item._head) else "Gaps"
-            elif isinstance(item, RangeHighlightItem) and item._hit_zone(
-                item.mapFromScene(self.mapToScene(viewport_pos))
-            ) in ("left", "right"):
-                group = "Shot bounds"
             else:
-                group = "Timeline"
+                group = "Timeline"  # the ruler and the lanes, and empty rows
         sq._set_gesture_context(group)
 
     def leaveEvent(self, event):
@@ -1105,13 +1032,16 @@ class TimelineView(QtWidgets.QGraphicsView):
             self.parent_sequencer.active_editor.mouse_release(event)
             event.accept()
             return
+        if self._layer_grab is not None:
+            layer = self._layer_grab
+            if not event.buttons():
+                self._layer_grab = None
+            if layer.mouse_release(event):
+                event.accept()
+                return
         if event.button() == QtCore.Qt.MiddleButton:
             self._pan_active = False
             CursorManager.pop(self)
-            event.accept()
-        elif event.button() == QtCore.Qt.LeftButton and self._range_edge_drag:
-            self._range_edge_drag.finish_edge_drag()
-            self._range_edge_drag = None
             event.accept()
         elif event.button() == QtCore.Qt.LeftButton and self._ruler_drag:
             self._ruler_drag = False
@@ -1159,12 +1089,12 @@ class TimelineView(QtWidgets.QGraphicsView):
         self.parent_sequencer._move_playhead(float(value))
 
     def mouseDoubleClickEvent(self, event):
-        zone = self._hit_zone(event.pos().y())
+        zone = self.hit_zone(event.pos().y())
         editor = self.parent_sequencer.active_editor
         if zone == "tracks" and editor.mouse_double_click(event):
             event.accept()
             return
-        if event.button() == QtCore.Qt.LeftButton and zone in ("ruler", "shot_lane"):
+        if event.button() == QtCore.Qt.LeftButton and zone != "tracks":
             item = self.itemAt(event.pos())
             if isinstance(item, MarkerItem):
                 super().mouseDoubleClickEvent(event)
@@ -1203,7 +1133,7 @@ class TimelineView(QtWidgets.QGraphicsView):
     def contextMenuEvent(self, event):
         sq = self.parent_sequencer
         item = self.itemAt(event.pos())
-        zone = self._hit_zone(event.pos().y())
+        zone = self.hit_zone(event.pos().y())
         if zone == "tracks" and sq.active_editor.context_menu(event):
             event.accept()
             return
@@ -1212,7 +1142,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         # hit on a 7-pixel dot -- and reaching it took a press that had
         # already collapsed a multi-key selection to that one key.  While any
         # key is selected it opens anywhere over the TRACKS; the ruler and
-        # the shot lane keep their own menus, and an unselected key still
+        # the lanes keep their own menus, and an unselected key still
         # becomes the selection first, through its own handler below.
         if zone == "tracks" and not (
             isinstance(item, KeyframeItem) and not item.isSelected()
@@ -1221,10 +1151,7 @@ class TimelineView(QtWidgets.QGraphicsView):
                 event.accept()
                 return
 
-        if isinstance(
-            item,
-            (ClipItem, KeyframeItem, TangentHandleItem, MarkerItem, _GapOverlayItem),
-        ):
+        if self._has_own_menu(item):
             super().contextMenuEvent(event)
             return
 
@@ -1234,22 +1161,17 @@ class TimelineView(QtWidgets.QGraphicsView):
         if interval > 0:
             t = round(t / interval) * interval
 
-        # Refine: a click at a time some shot covers is the shot lane,
-        # whatever the height — a shot owns its whole timeline COLUMN, not
-        # just the band drawn in the lane, so "right-click the shot" has to
-        # mean the same thing over the tracks as over the band.  Consumers
-        # present a shot-specific menu there.
-        # Hit-test with the UNSNAPPED click time: `t` was snapped above,
-        # which near a block edge can land the test on the wrong side of the
-        # boundary.  (Press/double-click keep plain "ruler" semantics: scrub
-        # and add-marker.)
-        # The RULER is exempt from that refinement: it IS the timeline, and
-        # the timeline's own menu has to be reachable somewhere better than
-        # "wherever no shot happens to be" -- which is what it came to when
-        # consumers folded those actions into the shot menu instead.
+        # The layers may refine the zone the menu reports: a lane whose
+        # blocks own their whole timeline COLUMN reports its own zone over
+        # the tracks too (``SequencerLayer.menu_zone``).  Asked with the
+        # UNSNAPPED click time: `t` was snapped above, which near a block's
+        # edge can land the test on the wrong side of it.  (Press and
+        # double-click keep plain ruler semantics: scrub and add-marker.)
         raw_t = self.x_to_time(scene_pos.x())
-        if zone == "tracks" and self._scene.ruler.shot_block_at(raw_t) is not None:
-            zone = "shot_lane"
+        for layer in sq._layers.values():
+            refine = getattr(layer, "menu_zone", None)
+            if refine is not None:
+                zone = refine(zone, raw_t)
 
         if sq.zone_menu_enabled:
             sq.zone_context_menu_requested.emit(zone, t, event.globalPos())
@@ -1258,16 +1180,28 @@ class TimelineView(QtWidgets.QGraphicsView):
 
         self._show_default_context_menu(sq, t, event.globalPos())
 
+    @staticmethod
+    def _has_own_menu(item) -> bool:
+        """Whether *item* answers a right-click itself -- a Python
+        ``contextMenuEvent`` of its own (clips, keys, tangent handles,
+        markers, a layer's items), so the scene delivers the event to it."""
+        return item is not None and any(
+            isinstance(vars(cls).get("contextMenuEvent"), types.FunctionType)
+            for cls in type(item).__mro__
+        )
+
     def default_context_entries(self, t: float) -> list:
         """The timeline's own context-menu entries at time *t*, as data.
 
-        ``[{"label", "callback", "checkable", "checked"}, ...]`` in menu
-        order, ``None`` standing for a separator.  A checkable entry's
-        callback takes the new checked state; a plain one takes nothing.
-        The ONE description of what the widget offers on a right-click, so
-        a consumer building its own menu (a shot menu, in whatever menu
-        widget it builds with) folds these in rather than leaving the user
-        to hunt for a second menu, and
+        ``[{"key", "label", "callback", "checkable", "checked"}, ...]`` in
+        menu order, ``None`` standing for a separator.  A checkable entry's
+        callback takes the new checked state; a plain one takes nothing;
+        ``key`` names the entry for a layer that edits the list
+        (``SequencerLayer.context_entries``, applied here in the order the
+        layers were added).  The ONE description of what the widget offers
+        on a right-click, so a consumer building its own menu (in whatever
+        menu widget it builds with) folds these in rather than leaving the
+        user to hunt for a second menu, and
         :meth:`add_default_context_actions` renders the same list into a
         QMenu.
         """
@@ -1287,6 +1221,7 @@ class TimelineView(QtWidgets.QGraphicsView):
 
         entries = [
             {
+                "key": "add_marker",
                 "label": f"Add Marker at {int(t)}\u2026",
                 "callback": _add_marker,
                 "checkable": False,
@@ -1295,12 +1230,12 @@ class TimelineView(QtWidgets.QGraphicsView):
             None,
         ]
         for key, label in (
-            ("range_overlays", "Show Shot Ranges"),
+            ("range_overlays", "Show Range Overlays"),
             ("range_highlight", "Show Active Range"),
-            ("gap_overlays", "Show Gap Overlays"),
         ):
             entries.append(
                 {
+                    "key": key,
                     "label": label,
                     "callback": lambda checked, k=key: setattr(
                         sq, f"show_{k}", bool(checked)
@@ -1309,6 +1244,10 @@ class TimelineView(QtWidgets.QGraphicsView):
                     "checked": bool(getattr(sq, f"show_{key}")),
                 }
             )
+        for layer in sq._layers.values():
+            edit = getattr(layer, "context_entries", None)
+            if edit is not None:
+                entries = list(edit(t, entries))
         return entries
 
     def add_default_context_actions(self, menu, t: float):
@@ -1354,7 +1293,7 @@ class TimelineView(QtWidgets.QGraphicsView):
 
     def _show_default_context_menu(self, sq, t, global_pos):
         # Parented for its style, so released: one QMenu leaked per click.
-        menu = MenuUtils._styled_menu(self)
+        menu = MenuUtils.styled_menu(self)
         try:
             handled = self.add_default_context_actions(menu, t)
             handled(menu.exec_(global_pos))
@@ -1398,6 +1337,10 @@ class TimelineView(QtWidgets.QGraphicsView):
                 # bounds re-derived from the new layout, announced first.
                 item.sync()
         sq.active_editor.relayout()
+        for layer in sq._layers.values():
+            relayout = getattr(layer, "relayout", None)
+            if relayout is not None:
+                relayout()
         self._sync_ruler_pos()
         # The Shift scale box brackets key dots that just moved under it.
         self.parent_sequencer.refresh_key_scale_box()
@@ -1407,11 +1350,12 @@ class TimelineView(QtWidgets.QGraphicsView):
     def content_time_bounds(self) -> tuple:
         """``(min_time, max_time)`` spanned by everything the scene draws.
 
-        Every decoration counts, not just the clips: shot bands, range
-        overlays and gaps are the things a shot edit moves, and a shot that
-        no longer encloses any clip still has to be reachable.
+        Every decoration counts, not just the clips: the range highlight
+        and overlays, the markers, and what each layer draws
+        (``SequencerLayer.time_bounds``) -- a range that no longer encloses
+        any clip still has to be reachable.
 
-        Frame 0 is not the floor.  Padding a shot's head or rippling one
+        Frame 0 is not the floor.  Padding a range's head or rippling one
         upstream legitimately puts content before it, and a view that
         started at the origin left that content unreachable.
         """
@@ -1421,7 +1365,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         def _span(a, b):
             nonlocal lo, hi
             if b < a:
-                # Consumer-supplied spans (shot blocks especially) are not
+                # Consumer-supplied spans (a layer's especially) are not
                 # validated anywhere; an inverted one would pull the bounds
                 # INWARD and hide the very content it describes.
                 a, b = b, a
@@ -1434,11 +1378,13 @@ class TimelineView(QtWidgets.QGraphicsView):
             _span(md.time, md.time)
         if sq._range_highlight is not None:
             _span(sq._range_highlight.start, sq._range_highlight.end)
-        for overlays in (sq._gap_overlays, sq._range_overlays):
-            for ov in overlays:
-                _span(ov._start, ov._end)
-        for blk in self._scene.ruler._shot_blocks:
-            _span(blk["start"], blk["end"])
+        for ov in sq._range_overlays:
+            _span(ov._start, ov._end)
+        for layer in sq._layers.values():
+            bounds = getattr(layer, "time_bounds", None)
+            span = bounds() if bounds is not None else None
+            if span is not None:
+                _span(*span)
         if sq._active_range is not None:
             _span(*sq._active_range)
         own = sq.active_editor.time_bounds()  # a graph's keys past the clips
@@ -1467,12 +1413,11 @@ class TimelineView(QtWidgets.QGraphicsView):
         visible = self.mapToScene(self.viewport().rect()).boundingRect()
         left = min(left, visible.left())
         right = max(right, visible.right())
+        top, rows_h = sq.content_span()
         row_h = sq.active_editor.content_height()
         if row_h is None:
-            row_h = max(
-                sq._total_row_height(), self.viewport().height() - sq._content_top
-            )
-        h = sq._content_top + row_h
+            row_h = rows_h
+        h = top + row_h
         rect = QtCore.QRectF(left, 0, right - left, h)
         if rect != self._scene.sceneRect():
             self._scene.setSceneRect(rect)
@@ -1504,8 +1449,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         if ar is not None:
             x0 = self.time_to_x(ar[0])
             x1 = self.time_to_x(ar[1])
-            top = sq._content_top
-            h = max(sq._total_row_height(), self.viewport().height() - top)
+            top, h = sq.content_span()
             painter.fillRect(QtCore.QRectF(x0, top, x1 - x0, h), sq._active_range_color)
 
     def _draw_track_rows(self, painter: QtGui.QPainter, rect: QtCore.QRectF) -> None:

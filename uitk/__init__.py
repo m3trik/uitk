@@ -208,6 +208,13 @@ DEFAULT_INCLUDE = {
     "widgets.sequencer._editor": ["SequencerEditor", "TrackEditor"],
     "widgets.sequencer._graph_editor": ["GraphEditor"],
     "widgets.sequencer._keyframe": ["KeyframeItem"],
+    # The parts a host's timeline layer builds its items from
+    # (``SequencerWidget.add_layer``) -- the widget's own items are made of
+    # them -- reached from a slots layer as ``self.sb.<Name>``.
+    "widgets.sequencer._clip": ["ClipItem"],
+    "widgets.sequencer._draggable": ["HeldGeometryMixin", "DraggableItemMixin"],
+    "widgets.sequencer._drag_tooltip": ["FrameTooltip"],
+    "widgets.sequencer._data": ["MenuUtils", "PatternRegistry"],
     # The transport row (play / step / range) a host panel docks on its footer
     # -- the Shot Sequencer's, reached as ``self.sb.TransportControls``.
     "widgets.sequencer._transport_controls": ["TransportControls"],
@@ -274,8 +281,58 @@ def _uitk_getattr(name: str):
 
 #: Public names that left this package (CODE_STANDARD section 5): no alias, so a
 #: read raises MovedNameError naming the new home. ``{name: (new home, version)}``;
-#: a move adds its names here in the same change set.
-MOVED_NAMES = {}
+#: a move adds its names here in the same change set. A ``Class.member`` key
+#: accounts for a member's move at release (``generate_api_registry.py``); only
+#: a root name answers at runtime.
+MOVED_NAMES = {
+    # The sequencer's shot layer -- the shot lane under the ruler and the gaps
+    # between shots -- is the Shot Sequencer's, and plugs back in through
+    # ``SequencerWidget.add_layer``.
+    "SequencerWidget.set_shot_blocks": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_shot_blocks",
+        "1.9.0",
+    ),
+    "SequencerWidget.selected_shot": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.selected_shot",
+        "1.9.0",
+    ),
+    "SequencerWidget.clear_shot_blocks": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_shot_blocks",
+        "1.9.0",
+    ),
+    "SequencerWidget.add_gap_overlay": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.add_gap_overlay",
+        "1.9.0",
+    ),
+    "SequencerWidget.clear_gap_overlays": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_gap_overlays",
+        "1.9.0",
+    ),
+    "SequencerWidget.set_all_gap_overlays_locked": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_all_gap_overlays_locked",
+        "1.9.0",
+    ),
+    "SequencerWidget.show_gap_overlays": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.show_gap_overlays",
+        "1.9.0",
+    ),
+    "RulerItem.set_shot_blocks": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_shot_blocks",
+        "1.9.0",
+    ),
+    "RulerItem.clear_shot_blocks": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_shot_blocks",
+        "1.9.0",
+    ),
+    "RulerItem.selected_block": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.selected_shot",
+        "1.9.0",
+    ),
+    "RulerItem.shot_block_at": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.shot_block_at",
+        "1.9.0",
+    ),
+}
 
 bootstrap_package(
     globals(),

@@ -283,7 +283,7 @@ class TclMaya(MarkingMenu):
 
 One line each — the deep docs are linked below:
 
-- **Timeline sequencer** — `SequencerWidget`, an NLE-style timeline: tracks, draggable clips and keyframes, markers, shot lanes, range/gap overlays, undo/redo, transport controls, audio scrubbing. Powers mayatk's Shot Sequencer.
+- **Timeline sequencer** — `SequencerWidget`, an NLE-style timeline: tracks, draggable clips and keyframes, markers, range overlays, host layers (a lane under the ruler, items over the rows: `add_layer`), undo/redo, transport controls, audio scrubbing. Powers tentacle's Shot Sequencer, whose shots are a layer.
 - **Compiled UI loading** — `.ui` files compile to hash-stamped `_ui.py` modules (`python -m uitk.compile`, `--check` for CI); stale output recompiles automatically, `precompile_async()` warms a fleet in the background, and compilation uses the running binding's own `uic` so output stays loadable across mixed PySide versions (a venv's PySide6 vs. Maya's bundled one).
 - **Shortcut registry & editor** — slot hotkeys, app-global shortcuts (`GlobalShortcut`), and named commands share one registry; `sb.editors.show("shortcut_editor")` opens a table editor with in-cell key capture, collision checking, and preset import/export.
 - **Named presets** — `ui.presets` (`PresetManager`) snapshots widget values into named presets backed by pythontk's `PresetStore`; `make_preset_combo()` returns a ready-wired picker.

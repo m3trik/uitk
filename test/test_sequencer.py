@@ -23,10 +23,8 @@ from uitk.widgets.sequencer import (
     MarkerData,
     RangeHighlightItem,
     AttributeColorDialog,
-    _GapOverlayItem,
     _StaticRangeOverlay,
     _RULER_HEIGHT,
-    _SHOT_LANE_HEIGHT,
     _SUB_ROW_HEIGHT,
     _MIN_CLIP_DURATION,
     DISPLAY_COLORS,
@@ -1534,174 +1532,9 @@ class TestKeyframeRendering(BaseTestCase):
 # =========================================================================
 
 
-class TestGapOverlays(BaseTestCase):
-    """Gap overlay creation, visibility, and lifecycle."""
-
-    def setUp(self):
-        self.w = SequencerWidget()
-
-    def tearDown(self):
-        self.w.close()
-        self.w.deleteLater()
-
-    def test_add_gap_overlay(self):
-        """add_gap_overlay creates a scene item and tracks it."""
-        self.w.add_gap_overlay(50, 60)
-        self.assertEqual(len(self.w._gap_overlays), 1)
-
-    def test_add_multiple_gap_overlays(self):
-        self.w.add_gap_overlay(10, 20)
-        self.w.add_gap_overlay(30, 40)
-        self.w.add_gap_overlay(70, 80)
-        self.assertEqual(len(self.w._gap_overlays), 3)
-
-    def test_clear_gap_overlays(self):
-        self.w.add_gap_overlay(10, 20)
-        self.w.add_gap_overlay(30, 40)
-        self.w.clear_gap_overlays()
-        self.assertEqual(len(self.w._gap_overlays), 0)
-
-    def test_gap_overlay_visible_by_default(self):
-        """Gaps are visible when _show_gap_overlays is True (default)."""
-        self.assertTrue(self.w._show_gap_overlays)
-        self.w.add_gap_overlay(10, 20)
-        self.assertTrue(self.w._gap_overlays[0].isVisible())
-
-    def test_gap_overlay_hidden_when_disabled(self):
-        """Gaps created while show_gap_overlays=False are hidden."""
-        self.w.show_gap_overlays = False
-        self.w.add_gap_overlay(10, 20)
-        self.assertFalse(self.w._gap_overlays[0].isVisible())
-
-    def test_toggle_show_gap_overlays(self):
-        """Toggling show_gap_overlays updates all existing gaps."""
-        self.w.add_gap_overlay(10, 20)
-        self.w.add_gap_overlay(30, 40)
-        self.w.show_gap_overlays = False
-        for item in self.w._gap_overlays:
-            self.assertFalse(item.isVisible())
-        self.w.show_gap_overlays = True
-        for item in self.w._gap_overlays:
-            self.assertTrue(item.isVisible())
-
-    def test_gap_overlay_locked_flag(self):
-        """add_gap_overlay(locked=True) sets the locked flag."""
-        self.w.add_gap_overlay(10, 20, locked=True)
-        self.assertTrue(self.w._gap_overlays[0]._locked)
-
-    def test_gap_overlay_unlocked_by_default(self):
-        self.w.add_gap_overlay(10, 20)
-        self.assertFalse(self.w._gap_overlays[0]._locked)
-
-    def test_set_all_gap_overlays_locked(self):
-        self.w.add_gap_overlay(10, 20)
-        self.w.add_gap_overlay(30, 40)
-        self.w.set_all_gap_overlays_locked(True)
-        for item in self.w._gap_overlays:
-            self.assertTrue(item._locked)
-        self.w.set_all_gap_overlays_locked(False)
-        for item in self.w._gap_overlays:
-            self.assertFalse(item._locked)
-
-    def test_clear_decorations_removes_gaps(self):
-        """clear_decorations removes gap overlays along with other items."""
-        self.w.add_gap_overlay(10, 20)
-        self.w.add_marker(time=25)
-        self.w.clear_decorations()
-        self.assertEqual(len(self.w._gap_overlays), 0)
-
-    def test_gap_overlay_is_scene_item(self):
-        """Gap overlays are added to the QGraphicsScene."""
-        self.w.add_gap_overlay(10, 20)
-        scene = self.w._timeline.scene()
-        gap_items = [
-            item for item in scene.items() if isinstance(item, _GapOverlayItem)
-        ]
-        self.assertEqual(len(gap_items), 1)
-
-    def test_gap_edge_click_does_not_start_marquee(self):
-        """Clicking a gap overlay edge must start a gap drag, not a marquee.
-
-        Bug: mousePressEvent in TimelineView checked ItemIsSelectable
-        which gap overlays don't have, so clicks fell to marquee code.
-        Fixed: 2026-04-07
-        """
-        from qtpy import QtCore, QtWidgets, QtTest
-
-        self.w.resize(800, 400)
-        self.w.show()
-        self.w.add_track("obj_A")
-        self.w.add_gap_overlay(50, 70)
-        QtWidgets.QApplication.processEvents()
-
-        tl = self.w._timeline
-        gap_item = self.w._gap_overlays[0]
-        # Ensure the gap is within the visible viewport before mapping
-        gap_rect = gap_item._rect()
-        tl.ensureVisible(gap_rect, 50, 50)
-        QtWidgets.QApplication.processEvents()
-        # Map the right edge of the gap to view coords
-        right_edge = QtCore.QPointF(gap_rect.right() - 2, gap_rect.center().y())
-        view_pos = tl.mapFromScene(right_edge)
-
-        # Simulate a left-button press at the gap's right edge
-        QtTest.QTest.mousePress(
-            tl.viewport(),
-            QtCore.Qt.LeftButton,
-            QtCore.Qt.NoModifier,
-            QtCore.QPoint(int(view_pos.x()), int(view_pos.y())),
-        )
-
-        # Marquee should NOT have started
-        self.assertFalse(
-            tl._marquee_active,
-            "Marquee started instead of forwarding to gap overlay!",
-        )
-
-
 # =========================================================================
 # Shot Blocks (Ruler)
 # =========================================================================
-
-
-class TestShotBlocks(BaseTestCase):
-    """Shot block indicators on the ruler."""
-
-    def setUp(self):
-        self.w = SequencerWidget()
-
-    def tearDown(self):
-        self.w.close()
-        self.w.deleteLater()
-
-    def test_set_shot_blocks(self):
-        """set_shot_blocks populates the ruler with blocks."""
-        blocks = [
-            {"name": "Shot_A", "start": 0, "end": 50, "active": True},
-            {"name": "Shot_B", "start": 60, "end": 100, "active": False},
-        ]
-        self.w.set_shot_blocks(blocks)
-        ruler = self.w._timeline._scene.ruler
-        self.assertEqual(len(ruler._shot_blocks), 2)
-
-    def test_clear_shot_blocks(self):
-        blocks = [{"name": "S", "start": 0, "end": 50, "active": True}]
-        self.w.set_shot_blocks(blocks)
-        self.w.clear_shot_blocks()
-        ruler = self.w._timeline._scene.ruler
-        self.assertEqual(len(ruler._shot_blocks), 0)
-
-    def test_shot_blocks_replaced_on_set(self):
-        """Calling set_shot_blocks replaces previous blocks."""
-        self.w.set_shot_blocks([{"name": "A", "start": 0, "end": 50, "active": True}])
-        self.w.set_shot_blocks(
-            [
-                {"name": "B", "start": 0, "end": 30, "active": True},
-                {"name": "C", "start": 40, "end": 80, "active": False},
-            ]
-        )
-        ruler = self.w._timeline._scene.ruler
-        self.assertEqual(len(ruler._shot_blocks), 2)
 
 
 # =========================================================================
@@ -2386,7 +2219,7 @@ class TestEditorSeam(BaseTestCase):
 
     def test_the_legend_shows_the_active_editors_gestures(self):
         groups = self.w._shortcut_mgr.gestures
-        self.assertIn("Shot bounds", groups)
+        self.assertIn("Tangents", groups)
         self.w.set_editor("probe")
         self.assertEqual(list(groups), ["Probe"])
         self.w.set_editor("tracks")
@@ -2416,17 +2249,6 @@ class TestEditorSeam(BaseTestCase):
         self.w.key_selection_changed.connect(seen.append)
         self.w.set_editor("probe")
         self.assertEqual(seen, [])
-
-    def test_the_shot_lane_still_grabs_the_bound_under_another_editor(self):
-        from qtpy import QtCore
-
-        self.w.set_editor("probe")
-        tl = self.w._timeline
-        x = tl.mapFromScene(tl.time_to_x(60), 0).x()
-        from uitk.widgets.sequencer import _RULER_HEIGHT
-
-        zone = tl._shot_band_zone(QtCore.QPoint(int(x), _RULER_HEIGHT + 3))
-        self.assertEqual(zone, "right")
 
     def test_an_unknown_editor_is_refused(self):
         with self.assertRaises(KeyError):
@@ -4344,7 +4166,8 @@ class TestExpansionSignals(BaseTestCase):
 
 
 class TestClearDecorationsComplete(BaseTestCase):
-    """clear_decorations removes markers, highlight, overlays, gaps, and shot blocks."""
+    """clear_decorations removes markers, the highlight and the overlays (a
+    layer's own: ``TestLayerSeam``)."""
 
     def setUp(self):
         self.w = SequencerWidget()
@@ -4359,20 +4182,16 @@ class TestClearDecorationsComplete(BaseTestCase):
         self.w.add_marker(time=10.0, note="test")
         self.w.set_range_highlight(10, 50)
         self.w.add_range_overlay(0, 100)
-        self.w.add_gap_overlay(50, 60)
-        self.w.set_shot_blocks([{"name": "S", "start": 0, "end": 50, "active": True}])
         # All present
         self.assertTrue(len(self.w.markers()) > 0)
         self.assertIsNotNone(self.w.range_highlight())
         self.assertTrue(len(self.w._range_overlays) > 0)
-        self.assertTrue(len(self.w._gap_overlays) > 0)
 
         # Clear and verify
         self.w.clear_decorations()
         self.assertEqual(len(self.w.markers()), 0)
         self.assertIsNone(self.w.range_highlight())
         self.assertEqual(len(self.w._range_overlays), 0)
-        self.assertEqual(len(self.w._gap_overlays), 0)
 
     def test_clear_decorations_preserves_tracks_and_clips(self):
         """Tracks and clips survive clear_decorations."""
@@ -4452,7 +4271,8 @@ class TestWaveformRendering(BaseTestCase):
 
 
 class TestShotLaneItem(BaseTestCase):
-    """Shot blocks are stored on the RulerItem (no standalone ShotLaneItem)."""
+    """The header's RulerItem is in the scene (a layer's lane is painted by it:
+    ``TestLayerSeam``)."""
 
     def setUp(self):
         self.w = SequencerWidget()
@@ -4468,22 +4288,6 @@ class TestShotLaneItem(BaseTestCase):
         scene = self.w._timeline.scene()
         rulers = [i for i in scene.items() if isinstance(i, RulerItem)]
         self.assertEqual(len(rulers), 1)
-
-    def test_set_shot_blocks_populates_ruler(self):
-        """Shot blocks propagate to the RulerItem._shot_blocks list."""
-        blocks = [
-            {"name": "A", "start": 0, "end": 50, "active": True},
-            {"name": "B", "start": 60, "end": 100, "active": False},
-        ]
-        self.w.set_shot_blocks(blocks)
-        ruler = self.w._timeline._scene.ruler
-        self.assertEqual(len(ruler._shot_blocks), 2)
-
-    def test_clear_shot_blocks_empties_ruler(self):
-        self.w.set_shot_blocks([{"name": "A", "start": 0, "end": 50, "active": True}])
-        self.w.clear_shot_blocks()
-        ruler = self.w._timeline._scene.ruler
-        self.assertEqual(len(ruler._shot_blocks), 0)
 
 
 # =========================================================================
@@ -4762,7 +4566,8 @@ class TestMultipleExpandedTracks(BaseTestCase):
 
 
 class TestContentTop(BaseTestCase):
-    """_content_top clears the whole header -- the ruler AND the shot lane."""
+    """_content_top clears the whole header: with no layer, the ruler alone
+    (with lanes: ``TestLayerSeam``)."""
 
     def setUp(self):
         self.w = SequencerWidget()
@@ -4772,13 +4577,15 @@ class TestContentTop(BaseTestCase):
         self.w.deleteLater()
 
     def test_content_top_equals_header_height(self):
-        self.assertEqual(self.w._content_top, _RULER_HEIGHT + _SHOT_LANE_HEIGHT)
+        self.assertEqual(self.w._content_top, _RULER_HEIGHT)
+        self.assertEqual(self.w.content_span()[0], _RULER_HEIGHT)
 
 
 class TestTimelineHitZones(BaseTestCase):
-    """``TimelineView._hit_zone``: the ruler, then the shot lane (its own strip),
-    then the tracks.  Moved here from mayatk's controller tests, which reached
-    into these layout constants across the package boundary."""
+    """``TimelineView.hit_zone``: the ruler, then each layer's lane (its own
+    strip: ``TestLayerSeam``), then the tracks.  Moved here from mayatk's
+    controller tests, which reached into these layout constants across the
+    package boundary."""
 
     def setUp(self):
         self.w = SequencerWidget()
@@ -4789,15 +4596,15 @@ class TestTimelineHitZones(BaseTestCase):
         self.w.deleteLater()
 
     def test_the_ruler_ends_at_its_last_pixel(self):
-        self.assertEqual(self.tl._hit_zone(0), "ruler")
-        self.assertEqual(self.tl._hit_zone(_RULER_HEIGHT - 1), "ruler")
-        self.assertEqual(self.tl._hit_zone(_RULER_HEIGHT), "shot_lane")
+        self.assertEqual(self.tl.hit_zone(0), "ruler")
+        self.assertEqual(self.tl.hit_zone(_RULER_HEIGHT - 1), "ruler")
+        self.assertEqual(self.tl.hit_zone(_RULER_HEIGHT), "tracks", "no lane")
 
     def test_the_tracks_start_where_the_content_does(self):
         top = self.w._content_top
-        self.assertEqual(self.tl._hit_zone(top - 1), "shot_lane")
-        self.assertEqual(self.tl._hit_zone(top), "tracks")
-        self.assertEqual(self.tl._hit_zone(top + 1), "tracks")
+        self.assertEqual(self.tl.hit_zone(top - 1), "ruler")
+        self.assertEqual(self.tl.hit_zone(top), "tracks")
+        self.assertEqual(self.tl.hit_zone(top + 1), "tracks")
 
 
 # =========================================================================
@@ -6548,91 +6355,6 @@ class TestStalePendingKeyCleared(BaseTestCase):
 # =========================================================================
 
 
-class TestLockedGapNoDrag(BaseTestCase):
-    """A locked gap advertises a lock state but its drag handlers ignored
-    ``_locked`` — a locked gap could still be resized/moved and emit
-    gap_resized / gap_left_resized / gap_moved.  It must now be inert."""
-
-    def setUp(self):
-        self.w = SequencerWidget()
-        self.w.resize(800, 400)
-        self.w.show()
-
-    def tearDown(self):
-        self.w.close()
-        self.w.deleteLater()
-
-    def _press(self, gap, scene_pt):
-        from qtpy import QtCore, QtWidgets
-
-        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMousePress)
-        ev.setButton(QtCore.Qt.LeftButton)
-        ev.setButtons(QtCore.Qt.LeftButton)
-        ev.setScenePos(scene_pt)
-        ev.setPos(scene_pt)
-        # The grab arms on SCREEN travel (``_past_drag_threshold``), so a
-        # simulated drag has to carry a screen position like a real one.
-        ev.setScreenPos(QtCore.QPoint(int(scene_pt.x()), int(scene_pt.y())))
-        ev.setModifiers(QtCore.Qt.NoModifier)
-        gap.mousePressEvent(ev)
-        return ev
-
-    def _move(self, gap, scene_pt):
-        from qtpy import QtCore, QtWidgets
-
-        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseMove)
-        ev.setScenePos(scene_pt)
-        ev.setPos(scene_pt)
-        ev.setScreenPos(QtCore.QPoint(int(scene_pt.x()), int(scene_pt.y())))
-        gap.mouseMoveEvent(ev)
-        return ev
-
-    def _release(self, gap):
-        from qtpy import QtCore, QtWidgets
-
-        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseRelease)
-        ev.setButton(QtCore.Qt.LeftButton)
-        gap.mouseReleaseEvent(ev)
-        return ev
-
-    def test_locked_gap_press_starts_no_drag_and_emits_nothing(self):
-        from qtpy import QtCore
-
-        self.w.add_gap_overlay(50, 70, locked=True)
-        gap = self.w._gap_overlays[0]
-        r = gap._rect()
-        edge = QtCore.QPointF(r.right() - 1, r.center().y())  # resize zone
-        emitted = []
-        self.w.gap_resized.connect(lambda *a: emitted.append(("resized", a)))
-        self.w.gap_moved.connect(lambda *a: emitted.append(("moved", a)))
-        self.w.gap_left_resized.connect(lambda *a: emitted.append(("left", a)))
-
-        self._press(gap, edge)
-        self.assertIsNone(gap._drag_mode, "locked gap must not enter a drag mode")
-        self._move(gap, QtCore.QPointF(r.right() + 40, r.center().y()))
-        self._release(gap)
-
-        self.assertEqual(emitted, [], "a locked gap must emit no gap_* signals")
-        self.assertEqual((gap._start, gap._end), (50.0, 70.0), "geometry unchanged")
-
-    def test_unlocked_gap_right_edge_still_resizes_and_emits(self):
-        """Control: the locked guard must not disable UNLOCKED gaps."""
-        from qtpy import QtCore
-
-        self.w.add_gap_overlay(50, 70, locked=False)
-        gap = self.w._gap_overlays[0]
-        r = gap._rect()
-        edge = QtCore.QPointF(r.right() - 1, r.center().y())
-        emitted = []
-        self.w.gap_resized.connect(lambda a, b: emitted.append((a, b)))
-
-        self._press(gap, edge)
-        self.assertEqual(gap._drag_mode, "right")
-        self._move(gap, QtCore.QPointF(r.right() + 40, r.center().y()))
-        self._release(gap)
-        self.assertEqual(len(emitted), 1, "unlocked gap resize must still emit")
-
-
 # =========================================================================
 # Ruler boundingRect covers the scene extent at high zoom (finding 2)
 # =========================================================================
@@ -7316,99 +7038,6 @@ class TestNoGrabCursorUntilTheDragArms(BaseTestCase):
         self.assertEqual(len(self.w.markers()), 1)
         self.assertAlmostEqual(self.w.get_marker(mid).time, 20.0)
 
-    def test_a_gap_press_does_not_arm_the_grab(self):
-        from qtpy import QtCore
-
-        self.w.add_gap_overlay(50, 90)
-        gap = self.w._gap_overlays[0]
-        r = gap._rect()
-        gap.mousePressEvent(
-            self._ev(
-                QtCore.QEvent.GraphicsSceneMousePress,
-                QtCore.QPointF(r.center().x(), r.center().y()),
-                QtCore.QPoint(500, 300),
-                QtCore.Qt.LeftButton,
-            )
-        )
-        self.assertIsNotNone(gap._drag_mode, "the drag mode is still recorded")
-        self.assertFalse(gap._grab_armed)
-        self.assertFalse(gap._drag_tooltip.is_visible())
-
-
-class TestTailGapOverlay(BaseTestCase):
-    """The last shot has no following shot, so the between-shots gap loop
-    leaves it with no drag handle at its end.  A zero-width ``tail`` overlay
-    supplies one, and it must expose ONLY the left edge (its right edge and
-    body have no shot to act on)."""
-
-    def setUp(self):
-        self.w = SequencerWidget()
-
-    def tearDown(self):
-        self.w.close()
-        self.w.deleteLater()
-
-    def test_tail_overlay_is_all_left_zone(self):
-        from qtpy import QtCore
-
-        self.w.add_gap_overlay(100, 100, tail=True)
-        gap = self.w._gap_overlays[0]
-        r = gap._rect()
-        for x in (r.left(), r.center().x(), r.right()):
-            self.assertEqual(
-                gap._hit_zone(QtCore.QPointF(x, r.center().y())),
-                "left",
-                "every press on a tail handle drags the preceding shot's end",
-            )
-
-    def test_tail_overlay_left_drag_emits_gap_left_resized(self):
-        from qtpy import QtCore, QtWidgets
-
-        self.w.add_gap_overlay(100, 100, tail=True)
-        gap = self.w._gap_overlays[0]
-        r = gap._rect()
-        emitted = []
-        self.w.gap_left_resized.connect(lambda a, b: emitted.append((a, b)))
-
-        press = QtWidgets.QGraphicsSceneMouseEvent(
-            QtCore.QEvent.GraphicsSceneMousePress
-        )
-        press.setButton(QtCore.Qt.LeftButton)
-        press.setPos(QtCore.QPointF(r.center().x(), r.center().y()))
-        press.setScenePos(QtCore.QPointF(r.center().x(), r.center().y()))
-        # The grab arms on SCREEN travel (``_past_drag_threshold``), so a
-        # simulated drag has to carry a screen position like a real one.
-        press.setScreenPos(QtCore.QPoint(int(r.center().x()), int(r.center().y())))
-        gap.mousePressEvent(press)
-        self.assertEqual(gap._drag_mode, "left")
-
-        move = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMouseMove)
-        move.setScenePos(QtCore.QPointF(r.center().x() + 40, r.center().y()))
-        move.setScreenPos(QtCore.QPoint(int(r.center().x()) + 40, int(r.center().y())))
-        gap.mouseMoveEvent(move)
-
-        rel = QtWidgets.QGraphicsSceneMouseEvent(
-            QtCore.QEvent.GraphicsSceneMouseRelease
-        )
-        rel.setButton(QtCore.Qt.LeftButton)
-        gap.mouseReleaseEvent(rel)
-
-        self.assertEqual(len(emitted), 1)
-        self.assertAlmostEqual(emitted[0][0], 100.0)
-        self.assertGreater(emitted[0][1], 100.0)
-
-    def test_regular_gap_still_exposes_all_three_zones(self):
-        from qtpy import QtCore
-
-        self.w._timeline._pixels_per_unit = 4.0
-        self.w.add_gap_overlay(50, 90)
-        gap = self.w._gap_overlays[0]
-        r = gap._rect()
-        y = r.center().y()
-        self.assertEqual(gap._hit_zone(QtCore.QPointF(r.left() + 1, y)), "left")
-        self.assertEqual(gap._hit_zone(QtCore.QPointF(r.center().x(), y)), "body")
-        self.assertEqual(gap._hit_zone(QtCore.QPointF(r.right() - 1, y)), "right")
-
 
 # =========================================================================
 # A programmatic rebuild is not the user deselecting
@@ -7583,30 +7212,6 @@ class TestKeyDragShiftFlag(BaseTestCase):
             any(p is ki for p, _ in ki._drag_peers),
             "the grabbed key must be in its own peer set",
         )
-
-
-class TestTailLockImmunity(BaseTestCase):
-    """A tail handle is a shot-end handle, not a gap: locking it (any path)
-    would leave the LAST shot with no way to resize."""
-
-    def setUp(self):
-        self.w = SequencerWidget()
-
-    def tearDown(self):
-        self.w.close()
-        self.w.deleteLater()
-
-    def test_lock_all_gaps_skips_the_tail(self):
-        self.w.add_gap_overlay(50, 70)
-        self.w.add_gap_overlay(100, 100, tail=True)
-        self.w.set_all_gap_overlays_locked(True)
-        gap, tail = self.w._gap_overlays
-        self.assertTrue(gap._locked)
-        self.assertFalse(tail._locked, "lock-all must never brick the tail handle")
-
-    def test_constructing_a_locked_tail_is_refused(self):
-        self.w.add_gap_overlay(100, 100, tail=True, locked=True)
-        self.assertFalse(self.w._gap_overlays[0]._locked)
 
 
 class TestTransportRangeFnRepoint(BaseTestCase):
@@ -8162,11 +7767,12 @@ class TestSelectedClipIsVisiblyMarked(BaseTestCase):
         )
         self.assertNotEqual(_ClipItem._selected_fill(base).name(), base.name())
 
-    def test_the_accent_is_the_one_the_ruler_marks_the_shot_with(self):
+    def test_the_accent_is_the_one_a_layer_marks_its_selection_with(self):
+        """A layer (the Shot Sequencer's shot lane) reads the accent off the
+        widget, so a selected clip and a selected shot share one colour."""
         from uitk.widgets.sequencer._data import SELECTED_ACCENT
-        from uitk.widgets.sequencer._ruler import _SELECTED_ACCENT
 
-        self.assertEqual(SELECTED_ACCENT, _SELECTED_ACCENT)
+        self.assertEqual(SequencerWidget.SELECTED_ACCENT, SELECTED_ACCENT)
 
 
 class TestTimelineReachesBeforeFrameZero(BaseTestCase):
@@ -8199,11 +7805,10 @@ class TestTimelineReachesBeforeFrameZero(BaseTestCase):
         tl = self.w._timeline
         self.assertLessEqual(self._scene_left(), tl.time_to_x(-60.0))
 
-    def test_a_shot_band_before_zero_widens_the_scene_alone(self):
-        """The band is the thing the user resized; no clip need follow it."""
-        self.w.set_shot_blocks(
-            [{"id": 1, "name": "s", "start": -80.0, "end": -20.0, "active": True}]
-        )
+    def test_a_layers_span_before_zero_widens_the_scene_alone(self):
+        """What a layer draws (a shot band) is what the user resized; no clip
+        need follow it."""
+        self.w.add_layer(_FakeLayer(bounds=(-80.0, -20.0)))
         tl = self.w._timeline
         self.assertLessEqual(self._scene_left(), tl.time_to_x(-80.0))
 
@@ -8266,16 +7871,6 @@ class TestShotSizeChangeRefreshesTheExtent(BaseTestCase):
         self.w.set_range_highlight(0.0, 4000.0)
         self.assertTrue(self._reaches(4000.0))
 
-    def test_shot_blocks_widen_the_scene(self):
-        self.w.set_shot_blocks(
-            [{"id": 1, "name": "s", "start": 0.0, "end": 8000.0, "active": True}]
-        )
-        self.assertTrue(self._reaches(8000.0))
-
-    def test_a_gap_overlay_widens_the_scene(self):
-        self.w.add_gap_overlay(6000.0, 6500.0)
-        self.assertTrue(self._reaches(6500.0))
-
     def test_a_bulk_rebuild_still_recomputes_only_once_at_exit(self):
         tl = self.w._timeline
         calls = []
@@ -8284,82 +7879,11 @@ class TestShotSizeChangeRefreshesTheExtent(BaseTestCase):
         try:
             with self.w.bulk_updates():
                 self.w.set_range_highlight(0.0, 900.0)
-                self.w.set_shot_blocks(
-                    [{"id": 1, "name": "s", "start": 0.0, "end": 900.0}]
-                )
-                self.w.add_gap_overlay(900.0, 950.0)
+                self.w.add_range_overlay(900.0, 950.0)
+                self.w.set_active_range(0.0, 900.0)
         finally:
             del tl._update_scene_rect
         self.assertEqual(len(calls), 1)
-
-
-class TestShotLaneCoversTheWholeColumn(BaseTestCase):
-    """Right-clicking a shot over its TRACKS means the shot.
-
-    The refinement used to apply only inside the ruler strip, so a
-    right-click over the tracks -- which is most of the shot -- reported
-    "tracks" and the consumer answered with the widget's own marker menu:
-    no edit, no delete, nothing about the shot under the cursor.  The RULER
-    is the other way round: it is the timeline itself, and it keeps its own
-    zone so the timeline's menu has somewhere to open that does not depend
-    on finding a spot no shot covers.
-    """
-
-    def setUp(self):
-        self.w = SequencerWidget()
-        self.w.resize(900, 400)
-        self.w.zone_menu_enabled = True
-        self.tid = self.w.add_track("A")
-        self.w.add_clip(self.tid, 0.0, 200.0, "c")
-        self.w.set_shot_blocks(
-            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
-        )
-        self.zones = []
-        self.w.zone_context_menu_requested.connect(
-            lambda zone, t, pos: self.zones.append((zone, t))
-        )
-
-    def tearDown(self):
-        self.w.close()
-        self.w.deleteLater()
-
-    def _right_click(self, time, y):
-        from qtpy import QtCore, QtGui
-
-        tl = self.w._timeline
-        x = int(tl.time_to_x(time) - tl.horizontalScrollBar().value())
-        ev = QtGui.QContextMenuEvent(
-            QtGui.QContextMenuEvent.Mouse,
-            QtCore.QPoint(x, y),
-            tl.viewport().mapToGlobal(QtCore.QPoint(x, y)),
-        )
-        tl.contextMenuEvent(ev)
-
-    def _empty_track_y(self):
-        """Well below the single track: an item under the cursor forwards the
-        event to ITS menu, which blocks on ``exec_``."""
-        return int(self.w._content_top + 120)
-
-    def test_a_click_over_the_tracks_inside_a_shot_is_the_shot_lane(self):
-        self._right_click(80.0, self._empty_track_y())
-        self.assertEqual([z for z, _t in self.zones], ["shot_lane"])
-
-    def test_a_click_over_the_ruler_is_the_ruler_even_inside_a_shot(self):
-        self._right_click(80.0, 4)
-        self.assertEqual([z for z, _t in self.zones], ["ruler"])
-
-    def test_the_shot_band_itself_is_always_the_shot_lane(self):
-        """Between the ruler and the tracks: the band the shot is drawn in."""
-        self._right_click(80.0, int(self.w._content_top) - 4)
-        self.assertEqual([z for z, _t in self.zones], ["shot_lane"])
-
-    def test_a_click_outside_every_shot_is_still_the_tracks(self):
-        self._right_click(180.0, self._empty_track_y())
-        self.assertEqual([z for z, _t in self.zones], ["tracks"])
-
-    def test_the_reported_time_is_where_the_user_clicked(self):
-        self._right_click(80.0, self._empty_track_y())
-        self.assertAlmostEqual(self.zones[0][1], 80.0, places=0)
 
 
 class TestDefaultContextActionsFoldIntoAnyMenu(BaseTestCase):
@@ -8390,9 +7914,7 @@ class TestDefaultContextActionsFoldIntoAnyMenu(BaseTestCase):
         menu, _ = self._menu()
         labels = [a.text() for a in menu.actions() if not a.isSeparator()]
         self.assertIn("Add Marker at 42\u2026", labels)
-        self.assertEqual(
-            labels[-3:], ["Show Shot Ranges", "Show Active Range", "Show Gap Overlays"]
-        )
+        self.assertEqual(labels[-2:], ["Show Range Overlays", "Show Active Range"])
 
     def test_they_append_after_a_consumer_s_own_entries(self):
         from qtpy import QtWidgets
@@ -8409,10 +7931,10 @@ class TestDefaultContextActionsFoldIntoAnyMenu(BaseTestCase):
         menu = QtWidgets.QMenu(self.w)
         mine = menu.addAction("Delete Shot")
         handled = self.w._timeline.add_default_context_actions(menu, 42.0)
-        toggle = next(a for a in menu.actions() if a.text() == "Show Gap Overlays")
+        toggle = next(a for a in menu.actions() if a.text() == "Show Active Range")
         toggle.setChecked(False)
         self.assertTrue(handled(toggle))
-        self.assertFalse(self.w.show_gap_overlays)
+        self.assertFalse(self.w.show_range_highlight)
         self.assertFalse(handled(mine), "a consumer action must fall through")
         self.assertFalse(handled(None), "a dismissed menu is nobody's action")
 
@@ -8491,146 +8013,6 @@ class TestMarqueeWorksInsideTheActiveShot(BaseTestCase):
         self.assertEqual(self.hl._drag_mode, "left")
 
 
-class TestShotBoundsDragFromTheRuler(BaseTestCase):
-    """A shot's bounds are drawn on the ruler band, so they drag from there.
-
-    They were drawn but inert: the highlight's hit area stops at
-    ``_content_top`` and a press on the band scrubbed the playhead instead.
-    The view drives the item's own drag rather than the item reaching its
-    geometry up into the ruler -- a view-dependent ``boundingRect`` re-enters
-    the scene index on scroll and dies natively (measured: access violation).
-    """
-
-    def setUp(self):
-        from qtpy import QtCore, QtGui
-
-        self.C, self.G = QtCore, QtGui
-        self.w = SequencerWidget()
-        self.w.resize(900, 400)
-        self.w.show()
-        self.tid = self.w.add_track("A")
-        self.w.add_clip(self.tid, 40.0, 80.0, "c")
-        self.w.set_shot_blocks(
-            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
-        )
-        self.w.set_range_highlight(40.0, 120.0)
-        self.SPAN = 120.0 - 40.0
-        self.tl = self.w._timeline
-        self.emitted = []
-        self.w.range_highlight_changed.connect(lambda a, b: self.emitted.append((a, b)))
-        self.moved = []
-        self.w.playhead_moved.connect(self.moved.append)
-
-    def tearDown(self):
-        self.w.close()
-        self.w.deleteLater()
-
-    def _vx(self, time):
-        return int(self.tl.time_to_x(time) - self.tl.horizontalScrollBar().value())
-
-    def _lane_y(self):
-        return _RULER_HEIGHT + _SHOT_LANE_HEIGHT // 2
-
-    def _drag(self, from_time, to_time, y=None, modifiers=None):
-        C, G = self.C, self.G
-        y = self._lane_y() if y is None else y
-        modifiers = C.Qt.NoModifier if modifiers is None else modifiers
-        for kind, x, btn, btns in (
-            (
-                C.QEvent.MouseButtonPress,
-                self._vx(from_time),
-                C.Qt.LeftButton,
-                C.Qt.LeftButton,
-            ),
-            (C.QEvent.MouseMove, self._vx(to_time), C.Qt.NoButton, C.Qt.LeftButton),
-            (
-                C.QEvent.MouseButtonRelease,
-                self._vx(to_time),
-                C.Qt.LeftButton,
-                C.Qt.NoButton,
-            ),
-        ):
-            ev = G.QMouseEvent(kind, C.QPointF(x, y), btn, btns, modifiers)
-            if kind == C.QEvent.MouseButtonPress:
-                self.tl.mousePressEvent(ev)
-            elif kind == C.QEvent.MouseMove:
-                self.tl.mouseMoveEvent(ev)
-            else:
-                self.tl.mouseReleaseEvent(ev)
-
-    def test_dragging_the_end_bound_on_the_ruler_resizes_the_shot(self):
-        """A grab of a bound moves that bound; the other stays."""
-        self._drag(120.0, 150.0)
-        self.assertEqual(len(self.emitted), 1, self.emitted)
-        start, end = self.emitted[0]
-        self.assertAlmostEqual(start, 40.0, places=0)
-        self.assertAlmostEqual(end, 150.0, places=0)
-        self.assertFalse(self.w.ctrl_held_at_press)
-
-    def test_alt_dragging_a_bound_resizes_about_the_centre(self):
-        """Alt: the other bound moves as far the other way (the graph's scale)."""
-        self._drag(120.0, 150.0, modifiers=self.C.Qt.AltModifier)
-        self.assertEqual(len(self.emitted), 1, self.emitted)
-        start, end = self.emitted[0]
-        self.assertAlmostEqual(end, 150.0, places=0)
-        self.assertAlmostEqual(start, 10.0, places=0, msg="mirrored about 80")
-
-    def test_ctrl_dragging_the_end_bound_on_the_ruler_resizes_the_shot(self):
-        self._drag(120.0, 150.0, modifiers=self.C.Qt.ControlModifier)
-        self.assertEqual(len(self.emitted), 1, self.emitted)
-        start, end = self.emitted[0]
-        self.assertAlmostEqual(start, 40.0, places=0)
-        self.assertAlmostEqual(end, 150.0, places=0)
-        self.assertTrue(self.w.ctrl_held_at_press)
-
-    def test_dragging_the_start_bound_on_the_ruler_resizes_the_shot(self):
-        self._drag(40.0, 20.0)
-        self.assertEqual(len(self.emitted), 1, self.emitted)
-        start, end = self.emitted[0]
-        self.assertAlmostEqual(start, 20.0, places=0)
-        self.assertAlmostEqual(end, 120.0, places=0)
-
-    def test_ctrl_dragging_the_start_bound_on_the_ruler_resizes_the_shot(self):
-        self._drag(40.0, 20.0, modifiers=self.C.Qt.ControlModifier)
-        self.assertEqual(len(self.emitted), 1, self.emitted)
-        start, end = self.emitted[0]
-        self.assertAlmostEqual(start, 20.0, places=0)
-        self.assertAlmostEqual(end, 120.0, places=0)
-
-    def test_the_band_between_the_bounds_moves_the_whole_shot(self):
-        """The band is the ONE place the shot can be dragged bodily.
-
-        The highlight's own body passes presses through so the timeline's
-        marquee works inside the active shot -- it spans every track row of
-        that shot, so claiming the gesture there left nowhere to marquee.
-        The band is where the shot's extent is already drawn, so it is where
-        the move lives instead.
-        """
-        self._drag(80.0, 90.0)
-        self.assertEqual(len(self.emitted), 1, "a body drag emits once")
-        start, end = self.emitted[0]
-        self.assertAlmostEqual(
-            end - start, self.SPAN, places=3, msg="a move must not resize the shot"
-        )
-        self.assertEqual(self.moved, [], "the band moves the shot, it does not scrub")
-
-    def test_the_tick_row_above_the_lane_still_scrubs(self):
-        self._drag(120.0, 150.0, y=2)
-        self.assertEqual(self.emitted, [])
-        self.assertTrue(self.moved)
-
-    def test_a_press_without_a_move_emits_nothing(self):
-        """Same zero-motion gate the item's own release keeps."""
-        self._drag(120.0, 120.0)
-        self.assertEqual(self.emitted, [])
-
-    def test_no_handle_is_offered_when_the_highlight_is_hidden(self):
-        self.w.show_range_highlight = False
-        self._drag(120.0, 150.0)
-        self.assertEqual(self.emitted, [])
-        self.assertTrue(self.moved, "it scrubs, as the ruler otherwise would")
-
-
 class TestRulerKeyTicks(BaseTestCase):
     """Keyed frames are marked on the ruler, the way Maya's timeline does."""
 
@@ -8686,97 +8068,6 @@ class TestRulerKeyTicks(BaseTestCase):
             self.assertEqual(len(calls), 1)
         finally:
             del ruler.update
-
-
-class TestShotLaneSitsBelowTheRuler(BaseTestCase):
-    """The shot band is its own strip; the ruler is ruler all the way down.
-
-    Reported live, twice: "the blue shot border still overlaps the shot
-    timeline ... we need to be able to click into that timeline area without
-    selecting the shot".  The band used to occupy the bottom half of the
-    ruler, so the active shot's accent rule was painted inside it and the
-    bottom 12px of the ruler grabbed the shot instead of scrubbing.
-    """
-
-    def setUp(self):
-        from qtpy import QtCore, QtGui
-
-        self.C, self.G = QtCore, QtGui
-        self.w = SequencerWidget()
-        self.w.resize(900, 400)
-        self.w.show()
-        self.tid = self.w.add_track("A")
-        self.w.add_clip(self.tid, 40.0, 80.0, "c")
-        self.w.set_shot_blocks(
-            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
-        )
-        self.w.set_range_highlight(40.0, 120.0)
-        self.tl = self.w._timeline
-        self.emitted = []
-        self.w.range_highlight_changed.connect(lambda a, b: self.emitted.append((a, b)))
-        self.moved = []
-        self.w.playhead_moved.connect(self.moved.append)
-
-    def tearDown(self):
-        self.w.close()
-        self.w.deleteLater()
-
-    def _vx(self, time):
-        return int(self.tl.time_to_x(time) - self.tl.horizontalScrollBar().value())
-
-    def _drag(self, from_time, to_time, y):
-        C, G = self.C, self.G
-        for kind, x, btn, btns in (
-            (
-                C.QEvent.MouseButtonPress,
-                self._vx(from_time),
-                C.Qt.LeftButton,
-                C.Qt.LeftButton,
-            ),
-            (C.QEvent.MouseMove, self._vx(to_time), C.Qt.NoButton, C.Qt.LeftButton),
-            (
-                C.QEvent.MouseButtonRelease,
-                self._vx(to_time),
-                C.Qt.LeftButton,
-                C.Qt.NoButton,
-            ),
-        ):
-            ev = G.QMouseEvent(kind, C.QPointF(x, y), btn, btns, C.Qt.NoModifier)
-            if kind == C.QEvent.MouseButtonPress:
-                self.tl.mousePressEvent(ev)
-            elif kind == C.QEvent.MouseMove:
-                self.tl.mouseMoveEvent(ev)
-            else:
-                self.tl.mouseReleaseEvent(ev)
-
-    def test_every_row_of_the_ruler_scrubs(self):
-        """Including the bottom row, which the band used to own."""
-        for y in (2, _RULER_HEIGHT // 2, _RULER_HEIGHT - 1):
-            with self.subTest(y=y):
-                self.emitted.clear()
-                self.moved.clear()
-                self._drag(120.0, 150.0, y=y)
-                self.assertEqual(self.emitted, [], "the ruler must not resize the shot")
-                self.assertTrue(self.moved, "it scrubs")
-
-    def test_the_band_below_the_ruler_still_grabs_the_shot(self):
-        self._drag(120.0, 150.0, y=_RULER_HEIGHT + _SHOT_LANE_HEIGHT // 2)
-        self.assertEqual(len(self.emitted), 1, self.emitted)
-        self.assertEqual(self.moved, [], "the band moves the shot, it does not scrub")
-
-    def test_the_ruler_item_covers_the_band_it_paints(self):
-        ruler = self.tl._scene.ruler
-        self.assertEqual(
-            ruler.boundingRect().height(), _RULER_HEIGHT + _SHOT_LANE_HEIGHT
-        )
-
-    def test_the_highlight_starts_clear_of_the_ruler(self):
-        top = self.w._range_highlight._rect().top()
-        self.assertGreaterEqual(top, _RULER_HEIGHT + _SHOT_LANE_HEIGHT)
-
-    def test_the_track_labels_line_up_with_the_tracks(self):
-        margin = self.w._header._layout.contentsMargins().top()
-        self.assertEqual(margin, _RULER_HEIGHT + _SHOT_LANE_HEIGHT)
 
 
 class TestTheHandAppearsOnlyOnceDragging(BaseTestCase):
@@ -9392,19 +8683,16 @@ class TestKeyContextMenuAndTangentHandles(BaseTestCase):
 
 
 class TestBoundHandleGrammar(BaseTestCase):
-    """A grab of a shot bound drags THAT bound under every modifier; the
+    """A grab of a range bound drags THAT bound under every modifier; the
     press records Ctrl and Shift so the consumer decides what else moves
-    (plain: the neighbours ripple; Ctrl: nothing else; Shift: retime).  The
-    whole-shot move is the ruler band's."""
+    (the shot sequencer: plain, the neighbours ripple; Ctrl, nothing else;
+    Shift, retime).  The whole-range move is a lane's (tentacle's shot lane)."""
 
     def setUp(self):
         self.w = SequencerWidget()
         self.w.resize(900, 400)
         self.w.show()
         self.w.add_track("A")
-        self.w.set_shot_blocks(
-            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
-        )
         self.w.set_range_highlight(40.0, 120.0)
         self.emitted = []
         self.w.range_highlight_changed.connect(lambda a, b: self.emitted.append((a, b)))
@@ -9499,25 +8787,6 @@ class TestBoundHandleGrammar(BaseTestCase):
         self.assertFalse(self.w.shift_held_at_press)
         self.assertFalse(self.w.ctrl_held_at_press)
 
-    def test_a_gap_edge_press_records_ctrl_and_labels_the_trim(self):
-        from qtpy import QtCore, QtWidgets
-
-        self.w.add_gap_overlay(120, 160)
-        gap = self.w._gap_overlays[0]
-        r = gap._rect()
-        pt = QtCore.QPointF(r.right() - 1, r.center().y())
-        ev = QtWidgets.QGraphicsSceneMouseEvent(QtCore.QEvent.GraphicsSceneMousePress)
-        ev.setButton(QtCore.Qt.LeftButton)
-        ev.setButtons(QtCore.Qt.LeftButton)
-        ev.setScenePos(pt)
-        ev.setPos(pt)
-        ev.setScreenPos(QtCore.QPoint(int(pt.x()), int(pt.y())))
-        ev.setModifiers(QtCore.Qt.ControlModifier)
-        gap.mousePressEvent(ev)
-        self.assertEqual(gap._drag_mode, "right")
-        self.assertTrue(self.w.ctrl_held_at_press)
-        self.assertTrue(gap._gap_drag_label().startswith("Trim 160"))
-
 
 class TestShortcutOverlay(BaseTestCase):
     """The corner legend: fed by the shortcut manager, hidden until asked,
@@ -9525,7 +8794,9 @@ class TestShortcutOverlay(BaseTestCase):
 
     def setUp(self):
         self.w = SequencerWidget()
-        self.w.resize(900, 400)
+        # Tall enough for the longest group (Clips & keys, the first with no
+        # layer) to fit the viewport: a card taller than it pins to the top.
+        self.w.resize(900, 500)
         self.w.show()
 
     def tearDown(self):
@@ -9534,11 +8805,8 @@ class TestShortcutOverlay(BaseTestCase):
 
     def test_gestures_are_registered_with_the_manager(self):
         mgr = self.w._shortcut_mgr
-        self.assertEqual(
-            list(mgr.gestures),
-            ["Shot bounds", "Gaps", "Clips & keys", "Tangents", "Timeline"],
-        )
-        entry = mgr.shortcuts["Ctrl+Drag (Shot bounds)"]
+        self.assertEqual(list(mgr.gestures), ["Clips & keys", "Tangents", "Timeline"])
+        entry = mgr.shortcuts["Ctrl+Drag (Tangents)"]
         self.assertTrue(entry["read_only"], "listed in the editor, not rebindable")
 
     def test_hidden_until_shown_then_anchored_in_the_timelines_corner(self):
@@ -9554,8 +8822,10 @@ class TestShortcutOverlay(BaseTestCase):
         g = overlay.geometry()
         self.assertEqual(g.right() + 1 + overlay.MARGIN, host.right() + 1)
         self.assertEqual(g.bottom() + 1 + overlay.MARGIN, host.bottom() + 1)
-        self.assertLessEqual(g.width(), overlay.MAX_WIDTH)
-        self.assertLess(g.height(), g.width(), "a card, not a column")
+        # A legend wider than the cap wraps at the cap -- a card, never a
+        # narrow column (the hint here is wider than MAX_WIDTH).
+        self.assertGreater(overlay._label.sizeHint().width(), overlay.MAX_WIDTH)
+        self.assertEqual(g.width(), overlay.MAX_WIDTH)
         self.w.shortcut_overlay_visible = False
         self.assertFalse(overlay.isVisible())
 
@@ -9572,29 +8842,26 @@ class TestShortcutOverlay(BaseTestCase):
     def test_the_hovered_group_is_the_one_shown(self):
         self.w.shortcut_overlay_visible = True
         overlay = self.w.shortcut_overlay
-        self.assertEqual(overlay.shown_group, "Shot bounds")
-        self.w._set_gesture_context("Gaps")
-        self.assertEqual(overlay.shown_group, "Gaps")
-        self.assertIn("Lock / unlock the gap", overlay._label.text())
+        self.assertEqual(overlay.shown_group, "Clips & keys")
+        self.w._set_gesture_context("Tangents")
+        self.assertEqual(overlay.shown_group, "Tangents")
+        self.assertIn("Break the tangent", overlay._label.text())
         self.assertNotIn("Marquee", overlay._label.text())
         self.w._set_gesture_context(None)
-        self.assertEqual(overlay.shown_group, "Shot bounds")
+        self.assertEqual(overlay.shown_group, "Clips & keys")
 
     def test_the_timeline_reports_the_group_under_the_pointer(self):
         from qtpy import QtCore
 
-        self.w.set_shot_blocks(
-            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
-        )
-        self.w.set_range_highlight(40.0, 120.0)
-        self.w.add_gap_overlay(120, 160)
+        tid = self.w.add_track("A")
+        cid = self.w.add_clip(tid, 40.0, 80.0)
         self.w.shortcut_overlay_visible = True
         tl = self.w._timeline
-        gap = self.w._gap_overlays[0]
-        centre = gap._rect().center()
+        self.w._set_gesture_context("Tangents")
+        centre = self.w._clip_items[cid].sceneBoundingRect().center()
         vp = tl.mapFromScene(centre)
         tl._sync_gesture_context(QtCore.QPoint(vp.x(), vp.y()))
-        self.assertEqual(self.w.shortcut_overlay.shown_group, "Gaps")
+        self.assertEqual(self.w.shortcut_overlay.shown_group, "Clips & keys")
 
     # -- Off / On / On Modifier ---------------------------------------------
 
@@ -9657,18 +8924,14 @@ class TestShortcutOverlay(BaseTestCase):
         two of them, so the group is tracked while it is still hidden."""
         from qtpy import QtCore
 
-        self.w.set_shot_blocks(
-            [{"id": 1, "name": "s", "start": 40.0, "end": 120.0, "active": True}]
-        )
-        self.w.set_range_highlight(40.0, 120.0)
-        self.w.add_gap_overlay(120, 160)
+        self.w.add_track("A")
         self.w.shortcut_overlay_mode = "modifier"
         tl = self.w._timeline
-        centre = self.w._gap_overlays[0]._rect().center()
-        vp = tl.mapFromScene(centre)
-        tl._sync_gesture_context(QtCore.QPoint(vp.x(), vp.y()))
+        # Over empty rows: the Timeline page, not the legend's first.
+        vp = QtCore.QPoint(200, int(self.w._content_top) + 200)
+        tl._sync_gesture_context(vp)
         self.w.set_modifiers_held(QtCore.Qt.ControlModifier)
-        self.assertEqual(self.w.shortcut_overlay.shown_group, "Gaps")
+        self.assertEqual(self.w.shortcut_overlay.shown_group, "Timeline")
 
     def test_a_modifier_key_over_the_timeline_is_what_raises_it(self):
         """The view banks the chord by KEY, not from ``event.modifiers()``:
@@ -9961,104 +9224,6 @@ class TestTangentHandleDrag(BaseTestCase):
 from qtpy import QtCore, QtWidgets  # noqa: E402
 
 
-class TestShotBoundCaps(BaseTestCase):
-    """The head/tail overlays are the first/last shot's own bound handles:
-    each sits just OUTSIDE its bound (as a real gap's edge handle does), so
-    the active shot's own handle keeps the pixels inside the bound, and its
-    drag reads as a bound move, not a slide."""
-
-    def setUp(self):
-        self.w = SequencerWidget()
-        self.w.resize(800, 300)
-        self.w.add_track("T")
-        self.tl = self.w._timeline
-
-    def tearDown(self):
-        self.w.close()
-        self.w.deleteLater()
-
-    def _cap(self, **kw):
-        self.w.add_gap_overlay(100, 100, **kw)
-        return self.w._gap_overlays[-1]
-
-    def test_tail_strip_starts_at_the_bound(self):
-        item = self._cap(tail=True)
-        r = item._rect()
-        self.assertAlmostEqual(r.left(), self.tl.time_to_x(100), places=3)
-        self.assertEqual(r.width(), item._MIN_PX)
-
-    def test_head_strip_ends_at_the_bound(self):
-        item = self._cap(head=True)
-        r = item._rect()
-        self.assertAlmostEqual(r.right(), self.tl.time_to_x(100), places=3)
-        self.assertEqual(r.width(), item._MIN_PX)
-
-    def test_caps_expose_one_edge_each(self):
-        self.assertEqual(self._cap(tail=True)._hit_zone(QtCore.QPointF(0, 0)), "left")
-        self.assertEqual(self._cap(head=True)._hit_zone(QtCore.QPointF(0, 0)), "right")
-
-    def test_caps_never_lock(self):
-        head = self._cap(head=True, locked=True)
-        tail = self._cap(tail=True, locked=True)
-        self.w.add_gap_overlay(10, 20)
-        self.w.set_all_gap_overlays_locked(True)
-        self.assertFalse(head._locked)
-        self.assertFalse(tail._locked)
-        self.assertTrue(self.w._gap_overlays[-1]._locked)
-
-    def test_a_plain_cap_drag_reads_as_a_resize(self):
-        for kw in ({"tail": True}, {"head": True}):
-            item = self._cap(**kw)
-            item._drag_mode = "left" if kw.get("tail") else "right"
-            self.w.record_press_modifiers(QtCore.Qt.NoModifier)
-            self.assertTrue(item._gap_drag_label().startswith("Resize "), kw)
-            self.w.record_press_modifiers(QtCore.Qt.ControlModifier)
-            self.assertTrue(item._gap_drag_label().startswith("Trim "), kw)
-            self.w.record_press_modifiers(QtCore.Qt.ShiftModifier)
-            self.assertTrue(item._gap_drag_label().startswith("Retime "), kw)
-        gap = self.w.add_gap_overlay(10, 20) or self.w._gap_overlays[-1]
-        gap._drag_mode = "left"
-        self.w.record_press_modifiers(QtCore.Qt.NoModifier)
-        self.assertTrue(gap._gap_drag_label().startswith("Slide "))
-
-    def test_a_head_cap_can_be_dragged_both_ways(self):
-        item = self._cap(head=True)
-        item._drag_mode = "right"
-        item._drag_origin_x = self.tl.time_to_x(100)
-        item._drag_origin_start = item._drag_origin_end = 100.0
-        item._undo_captured = True
-        item._grab_armed = True
-        dx = self.tl.time_to_x(80) - self.tl.time_to_x(100)
-
-        class _Ev:
-            def __init__(self, x):
-                self._x = x
-
-            def scenePos(self):
-                return QtCore.QPointF(self._x, 0)
-
-            def accept(self):
-                pass
-
-        item.mouseMoveEvent(_Ev(item._drag_origin_x + dx))
-        self.assertAlmostEqual(item._end, 80.0, places=3, msg="grew backwards")
-        self.assertAlmostEqual(item._start, 80.0, places=3)
-
-    def test_gesture_context_calls_a_cap_a_shot_bound(self):
-        seen = []
-        self.w.shortcut_overlay_visible = True
-        self.w._set_gesture_context = seen.append
-        item = self._cap(tail=True)
-        self.w.add_gap_overlay(10, 20)
-        gap = self.w._gap_overlays[-1]
-        self.w.show()
-        for overlay, expected in ((item, "Shot bounds"), (gap, "Gaps")):
-            view_pos = self.tl.mapFromScene(overlay._rect().center())
-            self.assertIs(self.tl.itemAt(view_pos), overlay)
-            self.tl._sync_gesture_context(view_pos)
-            self.assertEqual(seen[-1], expected)
-
-
 class TestDefaultContextEntries(BaseTestCase):
     """The timeline describes its own context-menu entries as data, and the
     QMenu path renders that same list."""
@@ -10076,8 +9241,11 @@ class TestDefaultContextEntries(BaseTestCase):
         labels = [e["label"] for e in entries if e is not None]
         self.assertEqual(labels[0], "Add Marker at 42\u2026")
         self.assertIn(None, entries, "a separator after the marker entry")
+        self.assertEqual(labels[1:], ["Show Range Overlays", "Show Active Range"])
         self.assertEqual(
-            labels[1:], ["Show Shot Ranges", "Show Active Range", "Show Gap Overlays"]
+            [e["key"] for e in entries if e is not None],
+            ["add_marker", "range_overlays", "range_highlight"],
+            "a layer finds an entry by its key",
         )
         for e in entries[2:]:
             self.assertTrue(e["checkable"])
@@ -10085,12 +9253,12 @@ class TestDefaultContextEntries(BaseTestCase):
 
     def test_a_toggle_callback_drives_the_widget(self):
         entries = self.tl.default_context_entries(0.0)
-        gaps = next(e for e in entries if e and e["label"] == "Show Gap Overlays")
-        gaps["callback"](False)
-        self.assertFalse(self.w.show_gap_overlays)
+        active = next(e for e in entries if e and e["key"] == "range_highlight")
+        active["callback"](False)
+        self.assertFalse(self.w.show_range_highlight)
         self.assertFalse(self.tl.default_context_entries(0.0)[-1]["checked"])
-        gaps["callback"](True)
-        self.assertTrue(self.w.show_gap_overlays)
+        active["callback"](True)
+        self.assertTrue(self.w.show_range_highlight)
 
     def test_qmenu_rendering_matches_the_entries(self):
         from qtpy import QtWidgets
@@ -10102,11 +9270,11 @@ class TestDefaultContextEntries(BaseTestCase):
             [a.text() for a in acts],
             [e["label"] for e in self.tl.default_context_entries(7.0) if e],
         )
-        gap_act = acts[-1]
-        self.assertTrue(gap_act.isCheckable() and gap_act.isChecked())
-        gap_act.setChecked(False)
-        self.assertTrue(handled(gap_act))
-        self.assertFalse(self.w.show_gap_overlays)
+        active_act = acts[-1]
+        self.assertTrue(active_act.isCheckable() and active_act.isChecked())
+        active_act.setChecked(False)
+        self.assertTrue(handled(active_act))
+        self.assertFalse(self.w.show_range_highlight)
         self.assertFalse(handled(None))
         menu.deleteLater()
 
@@ -11590,27 +10758,6 @@ class TestTheShotBoundOwnsItsEdge(BaseTestCase):
         self.assertEqual(self.bounds, [], "the bound took the mark's press")
         self.assertEqual(len(moved), 1)
 
-    def test_a_zero_width_gap_on_the_bound_yields_to_it(self):
-        """At a gap of zero the gap overlay is a strip centred on the seam;
-        it has no width of its own to resize, so the bound is what a press
-        there grabs (measured on the production assembly: the press went to
-        the gap and slid the next shot)."""
-        self.w.add_gap_overlay(120, 120)
-        gaps = []
-        self.w.gap_resized.connect(lambda *a: gaps.append(a))
-        self.w.gap_left_resized.connect(lambda *a: gaps.append(a))
-        self._drag(self._bound_x() + 1, self._row_y(self.mid), -40)
-        self.assertEqual(len(self.bounds), 1, "the bound drag never started")
-        self.assertEqual(gaps, [])
-
-    def test_a_real_gaps_edge_still_answers_as_the_gap(self):
-        self.w.add_gap_overlay(120, 140)
-        gaps = []
-        self.w.gap_left_resized.connect(lambda *a: gaps.append(a))
-        self._drag(self._bound_x() + 2, self._row_y(self.mid), 30)
-        self.assertEqual(self.bounds, [])
-        self.assertEqual(len(gaps), 1)
-
 
 class TestHoverFocusYieldsToTyping(BaseTestCase):
     """The timeline takes focus on hover so its keys work without a click --
@@ -11829,10 +10976,6 @@ class TestItemsHoldTheGeometryTheSceneIndexed(BaseTestCase):
         self.w.set_range_highlight(1.0, 101.0)
         self._assert_held(self.w._range_highlight, self._zoom)
 
-    def test_a_gap_overlay_holds_through_a_zoom(self):
-        self.w.add_gap_overlay(101.0, 120.0)
-        self._assert_held(self.w._gap_overlays[-1], self._zoom)
-
     def test_a_range_overlay_holds_through_a_zoom(self):
         self.w.add_range_overlay(130.0, 200.0)
         self._assert_held(self.w._range_overlays[-1], self._zoom)
@@ -11862,7 +11005,8 @@ class TestItemsHoldTheGeometryTheSceneIndexed(BaseTestCase):
 
     def test_the_new_shot_undo_rebuild_does_not_crash(self):
         """The calls the shot sequencer made, replayed: a new first shot
-        drawn, then the rebuild that cleared it.  Run in a child process --
+        drawn, then the rebuild that cleared it (its shot layer's half:
+        tentacle's ``test_shot_sequencer_layer.py``).  Run in a child process --
         before the fix it died natively, which would take this suite down."""
         import os
         import subprocess
@@ -11882,10 +11026,7 @@ class TestItemsHoldTheGeometryTheSceneIndexed(BaseTestCase):
             "    w.add_clip(track_id=tid, start=60.0, duration=40.0)\n"
             "    w.set_playhead(1.0); w.set_active_range(1.0, 101.0)\n"
             "    w.set_range_highlight(1.0, 101.0)\n"
-            "    w.set_shot_blocks([{'id': 0, 'name': 'S', 'start': 1.0,"
-            " 'end': 101.0, 'active': True}])\n"
-            "    w.add_gap_overlay(101.0, 101.0, tail=True)\n"
-            "    w.add_gap_overlay(1.0, 1.0, head=True)\n"
+            "    w.add_range_overlay(101.0, 140.0)\n"
             "app.processEvents()\n"
             "w.clear(); w._timeline._scene.update()\n"
             "for _ in range(5): app.processEvents()\n"
@@ -11904,3 +11045,463 @@ class TestItemsHoldTheGeometryTheSceneIndexed(BaseTestCase):
             timeout=120,
         )
         self.assertIn("survived", proc.stdout, proc.stderr[-2000:])
+
+
+# ---------------------------------------------------------------------------
+# The layer seam (``_layer.py``): a host's vocabulary on the timeline
+# ---------------------------------------------------------------------------
+
+
+class _BareLayer:
+    """A layer with nothing but a name: every hook is optional."""
+
+    def __init__(self, name="bare"):
+        self.name = name
+
+
+class _FakeLayer:
+    """A layer as the widget reads one (``SequencerLayer``): a lane, and a
+    record of what the widget offered it.  Its menu zone claims 40-120."""
+
+    def __init__(self, name="probe", lane_height=10, bounds=None, take=False):
+        self.name = name
+        self.lane_height = lane_height
+        self.bounds = bounds
+        self.take = take  # mouse_press answers this
+        self.claim = False  # claims_press answers this
+        self.view = None  # the TimelineView, for gesture_group_at
+        self.calls = []
+        self.painted = []
+
+    def paint_lane(self, painter, rect):
+        from qtpy import QtCore
+
+        self.painted.append(QtCore.QRectF(rect))
+
+    def mouse_press(self, event):
+        self.calls.append("press")
+        return self.take
+
+    def mouse_move(self, event):
+        self.calls.append("move" if event.buttons() else "hover")
+        return False
+
+    def mouse_release(self, event):
+        self.calls.append("release")
+        return True
+
+    def gesture_group_at(self, viewport_pos):
+        if self.view is None:
+            return None
+        return "Probe" if self.view.hit_zone(viewport_pos.y()) == self.name else None
+
+    def claims_press(self, scene_pos):
+        return self.claim
+
+    def legend(self, editor, rows):
+        if editor != "tracks":
+            return rows
+        return (("Probe", "Drag", "Probe the lane"),) + tuple(rows)
+
+    def context_entries(self, time, entries):
+        return list(entries) + [
+            {
+                "key": "probe",
+                "label": "Probe",
+                "callback": lambda: None,
+                "checkable": False,
+                "checked": False,
+            }
+        ]
+
+    def menu_zone(self, zone, time):
+        return self.name if zone == "tracks" and 40.0 <= time <= 120.0 else zone
+
+    def time_bounds(self):
+        return self.bounds
+
+    def relayout(self):
+        self.calls.append("relayout")
+
+    def clear(self):
+        self.calls.append("clear")
+
+
+class TestLayerSeam(BaseTestCase):
+    """``SequencerWidget.add_layer``: a host's lane and items plug into the
+    timeline through the widget's surface, and the widget with no layer is
+    the plain timeline (the shot sequencer's layer: tentacle's
+    ``test_shot_sequencer_layer.py``)."""
+
+    def setUp(self):
+        from qtpy import QtCore, QtGui
+
+        self.C, self.G = QtCore, QtGui
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+        self.w.show()
+        self.tl = self.w._timeline
+        app.processEvents()
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _layer(self, **kw):
+        layer = _FakeLayer(**kw)
+        layer.view = self.tl
+        self.w.add_layer(layer)
+        # Adding lays the layer out (``test_adding_a_layer_lays_it_out``);
+        # a test reads only what follows.
+        layer.calls.clear()
+        return layer
+
+    def test_adding_a_layer_lays_it_out(self):
+        layer = _FakeLayer()
+        layer.view = self.tl
+        self.w.add_layer(layer)
+        self.assertEqual(layer.calls, ["relayout"])
+
+    def _vx(self, time):
+        return int(self.tl.time_to_x(time) - self.tl.horizontalScrollBar().value())
+
+    def _mouse(self, kind, time, y, button=None, buttons=None):
+        C = self.C
+        button = C.Qt.LeftButton if button is None else button
+        buttons = button if buttons is None else buttons
+        ev = self.G.QMouseEvent(
+            kind, C.QPointF(self._vx(time), y), button, buttons, C.Qt.NoModifier
+        )
+        {
+            C.QEvent.MouseButtonPress: self.tl.mousePressEvent,
+            C.QEvent.MouseMove: self.tl.mouseMoveEvent,
+            C.QEvent.MouseButtonRelease: self.tl.mouseReleaseEvent,
+        }[kind](ev)
+
+    def _drag(self, from_time, to_time, y):
+        C = self.C
+        self._mouse(C.QEvent.MouseButtonPress, from_time, y)
+        self._mouse(
+            C.QEvent.MouseMove, to_time, y, C.Qt.NoButton, C.Qt.LeftButton
+        )
+        self._mouse(
+            C.QEvent.MouseButtonRelease, to_time, y, C.Qt.LeftButton, C.Qt.NoButton
+        )
+
+    def _right_click(self, time, y):
+        C = self.C
+        x = self._vx(time)
+        self.tl.contextMenuEvent(
+            self.G.QContextMenuEvent(
+                self.G.QContextMenuEvent.Mouse,
+                C.QPoint(x, y),
+                self.tl.viewport().mapToGlobal(C.QPoint(x, y)),
+            )
+        )
+
+    # -- no layer -------------------------------------------------------------
+
+    def test_with_no_layer_the_header_is_the_ruler_alone(self):
+        self.assertEqual(self.w._content_top, _RULER_HEIGHT)
+        self.assertEqual(self.tl.hit_zone(_RULER_HEIGHT), "tracks")
+        self.assertEqual(self.tl._scene.ruler.boundingRect().height(), _RULER_HEIGHT)
+        margin = self.w._header._layout.contentsMargins().top()
+        self.assertEqual(margin, _RULER_HEIGHT, "the labels line up with the rows")
+        with self.assertRaises(KeyError):
+            self.w.layer("probe")
+
+    def test_a_layer_needs_nothing_but_a_name(self):
+        """Every hook is optional: a press, a hover, a menu, a clear and a
+        re-layout all run past a layer that answers none of them."""
+        bare = _BareLayer()
+        self.w.add_layer(bare)
+        self.assertIs(self.w.layer("bare"), bare)
+        self.assertEqual(self.w._content_top, _RULER_HEIGHT, "no lane, no strip")
+        moved = []
+        self.w.playhead_moved.connect(moved.append)
+        self._drag(40.0, 50.0, 5)
+        self.assertTrue(moved, "the ruler still scrubs")
+        self._mouse(self.C.QEvent.MouseMove, 60.0, 5, self.C.Qt.NoButton)
+        self.w.zone_menu_enabled = True
+        zones = []
+        self.w.zone_context_menu_requested.connect(lambda z, t, p: zones.append(z))
+        self._right_click(80.0, int(self.w._content_top) + 200)
+        self.assertEqual(zones, ["tracks"])
+        self.assertEqual(
+            [e["key"] for e in self.tl.default_context_entries(0.0) if e],
+            ["add_marker", "range_overlays", "range_highlight"],
+        )
+        self.w.add_track("A")
+        self.w.clear_decorations()
+        self.w.clear()
+
+    # -- the lane ----------------------------------------------------------------
+
+    def test_a_lane_stacks_under_the_ruler_and_the_content_clears_it(self):
+        self._layer()
+        top = _RULER_HEIGHT + 10
+        self.assertEqual(self.w._content_top, top)
+        self.assertEqual(self.w.content_span()[0], top)
+        self.assertEqual(self.tl.hit_zone(_RULER_HEIGHT - 1), "ruler")
+        self.assertEqual(self.tl.hit_zone(_RULER_HEIGHT), "probe")
+        self.assertEqual(self.tl.hit_zone(top - 1), "probe")
+        self.assertEqual(self.tl.hit_zone(top), "tracks")
+        self.assertEqual(self.tl._scene.ruler.boundingRect().height(), top)
+        self.assertEqual(self.w._header._layout.contentsMargins().top(), top)
+        self.assertEqual(self.w._options_band.height(), top)
+        self.w.set_range_highlight(40.0, 120.0)
+        self.assertGreaterEqual(self.w._range_highlight._rect().top(), top)
+
+    def test_lanes_stack_in_the_order_their_layers_were_added(self):
+        self._layer(name="upper", lane_height=10)
+        self._layer(name="lower", lane_height=6)
+        self.assertEqual(self.w._content_top, _RULER_HEIGHT + 16)
+        self.assertEqual(self.tl.hit_zone(_RULER_HEIGHT + 9), "upper")
+        self.assertEqual(self.tl.hit_zone(_RULER_HEIGHT + 10), "lower")
+        self.assertEqual(self.tl.hit_zone(_RULER_HEIGHT + 16), "tracks")
+
+    def test_the_ruler_hands_each_lane_its_strip(self):
+        from qtpy import QtGui, QtWidgets
+
+        upper = self._layer(name="upper", lane_height=10)
+        lower = self._layer(name="lower", lane_height=6)
+        image = QtGui.QImage(900, 60, QtGui.QImage.Format_ARGB32)
+        painter = QtGui.QPainter(image)
+        try:
+            self.tl._scene.ruler.paint(
+                painter, QtWidgets.QStyleOptionGraphicsItem(), None
+            )
+        finally:
+            painter.end()
+        self.assertEqual(
+            (upper.painted[-1].top(), upper.painted[-1].height()),
+            (_RULER_HEIGHT, 10.0),
+        )
+        self.assertEqual(
+            (lower.painted[-1].top(), lower.painted[-1].height()),
+            (_RULER_HEIGHT + 10, 6.0),
+        )
+
+    def test_a_taken_name_is_replaced_in_place(self):
+        first = self._layer(name="probe")
+        self._layer(name="other", lane_height=4)
+        second = _FakeLayer(name="probe", lane_height=10)
+        second.view = self.tl
+        self.w.add_layer(second)
+        self.assertIn("clear", first.calls, "the old one's items leave with it")
+        self.assertIs(self.w.layer("probe"), second)
+        self.assertEqual(self.tl.hit_zone(_RULER_HEIGHT), "probe", "its place kept")
+        self.assertEqual(self.w._content_top, _RULER_HEIGHT + 14)
+
+    def test_the_graph_page_follows_a_lane_added_after_it(self):
+        page = self.w.editor("graph").header_widget()  # built before the lane
+        self._layer()
+        self.w.set_editor("graph")
+        self.assertEqual(
+            page.layout().contentsMargins().top(), int(self.w._content_top) + 1
+        )
+
+    # -- the pointer ---------------------------------------------------------------
+
+    def test_a_press_the_layer_takes_is_its_gesture(self):
+        layer = self._layer(take=True)
+        moved = []
+        self.w.playhead_moved.connect(moved.append)
+        self._drag(40.0, 60.0, int(self.w._content_top) + 200)
+        self.assertEqual(layer.calls, ["press", "move", "release"])
+        self.assertFalse(self.tl._marquee_active, "no marquee under its gesture")
+        self.assertEqual(moved, [])
+
+    def test_a_press_the_layer_declines_is_the_widgets(self):
+        layer = self._layer(take=False)
+        moved = []
+        self.w.playhead_moved.connect(moved.append)
+        self._drag(40.0, 60.0, 5)
+        self.assertEqual(layer.calls[0], "press")
+        self.assertNotIn("release", layer.calls)
+        self.assertTrue(moved, "the ruler scrubs")
+
+    def test_the_active_editors_press_comes_first(self):
+        from uitk.widgets.sequencer._editor import SequencerEditor
+
+        class _Taker(SequencerEditor):
+            name = "taker"
+
+            def mouse_press(self, event):
+                return True
+
+        self.w.register_editor("taker", _Taker)
+        self.w.set_editor("taker")
+        layer = self._layer(take=True)
+        self._drag(40.0, 60.0, int(self.w._content_top) + 200)
+        self.assertNotIn("press", layer.calls)
+
+    def test_a_hover_reaches_the_layer(self):
+        layer = self._layer()
+        self._mouse(self.C.QEvent.MouseMove, 60.0, 5, self.C.Qt.NoButton)
+        self.assertEqual(layer.calls, ["hover"])
+
+    def test_a_grab_whose_release_went_elsewhere_lets_go(self):
+        layer = self._layer(take=True)
+        y = int(self.w._content_top) + 200
+        self._mouse(self.C.QEvent.MouseButtonPress, 40.0, y)
+        self._mouse(self.C.QEvent.MouseMove, 50.0, y, self.C.Qt.NoButton)
+        self.assertIsNone(self.tl._layer_grab, "a buttonless move is a hover")
+        self.assertEqual(layer.calls, ["press", "hover"])
+
+    def test_a_layer_names_the_legend_group_under_the_pointer(self):
+        self._layer()
+        self.w.shortcut_overlay_visible = True
+        self.tl._sync_gesture_context(self.C.QPoint(200, _RULER_HEIGHT + 3))
+        self.assertEqual(self.w._gesture_context, "Probe")
+        self.tl._sync_gesture_context(self.C.QPoint(200, 5))
+        self.assertEqual(self.w._gesture_context, "Timeline", "the ruler's own")
+
+    def test_a_claimed_press_keeps_the_range_highlights_edge(self):
+        from qtpy import QtWidgets
+
+        layer = self._layer()
+        self.w.set_range_highlight(40.0, 120.0)
+        item = self.w.range_highlight_item
+        self.assertIs(item, self.w._range_highlight)
+        r = item._rect()
+        pt = self.C.QPointF(r.right() - 1, r.center().y())
+
+        def press():
+            ev = QtWidgets.QGraphicsSceneMouseEvent(
+                self.C.QEvent.GraphicsSceneMousePress
+            )
+            ev.setButton(self.C.Qt.LeftButton)
+            ev.setButtons(self.C.Qt.LeftButton)
+            ev.setScenePos(pt)
+            ev.setPos(pt)
+            item.mousePressEvent(ev)
+            return ev
+
+        layer.claim = True
+        self.assertFalse(press().isAccepted(), "the layer's item takes it")
+        self.assertIsNone(item._drag_mode)
+        layer.claim = False
+        self.assertTrue(press().isAccepted())
+        self.assertEqual(item._drag_mode, "right")
+
+    # -- the data the widget describes itself with ------------------------------------
+
+    def test_a_layer_edits_the_legend_of_the_editor_it_knows(self):
+        self._layer()
+        groups = self.w._shortcut_mgr.gestures
+        self.assertEqual(list(groups)[0], "Probe")
+        self.w.set_editor("graph")
+        self.assertNotIn("Probe", groups)
+        self.w.set_editor("tracks")
+        self.assertEqual(list(groups)[0], "Probe")
+
+    def test_a_layer_edits_the_timeline_menu(self):
+        self._layer()
+        entries = self.tl.default_context_entries(0.0)
+        self.assertEqual(entries[-1]["key"], "probe")
+        self.assertEqual(self.w.context_entries(0.0)[-1]["label"], "Probe")
+
+    def test_a_layer_refines_the_zone_a_right_click_reports(self):
+        self._layer()
+        self.w.zone_menu_enabled = True
+        zones = []
+        self.w.zone_context_menu_requested.connect(lambda z, t, p: zones.append(z))
+        empty_rows = int(self.w._content_top) + 200
+        self._right_click(80.0, empty_rows)  # inside the span it claims
+        self._right_click(180.0, empty_rows)
+        self._right_click(80.0, 4)  # the ruler stays the ruler
+        self._right_click(180.0, _RULER_HEIGHT + 3)  # its lane is its own
+        self.assertEqual(zones, ["probe", "tracks", "ruler", "probe"])
+
+    def test_a_layers_span_widens_the_scroll_extent(self):
+        layer = self._layer(bounds=(0.0, 8000.0))
+        self.w.refresh_extent()
+        rect = self.tl._scene.sceneRect()
+        self.assertLessEqual(self.tl.time_to_x(8000.0), rect.right())
+        layer.bounds = (-500.0, -100.0)
+        self.w.refresh_extent()
+        self.assertLessEqual(self.tl._scene.sceneRect().left(), self.tl.time_to_x(-500.0))
+
+    def test_a_clear_and_a_relayout_reach_the_layer(self):
+        layer = self._layer()
+        self.w.clear_decorations()
+        self.w.clear()
+        self.assertEqual(layer.calls.count("clear"), 2)
+        layer.calls.clear()
+        self.w.add_track("A")  # the rows changed under the layer's items
+        self.assertIn("relayout", layer.calls)
+        layer.calls.clear()
+        self.w.refresh()  # the zoom / viewport changed
+        self.assertIn("relayout", layer.calls)
+
+    # -- the parts a layer builds its items from --------------------------------------
+
+    def test_a_layers_item_lives_under_the_track_rows(self):
+        from qtpy import QtWidgets
+
+        item = QtWidgets.QGraphicsRectItem(0, 0, 10, 10)
+        self.w.add_track_item(item)
+        self.assertIs(item.parentItem(), self.w.editor("tracks").content_root)
+        self.w.set_editor("graph")
+        self.assertFalse(item.isVisible(), "it hides with the rows")
+        self.w.set_editor("tracks")
+        self.w.remove_track_item(item)
+        self.assertIsNone(item.scene())
+
+    def test_the_parts_are_reachable_from_the_root(self):
+        """A slots layer reaches uitk as ``self.sb.<Name>``: the root names."""
+        import uitk
+        from uitk.widgets.sequencer import HATCH_SPARSE
+
+        for name in (
+            "ClipItem",
+            "HeldGeometryMixin",
+            "DraggableItemMixin",
+            "FrameTooltip",
+            "MenuUtils",
+            "PatternRegistry",
+        ):
+            with self.subTest(name=name):
+                self.assertIn(name, uitk.__all__)
+        self.assertEqual(uitk.PatternRegistry.HATCH_SPARSE, HATCH_SPARSE)
+        self.assertTrue(callable(uitk.MenuUtils.styled_menu))
+        self.assertIs(self.w.timeline, self.tl)
+        self.assertEqual(self.w.SELECTED_ACCENT, "#5A8CDC")
+
+    def test_a_drag_captures_one_undo_step(self):
+        """``DraggableItemMixin._capture_drag_undo``: once per gesture."""
+        self.w.set_range_highlight(40.0, 120.0)
+        item = self.w.range_highlight_item
+        before = len(self.w._undo_stack)
+        item._undo_captured = False
+        item._capture_drag_undo()
+        item._capture_drag_undo()
+        self.assertEqual(len(self.w._undo_stack), before + 1)
+
+    def test_the_shot_layer_left_for_tentacle(self):
+        """Its names are gone from the widget, each listed as moved (CODE_STANDARD
+        section 5): tentacle's Shot Sequencer adds them back as a layer."""
+        import uitk
+        from uitk.widgets.sequencer import RulerItem
+
+        for owner, name in (
+            (SequencerWidget, "set_shot_blocks"),
+            (SequencerWidget, "selected_shot"),
+            (SequencerWidget, "clear_shot_blocks"),
+            (SequencerWidget, "add_gap_overlay"),
+            (SequencerWidget, "clear_gap_overlays"),
+            (SequencerWidget, "set_all_gap_overlays_locked"),
+            (SequencerWidget, "show_gap_overlays"),
+            (RulerItem, "set_shot_blocks"),
+            (RulerItem, "clear_shot_blocks"),
+            (RulerItem, "selected_block"),
+            (RulerItem, "shot_block_at"),
+        ):
+            with self.subTest(name=f"{owner.__name__}.{name}"):
+                self.assertFalse(hasattr(owner, name))
+                new_home, version = uitk.MOVED_NAMES[f"{owner.__name__}.{name}"]
+                self.assertTrue(new_home.startswith("tentacle."), new_home)
+                self.assertEqual(version, "1.9.0")
+        for signal in ("shot_switch_requested", "gap_resized", "shots_changed"):
+            self.assertFalse(hasattr(SequencerWidget, signal), signal)

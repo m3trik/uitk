@@ -517,7 +517,7 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
             if scene is not None:
                 scene.clearSelection()
             self.setSelected(True)
-        if sq.show_key_menu(MenuUtils._menu_exec_pos(event)):
+        if sq.show_key_menu(MenuUtils.menu_exec_pos(event)):
             event.accept()
         else:
             event.ignore()
