@@ -1,6 +1,7 @@
 # uitk — Changelog
 
 ## 2026
+- **2026-10-28 -- `docs/BRIDGE.md`'s walk-through points at tentacle's Blender Bridge tool.**
 - **2026-10-28 -- `Switchboard.register(..., exclude=None)` (`switchboard/_core.py`).** File-name wildcards a call leaves out on top of each registry's own `exc_files` (a bare per-call `exc_files` would replace `*_ui.py` and let a slot scan pick up compiled UI modules). tentacle registers its shared tools minus the ones a host doesn't serve with it.
   - Test(s): `test_switchboard_sources.py` +2.
 - **2026-10-28 -- `docs/COOKBOOK.md`: the hosted-vs-standalone launch recipe no longer cites mayatk's removed Channels panel as live source.**
