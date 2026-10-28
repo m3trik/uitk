@@ -12,11 +12,9 @@ Patterns extracted from real UITK consumers — primarily [mayatk](https://githu
 
 **Solution**: an optional `sb` parameter on a static `launch` method of the slots class. If present, use the caller's Switchboard via the marking menu handler. If absent, build a private one.
 
-*Maya-only as written* (the slot class imports `maya.cmds`) — the pattern itself is host-agnostic. Verified against the live mayatk source below.
+A sketch of the pattern, host-agnostic. tentacle's shared Channels tool (`tentacle/slots/tools/channels.py`) keeps only the hosted half: its tools always open through tentacle's marking menu.
 
 ```python
-# mayatk/node_utils/attributes/channels/channels_slots.py
-
 class ChannelsSlots(...):
     @staticmethod
     def launch(sb=None, targets=None, filter=None, search=None):

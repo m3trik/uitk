@@ -1,6 +1,7 @@
 # uitk — Changelog
 
 ## 2026
+- **2026-10-28 -- `docs/COOKBOOK.md`: the hosted-vs-standalone launch recipe no longer cites mayatk's removed Channels panel as live source.**
 - **2026-10-28 -- `Tooltip` is on the root (`__init__.py`).** The bridge's parameter-tooltip formatter (`Tooltip.format_param_tooltip`) is a consumer's need, like `AttributeSpec` and `KindFactory`: tentacle's Shot Manifest panel reaches it as `self.sb.Tooltip`, its slots layer importing no deep path.
   - Test(s): uitk's affected suites (23 modules) pass.
 - **2026-10-27 -- A panel tag opens a UI sticky in any host (`handlers/ui_handler.py`, `__init__.py`).** A new public constant and a new default, so this is a minor release (1.9.0). `UiHandler.PANEL_TAG` (`"panel"`) names the tag a source registers its tool panels under, and `default_persistence` returns sticky for it; the hosts' handlers already defer to it, so a panel registered by an app other than mayatk or blendertk (tentacle's shared `ui/tools/`) opens sticky in Maya and Blender alike.
