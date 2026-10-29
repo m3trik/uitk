@@ -1,6 +1,10 @@
 # uitk — Changelog
 
 ## 2026
+- **2026-10-28 -- Fix: `Switchboard(tag_delimiter=...)` reaches every tag and name method (`switchboard/names.py`).** Only `get_ui_relatives` honored it; `get_tags_from_name`, `edit_tags`, `filter_tags`, `get_unknown_tags` and `get_base_name` split on `'#'` whatever was passed.
+  - Test(s): `test_switchboard.py::TestTagDelimiterOverride`, red first.
+- **2026-10-28 -- Deprecated: `Switchboard(ui_name_delimiters=...)` and `Switchboard.UI_NAME_DELIMITER`, removed in 1.10.0 (`switchboard/_core.py`).** Nothing ever read them. The keyword warns and is ignored; a positional argument still binds.
+  - Test(s): `test_switchboard.py::TestUiNameDelimitersRetired`.
 - **2026-10-28 -- The `Switchboard` is a facade over private collaborators, not 13 single-use mixins (`switchboard/*`, `__init__.py`; `switchboard/style.py` removed).** Every public `sb.<name>` keeps its name, signature, defaults and docstring. Each delegates in one line to the collaborator that owns the behavior and its state (`_Slots`, `_Shortcuts`, `_Widgets` / `_Gates`, `_Rules`, `_WidgetValues`, `_ControlGroups`, `_Dialogs`, `_EventLoop`, `_Names`, `_Placement`, `_UitkNamespace`). A collaborator either holds the Switchboard, calling the public methods through it so an override or patch of `sb.<method>` still reaches every caller, or reads its logger and tables through getters. The private names other code reads (`sb._commands`, `sb._find_slots_class`, `sb._widget_is_alive`, ...) forward to their owner. Moved out (`MOVED_NAMES`): the 13 `Switchboard*Mixin` classes, which point at `uitk.Switchboard`. Dead `_synced_pairs` removed.
   - Test(s): `test_switchboard.py` +16 (`TestFacadeCharacterization`, `TestRetiredMixinNames`); `test_switchboard_namespace`, `test_form_panel`, `test_list_input_dialog`, `test_progress_adapter`, `test_marking_menu` call `Switchboard` instead of a mixin.
 - **2026-10-28 -- Removed: the retired Switchboard editor names `style` / `shortcut` / `browser` / `presets` (`switchboard/editors.py`), due in 1.8.0.** Use `style_editor` / `shortcut_editor` / `ui_browser` / `preset_editor`.

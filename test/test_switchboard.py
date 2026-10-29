@@ -482,6 +482,37 @@ class TestSwitchboardTagManagement(QtBaseTestCase):
         self.assertEqual(result, ["foo", "bar"])
 
 
+class TestTagDelimiterOverride(QtBaseTestCase):
+    """``Switchboard(tag_delimiter=...)`` reaches every name and tag method.
+
+    Regression: the override was stored, but only ``get_ui_relatives`` read it;
+    every other method split on the class constant ``TAG_DELIMITER``.
+    """
+
+    def test_tag_methods_honor_the_override(self):
+        sb = Switchboard(tag_delimiter="@")
+        self.assertEqual(sb.tag_delimiter, "@")
+        self.assertEqual(sb.get_tags_from_name("menu@submenu"), {"submenu"})
+        self.assertEqual(sb.edit_tags("menu", add="submenu"), "menu@submenu")
+        self.assertEqual(sb.filter_tags("menu@a@b", keep_tags=["b"]), "menu@b")
+        self.assertEqual(sb.get_unknown_tags("menu@a@b", ["a"]), ["b"])
+        self.assertEqual(sb.get_base_name("menu2@submenu"), "menu")
+
+    def test_default_is_the_class_constant(self):
+        self.assertEqual(Switchboard().tag_delimiter, Switchboard.TAG_DELIMITER)
+
+
+class TestUiNameDelimitersRetired(QtBaseTestCase):
+    """``ui_name_delimiters`` / ``UI_NAME_DELIMITER`` never had a reader: passing
+    the keyword or reading the constant warns, a positional call still binds."""
+
+    def test_keyword_warns_and_the_constant_warns(self):
+        with self.assertWarns(DeprecationWarning):
+            Switchboard(ui_name_delimiters=".")
+        with self.assertWarns(DeprecationWarning):
+            self.assertEqual(Switchboard.UI_NAME_DELIMITER, ".")
+
+
 class TestSwitchboardHasTags(QtBaseTestCase):
     """Tests for _Names has_tags method."""
 

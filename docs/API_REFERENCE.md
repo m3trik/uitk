@@ -20,8 +20,8 @@ Switchboard(
     widget_source=None,    # path | module | list thereof
     icon_source=None,      # path | module | list thereof
     handlers: dict = None, # {"name": HandlerClass | instance}
-    tag_delimiter: str = None,         # default "#"
-    ui_name_delimiters: str = None,    # default "."
+    tag_delimiter: str = None,         # default "#"; every tag / name method splits on it
+    ui_name_delimiters: str = None,    # deprecated, removed in 1.10.0: nothing reads it
     log_level: str = "warning",
     base_dir=None,
     loader="runtime",                  # "runtime" | "compiled"
@@ -60,7 +60,7 @@ Switchboard(
 
 ```python
 TAG_DELIMITER = "#"
-UI_NAME_DELIMITER = "."
+UI_NAME_DELIMITER = "."  # deprecated, removed in 1.10.0: nothing reads it
 SLOT_SUFFIX = "Slots"
 INIT_SUFFIX = "_init"
 ```

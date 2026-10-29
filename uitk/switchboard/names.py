@@ -9,8 +9,9 @@ import pythontk as ptk
 class _Names:
     """Names and tags behind the Switchboard: legal names, slot-class names, tag
     strings and the shorthand name patterns (``'b000-3'``). Stateless; reads the
-    Switchboard's vocabulary (``TAG_DELIMITER``, ``SLOT_SUFFIX``) live, so a
-    subclass that overrides one is honored everywhere.
+    Switchboard's ``tag_delimiter`` (its ``tag_delimiter=`` override, else
+    ``TAG_DELIMITER``) and ``SLOT_SUFFIX`` live, so every tag / name method
+    splits on the one delimiter.
     """
 
     def __init__(self, sb):
@@ -54,13 +55,13 @@ class _Names:
             raise ValueError(f"Expected a string, got {type(name)}")
         if not name:
             return ""
-        name = name.split(self._sb.TAG_DELIMITER)[0]
+        name = name.split(self._sb.tag_delimiter)[0]
         name = re.sub(r"[_\d]+$", "", name)
         match = re.search(r"\b[a-zA-Z]\w*", name)
         return match.group() if match else name
 
     def get_tags_from_name(self, name: str) -> set[str]:
-        parts = name.split(self._sb.TAG_DELIMITER)
+        parts = name.split(self._sb.tag_delimiter)
         return set(parts[1:]) if len(parts) > 1 else set()
 
     def has_tags(self, ui, tags=None) -> bool:
@@ -88,7 +89,7 @@ class _Names:
     ) -> Union[str, None]:
         if isinstance(target, str):
             current_tags = self._sb.get_tags_from_name(target)
-            base_name = target.split(self._sb.TAG_DELIMITER)[0]
+            base_name = target.split(self._sb.tag_delimiter)[0]
 
             if clear:
                 current_tags.clear()
@@ -103,8 +104,8 @@ class _Names:
 
             return (
                 base_name
-                + self._sb.TAG_DELIMITER
-                + self._sb.TAG_DELIMITER.join(sorted(current_tags))
+                + self._sb.tag_delimiter
+                + self._sb.tag_delimiter.join(sorted(current_tags))
             )
 
         elif isinstance(target, QtWidgets.QWidget):
@@ -131,7 +132,7 @@ class _Names:
     ) -> str:
         if keep_tags is not None:
             # Keep only specified tags
-            base_name = tag_string.split(self._sb.TAG_DELIMITER)[0]
+            base_name = tag_string.split(self._sb.tag_delimiter)[0]
             current_tags = self._sb.get_tags_from_name(tag_string)
             keep_tags_set = set(ptk.make_iterable(keep_tags))
             filtered_tags = current_tags.intersection(keep_tags_set)
@@ -139,8 +140,8 @@ class _Names:
             if filtered_tags:
                 return (
                     base_name
-                    + self._sb.TAG_DELIMITER
-                    + self._sb.TAG_DELIMITER.join(sorted(filtered_tags))
+                    + self._sb.tag_delimiter
+                    + self._sb.tag_delimiter.join(sorted(filtered_tags))
                 )
             else:
                 return base_name
@@ -155,7 +156,7 @@ class _Names:
         # tags. Substring regex mis-fired on prefixes ('sub' vs 'submenu'),
         # truncated underscore tags, and never matched with an empty known list.
         known = set(ptk.make_iterable(known_tags))
-        tags = tag_string.split(self._sb.TAG_DELIMITER)[1:]
+        tags = tag_string.split(self._sb.tag_delimiter)[1:]
         return [tag for tag in tags if tag and tag not in known]
 
     @classmethod
