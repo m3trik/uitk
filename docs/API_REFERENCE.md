@@ -10,7 +10,7 @@ Signatures below are verified against the generated registry ([API_INDEX.md](../
 
 ## `uitk.Switchboard`
 
-Source: [switchboard/_core.py](../uitk/switchboard/_core.py) (composes partials from sibling modules — `slots.py`, `widgets.py`, `widget_values.py`, `rules.py`, `control_groups.py`, `dialogs.py`, `placement.py`, `event_loop.py`, `names.py`, `editors.py`, `style.py`, `shortcuts.py`)
+Source: [switchboard/_core.py](../uitk/switchboard/_core.py) (a facade over private collaborators in sibling modules — `slots.py`, `widgets.py`, `widget_values.py`, `rules.py`, `control_groups.py`, `dialogs.py`, `placement.py`, `event_loop.py`, `names.py`, `editors.py`, `namespace.py`, `shortcuts.py`)
 
 ```python
 Switchboard(

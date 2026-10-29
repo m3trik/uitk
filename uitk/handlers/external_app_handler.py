@@ -1279,7 +1279,7 @@ class ExternalAppHandler(BaseHandler):
         method on a dead wrapper raises ``RuntimeError``.
 
         ``AttributeError`` is caught for the same reason
-        ``SwitchboardWidgetMixin._widget_is_alive`` catches it: some shiboken
+        ``Switchboard._widget_is_alive`` catches it: some shiboken
         builds raise that instead for a PARTIALLY-disposed wrapper, and this
         copy used to let it escape -- so the one case a liveness probe exists
         for could still propagate out of the cache lookup at :meth:`_cached`.

@@ -4,9 +4,11 @@ from qtpy import QtWidgets
 from uitk.managers.value_manager import ValueManager
 
 
-class SwitchboardWidgetValuesMixin:
+class _WidgetValues:
     """What a control's value means, read and written one way: the reader /
-    writer / change-signal tables behind ``toggle_multi`` and the rule family."""
+    writer / change-signal tables behind ``toggle_multi`` and the rule family.
+    Stateless; given the logger and the slot-wiring ``default_signals`` table.
+    """
 
     # ------------------------------------------------------------------
     # Widget value / signal plumbing shared by toggle_multi and enable_when
@@ -15,7 +17,7 @@ class SwitchboardWidgetValuesMixin:
     #: (widget type, value getter) — most-specific first. The one table behind
     #: ``toggle_multi``'s initial apply and ``enable_when``'s reads, so "what
     #: does this control's value mean" is decided once. A leading underscore
-    #: names a reader on this mixin; anything else is a zero-arg widget method.
+    #: names a reader on this class; anything else is a zero-arg widget method.
     #: signal name -> zero-arg widget getter that yields what that signal would
     #: deliver for the CURRENT state (an initial apply runs before any signal).
     _SIGNAL_VALUE_READERS = {
@@ -48,7 +50,7 @@ class SwitchboardWidgetValuesMixin:
     #: ``"8"`` into a spin box, a truthy value into a checkable button, never a
     #: button's LABEL). Only combos are written locally, and for a reason that
     #: is combo-specific rather than a flaw in the manager — see
-    #: :meth:`_set_combo_value`.
+    #: :meth:`set_combo_value`.
     #:
     #: Deriving it, rather than gating on ``ValueManager.is_supported_widget``,
     #: is what makes reader/writer symmetry STRUCTURAL: the two agree today
@@ -66,6 +68,12 @@ class SwitchboardWidgetValuesMixin:
         (QtWidgets.QPlainTextEdit, "textChanged"),
     )
 
+    def __init__(self, logger, default_signals):
+        # Getters, read per call: () -> the Switchboard's logger, and its
+        # slot-wiring default_signals table (a reassignment reaches here too).
+        self._logger = logger
+        self._default_signals = default_signals
+
     @staticmethod
     def _combo_value(combo):
         """A combo's value is its ``currentData`` when items carry data, else
@@ -74,7 +82,7 @@ class SwitchboardWidgetValuesMixin:
         Read through the one owner, ``ValueManager.combo_value``."""
         return ValueManager.combo_value(combo, "data", fallback="index")
 
-    def _widget_value_reader(self, widget):
+    def widget_value_reader(self, widget):
         """``getter(widget) -> value`` for *widget*, or ``None`` if untabled.
 
         A widget that names its own value (``state_value``: a check list's is
@@ -90,7 +98,7 @@ class SwitchboardWidgetValuesMixin:
                 return lambda w, g=getter: getattr(w, g)()
         return None
 
-    def _set_combo_value(self, combo, value) -> None:
+    def set_combo_value(self, combo, value) -> None:
         """Select the item *value* names — the inverse of :meth:`_combo_value`.
 
         Resolution mirrors how a combo's value is READ: item data first (the
@@ -133,17 +141,17 @@ class SwitchboardWidgetValuesMixin:
         ):
             index = value  # symmetric with _combo_value's index reading
         if index < 0:
-            self.logger.warning(
+            self._logger().warning(
                 f"[value_from] {combo.objectName()!r} has no item for {value!r}; "
                 f"selection left unchanged"
             )
             return
         combo.setCurrentIndex(index)
 
-    def _widget_value_writer(self, widget):
+    def widget_value_writer(self, widget):
         """``setter(widget, value)`` for *widget*, or ``None`` if unwritable.
 
-        A combo is written here — :meth:`_set_combo_value` matches by item DATA
+        A combo is written here — :meth:`set_combo_value` matches by item DATA
         the way :meth:`_combo_value` READS it, and goes through
         ``setCurrentIndex`` because uitk's ``ComboBox.setCurrentText`` is
         ``@Signals.blockSignals``-decorated. Everything else delegates to
@@ -151,17 +159,17 @@ class SwitchboardWidgetValuesMixin:
         widget's value"; the combo family is the ONLY place a uitk widget
         silences a setter, so nothing else can be surprised that way. A
         widget that names its own value (``set_state_value``) is writable
-        too, as :meth:`_widget_value_reader` reads it by ``state_value``.
+        too, as :meth:`widget_value_reader` reads it by ``state_value``.
         """
         if isinstance(widget, QtWidgets.QComboBox):
-            return self._set_combo_value
+            return self.set_combo_value
         if isinstance(widget, self._WIDGET_VALUE_WRITABLE) or callable(
             getattr(widget, "set_state_value", None)
         ):
             return ValueManager.set_value
         return None
 
-    def _value_change_signal(self, widget):
+    def value_change_signal(self, widget):
         """Name of the signal announcing a value change on *widget*: the
         widget's own ``state_signal``, then the override table, then the
         Switchboard's ``default_signals``."""
@@ -171,18 +179,18 @@ class SwitchboardWidgetValuesMixin:
         for wtype, name in self._VALUE_CHANGE_SIGNALS:
             if isinstance(widget, wtype) and hasattr(widget, name):
                 return name
-        for wtype, name in getattr(self, "default_signals", {}).items():
+        for wtype, name in self._default_signals().items():
             if isinstance(widget, wtype) and hasattr(widget, name):
                 return name
         return None
 
-    def _resolve_ui_widget(self, ui, ref):
+    def resolve_ui_widget(self, ui, ref):
         """Resolve a widget reference — an instance or an objectName on *ui*."""
         if isinstance(ref, QtWidgets.QWidget):
             return ref
         return getattr(ui, ref, None) if isinstance(ref, str) else None
 
-    def _read_signal_value(self, widget, signal):
+    def read_signal_value(self, widget, signal):
         """The value a *signal* would deliver for the widget's CURRENT state —
         what an initial apply needs, since no signal has fired yet."""
         reader = self._SIGNAL_VALUE_READERS.get(signal)
@@ -191,5 +199,5 @@ class SwitchboardWidgetValuesMixin:
             # PySide6 hands ``checkState()`` back as a Qt.CheckState enum while
             # ``stateChanged`` delivers the int — match what the signal sends.
             return getattr(value, "value", value)
-        getter = self._widget_value_reader(widget)
+        getter = self.widget_value_reader(widget)
         return getter(widget) if getter is not None else None

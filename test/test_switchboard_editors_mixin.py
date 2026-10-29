@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Tests for ``SwitchboardEditorsMixin`` — the ``sb.editors`` registry.
+"""Tests for ``Switchboard.editors`` — the ``sb.editors`` registry.
 
 Covers:
 - Editor name registry (``style``, ``shortcut``, ``browser``, ``presets``)

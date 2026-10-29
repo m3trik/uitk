@@ -1,12 +1,12 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Mixin that exposes the bundled editor windows on the Switchboard.
+"""The bundled editor windows behind ``Switchboard.editors``.
 
 The Switchboard ships four top-level editor windows that operate on its
 state — :class:`StyleEditor`, :class:`ShortcutEditor`,
 :class:`SwitchboardBrowser` and :class:`PresetEditor`. Without a central exposure point each caller
 re-implements the same five-line pattern of "cache, probe for deletion,
-recreate if dead, show, raise". This mixin centralizes that:
+recreate if dead, show, raise". The registry centralizes that:
 
     self.sb.editors.show("style_editor")   # opens / focuses by name
     self.sb.editors.browser                # property access
@@ -21,7 +21,7 @@ the underlying Qt object has been deleted (e.g. the user clicked the OS
 close button and Qt destroyed the C++ side).
 
 Mirrors the spirit of :class:`mayatk.MayaUiHandler`'s "use what's given,
-otherwise stand one up" pattern; the mixin doesn't need a host instance
+otherwise stand one up" pattern; the registry doesn't need a host instance
 because the Switchboard itself is the ambient host.
 """
 
@@ -43,7 +43,7 @@ class _EditorRegistry:
     """
 
     # Editor names → factory specs. Each spec is a (module_path, class_name,
-    # needs_switchboard[, kwargs]) tuple resolved lazily so importing the mixin
+    # needs_switchboard[, kwargs]) tuple resolved lazily so importing the module
     # doesn't drag every editor module into memory. The optional 4th element is a
     # dict of extra constructor kwargs (e.g. a focused-launch flag).
     #
@@ -89,7 +89,6 @@ class _EditorRegistry:
         "ui_browser": "Search, launch and tag every registered UI and app.",
         "preset_editor": "Browse, lock, hide and share every tool's presets in one tree.",
     }
-
 
     def __init__(self, sb):
         self._sb = sb
@@ -290,19 +289,3 @@ class _EditorRegistry:
                     logger.warning(
                         f"[editors] Post-build hook {hook} raised for {name!r}: {exc}"
                     )
-
-
-class SwitchboardEditorsMixin:
-    """Adds an ``editors`` property to Switchboard exposing the bundled editors.
-
-    Lazy where it costs: the registry is a small name table (the default
-    ``EditorHandler`` reads it to list the editors as launcher rows), and an
-    editor's module is imported only when that editor is first built.
-    """
-
-    @property
-    def editors(self) -> _EditorRegistry:
-        """Cached editor registry — see :class:`_EditorRegistry`."""
-        if not hasattr(self, "_editors_registry"):
-            self._editors_registry = _EditorRegistry(self)
-        return self._editors_registry

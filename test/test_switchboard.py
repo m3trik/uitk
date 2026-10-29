@@ -6,10 +6,10 @@ This module tests the Switchboard functionality including:
 - Slot wrapper variants
 - Widget state storage and restoration
 - Button group creation and behavior
-- SwitchboardNameMixin: Tag management, name conversion
-- SwitchboardSlotsMixin: Signal discovery, slot history
+- _Names: Tag management, name conversion
+- _Slots: Signal discovery, slot history
 - Switchboard partials: dialogs, placement, event loop, name unpacking
-- SwitchboardWidgetMixin: Widget resolution, discovery
+- _Widgets: Widget resolution, discovery
 
 Run standalone: python -m test.test_switchboard
 """
@@ -24,7 +24,6 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.switchboard import Switchboard
-from uitk.switchboard.dialogs import SwitchboardDialogsMixin
 from uitk.managers.cursor_manager import CursorManager
 from uitk.examples.example import ExampleSlots
 
@@ -366,12 +365,12 @@ class TestSwitchboardButtonGroups(QtBaseTestCase):
 
 
 # =============================================================================
-# SwitchboardNameMixin Tests
+# _Names Tests
 # =============================================================================
 
 
 class TestSwitchboardNameConversion(QtBaseTestCase):
-    """Tests for SwitchboardNameMixin name conversion methods."""
+    """Tests for _Names name conversion methods."""
 
     @classmethod
     def setUpClass(cls):
@@ -414,7 +413,7 @@ class TestSwitchboardNameConversion(QtBaseTestCase):
 
 
 class TestSwitchboardTagManagement(QtBaseTestCase):
-    """Tests for SwitchboardNameMixin tag management."""
+    """Tests for _Names tag management."""
 
     @classmethod
     def setUpClass(cls):
@@ -484,7 +483,7 @@ class TestSwitchboardTagManagement(QtBaseTestCase):
 
 
 class TestSwitchboardHasTags(QtBaseTestCase):
-    """Tests for SwitchboardNameMixin has_tags method."""
+    """Tests for _Names has_tags method."""
 
     @classmethod
     def setUpClass(cls):
@@ -519,12 +518,12 @@ class TestSwitchboardHasTags(QtBaseTestCase):
 
 
 # =============================================================================
-# SwitchboardSlotsMixin Tests
+# _Slots Tests
 # =============================================================================
 
 
 class TestSwitchboardDefaultSignals(QtBaseTestCase):
-    """Tests for SwitchboardSlotsMixin default signal discovery."""
+    """Tests for _Slots default signal discovery."""
 
     @classmethod
     def setUpClass(cls):
@@ -566,7 +565,7 @@ class TestSwitchboardDefaultSignals(QtBaseTestCase):
 
 
 class TestSwitchboardAvailableSignals(QtBaseTestCase):
-    """Tests for SwitchboardSlotsMixin available signal discovery."""
+    """Tests for _Slots available signal discovery."""
 
     @classmethod
     def setUpClass(cls):
@@ -623,7 +622,7 @@ class TestSwitchboardAvailableSignals(QtBaseTestCase):
 
 
 class TestSwitchboardSlotHistory(QtBaseTestCase):
-    """Tests for SwitchboardSlotsMixin slot history."""
+    """Tests for _Slots slot history."""
 
     @classmethod
     def setUpClass(cls):
@@ -1449,12 +1448,12 @@ class TestDeferredWidgetRevival(QtBaseTestCase):
 
 
 # =============================================================================
-# SwitchboardWidgetMixin Tests
+# _Widgets Tests
 # =============================================================================
 
 
 class TestSwitchboardGetWidgetsFromUI(QtBaseTestCase):
-    """Tests for SwitchboardWidgetMixin _get_widgets_from_ui method."""
+    """Tests for _Widgets _get_widgets_from_ui method."""
 
     @classmethod
     def setUpClass(cls):
@@ -1488,7 +1487,7 @@ class TestSwitchboardGetWidgetsFromUI(QtBaseTestCase):
 
 
 class TestSwitchboardGetWidgetFromUI(QtBaseTestCase):
-    """Tests for SwitchboardWidgetMixin _get_widget_from_ui method."""
+    """Tests for _Widgets _get_widget_from_ui method."""
 
     @classmethod
     def setUpClass(cls):
@@ -1528,7 +1527,7 @@ class TestSwitchboardGetWidgetFromUI(QtBaseTestCase):
 
 
 class TestSwitchboardIsWidget(QtBaseTestCase):
-    """Tests for SwitchboardWidgetMixin is_widget method."""
+    """Tests for _Widgets is_widget method."""
 
     @classmethod
     def setUpClass(cls):
@@ -1562,7 +1561,7 @@ class TestSwitchboardIsWidget(QtBaseTestCase):
 
 
 class TestSwitchboardGetParentWidgets(QtBaseTestCase):
-    """Tests for SwitchboardWidgetMixin get_parent_widgets method."""
+    """Tests for _Widgets get_parent_widgets method."""
 
     def test_get_parent_widgets_returns_list(self):
         """Should return a list of parent widgets."""
@@ -1586,7 +1585,7 @@ class TestSwitchboardGetParentWidgets(QtBaseTestCase):
 
 
 class TestSwitchboardGetAllWidgets(QtBaseTestCase):
-    """Tests for SwitchboardWidgetMixin get_all_widgets method."""
+    """Tests for _Widgets get_all_widgets method."""
 
     def test_get_all_widgets_returns_list(self):
         """Should return a list of widgets."""
@@ -2901,7 +2900,7 @@ class TestDialogsYieldToBusyCursor(QtBaseTestCase):
 
     def test_busy_cursor_reaches_the_scope_through_the_switchboard(self):
         app = QtWidgets.QApplication.instance()
-        with SwitchboardDialogsMixin.busy_cursor():
+        with Switchboard.busy_cursor():
             self.assertEqual(app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
         self.assertIsNone(app.overrideCursor())
 
@@ -3121,6 +3120,212 @@ class TestMissingSourceTolerance(QtBaseTestCase):
             )
         finally:
             os.environ.pop("UITK_TEST_SRC_ROOT", None)
+
+
+class TestRetiredMixinNames(unittest.TestCase):
+    """The mixins the Switchboard was composed of are gone: each name answers
+    with where its methods went (``uitk.MOVED_NAMES``)."""
+
+    def test_each_mixin_name_points_at_the_switchboard(self):
+        import uitk
+
+        mixins = [n for n in uitk.MOVED_NAMES if n.startswith("Switchboard")]
+        self.assertEqual(len(mixins), 13)
+        for name in mixins:
+            with self.subTest(name=name):
+                self.assertEqual(uitk.MOVED_NAMES[name], ("uitk.Switchboard", "1.9.0"))
+                with self.assertRaises(AttributeError) as caught:
+                    getattr(uitk, name)
+                self.assertIn("uitk.Switchboard", str(caught.exception))
+
+
+class TestFacadeCharacterization(QtBaseTestCase):
+    """Pins, through ``Switchboard``, the public methods no other test calls.
+
+    The Switchboard delegates them to collaborators; these hold what each one
+    answers, so the wiring between the two cannot drift.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from uitk import examples
+
+        self.sb = Switchboard(ui_source=examples, slot_source=ExampleSlots)
+        self.ui = self.sb.loaded_ui.example
+        self.slots = self.sb.get_slots_instance(self.ui)
+
+    def tearDown(self):
+        self.ui.close()
+        super().tearDown()
+
+    # names
+    def test_slot_class_and_file_names(self):
+        self.assertEqual(
+            self.sb.get_slot_class_names("my_tool"), ["MyToolSlots", "MyTool"]
+        )
+        self.assertEqual(
+            self.sb.get_slot_file_names("my_tool"),
+            ["my_toolSlots", "my_tool_slots", "my_tool", "_my_tool"],
+        )
+
+    def test_methods_by_string_pattern(self):
+        class _Holder:
+            def a000(self):
+                pass
+
+            def a001(self):
+                pass
+
+        found = self.sb.get_methods_by_string_pattern(_Holder(), "a000-2")
+        self.assertEqual([m.__name__ for m in found], ["a000", "a001"])
+
+    # control groups
+    def test_axis_round_trips_through_checkboxes(self):
+        boxes = [self.track_widget(QtWidgets.QCheckBox(t)) for t in "-XYZ"]
+        self.sb.set_axis_for_checkboxes(boxes, "-Y")
+        self.assertEqual([b.isChecked() for b in boxes], [True, False, True, False])
+        self.assertEqual(self.sb.get_axis_from_checkboxes(boxes), "-y")
+        self.assertEqual(self.sb.get_axis_from_checkboxes(boxes, return_type="int"), 3)
+
+    def test_hide_unmatched_groupboxes(self):
+        host = self.track_widget(QtWidgets.QWidget())
+        keep, drop = QtWidgets.QGroupBox(host), QtWidgets.QGroupBox(host)
+        keep.setObjectName("keep")
+        drop.setObjectName("drop")
+        self.sb.hide_unmatched_groupboxes(host, ["keep"])
+        self.assertEqual((keep.isHidden(), drop.isHidden()), (False, True))
+        self.sb.hide_unmatched_groupboxes(host, [])
+        self.assertFalse(drop.isHidden())
+
+    # event loop
+    def test_gc_protect_holds_until_cleared(self):
+        obj = QtCore.QObject()
+        obj.setObjectName("held")
+        protected = self.sb.gc_protect(obj)
+        self.assertIs(protected["held"], obj)
+        self.assertIs(self.sb.gc_protect(), protected)
+        self.assertEqual(self.sb.gc_protect(clear=True), {})
+
+    def test_defer_with_timer_validates_and_runs(self):
+        with self.assertRaises(ValueError):
+            self.sb.defer_with_timer("not callable")
+        with self.assertRaises(TypeError):
+            self.sb.defer_with_timer(print, ms=1.5)
+        ran = []
+        self.sb.defer_with_timer(ran.append, "x", ms=0)
+        deadline = QtCore.QDeadlineTimer(2000)
+        while not ran and not deadline.hasExpired():
+            QtWidgets.QApplication.processEvents()
+        self.assertEqual(ran, ["x"])
+
+    def test_simulate_key_press_posts_to_the_widget(self):
+        with self.assertRaises(ValueError):
+            self.sb.simulate_key_press(object())
+        seen = []
+
+        class _Keys(QtWidgets.QWidget):
+            def event(self, e):
+                if e.type() in (QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease):
+                    seen.append((e.type(), e.key()))
+                return super().event(e)
+
+        widget = self.track_widget(_Keys())
+        self.sb.simulate_key_press(widget, QtCore.Qt.Key_A, release=True)
+        QtWidgets.QApplication.processEvents()
+        press, release = QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease
+        key = QtCore.Qt.Key_A
+        self.assertEqual(seen, [(press, key), (release, key)])
+
+    # placement
+    def test_cursor_offset_from_center(self):
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(40, 20)
+        expected = QtGui.QCursor.pos() - widget.rect().center()
+        self.assertEqual(self.sb.get_cursor_offset_from_center(widget), expected)
+
+    # widgets
+    def test_ui_name_and_menu_target_resolution(self):
+        self.assertFalse(self.sb.ui_name_resolves(""))
+        self.assertTrue(self.sb.ui_name_resolves("example"))
+        self.assertFalse(self.sb.ui_name_resolves("no_such_ui"))
+        to_ui = mock.Mock(target="example")
+        nowhere = mock.Mock(target="no_such_ui", **{"submenu_name.return_value": "x"})
+        self.assertTrue(self.sb.menu_button_target_resolves(to_ui))
+        self.assertFalse(self.sb.menu_button_target_resolves(nowhere))
+        self.assertFalse(self.sb.menu_button_target_resolves(mock.Mock(target="")))
+
+    def test_widget_class_icon_and_window_lookup(self):
+        cls = self.sb.resolve_widget_class("PushButton")
+        self.assertEqual(cls.__name__, "PushButton")
+        self.assertIsNone(self.sb.resolve_widget_class("NoSuchWidget"))
+        self.assertTrue(self.sb.get_icon("no_such_icon").isNull())
+        self.assertEqual(self.sb.get_all_windows("no_such_window"), [])
+        far = QtCore.QPoint(-100000, -100000)
+        self.assertIsNone(self.sb.get_widget_at(far))
+        self.assertEqual(self.sb.get_widget_at(far, top_widget_only=False), [])
+
+    def test_widget_and_slot_lookups(self):
+        widget = self.ui.cmb_options  # registers it
+        self.assertIs(self.sb.get_widget("cmb_options", self.ui), widget)
+        self.assertEqual(self.sb.get_slot_from_widget(widget), self.slots.cmb_options)
+        self.assertIs(self.sb.get_widget_from_slot(self.slots.cmb_options), widget)
+        self.assertIsNone(self.sb.get_widget_from_slot(None))
+        self.assertTrue(self.sb.slots_instantiated("example"))
+
+    # slots
+    def test_missing_slot_hook_and_marker(self):
+        widget = self.ui.cmb_options
+        calls = []
+        self.sb.on_missing_slot = calls.append
+        self.sb.notify_missing_slot(widget)
+        self.sb.on_missing_slot = None
+        self.sb.notify_missing_slot(widget)  # no hook: a no-op
+        self.assertEqual(calls, [widget])
+        self.sb.mark_missing_slot(widget)
+        self.assertFalse(widget.isEnabled())
+        self.assertIn("'cmb_options'", widget.toolTip())
+
+    # dialogs
+    def test_dir_and_save_file_dialogs(self):
+        from uitk.switchboard import dialogs
+
+        with mock.patch.object(dialogs.QtWidgets, "QFileDialog") as fd:
+            fd.getExistingDirectory.return_value = "/picked"
+            self.assertEqual(Switchboard.dir_dialog("Pick", "/start"), "/picked")
+            args = fd.getExistingDirectory.call_args[0]
+            self.assertEqual(args[:3], (None, "Pick", "/start"))
+            fd.getSaveFileName.return_value = ("", "")
+            self.assertIsNone(Switchboard.save_file_dialog("*.wav"))
+            fd.getSaveFileName.return_value = ("/a.wav", "")
+            path = Switchboard.save_file_dialog(
+                "*.wav", title="Export", filter_description="WAV Files"
+            )
+            self.assertEqual(path, "/a.wav")
+            args = fd.getSaveFileName.call_args[0]
+            self.assertEqual(args[1:], ("Export", "/home", "WAV Files (*.wav)"))
+
+    def test_modal_menu_forwards_to_menu_run_modal(self):
+        from uitk.widgets.menu import Menu
+
+        seen = {}
+
+        def run_modal(content_fn, parent=None, **kwargs):
+            seen.update(fn=content_fn, parent=parent, **kwargs)
+            return {"ok": True}
+
+        with mock.patch.object(Menu, "run_modal", new=run_modal):
+            result = Switchboard.modal_menu(print, parent=None, title="T")
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(seen, {"fn": print, "parent": None, "title": "T"})
+
+    def test_save_data_dialog_cancel_writes_nothing(self):
+        from uitk.switchboard import dialogs
+
+        with mock.patch.object(dialogs.QtWidgets, "QFileDialog") as fd:
+            fd.getSaveFileName.return_value = ("", "")
+            self.assertIsNone(self.sb.save_data_dialog({"a": 1}, "T", "p.json"))
+        args = fd.getSaveFileName.call_args[0]
+        self.assertEqual(args[1:], ("Save T As", "p.json", "JSON (*.json)"))
 
 
 # -----------------------------------------------------------------------------

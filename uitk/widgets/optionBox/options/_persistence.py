@@ -176,7 +176,7 @@ class PersistedOption:
         Before host namespacing every host wrote ``<key>``; now each writes
         ``<key>_<host>``. Without this, the move would read as "my pinned
         directories vanished". Mirrors
-        ``SwitchboardShortcutMixin._migrate_shortcuts_to_host_namespace``: each host
+        ``_Shortcuts.migrate_shortcuts_to_host_namespace``: each host
         *copies* on first run and then diverges, and the shared values are
         deliberately left in place so the *other* host can still seed from them.
 

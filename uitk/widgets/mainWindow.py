@@ -425,7 +425,7 @@ class MainWindow(
         # through it via widget.lineEdit() -- and register_children still
         # RECURSES past these, so a user widget inside one is unaffected.
         # Same rule the switchboard applies to slot discovery / .ui parsing
-        # (SwitchboardShortcutMixin).
+        # (``_Shortcuts``).
         if widget.objectName().startswith("qt_"):
             self.logger.debug(
                 f"[register_widget]: skipping Qt-internal widget "
@@ -715,7 +715,7 @@ class MainWindow(
         state = self._relative_states.get(ui_name)
         if state is None:
             # Host-namespaced to match add_ui's branch naming (see
-            # SwitchboardShortcutMixin._host_namespaced_branch) -- a sibling
+            # _Shortcuts.host_namespaced_branch) -- a sibling
             # branch built here must resolve to the SAME key a loaded sibling
             # would use, or a value written via this fallback would silently
             # land in the wrong host's store.

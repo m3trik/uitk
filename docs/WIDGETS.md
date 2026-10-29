@@ -938,7 +938,7 @@ Shortcuts live in two layers; `ShortcutEditor` is the single UI over both.
 - `ShortcutManager` — per-widget registry: `add_shortcut(key, action, description, context)`, `add_global_shortcut`, `add_shortcuts_batch`, `rebind_shortcut(old, new)`, `get_registry()`; `show_editor()` opens `ShortcutEditor` over a bare manager via `ManagerSwitchboardFacade` ([manager_facade.py](../uitk/widgets/editors/shortcut_editor/manager_facade.py)), which presents the manager as a one-UI Switchboard.
 - `host_namespace_suffix(context_tags)` — the settings-key suffix (`"_maya"` / `"_blender"`, `""` standalone) that namespaces persisted bindings per host, shared by the marking-menu binding store and the Switchboard shortcut store so per-DCC overrides can't collide.
 
-**Switchboard-side registry** — [`uitk/switchboard/shortcuts.py`](../uitk/switchboard/shortcuts.py) (`SwitchboardShortcutMixin`):
+**Switchboard-side registry** — [`uitk/switchboard/shortcuts.py`](../uitk/switchboard/shortcuts.py) (`_Shortcuts`, behind the `Switchboard`'s shortcut methods):
 
 - Slot shortcuts: decorate a slot with `@Shortcut("Ctrl+S")`; `register_slots_shortcuts(ui, slots_instance)` scans the Slots class, applies user overrides from `ui.settings`, and live-binds. `set_user_shortcut(ui, slot_name, sequence, scope)` persists an override and rebinds the active shortcut.
 - Commands: `register_command(name, callback, sequence=..., scope=...)` registers a UI-less, shortcut-bindable command (listed under the editor's "⌘ Commands" pseudo-UI; may ship unbound, hidden, or non-editable). `set_command_shortcut(name, sequence, scope)` is the command twin of `set_user_shortcut`; an empty sequence unbinds.

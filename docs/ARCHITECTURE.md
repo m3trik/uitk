@@ -53,36 +53,39 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
 ## 3. Switchboard — the orchestrator
 
 [uitk/switchboard/_core.py](../uitk/switchboard/_core.py). The Switchboard
-class composes private partials co-located in the
-[uitk/switchboard/](../uitk/switchboard/) package:
+is a facade: each public method delegates in one line to a private
+collaborator co-located in the [uitk/switchboard/](../uitk/switchboard/)
+package, which owns that subsystem's behavior and state:
 
 ```python
-class Switchboard(
-    QtCore.QObject,
-    ptk.HelpMixin,                 # introspection helpers
-    ptk.LoggingMixin,              # named logger, log_prefix
-    SwitchboardSlotsMixin,         # slot resolution, Signals, SlotWrapper
-    SwitchboardShortcutMixin,      # keyboard shortcut registration
-    SwitchboardWidgetMixin,        # widget resolution + registration
-    SwitchboardRulesMixin,         # enable_when / show_when / text_from / value_from
-    SwitchboardWidgetValuesMixin,  # what a control's value means (read / write / change signal)
-    SwitchboardControlGroupsMixin, # button groups, toggle_multi, linked spin boxes, reset buttons
-    SwitchboardDialogsMixin,       # message/input/file/form dialogs, progress, busy cursor
-    SwitchboardPlacementMixin,     # center_widget, cursor offset
-    SwitchboardEventLoopMixin,     # defer_with_timer, simulate_key_press, gc_protect
-    SwitchboardNameMixin,          # tag/base name parsing, legal names, name patterns (unpack_names)
-    SwitchboardEditorsMixin,       # sb.editors registry (style/hotkey/browser)
-    SwitchboardStyleMixin,         # sb.style — lazy StyleSheet accessor
-    SwitchboardNamespaceMixin,     # last: __getattr__ fallback to uitk symbols
-): ...
+class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
+    # collaborators, built in __init__:
+    _slots       # _Slots:         slot resolution, deferred init, connect_slot, repeat_last
+    _shortcuts   # _Shortcuts:     slot shortcuts, commands, cold-start standins
+    _widgets     # _Widgets:       widget resolution + registration, visibility policy
+    _gates       # _Gates:         gate / recheck_gates / unmet_policy
+    _rules       # _Rules:         enable_when / show_when / text_from / value_from
+    _values      # _WidgetValues:  what a control's value means (read / write / change signal)
+    _groups      # _ControlGroups: button groups, toggle_multi, linked spin boxes, reset buttons
+    _dialogs     # _Dialogs:       message/input/file/form dialogs, progress, busy cursor
+    _event_loop  # _EventLoop:     defer_with_timer, simulate_key_press, gc_protect
+    _names       # _Names:         tag/base name parsing, legal names, name patterns
+    # plus _Placement (center_widget), _UitkNamespace (the __getattr__ fallback to
+    # uitk symbols) and the sb.editors registry (_EditorRegistry); sb.style is the
+    # facade's own lazy StyleSheet accessor.
 ```
 
-Each partial lives in `uitk/switchboard/<name>.py`, one concept each (e.g.
-`slots.py`, `shortcuts.py`, `widgets.py`, `widget_values.py`, `rules.py`,
+Each collaborator lives in `uitk/switchboard/<name>.py`, one concept each
+(`slots.py`, `shortcuts.py`, `widgets.py`, `widget_values.py`, `rules.py`,
 `control_groups.py`, `dialogs.py`, `placement.py`, `event_loop.py`,
-`names.py`, `editors.py`, `style.py`, `namespace.py`). These are implementation pieces, not standalone mixins —
-the `switchboard` subpackage is the encapsulation boundary, not the
-individual partials.
+`names.py`, `editors.py`, `namespace.py`). Each is handed what it needs: the
+Switchboard where it reads state a host changes after construction
+(`context_tags`, settings, the name vocabulary), else getters for the
+Switchboard's logger and tables plus the other collaborators it uses -- never
+a captured value. One holding the Switchboard calls the public methods through
+it, so an override or patch of `sb.<method>` reaches every caller. They are implementation pieces, never
+imported outside the package — the `switchboard` subpackage is the
+encapsulation boundary.
 
 The companion module [uitk/managers/shortcut_manager.py](../uitk/managers/shortcut_manager.py)
 holds the *generic* shortcut primitives (``GlobalShortcut``,

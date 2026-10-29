@@ -395,18 +395,19 @@ class _NavStubSb:
     """Switchboard stub for the nav-resolution methods. ``get_ui`` *raises* for an
     unregistered name — mirroring the real resolver ("Slot class '<name>' not found") —
     so the test pins that ``_cached_ui`` must guard it rather than let it propagate. The
-    destination resolver is the REAL ``SwitchboardWidgetMixin.menu_button_target_name`` (the
+    destination resolver is the REAL ``_Widgets.menu_button_target_name`` (the
     shared SSoT the click + auto-hide paths both use), exercised against this stub's
     ``is_registered_ui``."""
 
-    from uitk.switchboard.widgets import SwitchboardWidgetMixin as _Mixin
+    from uitk.switchboard.widgets import _Widgets
 
-    menu_button_target_name = _Mixin.menu_button_target_name
+    menu_button_target_name = _Widgets.menu_button_target_name
     # The resolver now routes through ui_name_resolves (file stem OR handler-backed).
     # With no ``handlers`` set on this stub it degrades to is_registered_ui.
-    ui_name_resolves = _Mixin.ui_name_resolves
+    ui_name_resolves = _Widgets.ui_name_resolves
 
     def __init__(self, registered, handler=None):
+        self._sb = self  # the resolver reads the handlers off its switchboard
         self._registered = dict(registered)  # name -> ui sentinel
         self.hidden = []
         if handler is not None:  # opt-in: a UI handler exposing can_resolve()

@@ -10,7 +10,7 @@ This module is paired with :mod:`uitk.managers.shortcut_manager`:
   widget independent of Switchboard.
 
 * The Switchboard-only pieces (the ``@Shortcut`` slot-decorator and
-  ``SwitchboardShortcutMixin`` which scans Slot classes for decorated
+  ``_Shortcuts``, behind the Switchboard, which scans Slot classes for decorated
   methods, applies user overrides from ``ui.settings``, and live-binds
   ``QShortcut`` objects on the main window) live here.
 
@@ -51,7 +51,7 @@ class Shortcut:
             toggle, so it remains discoverable and collision-checked). Use for
             conventional/functional keys that should not clutter the list.
             Defaults to False. May be overridden per-binding at runtime via
-            :meth:`SwitchboardShortcutMixin.set_binding_hidden`.
+            :meth:`Switchboard.set_binding_hidden`.
         editable (bool, optional): If False, the binding is shown in the editor
             but cannot be rebound by the user (a fixed, semantic key). Defaults
             to True.
@@ -88,8 +88,30 @@ class Shortcut:
         return func
 
 
-class SwitchboardShortcutMixin:
-    """Mixin for managing keyboard shortcuts for Switchboard Slots."""
+class _Shortcuts:
+    """Keyboard shortcuts behind the Switchboard: slot shortcuts, UI-less
+    commands and the cold-start standins for application-scoped bindings. Owns the
+    command registry and every live shortcut it made; reads the Switchboard
+    (settings, ``context_tags``, loaded UIs, slot instances) at call time, since a
+    host sets its context tags after construction.
+    """
+
+    def __init__(self, sb):
+        self._sb = sb
+        # UI-less, shortcut-bindable commands: name -> spec, and name -> live
+        # shortcut. Bound lazily once a host window exists (on_ui_loaded), so
+        # registration order is free.
+        self.commands: dict = {}
+        self.command_shortcuts: dict = {}
+        # Cold-start standins for *application*-scoped slot shortcuts whose owning
+        # UI hasn't been built yet: (ui_name, method) -> QShortcut. An app-scoped
+        # binding should fire from a fresh session without first opening its tool,
+        # but register_slots_shortcuts only runs when the UI is built. These
+        # host-owned standins build-then-invoke on press and are disposed the moment
+        # the real UI builds (its real shortcut takes over). Scanned once, on the
+        # first on_ui_loaded with a visible host.
+        self.deferred_slot_shortcuts: dict = {}
+        self.deferred_slots_scanned: bool = False
 
     @staticmethod
     def _as_bool(value: Any) -> bool:
@@ -117,26 +139,26 @@ class SwitchboardShortcutMixin:
     # host identity and can't drift apart.
     # ─────────────────────────────────────────────────────────────────
 
-    def _host_suffix(self) -> str:
+    def host_suffix(self) -> str:
         """Host-context suffix: ``"_maya"`` / ``"_blender"`` / ``""`` (standalone).
         Delegates to the shared :func:`host_namespace_suffix` so it stays identical
         to the marking-menu binding store's scheme (drift would re-introduce
-        cross-host collisions). Underpins both :meth:`_shortcut_ns` (shortcut/command
-        keys) and :meth:`_host_namespaced_branch` (per-panel widget-state branches)."""
+        cross-host collisions). Underpins both :meth:`shortcut_ns` (shortcut/command
+        keys) and :meth:`host_namespaced_branch` (per-panel widget-state branches)."""
         return ShortcutManager.host_namespace_suffix(
-            getattr(self, "context_tags", None)
+            getattr(self._sb, "context_tags", None)
         )
 
-    def _shortcut_ns(self) -> str:
+    def shortcut_ns(self) -> str:
         """Settings-key prefix for every slot/command override, host-namespaced
         (e.g. ``"shortcuts_maya."``). Single source of truth for the prefix so the
         write path, the read/registry path, and the deferred-bind scan can't
         drift apart — drift would re-introduce the cross-host collision."""
-        return f"shortcuts{self._host_suffix()}."
+        return f"shortcuts{self.host_suffix()}."
 
-    def _host_namespaced_branch(self, name: str) -> str:
+    def host_namespaced_branch(self, name: str) -> str:
         """Host-namespace a per-panel settings BRANCH name (e.g. ``"mirror"`` ->
-        ``"mirror_maya"``), the widget-state analog of :meth:`_shortcut_ns`.
+        ``"mirror_maya"``), the widget-state analog of :meth:`shortcut_ns`.
 
         Single source of truth for ``Switchboard.add_ui`` (the branch a loaded
         UI's ``ui.settings``/``ui.state`` actually uses),
@@ -145,14 +167,12 @@ class SwitchboardShortcutMixin:
         force-loading the UI) — drift between them would re-introduce the
         cross-host collision this namespacing exists to prevent.
         """
-        return name + self._host_suffix()
+        return name + self.host_suffix()
 
     #: Suffixes of the settings twins stored beside a slot override's sequence.
     _SLOT_KEY_TWINS = ("", ".scope", ".hidden", ".editable")
 
-    def _slot_shortcut_key(
-        self, slots_cls_name: str, method: str, settings=None
-    ) -> str:
+    def slot_shortcut_key(self, slots_cls_name: str, method: str, settings=None) -> str:
         """The settings key for a slot's shortcut override, ``{ns}{class}.{method}``.
 
         The one builder shared by the bind, registry and write paths. Given the
@@ -164,7 +184,7 @@ class SwitchboardShortcutMixin:
         nothing and the legacy ``{ns}<Base>.{method}`` key is present, the
         legacy value and its ``.scope`` / ``.hidden`` / ``.editable`` twins are
         copied to the new key. The legacy keys are left in place, as
-        :meth:`_migrate_shortcuts_to_host_namespace` leaves its source keys, and
+        :meth:`migrate_shortcuts_to_host_namespace` leaves its source keys, and
         a value already under the new key is never overwritten.
 
         Parameters:
@@ -176,13 +196,13 @@ class SwitchboardShortcutMixin:
         Returns:
             str: The settings key.
         """
-        ns = self._shortcut_ns()
+        ns = self.shortcut_ns()
         key = f"{ns}{slots_cls_name}.{method}"
-        base = slots_cls_name[: -len(self.SLOT_SUFFIX)]
+        base = slots_cls_name[: -len(self._sb.SLOT_SUFFIX)]
         if (
             settings is None
             or not base
-            or not slots_cls_name.endswith(self.SLOT_SUFFIX)
+            or not slots_cls_name.endswith(self._sb.SLOT_SUFFIX)
             or settings.value(key) is not None
         ):
             return key
@@ -195,7 +215,7 @@ class SwitchboardShortcutMixin:
                 settings.setValue(key + twin, value)
         return key
 
-    def _migrate_shortcuts_to_host_namespace(self) -> None:
+    def migrate_shortcuts_to_host_namespace(self) -> None:
         """One-shot: copy legacy un-suffixed ``shortcuts.*`` overrides into this
         host's namespaced keys, so existing customizations survive the move to
         host-namespaced persistence.
@@ -218,43 +238,30 @@ class SwitchboardShortcutMixin:
         ``"commands" + suffix`` — so writing both unconditionally is safe
         without needing to know which ``head`` values are panel names.
         """
-        suffix = self._host_suffix()
+        suffix = self.host_suffix()
         if not suffix:
             return  # standalone keeps the legacy un-suffixed keys (no collision)
         marker = f"shortcuts_migrated{suffix}"
-        if self.configurable.value(marker):
+        if self._sb.configurable.value(marker):
             return
         legacy_prefix = "shortcuts."
         host_prefix = f"shortcuts{suffix}."
-        for key in self.settings.keys():
+        for key in self._sb.settings.keys():
             head, sep, tail = key.partition("/")
             if not sep or not tail.startswith(legacy_prefix):
                 continue
             leaf = tail[len(legacy_prefix) :]
-            for twin_head in (head, self._host_namespaced_branch(head)):
+            for twin_head in (head, self.host_namespaced_branch(head)):
                 twin = f"{twin_head}/{host_prefix}{leaf}"
-                if self.settings.value(twin) is None:
-                    self.settings.setValue(twin, self.settings.value(key))
-        self.configurable.setValue(marker, True)
+                if self._sb.settings.value(twin) is None:
+                    self._sb.settings.setValue(twin, self._sb.settings.value(key))
+        self._sb.configurable.setValue(marker, True)
 
     def register_slots_shortcuts(
         self, ui: QtWidgets.QWidget, slots_instance: object
     ) -> None:
-        """Scan a Slots instance and register shortcuts for decorated methods.
-
-        This method:
-        1. Iterates over all methods in the slots instance.
-        2. checks for `_shortcut_meta` (from @shortcut decorator) OR `shortcut` attribute.
-        3. Checks `ui.settings` for user overrides.
-        4. Creates a QShortcut attached to the main window (or specific context).
-        5. Connects the shortcut to the slot, handling argument injection gracefully.
-
-        Args:
-            ui (QtWidgets.QWidget): The UI instance (MainWindow) owning the slots.
-            slots_instance (object): The instantiated Slots class.
-        """
         slots_cls_name = slots_instance.__class__.__name__
-        self.logger.debug(
+        self._sb.logger.debug(
             f"[register_slots_shortcuts] Scanning {slots_cls_name} for shortcuts..."
         )
 
@@ -303,7 +310,7 @@ class SwitchboardShortcutMixin:
             final_sequence = default_sequence
             default_context = meta.get("context", QtCore.Qt.WindowShortcut)
             final_context = default_context
-            settings_key = self._slot_shortcut_key(
+            settings_key = self.slot_shortcut_key(
                 slots_cls_name, name, getattr(ui, "settings", None)
             )
             scope_settings_key = f"{settings_key}.scope"
@@ -344,7 +351,7 @@ class SwitchboardShortcutMixin:
         # their keys. Drop any cold-start standins for this UI — a leftover
         # standin on the same app-scoped key would make Qt's activation
         # ambiguous (neither fires). No-op when there were none.
-        self._dispose_deferred_slot_shortcuts(ui.objectName())
+        self.dispose_deferred_slot_shortcuts(ui.objectName())
 
     @staticmethod
     def _adapt_shortcut_callback(callback: Callable) -> Callable:
@@ -353,7 +360,7 @@ class SwitchboardShortcutMixin:
         A shortcut/GlobalShortcut trigger passes no arguments, but slots/commands
         often expect ``widget``; inject ``widget=None`` for those. Shared by the
         slot (:meth:`_create_switchboard_shortcut`) and command
-        (:meth:`_bind_command`) binders.
+        (:meth:`bind_command`) binders.
         """
         try:
             wants_widget = "widget" in inspect.signature(callback).parameters
@@ -410,55 +417,22 @@ class SwitchboardShortcutMixin:
 
         slots_instance._connected_shortcuts[method_name] = shortcut
 
-        self.logger.debug(
+        self._sb.logger.debug(
             f"[shortcut] Bound '{sequence}' -> {slots_instance.__class__.__name__}.{method_name}"
         )
 
     def widget_has_shortcut(self, widget: QtWidgets.QWidget) -> bool:
-        """Whether *widget*'s slot currently holds a bound keyboard shortcut.
-
-        The live binding map answers this: ``_connected_shortcuts`` is keyed by
-        slot method name and holds only what is bound right now, so a cleared
-        binding drops out of it. Cheaper than :meth:`get_shortcut_registry`,
-        which rebuilds every entry for the UI — this runs per item as a menu
-        opens (``Menu._apply_shortcut_item_filter``).
-
-        Parameters:
-            widget (QtWidgets.QWidget): A registered widget; its objectName
-                names the slot, and its ``ui`` says which Slots instance owns it.
-
-        Returns:
-            bool: ``True`` when a key is bound to that slot.
-        """
         name = widget.objectName()
         ui = getattr(widget, "ui", None)
         if not name or ui is None:
             return False
-        slots_instance = self.get_slots_instance(ui)
+        slots_instance = self._sb.get_slots_instance(ui)
         connected = getattr(slots_instance, "_connected_shortcuts", None) or {}
         return name in connected
 
     def get_shortcut_registry(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]:
-        """Get a registry of all assignable slots and their shortcut status.
-
-        Identifies slots by finding widget objectNames that have matching methods
-        in the slots class. Also includes any methods with explicit @shortcut
-        decorator (for non-widget-bound actions).
-
-        Returns:
-            List[Dict]: [
-                {
-                    "class": "MainSlots",
-                    "method": "save_file",
-                    "name": "Save File",
-                    "current": "Ctrl+S",
-                    "default": "Ctrl+S",
-                    "doc": "Saves the current file."
-                }, ...
-            ]
-        """
         # Get the slots instance for this UI
-        slots_instance = self.get_slots_instance(ui)
+        slots_instance = self._sb.get_slots_instance(ui)
         if not slots_instance:
             return []
 
@@ -514,9 +488,9 @@ class SwitchboardShortcutMixin:
                 live path, an unbound function for the static path) or ``None``.
             settings: The store holding user overrides (the same
                 ``{_shortcut_ns}{cls}.{method}`` keys the live UI writes — the
-                prefix is host-namespaced, see :meth:`_shortcut_ns`; a key saved
+                prefix is host-namespaced, see :meth:`shortcut_ns`; a key saved
                 under the class's pre-``Slots`` name is carried forward, see
-                :meth:`_slot_shortcut_key`), or ``None`` when no store is
+                :meth:`slot_shortcut_key`), or ``None`` when no store is
                 available.
         """
         settings_value = settings.value if settings is not None else (lambda _k: None)
@@ -540,7 +514,7 @@ class SwitchboardShortcutMixin:
             # reverts to the default. See the note in ``_register_shortcuts``.
             current = default
             current_scope = default_scope
-            settings_key = self._slot_shortcut_key(slots_cls_name, name, settings)
+            settings_key = self.slot_shortcut_key(slots_cls_name, name, settings)
             override = settings_value(settings_key)
             if override is not None:
                 current = override
@@ -564,10 +538,10 @@ class SwitchboardShortcutMixin:
             editable = bool(meta.get("editable", True))
             hidden_override = settings_value(f"{settings_key}.hidden")
             if hidden_override is not None:
-                hidden = SwitchboardShortcutMixin._as_bool(hidden_override)
+                hidden = _Shortcuts._as_bool(hidden_override)
             editable_override = settings_value(f"{settings_key}.editable")
             if editable_override is not None:
-                editable = SwitchboardShortcutMixin._as_bool(editable_override)
+                editable = _Shortcuts._as_bool(editable_override)
 
             registry.append(
                 {
@@ -588,28 +562,8 @@ class SwitchboardShortcutMixin:
         return registry
 
     def get_static_shortcut_registry(self, ui_name: str) -> List[Dict[str, Any]]:
-        """Build a UI's shortcut registry WITHOUT instantiating the UI.
-
-        Resolves the slots class and widget objectNames from the registry and
-        the ``.ui`` file on disk (not a live widget tree), reads user overrides
-        from the same per-UI ``QSettings`` the live UI writes, and feeds them
-        through the shared :meth:`_build_shortcut_entries`. This lets a caller
-        (e.g. the shortcut editor's "show all" view) list every registered UI's
-        slots at once without force-building them all — the cause of the
-        host-shutdown crash; a UI is only instantiated when its binding is
-        actually edited.
-
-        Fidelity note: widget names come from the static ``.ui`` XML, so slots
-        bound to widgets *created in code at runtime* (not declared in the
-        ``.ui``) are not listed until that UI is actually loaded.
-        ``@shortcut``-decorated methods are always included (read from the
-        class). For an already-loaded UI prefer :meth:`get_shortcut_registry`,
-        which sees the real widget tree.
-
-        Returns an empty list when no slots class resolves for ``ui_name``.
-        """
-        slots_cls = self._find_slots_class(
-            self.get_base_name(ui_name), allow_sole_fallback=True
+        slots_cls = self._sb._find_slots_class(
+            self._sb.get_base_name(ui_name), allow_sole_fallback=True
         )
         if slots_cls is None:
             return []
@@ -632,7 +586,7 @@ class SwitchboardShortcutMixin:
         # the loaded UI uses (see ``Switchboard.add_ui`` /
         # ``_host_namespaced_branch``), so a binding persisted while the UI was
         # open is reflected here without rebuilding.
-        settings = self.settings.branch(self._host_namespaced_branch(ui_name))
+        settings = self._sb.settings.branch(self.host_namespaced_branch(ui_name))
         return self._build_shortcut_entries(
             slots_cls.__name__,
             slot_method_names,
@@ -650,9 +604,9 @@ class SwitchboardShortcutMixin:
         """
         import xml.etree.ElementTree as ET
 
-        actual = self.find_ui_filename(ui_name, unique_match=True)
+        actual = self._sb.find_ui_filename(ui_name, unique_match=True)
         filepath = (
-            self.registry.ui_registry.get(filename=actual, return_field="filepath")
+            self._sb.registry.ui_registry.get(filename=actual, return_field="filepath")
             if actual
             else None
         )
@@ -680,25 +634,12 @@ class SwitchboardShortcutMixin:
         sequence: str,
         scope: Optional[str] = None,
     ) -> None:
-        """Update a shortcut setting dynamically and live-update the active QShortcut.
-
-        Args:
-            ui (QtWidgets.QWidget): The main window/UI.
-            slot_name (str): The name of the method (e.g., "save_file").
-            sequence (str): The new key sequence (e.g., "Ctrl+Alt+S").
-            scope (str, optional): Persisted scope name ("window", "application",
-                "widget", "widget_children"). When None, the existing scope
-                override (if any) is preserved; otherwise the decorator default
-                applies.
-        """
-        slots_instance = self.get_slots_instance(ui)
+        slots_instance = self._sb.get_slots_instance(ui)
         if not slots_instance:
             return
 
         cls_name = slots_instance.__class__.__name__
-        key = self._slot_shortcut_key(
-            cls_name, slot_name, getattr(ui, "settings", None)
-        )
+        key = self.slot_shortcut_key(cls_name, slot_name, getattr(ui, "settings", None))
         scope_key = f"{key}.scope"
 
         # 1. Update Persistent Settings. Treat empty scope the same as
@@ -744,7 +685,7 @@ class SwitchboardShortcutMixin:
         existing_shortcuts = getattr(slots_instance, "_connected_shortcuts", {})
         old = existing_shortcuts.pop(slot_name, None)
         if old is not None:
-            self._dispose_shortcut(old)
+            self.dispose_shortcut(old)
 
         if sequence and method:
             self._create_switchboard_shortcut(
@@ -756,53 +697,32 @@ class SwitchboardShortcutMixin:
                 target_context,
                 meta.get("robust", False),
             )
-            self.logger.info(
+            self._sb.logger.info(
                 f"[set_user_shortcut] Rebound {slot_name} to {sequence} "
                 f"({ShortcutManager.context_to_scope_name(target_context)})"
             )
 
     def dispose_shortcuts(self) -> int:
-        """Destroy every shortcut this Switchboard registered; returns the count.
-
-        Application-scoped shortcuts are parented to the HOST window rather than
-        to the tool's own UI (see :meth:`_create_switchboard_shortcut`) so they
-        keep firing while the tool is hidden. The consequence is that Qt, not
-        this Switchboard, owns their lifetime: dropping the Switchboard and its
-        slot instances leaves them armed on that host forever, because a
-        parented QObject does not die with the Python wrapper that made it.
-
-        That is only a leak until the UI is rebuilt in the same session — the
-        dev-reload path (tentacle's ``Settings > Reload Scripts``). Then the
-        rebuild arms a SECOND shortcut on the same sequence and the same parent,
-        which Qt reports as an ambiguous overload and answers by firing NEITHER.
-        The binding dies silently and stays dead until the host restarts.
-        Measured in a live Maya: one reload took two user hotkeys from one armed
-        shortcut each to three each.
-
-        So a host tearing down a Switchboard has to say so, and this is that
-        call — see ``MarkingMenu.retire``, which makes it part of retiring an
-        instance. Idempotent: a second call finds nothing left and returns 0.
-        """
         disposed = 0
-        for slots_instance in self.slot_instances.values():
+        for slots_instance in self._sb.slot_instances.values():
             bound = getattr(slots_instance, "_connected_shortcuts", None)
             if not bound:
                 continue
             for shortcut in list(bound.values()):
-                self._dispose_shortcut(shortcut)
+                self.dispose_shortcut(shortcut)
                 disposed += 1
             bound.clear()
 
-        for shortcut in list(self._command_shortcuts.values()):
-            self._dispose_shortcut(shortcut)
+        for shortcut in list(self.command_shortcuts.values()):
+            self.dispose_shortcut(shortcut)
             disposed += 1
-        self._command_shortcuts.clear()
+        self.command_shortcuts.clear()
 
         return disposed
 
     @staticmethod
-    def _dispose_shortcut(shortcut) -> None:
-        """Tear down a QShortcut/GlobalShortcut created by this mixin.
+    def dispose_shortcut(shortcut) -> None:
+        """Tear down a QShortcut/GlobalShortcut created by this class.
 
         Disable first so the outgoing shortcut is inert immediately — its
         replacement is created right after, and a still-live old shortcut on
@@ -829,7 +749,7 @@ class SwitchboardShortcutMixin:
     # like slot shortcuts (the editor lists them under a "Commands"
     # pseudo-UI with a colour-coded "no UI" tag) and persist their overrides
     # under the Switchboard's own settings, namespaced ``shortcuts.Commands.*``
-    # — the same key shape a UI uses, just rooted at ``self.settings``
+    # — the same key shape a UI uses, just rooted at ``self._sb.settings``
     # instead of a per-UI branch. This is the registry path that lets a
     # command appear in the editor even when it ships *unbound* (the
     # ``@Shortcut`` decorator path required a non-empty default sequence).
@@ -840,14 +760,14 @@ class SwitchboardShortcutMixin:
     #: and write keys can't drift.
     _COMMAND_NS = "Commands"
 
-    def _command_settings(self):
+    def command_settings(self):
         """The store holding command overrides (``shortcuts.Commands.*``)."""
-        return self.settings.branch("commands")
+        return self._sb.settings.branch("commands")
 
-    def _command_key(self, name: str) -> str:
+    def command_key(self, name: str) -> str:
         """The settings key for command *name* (mirrors the slot key shape,
-        host-namespaced via :meth:`_shortcut_ns`)."""
-        return f"{self._shortcut_ns()}{self._COMMAND_NS}.{name}"
+        host-namespaced via :meth:`shortcut_ns`)."""
+        return f"{self.shortcut_ns()}{self._COMMAND_NS}.{name}"
 
     def register_command(
         self,
@@ -865,53 +785,6 @@ class SwitchboardShortcutMixin:
         on_rebind: Optional[Callable[[str, str], None]] = None,
         value_getter: Optional[Callable[[], str]] = None,
     ) -> str:
-        """Register a UI-less, shortcut-bindable command.
-
-        The command appears in the shortcut editor's "Commands" pseudo-UI and can
-        be (re)bound there like any slot shortcut. It also live-binds a plain
-        host-owned ``QShortcut`` (see :meth:`_make_host_shortcut`) as soon as an
-        always-visible host window is available (deferred to the first
-        ``on_ui_loaded`` when none exists yet).
-
-        Parameters:
-            name: Stable identifier and settings key (e.g. ``"reopen_last_ui"``).
-            callback: Zero-arg callable (or one accepting ``widget=None``) run on
-                trigger — typically a bound Switchboard verb.
-            label: Display name in the editor. Defaults to a title-cased *name*.
-            sequence: Default key sequence. ``""`` ships the command **unbound**
-                (it still lists in the editor for the user to assign).
-            scope: Default scope name (``"application"`` / ``"window"``).
-            doc: Description shown in the editor. Defaults to ``callback.__doc__``.
-            hidden: When True, omit from the editor's default view (still listed
-                under "Show hidden"). Overridable at runtime via
-                :meth:`set_binding_hidden`.
-            editable: When False, show the command but disallow rebinding (a
-                fixed, semantic key).
-            clearable: When False, the editor never offers to *clear* this
-                command's key to resolve a collision (it reports the conflict as
-                coexisting, non-breaking). For an externally-owned binding whose
-                ``on_rebind`` cannot honour an empty sequence — e.g. the marking
-                menu's activation key, which must always stay bound — so the
-                "Clear conflicting" path doesn't silently no-op.
-            bind: When False the register does **not** create a host ``QShortcut``
-                for this command — the real key is owned externally (e.g. the
-                marking menu's own activation ``GlobalShortcut``) or the entry is
-                display-only. Prevents a second, colliding shortcut on the same
-                key. Pair with ``value_getter`` / ``on_rebind`` to keep the editor
-                row live + editable without that duplicate.
-            on_rebind: ``(sequence, scope) -> None`` invoked when the user edits
-                (or resets) this command in the editor, **instead of** the default
-                persist-and-rebind. For a binding whose owner must perform a
-                cross-cutting update — e.g. the marking menu rewriting every chord
-                when its activation key changes.
-            value_getter: ``() -> str`` returning the command's live current
-                sequence, read from the external owner rather than command
-                settings (which are never written for a ``bind=False`` entry). So
-                the editor shows + colours the real, externally-held state.
-
-        Returns:
-            The command *name*.
-        """
         spec = {
             "name": name,
             "callback": callback,
@@ -930,16 +803,15 @@ class SwitchboardShortcutMixin:
             "value_getter": value_getter,
         }
         spec["_carrier"] = self._make_command_carrier(spec)
-        self._commands[name] = spec
-        self._bind_command(name)
+        self.commands[name] = spec
+        self.bind_command(name)
         return name
 
     def unregister_command(self, name: str) -> None:
-        """Remove a command and tear down its live shortcut, if any."""
-        self._commands.pop(name, None)
-        shortcut = self._command_shortcuts.pop(name, None)
+        self.commands.pop(name, None)
+        shortcut = self.command_shortcuts.pop(name, None)
         if shortcut is not None:
-            self._dispose_shortcut(shortcut)
+            self.dispose_shortcut(shortcut)
 
     def _make_command_carrier(self, spec: dict) -> Callable:
         """Wrap a command spec as a callable carrying ``_shortcut_meta``.
@@ -966,21 +838,14 @@ class SwitchboardShortcutMixin:
         return carrier
 
     def get_command_registry(self) -> List[Dict[str, Any]]:
-        """Registry entries for every command, in the slot-shortcut entry shape.
-
-        Each entry carries ``"command": True`` so the editor renders it under the
-        "Commands" pseudo-UI with a colour-coded tag and routes edits through
-        :meth:`set_command_shortcut`. Reuses :meth:`_build_shortcut_entries` for
-        identical default/override resolution.
-        """
-        commands = getattr(self, "_commands", None)
+        commands = self.commands
         if not commands:
             return []
         entries = self._build_shortcut_entries(
             self._COMMAND_NS,
             set(commands),
             lambda n: commands.get(n, {}).get("_carrier"),
-            self._command_settings(),
+            self.command_settings(),
         )
         for entry in entries:
             entry["command"] = True
@@ -993,7 +858,7 @@ class SwitchboardShortcutMixin:
                 try:
                     entry["current"] = getter() or ""
                 except Exception:  # a flaky getter must not break the whole list
-                    self.logger.debug(
+                    self._sb.logger.debug(
                         f"[command] value_getter for {entry['method']!r} raised",
                         exc_info=True,
                     )
@@ -1002,31 +867,19 @@ class SwitchboardShortcutMixin:
     def set_command_shortcut(
         self, name: str, sequence: str, scope: Optional[str] = None
     ) -> None:
-        """Persist a command's override and live-rebind it (the command twin of
-        :meth:`set_user_shortcut`).
-
-        An empty *sequence* clears the binding (the command stays listed, just
-        unbound). A *scope* of ``None`` preserves the existing override.
-
-        Externally-owned bindings (registered ``on_rebind=…``) delegate the edit
-        to their owner instead of touching command settings / the register's
-        shortcut — the owner is the source of truth its ``value_getter`` reads
-        back (e.g. the marking menu rewriting every chord for a new activation
-        key). The reset path routes here too, so a reset also delegates.
-        """
-        if name not in getattr(self, "_commands", {}):
+        if name not in self.commands:
             return
-        spec = self._commands[name]
+        spec = self.commands[name]
         on_rebind = spec.get("on_rebind")
         if on_rebind is not None:
             on_rebind(sequence, scope or spec.get("scope", "application"))
             return
-        store = self._command_settings()
-        key = self._command_key(name)
+        store = self.command_settings()
+        key = self.command_key(name)
         store.setValue(key, sequence)
         if scope:
             store.setValue(f"{key}.scope", scope)
-        self._bind_command(name)
+        self.bind_command(name)
 
     def _set_command_flag(self, name: str, flag: str, value: bool) -> None:
         """Persist + live-apply a command's ``hidden``/``editable`` flag override.
@@ -1037,28 +890,18 @@ class SwitchboardShortcutMixin:
         entry built from the live command reflects the change immediately. A
         no-op for an unknown command. Shared by the two public mutators.
         """
-        spec = getattr(self, "_commands", {}).get(name)
+        spec = self.commands.get(name)
         if spec is None:
             return
         value = bool(value)
         spec[flag] = value
         spec["_carrier"]._shortcut_meta[flag] = value
-        self._command_settings().setValue(f"{self._command_key(name)}.{flag}", value)
+        self.command_settings().setValue(f"{self.command_key(name)}.{flag}", value)
 
     def set_binding_hidden(self, name: str, hidden: bool = True) -> None:
-        """Hide/show command *name* in the shortcut editor's default view.
-
-        The post-hoc twin of the ``hidden=`` registration kwarg. A no-op for an
-        unknown command.
-        """
         self._set_command_flag(name, "hidden", hidden)
 
     def set_binding_editable(self, name: str, editable: bool = True) -> None:
-        """Allow/forbid the user rebinding command *name* in the editor.
-
-        The post-hoc twin of the ``editable=`` registration kwarg. A no-op for an
-        unknown command.
-        """
         self._set_command_flag(name, "editable", editable)
 
     def _resolve_command_binding(self, name: str):
@@ -1067,9 +910,9 @@ class SwitchboardShortcutMixin:
         Override (present, incl. empty = explicit clear) wins over the spec
         default; a garbage/legacy scope override falls back to the default.
         """
-        spec = self._commands[name]
-        store = self._command_settings()
-        key = self._command_key(name)
+        spec = self.commands[name]
+        store = self.command_settings()
+        key = self.command_key(name)
         seq = store.value(key)
         if seq is None:
             seq = spec["sequence"]
@@ -1078,11 +921,11 @@ class SwitchboardShortcutMixin:
             scope = spec["scope"]
         return seq, scope
 
-    def _command_host(self) -> Optional[QtWidgets.QWidget]:
+    def command_host(self) -> Optional[QtWidgets.QWidget]:
         """A live starting widget to own command shortcuts, or None.
 
         Resolution defers to :func:`resolve_application_host` (called by
-        :meth:`_bind_command`) for the final DCC-host upgrade; this just needs a
+        :meth:`bind_command`) for the final DCC-host upgrade; this just needs a
         good *starting* widget.
 
         A persistent, visible Switchboard UI is preferred over
@@ -1111,7 +954,7 @@ class SwitchboardShortcutMixin:
         succeeds. Returns ``None`` only when nothing is on screen at all —
         binding is retried on the next ``on_ui_loaded`` / current-UI change.
         """
-        for ui in self.loaded_ui.values():
+        for ui in self._sb.loaded_ui.values():
             try:
                 if ui.has_tags(["startmenu", "submenu"]):
                     continue
@@ -1130,39 +973,41 @@ class SwitchboardShortcutMixin:
             return None
         return host
 
-    def _bind_command(self, name: str) -> None:
+    def bind_command(self, name: str) -> None:
         """(Re)create the live shortcut for command *name* from its current
         sequence/scope. Disposes any prior shortcut first; a no-op when the
         command is unbound or no host window exists yet."""
-        spec = self._commands.get(name)
+        spec = self.commands.get(name)
         if spec is None:
             return
         if not spec.get("bind", True):
             return  # externally-owned / display-only: the register creates no shortcut
 
-        old = self._command_shortcuts.pop(name, None)
+        old = self.command_shortcuts.pop(name, None)
         if old is not None:
-            self._dispose_shortcut(old)
+            self.dispose_shortcut(old)
 
         sequence, scope = self._resolve_command_binding(name)
         if not sequence:
             return  # unbound
 
-        host = self._command_host()
+        host = self.command_host()
         if host is None:
             return  # defer until a window exists (on_ui_loaded)
 
-        shortcut = self._make_host_shortcut(
+        shortcut = self.make_host_shortcut(
             sequence,
             host,
             self._adapt_shortcut_callback(spec["callback"]),
             ShortcutManager.scope_name_to_context(scope),
         )
-        self._command_shortcuts[name] = shortcut
-        self.logger.debug(f"[command] Bound '{sequence}' ({scope}) -> command '{name}'")
+        self.command_shortcuts[name] = shortcut
+        self._sb.logger.debug(
+            f"[command] Bound '{sequence}' ({scope}) -> command '{name}'"
+        )
 
     @staticmethod
-    def _make_host_shortcut(
+    def make_host_shortcut(
         sequence: str,
         host: QtWidgets.QWidget,
         on_press: Callable,
@@ -1211,7 +1056,7 @@ class SwitchboardShortcutMixin:
         shortcut.activated.connect(on_press)
         return shortcut
 
-    def _bind_pending_commands(self, *args) -> None:
+    def bind_pending_commands(self, *args) -> None:
         """Bind every command whose live shortcut is missing OR stale.
 
         Wired to ``on_ui_loaded``. Two jobs:
@@ -1241,12 +1086,12 @@ class SwitchboardShortcutMixin:
         always-visible host is inert exactly when an app-scoped binding should
         fire — so a key-only check would silently leave it mis-scoped.
         """
-        for name in list(getattr(self, "_commands", {})):
-            if not self._commands[name].get("bind", True):
+        for name in list(self.commands):
+            if not self.commands[name].get("bind", True):
                 continue  # externally-owned / display-only: nothing to (re)bind
-            live = self._command_shortcuts.get(name)
+            live = self.command_shortcuts.get(name)
             if live is None:
-                self._bind_command(name)  # pending: never bound yet
+                self.bind_command(name)  # pending: never bound yet
                 continue
             sequence, scope = self._resolve_command_binding(name)
             try:
@@ -1256,7 +1101,7 @@ class SwitchboardShortcutMixin:
             except RuntimeError:
                 in_sync = False  # underlying C++ shortcut gone -> rebind
             if not in_sync:
-                self._bind_command(name)  # stale: persisted binding drifted
+                self.bind_command(name)  # stale: persisted binding drifted
 
     # ─────────────────────────────────────────────────────────────────
     # Cold-start application-scoped slot shortcuts
@@ -1275,20 +1120,20 @@ class SwitchboardShortcutMixin:
     # fire while their window is focused, which already requires it to be open.
     # ─────────────────────────────────────────────────────────────────
 
-    def _ui_names_with_shortcut_overrides(self) -> set:
+    def ui_names_with_shortcut_overrides(self) -> set:
         """UI names that have any persisted shortcut override for THIS host.
 
-        Reads the host-namespaced prefix (see :meth:`_shortcut_ns`) so a Maya
+        Reads the host-namespaced prefix (see :meth:`shortcut_ns`) so a Maya
         session's deferred-bind scan ignores Blender's overrides. One settings
         scan, so the (per-UI, XML-parsing) :meth:`get_static_shortcut_registry`
         is only paid for UIs the user has actually customised — not every
         registered UI. The ``commands`` branch is skipped: it's the command
         store, not a UI.
         """
-        prefix = self._shortcut_ns()
-        suffix = self._host_suffix()
+        prefix = self.shortcut_ns()
+        suffix = self.host_suffix()
         names = set()
-        for key in self.settings.keys():
+        for key in self._sb.settings.keys():
             head, sep, tail = key.partition("/")
             if sep and head != "commands" and tail.startswith(prefix):
                 # ``head`` is the per-panel settings BRANCH, host-namespaced via
@@ -1303,7 +1148,7 @@ class SwitchboardShortcutMixin:
                 names.add(head)
         return names
 
-    def _bind_deferred_slot_shortcuts(self, *args) -> None:
+    def bind_deferred_slot_shortcuts(self, *args) -> None:
         """Eagerly bind application-scoped slot shortcuts for UIs not yet built.
 
         Wired to ``on_ui_loaded``; runs the scan once, the first time a visible
@@ -1311,19 +1156,19 @@ class SwitchboardShortcutMixin:
         already-built UIs — their real shortcuts own the keys — and is a no-op
         when nothing is customised.
         """
-        if self._deferred_slots_scanned:
+        if self.deferred_slots_scanned:
             return
-        host = self._command_host()
+        host = self.command_host()
         if host is None:
             return  # no visible owner yet; retry on the next on_ui_loaded
 
-        for ui_name in self._ui_names_with_shortcut_overrides():
-            if self.loaded_ui.peek(ui_name) is not None:
+        for ui_name in self.ui_names_with_shortcut_overrides():
+            if self._sb.loaded_ui.peek(ui_name) is not None:
                 continue  # built -> register_slots_shortcuts owns its shortcuts
             try:
-                registry = self.get_static_shortcut_registry(ui_name)
+                registry = self._sb.get_static_shortcut_registry(ui_name)
             except Exception:
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[deferred-slot] static registry failed for {ui_name!r}",
                     exc_info=True,
                 )
@@ -1336,23 +1181,23 @@ class SwitchboardShortcutMixin:
                     self._create_deferred_slot_shortcut(
                         ui_name, entry["method"], sequence, host
                     )
-        self._deferred_slots_scanned = True
+        self.deferred_slots_scanned = True
 
     def _create_deferred_slot_shortcut(
         self, ui_name: str, method: str, sequence: str, host
     ) -> None:
         """Own a host-window standin shortcut that builds-then-invokes a slot."""
         key = (ui_name, method)
-        if key in self._deferred_slot_shortcuts:
+        if key in self.deferred_slot_shortcuts:
             return
-        self._deferred_slot_shortcuts[key] = self._make_host_shortcut(
-            sequence, host, self._make_deferred_slot_callback(ui_name, method)
+        self.deferred_slot_shortcuts[key] = self.make_host_shortcut(
+            sequence, host, self.make_deferred_slot_callback(ui_name, method)
         )
-        self.logger.debug(
+        self._sb.logger.debug(
             f"[deferred-slot] Bound '{sequence}' -> {ui_name}.{method} (until built)"
         )
 
-    def _make_deferred_slot_callback(self, ui_name: str, method: str) -> Callable:
+    def make_deferred_slot_callback(self, ui_name: str, method: str) -> Callable:
         """Build the UI (if needed), resolve the slot, and invoke it.
 
         Building the UI runs :meth:`register_slots_shortcuts`, which disposes
@@ -1362,13 +1207,13 @@ class SwitchboardShortcutMixin:
         """
 
         def fire():
-            ui = self.get_ui(ui_name)
+            ui = self._sb.get_ui(ui_name)
             if ui is None:
                 return
-            instance = self.get_slots_instance(ui)
+            instance = self._sb.get_slots_instance(ui)
             slot = getattr(instance, method, None) if instance else None
             if slot is None:
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[deferred-slot] {ui_name}.{method} not found after build"
                 )
                 return
@@ -1376,11 +1221,11 @@ class SwitchboardShortcutMixin:
 
         return fire
 
-    def _dispose_deferred_slot_shortcuts(self, ui_name: str) -> None:
+    def dispose_deferred_slot_shortcuts(self, ui_name: str) -> None:
         """Tear down every standin for *ui_name* — its real shortcuts now own
         the keys (a leftover standin would make Qt's activation ambiguous)."""
-        store = getattr(self, "_deferred_slot_shortcuts", None)
+        store = self.deferred_slot_shortcuts
         if not store:
             return
         for key in [k for k in store if k[0] == ui_name]:
-            self._dispose_shortcut(store.pop(key))
+            self.dispose_shortcut(store.pop(key))

@@ -4,8 +4,8 @@
 
 This module is paired with :mod:`uitk.switchboard.shortcuts`, which
 holds the Switchboard-specific glue (the ``@Shortcut`` slot decorator
-and ``SwitchboardShortcutMixin``). Anything in this file is intended
-for direct use by widgets without involving Switchboard:
+and ``_Shortcuts``, behind the Switchboard's shortcut methods). Anything in
+this file is intended for direct use by widgets without involving Switchboard:
 
 * :class:`GlobalShortcut` — robust press/release detection via event filter.
 * :class:`ShortcutManager` — per-widget registry of shortcuts.
@@ -251,7 +251,7 @@ class GlobalShortcut(QtCore.QObject):
     def setContext(self, context: QtCore.Qt.ShortcutContext):
         """Live-update the underlying QShortcut's context.
 
-        Mirrors QShortcut.setContext so SwitchboardShortcutMixin can rebind
+        Mirrors QShortcut.setContext so the Switchboard's shortcuts can rebind
         scope without recreating the shortcut.
         """
         self._shortcut.setContext(context)
@@ -421,7 +421,7 @@ class ShortcutManager:
 
         Single source of the convention, shared by the marking-menu binding store
         (``MarkingMenu._binding_store_key``) and the shortcut/command store
-        (``SwitchboardShortcutMixin._shortcut_ns``) so the two can't drift — drift
+        (``_Shortcuts.shortcut_ns``) so the two can't drift — drift
         would re-introduce the cross-host collision both are guarding against.
         """
         tags = sorted(context_tags or ())
@@ -894,7 +894,7 @@ class ShortcutManager:
 
     def get_registry(self) -> List[Dict]:
         """Registry entries for this manager's shortcuts, in the shared editor
-        shape (:meth:`SwitchboardShortcutMixin._build_shortcut_entries`).
+        shape (``_Shortcuts._build_shortcut_entries``).
 
         Lets the one unified :class:`ShortcutEditor` render + edit a manager's
         bindings exactly like Switchboard slots/commands — the DRY replacement

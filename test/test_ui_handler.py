@@ -3,7 +3,7 @@
 """Unit tests for ``UiHandler`` — UI resolution and launch dispatch.
 
 ``can_resolve`` is the handler-side contract behind
-``SwitchboardWidgetMixin.ui_name_resolves``: it reports whether ``get(name)``
+``Switchboard.ui_name_resolves``: it reports whether ``get(name)``
 would resolve to a UI *without building it*, so marking-menu destination
 resolution (nav-button click + auto-hide) can recognise a handler's UIs. The
 base implementation resolves registered ``.ui`` file stems (stripping any

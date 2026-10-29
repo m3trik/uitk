@@ -5,9 +5,16 @@ from qtpy import QtWidgets, QtCore
 from uitk.managers.field_visibility import FieldVisibility
 
 
-class SwitchboardRulesMixin:
-    """Declarative widget rules: ``enable_when`` / ``show_when`` / ``text_from`` /
-    ``value_from`` on one shared wiring core, plus ``refresh_dependencies``."""
+class _Rules:
+    """Declarative widget rules behind the Switchboard: ``enable_when`` /
+    ``show_when`` / ``text_from`` / ``value_from`` on one shared wiring core, plus
+    ``refresh_dependencies``. Stateless: a rule lives in its UI's ``__dict__``.
+    """
+
+    def __init__(self, logger, names, values):
+        self._logger = logger  # () -> the Switchboard's logger, read per call
+        self._names = names  # name patterns ('b000-3') resolve against a UI
+        self._values = values  # the value / change-signal tables every rule reads
 
     @staticmethod
     def _enable_when_key(condition, invert):
@@ -44,7 +51,7 @@ class SwitchboardRulesMixin:
             if isinstance(ref, QtWidgets.QWidget):
                 out.append(ref)
             elif isinstance(ref, str):
-                out.extend(self.get_widgets_by_string_pattern(ui, ref))
+                out.extend(self._names.get_widgets_by_string_pattern(ui, ref))
         return out
 
     def _watched_rule_names(self, *ref_groups) -> set:
@@ -54,7 +61,9 @@ class SwitchboardRulesMixin:
         for group in ref_groups:
             for name in group:
                 watched.update(
-                    self.unpack_names(name) if self._is_name_pattern(name) else [name]
+                    self._names.unpack_names(name)
+                    if self._is_name_pattern(name)
+                    else [name]
                 )
         return watched
 
@@ -88,7 +97,7 @@ class SwitchboardRulesMixin:
             return
         for role, widgets in roles.items():
             if not widgets:
-                self.logger.warning(
+                self._logger().warning(
                     f"[{rule}] could not resolve its {role} against "
                     f"{ui.objectName() or type(ui).__name__}, which has no "
                     f"on_child_registered — nothing further can arrive, so this rule "
@@ -112,7 +121,7 @@ class SwitchboardRulesMixin:
             )
             if callable(reader):
                 return reader(widget)
-            getter = self._widget_value_reader(widget)
+            getter = self._values.widget_value_reader(widget)
             return getter(widget) if getter is not None else None
 
         return read
@@ -137,9 +146,9 @@ class SwitchboardRulesMixin:
                 if isinstance(ref, QtWidgets.QWidget):
                     out.append(ref)
                 elif isinstance(ref, str) and unpack and self._is_name_pattern(ref):
-                    out.extend(self.get_widgets_by_string_pattern(ui, ref))
+                    out.extend(self._names.get_widgets_by_string_pattern(ui, ref))
                 elif isinstance(ref, str):
-                    widget = self._resolve_ui_widget(ui, ref)
+                    widget = self._values.resolve_ui_widget(ui, ref)
                     if widget is None:
                         return None
                     out.append(widget)
@@ -197,10 +206,10 @@ class SwitchboardRulesMixin:
                 if id(widget) in connected:
                     continue
                 name = signal if (signal and len(widgets) == 1) else None
-                name = name or self._value_change_signal(widget)
+                name = name or self._values.value_change_signal(widget)
                 sig = getattr(widget, name, None) if name else None
                 if sig is None or not callable(getattr(sig, "connect", None)):
-                    self.logger.warning(
+                    self._logger().warning(
                         f"[{rule}] no change signal for {widget.objectName()!r}"
                     )
                     continue
@@ -239,64 +248,6 @@ class SwitchboardRulesMixin:
         value=None,
         invert=False,
     ):
-        """Keep *targets* enabled exactly while *trigger*'s value satisfies
-        *condition* — a declarative dependency, wired once.
-
-        The one-line answer to "grey this out when it can't apply": a lower-level
-        choice (output format, a master checkbox, a mode combo) makes some other
-        control irrelevant, and the panel should say so instead of leaving a
-        live dial the export ignores. Replaces the pattern of a per-trigger slot
-        + a ``_sync_*`` helper + a mirrored ``toggle_multi`` ``on_True`` /
-        ``on_False`` pair with one rule that reads as the sentence it encodes::
-
-            sb.enable_when(ui, "cmb006", "cmb004", lambda fmt: fmt != "fbx")
-            sb.enable_when(ui, "texture_max_size", "optimize_textures")
-            sb.enable_when(ui, "s001,chk002", "cmb035", 0)           # index / data == 0
-            sb.enable_when(ui, "d000", "cmb035", 0, invert=True)     # the other branch
-            sb.enable_when(ui, "texture_write_back",
-                           ["optimize_textures", "cmb005"], lambda opt, tpl: opt or tpl)
-
-        Parameters:
-            ui: The loaded UI (widgets resolve by objectName on it).
-            targets: Widget(s) to enable/disable — an objectName pattern string
-                (``'s000,b004-7'``), a widget, or a list of either.
-            trigger: The controlling widget(s) — objectName / widget, or a list
-                (the condition then receives one value per trigger, in order).
-            condition: What "on" means for the trigger's value: a callable
-                ``(value, …) -> bool``; a plain value (equality); a set / list /
-                tuple of values (membership); or ``True`` (default: truthiness —
-                the master-checkbox case). With MULTIPLE triggers every
-                non-callable form is **all-of**: equality, membership and
-                truthiness each have to hold for every trigger. A callable is
-                handed one value per trigger and decides for itself, which is
-                where any-of lives.
-            signal: Change signal name (single trigger). Default: the widget's
-                natural signal from the value table.
-            value: Reader override — a callable ``(widget) -> value`` used for
-                every trigger, or a ``{objectName: callable}`` mapping for a
-                mixed set (unlisted triggers keep the default reader, which
-                reads a combo's ``currentData`` when items carry data, else
-                ``currentIndex``; buttons ``isChecked``; …).
-            invert: Enable when the condition is NOT met.
-
-        A rule that resolves nothing against a container that HAS no
-        ``on_child_registered`` is reported (see :meth:`_warn_if_rule_is_dead`):
-        nothing further can arrive there, so it is not waiting — the names are on
-        another container.
-
-        Order-independent by design: a target (or trigger) that isn't
-        registered on *ui* yet — a ``WidgetComboBox`` row, an option-box menu
-        item — is picked up when ``ui.on_child_registered`` announces it, and
-        the rule is (re)applied then and once more after the current event
-        (registration restores session state with signals blocked, so the
-        first read can be pre-restore). Every rule is also re-applied by
-        :meth:`refresh_dependencies` for bulk state changes made with signals
-        blocked (a preset load). Wiring the same targets to the same triggers
-        twice is a no-op, so an ``_init`` slot that re-runs can't stack rules.
-
-        Returns:
-            The rule's ``apply`` callable (handy as an ``on_loaded`` hook).
-        """
         return self._gate_when(
             ui,
             targets,
@@ -320,31 +271,6 @@ class SwitchboardRulesMixin:
         value=None,
         invert=False,
     ):
-        """Keep *targets* on screen exactly while *trigger*'s value satisfies
-        *condition* -- :meth:`enable_when`'s visibility twin.
-
-        Greying out says "this exists but does not apply"; hiding says "this
-        does not exist for what you chose". A KTX2 encoder dial with PNG
-        selected, a GLB-only optimisation with no GLB being written, an FBX
-        preset on a USD export: the panel is smaller and reads truer without
-        them. Same rule grammar, same order-independence, same bulk refresh
-        (:meth:`refresh_dependencies`), same conflict report::
-
-            sb.show_when(ui, "uastc_rdo", "texture_file_type", "ktx2")
-            sb.show_when(ui, "secondary_max_size,glb_key_tolerance", "cmb004",
-                         {"glb", "fbx_glb"})
-
-        A plain widget hides itself. A row of a :class:`WidgetComboBox` (an
-        option menu) goes through the combo's own
-        :class:`~uitk.managers.field_visibility.FieldVisibility` instead, so
-        the model row leaves the popup and the titled separator over a section
-        whose every row is hidden stands down with them. Either way the
-        widget's VALUE is untouched: a hidden field still saves, restores and
-        reads -- the run reads what the panel holds, so a hidden dial must be
-        one the run ignores (or one the caller resolves as off).
-
-        Parameters and return value as :meth:`enable_when`.
-        """
         return self._gate_when(
             ui,
             targets,
@@ -417,7 +343,7 @@ class SwitchboardRulesMixin:
                 if self._enable_when_key(*prior) != self._enable_when_key(
                     condition, invert
                 ):
-                    self.logger.warning(
+                    self._logger().warning(
                         f"{rule}: a rule for {key[1]} on {key[0]} already "
                         f"exists with condition={prior[0]!r} invert={prior[1]}; "
                         f"the new condition={condition!r} invert={invert} was "
@@ -455,7 +381,7 @@ class SwitchboardRulesMixin:
             try:
                 on = bool(predicate(*[read(w) for w in triggers]))
             except Exception as e:  # a half-built trigger; try again on the next signal
-                self.logger.debug(f"[{rule}] condition raised: {e}")
+                self._logger().debug(f"[{rule}] condition raised: {e}")
                 return
             if invert:
                 on = not on
@@ -488,63 +414,6 @@ class SwitchboardRulesMixin:
             Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]
         ] = None,
     ) -> Callable[[], None]:
-        """Keep *targets*' text derived from *sources* — a self-labelling widget,
-        wired once.
-
-        The text counterpart of :meth:`enable_when`: that one answers "grey this out
-        when it can't apply", this one answers "say what this will do". A control
-        whose behaviour is configured elsewhere — an option box, a mode combo —
-        reads as a mystery until it names its own outcome, and on a marking menu
-        there is no dialog to read first::
-
-            sb.text_from(menu, widget, "s003", "Crease {}".format)
-            sb.text_from(menu, widget, "chk024-26",
-                         lambda *on: f"Constrain: {'ON' if any(on) else 'OFF'}")
-            sb.text_from(menu, widget, ["cmb_scope", "cmb_save", "cmb_format"],
-                         self._export_button_text,
-                         value={"cmb_format": lambda w: w.currentText()})
-
-        Hand-wiring this is three steps — read, format, ``setText`` — plus a fourth
-        that is easy to forget: applying it at WIRE TIME. A rule that is only
-        connected leaves whatever text the ``.ui`` shipped standing until the user
-        touches something, which is already wrong whenever a source starts
-        non-default or was restored from session state.
-
-        Parameters:
-            ui: The loaded UI, or whatever the names resolve against — an option
-                box's ``menu`` is the common one.
-            targets: Widget(s) to relabel — an objectName pattern string
-                (``'tb003'``, ``'b004-7'``), a widget, or a list of either. Every
-                resolved target gets the same text.
-            sources: The widget(s) the text is derived from — objectName / pattern
-                / widget, or a list of those. Patterns UNPACK here (unlike
-                :meth:`enable_when`'s trigger), so ``'chk024-26'`` feeds the
-                formatter three values.
-            formatter: ``callable(*values) -> str``, one value per resolved source
-                in order. ``"Crease {}".format`` is a formatter.
-            signal: Change signal name (single source). Default: the widget's
-                natural signal from the value table.
-            value: Reader override — a callable ``(widget) -> value`` used for every
-                source, or a ``{objectName: callable}`` mapping for a mixed set
-                (unlisted sources keep the default reader). The default reads a
-                combo's ``currentData`` when its items carry data, else
-                ``currentIndex``; pass ``currentText`` when the item's LABEL is what
-                the text should say.
-
-        Order-independent, idempotent and bulk-refreshable exactly as
-        :meth:`enable_when` — they share the machinery and the notes there apply,
-        including the report when a rule can never fire. A source named EXACTLY that
-        hasn't been registered yet holds the whole rule rather than formatting a
-        partial reading; a pattern contributes whatever it matches so far, and is
-        re-applied when the rest arrive.
-
-        A target that is also a source is safe: the write-back cannot re-enter the
-        rule. A formatter that raises leaves the current text standing rather than
-        blanking it, so a half-built source costs nothing.
-
-        Returns:
-            The rule's ``apply`` callable (handy as an ``on_loaded`` hook).
-        """
         source_refs = list(sources) if isinstance(sources, (list, tuple)) else [sources]
         target_refs = list(targets) if isinstance(targets, (list, tuple)) else [targets]
 
@@ -581,7 +450,7 @@ class SwitchboardRulesMixin:
             try:
                 text = formatter(*[read(w) for w in widgets])
             except Exception as e:  # a half-built source; try again on the next signal
-                self.logger.debug(f"[text_from] formatter raised: {e}")
+                self._logger().debug(f"[text_from] formatter raised: {e}")
                 return
             writing.append(True)
             try:
@@ -590,7 +459,7 @@ class SwitchboardRulesMixin:
                     if callable(setter):
                         setter(text)
                     else:
-                        self.logger.warning(
+                        self._logger().warning(
                             f"[text_from] {widget.objectName()!r} has no setText"
                         )
             finally:
@@ -618,65 +487,6 @@ class SwitchboardRulesMixin:
             Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]
         ] = None,
     ) -> Callable[[], None]:
-        """Keep *targets*' VALUE derived from *sources* — a control that follows
-        the dials it stands for, wired once.
-
-        The third of the declarative family: :meth:`enable_when` answers "grey
-        this out when it can't apply", :meth:`text_from` "say what this will
-        do", and this one "say WHICH of my presets you are on". The case it
-        exists for is a summary control the user can also drive around: a
-        Quality combo that fills Resolution / Samples has to fall back to
-        *Custom* the moment either dial stops matching a preset, or it keeps
-        naming a tier the bake is no longer using::
-
-            sb.value_from(ui, "cmb000", ["cmb_resolution", "spn_samples"],
-                          self._preset_for_dials)      # -> "mobile" | "Custom"
-
-            sb.value_from(m, "cmb_mode", "chk_advanced",
-                          lambda on: "advanced" if on else "basic")
-
-        Hand-wiring this is the same four steps as :meth:`text_from` — read,
-        resolve, write, and apply at WIRE TIME — plus a fifth that only bites
-        here: a naive write-back re-enters through the target's own change
-        signal. The write is fenced, so a target may be its own source.
-
-        Parameters:
-            ui: The loaded UI, or whatever the names resolve against — an option
-                box's ``menu`` is the common one.
-            targets: Widget(s) to drive — an objectName pattern string
-                (``'cmb000'``, ``'s004-7'``), a widget, or a list of either.
-                Every resolved target gets the same value.
-            sources: The widget(s) the value is derived from — objectName /
-                pattern / widget, or a list of those. Patterns UNPACK (as in
-                :meth:`text_from`), so ``'chk024-26'`` feeds three values.
-            resolver: ``callable(*values) -> value``, one value per resolved
-                source in order. Returning ``None`` DECLINES — the target is
-                left exactly as the user left it — so "I have no opinion about
-                this combination" needs no sentinel.
-            signal: Change signal name (single source). Default: the widget's
-                natural signal from the value table.
-            value: Reader override for the SOURCES — a callable ``(widget) ->
-                value`` for every one, or a ``{objectName: callable}`` mapping
-                for a mixed set. (Writes are dispatched by widget type; see
-                :meth:`_widget_value_writer`.)
-
-        The write is the mirror of the read: a combo takes the item whose DATA,
-        then whose LABEL, then whose ROW matches (a value matching none of the
-        three is reported and skipped, never coerced to row 0); every other type
-        goes to ``ValueManager.set_value``, which coerces where that is
-        unambiguous (``"8"`` into a spin box) and leaves the widget alone where
-        it is not. Writes are NOT signal-blocked — a derived value is a real
-        change and the target's own slot is entitled to see it (that is what
-        lets a preset combo re-apply the rest of its preset).
-
-        Order-independent, idempotent and bulk-refreshable exactly as
-        :meth:`enable_when` and :meth:`text_from` — they share the machinery
-        (:meth:`_wire_rule`) and the notes there apply, including the report
-        when a rule can never fire.
-
-        Returns:
-            The rule's ``apply`` callable (handy as an ``on_loaded`` hook).
-        """
         source_refs = list(sources) if isinstance(sources, (list, tuple)) else [sources]
         target_refs = list(targets) if isinstance(targets, (list, tuple)) else [targets]
 
@@ -712,16 +522,16 @@ class SwitchboardRulesMixin:
             try:
                 derived = resolver(*[read(w) for w in widgets])
             except Exception as e:  # a half-built source; retry on the next signal
-                self.logger.debug(f"[value_from] resolver raised: {e}")
+                self._logger().debug(f"[value_from] resolver raised: {e}")
                 return
             if derived is None:  # the resolver declined — leave the target alone
                 return
             writing.append(True)
             try:
                 for widget in resolve_targets():
-                    writer = self._widget_value_writer(widget)
+                    writer = self._values.widget_value_writer(widget)
                     if writer is None:
-                        self.logger.warning(
+                        self._logger().warning(
                             f"[value_from] no value setter for "
                             f"{widget.objectName()!r} ({type(widget).__name__})"
                         )
@@ -729,7 +539,7 @@ class SwitchboardRulesMixin:
                     try:
                         writer(widget, derived)
                     except Exception as e:
-                        self.logger.warning(
+                        self._logger().warning(
                             f"[value_from] {widget.objectName()!r} rejected "
                             f"{derived!r}: {e}"
                         )
@@ -756,10 +566,6 @@ class SwitchboardRulesMixin:
     )
 
     def refresh_dependencies(self, ui) -> None:
-        """Re-apply every declarative rule on *ui* — :meth:`enable_when`'s,
-        :meth:`show_when`'s, :meth:`text_from`'s and :meth:`value_from`'s — for bulk value changes
-        made with signals blocked (a preset load, a programmatic restore) that
-        no trigger signal announced."""
         for registry in self._DEPENDENCY_REGISTRIES:
             for apply in list(ui.__dict__.get(registry, {}).values()):
                 apply()

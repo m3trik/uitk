@@ -332,6 +332,21 @@ MOVED_NAMES = {
         "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.shot_block_at",
         "1.9.0",
     ),
+    # The Switchboard's single-use mixins became private collaborators behind the
+    # class itself: every method one carried is a ``Switchboard`` method now.
+    "SwitchboardSlotsMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardShortcutMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardWidgetMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardRulesMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardWidgetValuesMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardControlGroupsMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardDialogsMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardPlacementMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardEventLoopMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardNameMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardEditorsMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardStyleMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardNamespaceMixin": ("uitk.Switchboard", "1.9.0"),
 }
 
 bootstrap_package(
