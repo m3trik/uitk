@@ -10,16 +10,16 @@ so a host normally registers nothing — :meth:`ExternalAppHandler.discover`
 from its distribution automatically. A host only needs to point at the
 *provider* package when it might not be installed yet::
 
-    sb.handlers.external_app.add_provider("extapps")   # install-on-demand
-    sb.handlers.external_app.launch("compositor")      # installs + launches
+    sb.handlers.external_app.add_provider("mypkg-dist", probe_module="mypkg")
+    sb.handlers.external_app.launch("my_app")          # installs + launches
 
 Direct registration is still available for ad-hoc / out-of-band apps::
 
     sb.handlers.external_app.register(
-        "compositor",
-        module="extapps.texture_maps.compositor",
-        entry="CompositorUI",
-        install_spec="extapps",
+        "my_app",
+        module="mypkg.apps",
+        entry="MyAppUI",
+        install_spec="mypkg-dist",
     )
 """
 
@@ -87,7 +87,7 @@ class ExternalAppHandler(BaseHandler):
 
     # Entry-point group hosts use to advertise *provider packages* — a
     # package that ships discoverable apps but may not be installed yet.
-    # ``name = install_spec`` (e.g. ``extapps = "extapps"``). Read by
+    # ``name = install_spec`` (e.g. ``mypkg = "mypkg-dist"``). Read by
     # :meth:`discover`; absent providers self-install on first launch
     # of any of their apps (see :meth:`_bootstrap_providers`).
     PROVIDER_GROUP: str = "uitk.external_app_providers"
@@ -141,7 +141,7 @@ class ExternalAppHandler(BaseHandler):
         Example (in an app's ``pyproject.toml``)::
 
             [project.entry-points."uitk.external_apps.in_process"]
-            metashape_workflow = "metashape_workflow:MetashapeWorkflowUI [photogrammetry,materials]"
+            my_app = "mypkg.apps:MyAppUI [photogrammetry,materials]"
 
         ``name = module:Class [tag1,tag2,...]`` — name becomes the
         registration key, ``module:Class`` becomes module + entry,
@@ -468,7 +468,7 @@ class ExternalAppHandler(BaseHandler):
         """Register providers advertised under :attr:`PROVIDER_GROUP`.
 
         Lets a host declare its providers declaratively in its own
-        ``pyproject.toml`` (``extapps = "extapps"``) instead of in code.
+        ``pyproject.toml`` (``mypkg = "mypkg-dist"``) instead of in code.
         The entry-point name is the probe/import name; its value is the
         install spec. Returns the count registered.
         """
@@ -559,7 +559,7 @@ class ExternalAppHandler(BaseHandler):
 
         Parameters:
             name: Unique identifier used with :meth:`launch`.
-            module: Importable module name (e.g. ``"extapps.texture_maps.compositor"``).
+            module: Importable module name (e.g. ``"mypkg.apps"``).
             entry: Class/callable inside *module* that returns a uitk
                 MainWindow when invoked. Required for ``mode="in_process"``.
                 In ``mode="subprocess"`` it's optional — if omitted the

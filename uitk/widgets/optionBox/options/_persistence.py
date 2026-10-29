@@ -137,7 +137,7 @@ class PersistedOption:
         ``""`` (no suffix, shared storage) for anything the resolution doesn't
         reach: a widget not registered with a MainWindow, or a Switchboard with no
         ``context_tags``. That is the intended answer, not a fallback — a standalone
-        host has nothing to collide with, and the host-agnostic ``extapps`` panels
+        host has nothing to collide with, and the host-agnostic standalone panels
         (their own tag-less Switchboard) *should* keep one shared recent-files list
         across every session that opens them.
         """
