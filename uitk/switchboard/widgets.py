@@ -221,6 +221,56 @@ class _Widgets:
         except Exception:
             return False
 
+    def resolve_handler_ui(self, name: str) -> Optional[QtWidgets.QWidget]:
+        """The UI the active UI handler builds on demand for *name*, or ``None``
+        when the handler does not claim it.
+
+        The build half of :meth:`ui_name_resolves`: a name no ``.ui`` file names
+        that the handler claims (``can_resolve``) is built by its ``get``, the
+        contract ``can_resolve`` states (mayatk's native Maya menus). A name whose
+        base is a ``.ui`` file stays the file registry's to answer, so the base
+        handler (which claims exactly those) is never asked.
+
+        Raises:
+            AttributeError: The handler claims *name* but its ``get`` raised or
+                built nothing -- a failed build, named as one and logged as a
+                warning (a marking-menu release swallows the error and opens
+                nothing). A ``get`` that resolves the name back through the
+                switchboard lands here too: the name lookup's own recursion guard
+                stops it.
+        """
+        if not name:
+            return None
+        if self._sb.is_registered_ui(name.split(self._sb.tag_delimiter)[0]):
+            return None
+        handler = getattr(getattr(self._sb, "handlers", None), "ui", None)
+        can_resolve = getattr(handler, "can_resolve", None)
+        try:
+            claimed = bool(can_resolve and can_resolve(name))
+        except Exception:  # noqa: BLE001 - a failing claim is no claim (ui_name_resolves)
+            claimed = False
+        if not claimed:
+            return None
+        owner = type(handler).__name__
+        try:
+            ui = handler.get(name)
+        except Exception as exc:
+            self._sb.logger.warning(
+                f"[resolve_handler_ui] {owner} claims {name!r} but failed to build "
+                f"it: {type(exc).__name__}: {exc}",
+                exc_info=True,
+            )
+            raise AttributeError(
+                f"{owner} claims UI {name!r} but failed to build it: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+        if ui is None:
+            self._sb.logger.warning(
+                f"[resolve_handler_ui] {owner} claims {name!r} but built nothing"
+            )
+            raise AttributeError(f"{owner} claims UI {name!r} but built nothing.")
+        return ui
+
     def menu_button_target_name(self, widget) -> Optional[str]:
         target = widget.target
         if not target:

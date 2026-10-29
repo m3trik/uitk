@@ -133,7 +133,7 @@ import mayatk as mtk
 from uitk import MarkingMenu, ExternalAppHandler
 
 class TclMaya(MarkingMenu):
-    def __init__(self, parent=None, slot_source="slots/maya", log_level="WARNING", **kwargs):
+    def __init__(self, parent=None, slot_source=None, log_level="WARNING", **kwargs):
         parent = parent or mtk.get_main_window()
 
         key_show = kwargs.pop("key_show", "F12")

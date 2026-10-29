@@ -219,7 +219,9 @@ class UiHandler(BaseHandler):
         Hook for the switchboard's :meth:`Switchboard.ui_name_resolves`
         so destination resolution (nav-button click + auto-hide) can recognise UIs
         this handler produces. Base = a registered file stem; subclasses extend it
-        for non-file sources (``MayaUiHandler`` adds its native-menu names).
+        for non-file sources (``MayaUiHandler`` adds its native-menu names), and
+        the switchboard's ``get_ui`` then builds such a name through :meth:`get`
+        -- no Slots class is needed for it to resolve.
         """
         if not name:
             return False
@@ -234,9 +236,10 @@ class UiHandler(BaseHandler):
             **kwargs: Accepted and ignored for call-site compatibility. The
                 underlying :meth:`Switchboard.get_ui` takes only ``name`` and no
                 UI-reload path exists, but existing consumers pass extra
-                keywords (e.g. tentacle's ``get(name, header=True)`` and the
-                marking menu's ``get(name, **kwargs)``); tolerating them here
-                keeps those call sites working rather than raising ``TypeError``.
+                keywords (e.g. the marking menu's ``get(name, **kwargs)``, and a
+                subclass's own build options such as ``MayaUiHandler``'s
+                ``header=``); tolerating them here keeps those call sites working
+                rather than raising ``TypeError``.
 
         Returns:
             The UI widget with styles applied, or None if not found.

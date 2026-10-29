@@ -228,6 +228,132 @@ class TestLaunchDelegationIntegration(unittest.TestCase):
             ui.deleteLater()
 
 
+class _BuildingUiHandler(UiHandler):
+    """Builds ``"native"`` on demand, the shape of mayatk's native-menu wrap:
+    ``can_resolve`` claims the name, ``get`` builds and registers the window.
+    Also claimed: ``"loop"``, whose ``get`` is the base one, which resolves the
+    name back through the switchboard; ``"broken"``, whose build raises; and
+    ``"empty"``, whose build fails soft (returns ``None``)."""
+
+    BUILT = ("native",)
+    CLAIMED = BUILT + ("loop", "broken", "empty")
+
+    def __init__(self, switchboard):
+        super().__init__(switchboard=switchboard, log_level="WARNING")
+        self.builds = []
+
+    def can_resolve(self, name):
+        return name in self.CLAIMED or super().can_resolve(name)
+
+    def get(self, name, **kwargs):
+        if name == "broken":
+            raise RuntimeError("the host menu bar is not there")
+        if name == "empty":
+            return None
+        if name not in self.BUILT:
+            return super().get(name, **kwargs)
+        cached = self.sb.loaded_ui.peek(name)
+        if cached is not None:
+            return cached
+        from qtpy import QtWidgets
+
+        self.builds.append(name)
+        return self.sb.add_ui(name=name, widget=QtWidgets.QWidget(), tags={"menu"})
+
+
+class TestHandlerBuiltUiResolvesThroughGetUi(unittest.TestCase):
+    """A name the UI handler builds on demand resolves through ``get_ui`` with
+    no ``.ui`` file and no Slots class: the switchboard's resolver hands it to
+    the handler's ``get``, the build half of ``can_resolve``. A marking-menu
+    release resolves its target through ``get_ui``, so this is how a chord-menu
+    button opens one of Maya's own menus; a Slots class whose only job was to
+    build the menu used to stand in for it."""
+
+    @classmethod
+    def setUpClass(cls):
+        from conftest import setup_qt_application
+
+        cls.app = setup_qt_application()
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        write_ui_file(os.path.join(self.tmp.name, "panel.ui"), "panel")
+        from uitk.switchboard import Switchboard
+
+        self.sb = Switchboard(ui_source=self.tmp.name, log_level="WARNING")
+        # A handler is a singleton: a fresh one per test, bound to this switchboard.
+        _BuildingUiHandler.reset_instance()
+        self.addCleanup(_BuildingUiHandler.reset_instance)
+        self.handler = _BuildingUiHandler(self.sb)
+        self.sb.register_handler("ui", self.handler)
+
+    def tearDown(self):
+        from qtpy import QtCore, QtWidgets
+
+        self.sb.deleteLater()
+        for _ in range(3):
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        self.tmp.cleanup()
+
+    def test_a_claimed_name_is_built_by_the_handler(self):
+        self.assertTrue(self.sb.ui_name_resolves("native"))
+        ui = self.sb.get_ui("native")
+        self.assertEqual(ui.objectName(), "native")
+        self.assertEqual(self.handler.builds, ["native"])
+
+    def test_it_is_built_once_then_served_from_loaded_ui(self):
+        first = self.sb.get_ui("native")
+        self.assertIs(self.sb.get_ui("native"), first)
+        self.assertEqual(self.handler.builds, ["native"])
+
+    def test_an_unclaimed_name_still_raises(self):
+        with self.assertRaises(AttributeError):
+            self.sb.get_ui("unknown")
+        self.assertEqual(self.handler.builds, [])
+
+    def test_a_file_backed_base_is_not_handed_to_the_handler(self):
+        """The base handler claims ``panel#extra`` by its file-backed base; its
+        ``get`` would answer with the ``panel`` UI, a different UI than asked."""
+        with self.assertRaises(AttributeError):
+            self.sb.get_ui("panel#extra")
+        self.assertIsNone(self.sb.loaded_ui.peek("panel"))
+
+    def test_a_get_resolving_back_through_the_switchboard_is_refused(self):
+        """The name lookup's own recursion guard stops the loop; the refusal is
+        reported like any failed build."""
+        with self.assertRaises(AttributeError) as caught:
+            self.sb.get_ui("loop")
+        self.assertIsInstance(caught.exception.__cause__, RuntimeError)
+
+    def test_a_failing_build_is_reported_as_what_it_is(self):
+        """A claimed name whose ``get`` raises is a failed build, not a missing
+        Slots class: the error names the handler and chains the build's own,
+        and a warning makes it visible (a marking-menu release swallows the
+        error and opens nothing)."""
+        with self.assertLogs(self.sb.logger, level="WARNING") as logs:
+            with self.assertRaises(AttributeError) as caught:
+                self.sb.get_ui("broken")
+        message = str(caught.exception)
+        self.assertIn("'broken'", message)
+        self.assertIn("_BuildingUiHandler", message)
+        self.assertNotIn("Slot class", message)
+        self.assertIsInstance(caught.exception.__cause__, RuntimeError)
+        self.assertTrue(
+            any("'broken'" in r.getMessage() for r in logs.records),
+            [r.getMessage() for r in logs.records],
+        )
+
+    def test_a_build_that_returns_nothing_names_the_handler(self):
+        with self.assertLogs(self.sb.logger, level="WARNING"):
+            with self.assertRaises(AttributeError) as caught:
+                self.sb.get_ui("empty")
+        message = str(caught.exception)
+        self.assertIn("'empty'", message)
+        self.assertIn("_BuildingUiHandler", message)
+        self.assertNotIn("Slot class", message)
+
+
 class TestEntryNoticeAfterSwitchboardGone(unittest.TestCase):
     """A window can hide after its switchboard's C++ object is gone (a test's
     teardown, a host quitting). Its entry-change notice, sent from the
@@ -621,9 +747,10 @@ class TestUiHandlerGetSignature(unittest.TestCase):
         self.assertIs(handler.get("polygons#component"), sentinel)
 
     def test_get_tolerates_extra_kwargs(self):
-        # Existing consumers pass extra keywords — tentacle's slots call
-        # get(name, header=True) and the marking menu calls get(name, **kwargs).
-        # These must be accepted (and ignored), not raise TypeError.
+        # Existing consumers pass extra keywords — the marking menu calls
+        # get(name, **kwargs), and a subclass's build options (MayaUiHandler's
+        # header=) reach the base. These must be accepted (and ignored), not
+        # raise TypeError.
         sentinel = object()
         handler = self._handler(sentinel)
         self.assertIs(handler.get("polygons", header=True), sentinel)

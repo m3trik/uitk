@@ -303,7 +303,7 @@ LAUNCH_DEFAULTS = {      # launch() options; launch_code spells out only overrid
 | Method | Purpose |
 |:---|:---|
 | `get(name, **kwargs) -> QWidget \| None` | Resolve UI + apply styles (extra kwargs accepted and ignored for call-site compatibility) |
-| `can_resolve(name) -> bool` | Whether `get` would resolve `name` — without building it |
+| `can_resolve(name) -> bool` | Whether `get` would resolve `name` — without building it. A claimed name no `.ui` file or Slots class provides is then built by the switchboard's `get_ui` through `get` |
 | `show(ui, pos=None, force=False, **kw) -> QWidget` | Show and position a UI |
 | `apply_styles(ui, style=None, theme=None)` | Apply `DEFAULT_STYLE` (or override) with tag-based adjustments; `theme` overrides for this call |
 | `setup_lifecycle(ui, hide_signal=None)` | Connect a signal to `ui.request_hide()` |

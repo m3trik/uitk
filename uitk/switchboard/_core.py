@@ -637,12 +637,27 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
         return visible.copy()
 
     def _resolve_ui(self, attr_name):
-        """Resolver for dynamically loading UIs when accessed via NamespaceHandler."""
+        """Resolver for dynamically loading UIs when accessed via NamespaceHandler.
+
+        A name resolves to its ``.ui`` file, else to its Slots class (a UI built
+        in code), else to the UI the active UI handler builds on demand (a name
+        :meth:`ui_name_resolves` reports through the handler's ``can_resolve``,
+        e.g. mayatk's native Maya menus). A UI with no Slots class is the normal
+        case: such a name needs none to resolve. A claimed name the handler fails
+        to build raises an ``AttributeError`` naming the handler, not the Slots
+        miss.
+        """
         self.logger.debug(f"[{attr_name}] Resolving UI")
 
         actual_ui_name = self.find_ui_filename(attr_name, unique_match=True)
         if not actual_ui_name:
-            return self._resolve_ui_using_slots(attr_name)
+            try:
+                return self._resolve_ui_using_slots(attr_name)
+            except AttributeError:
+                ui = self._widgets.resolve_handler_ui(attr_name)
+                if ui is None:
+                    raise
+                return ui
 
         ui_filepath = self.registry.ui_registry.get(
             filename=actual_ui_name, return_field="filepath"
@@ -2880,7 +2895,8 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
         lazily-built UIs, which is why a nav button whose ``target`` is a native
         menu fell back to its ``#submenu`` overlay on release (instead of opening
         the menu). Resolvability is queried via the handler's ``can_resolve`` hook
-        (default = file stem), so no menu is actually built here.
+        (default = file stem), so no menu is actually built here; :meth:`get_ui`
+        builds it, through the handler's ``get``, the first time it is asked.
         """
         return self._widgets.ui_name_resolves(name)
 
