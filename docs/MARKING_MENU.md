@@ -12,7 +12,7 @@ Hold a key (e.g. `F12`). A radial menu appears centered at the cursor. Flick the
 
 The same system also launches standalone windows — any UI without the `#startmenu` / `#submenu` tag is treated as a regular `MainWindow` that the marking menu shows on demand.
 
-Implementation: [uitk/widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py) — one of the largest single classes in the package, so it is assembled from one part per concept, each a mixin module beside it: [\_bindings.py](../uitk/widgets/marking_menu/_bindings.py) (chord table, activation key, routes), [\_hosting.py](../uitk/widgets/marking_menu/_hosting.py) (stacked pages, hosted themes, preload), [\_navigation.py](../uitk/widgets/marking_menu/_navigation.py) (submenu transitions, child hooks), [\_input.py](../uitk/widgets/marking_menu/_input.py) (hit-testing, press/release dispatch, the grab, input diagnostics) and [\_presentation.py](../uitk/widgets/marking_menu/_presentation.py) (show/hide, the fade). The facade keeps construction, the process-wide instance registry and the activation press/release, and subclasses `<parts> + QWidget + SingletonMixin + LoggingMixin + HelpMixin` — the parts come before `QWidget` because they override its virtuals. The public and protected surface is the one class's, so a host subclass (`TclMaya`, `TclBlender`) overrides any member as before. Pure chord→menu resolution lives in [\_resolver.py](../uitk/widgets/marking_menu/_resolver.py) (Qt-free, unit-testable).
+Implementation: [uitk/widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py) — one of the largest single classes in the package, so it is assembled from one part per concept, each a mixin module beside it: [\_bindings.py](../uitk/widgets/marking_menu/_bindings.py) (chord table, activation key, routes), [\_hosting.py](../uitk/widgets/marking_menu/_hosting.py) (stacked pages, hosted themes, preload), [\_navigation.py](../uitk/widgets/marking_menu/_navigation.py) (submenu transitions, child hooks), [\_input.py](../uitk/widgets/marking_menu/_input.py) (hit-testing, press/release dispatch, the grab, input diagnostics) and [\_presentation.py](../uitk/widgets/marking_menu/_presentation.py) (show/hide, the fade). The facade keeps construction, the process-wide instance registry and the activation press/release, and subclasses `<parts> + QWidget + SingletonMixin + LoggingMixin + HelpMixin` — the parts come before `QWidget` because they override its virtuals. The public and protected surface is the one class's, so a host subclass (`TclMaya`, `TclBlender`) overrides any member as before. Pure chord→menu resolution lives in [\_resolver.py](../uitk/widgets/marking_menu/_resolver.py) (Qt-free, unit-testable). The mixin assembly predates the facade rule ([CODE_STANDARD §14](https://github.com/m3trik/m3trik/blob/main/docs/CODE_STANDARD.md)): it is the next facade to split into collaborators that own their state (the shape `Switchboard` and `TableWidget` now have), not a model for a new class.
 
 A process hosts at most **one** input-owning marking menu: constructing a new instance calls `retire()` on every prior live instance (disposes its activation `GlobalShortcut`, cancels timers, ends any live gesture — irreversible; the dev-reload path).
 
@@ -129,9 +129,8 @@ As a backstop for pages that still reach the activation path cold (preloading of
 The canonical pattern — a DCC-specific subclass ([tcl_maya.py](../../tentacle/tentacle/tcl_maya.py), condensed):
 
 ```python
-from uitk.widgets.marking_menu._marking_menu import MarkingMenu
 import mayatk as mtk
-from mayatk.ui_utils.maya_ui_handler import MayaUiHandler
+from uitk import MarkingMenu, ExternalAppHandler
 
 class TclMaya(MarkingMenu):
     def __init__(self, parent=None, slot_source="slots/maya", log_level="WARNING", **kwargs):
@@ -152,7 +151,7 @@ class TclMaya(MarkingMenu):
             ui_source=("ui", "ui/maya_menus"),
             slot_source=slot_source,
             bindings=bindings,
-            handlers={"ui": MayaUiHandler},
+            handlers={"ui": mtk.MayaUiHandler, "external_app": ExternalAppHandler},
             log_level=log_level,
             suppress_default_on_reentry=True,
             precompile=True,
@@ -160,12 +159,16 @@ class TclMaya(MarkingMenu):
             context_tags={"maya"},
             **kwargs,
         )
+        # The toolkit the Slots classes both hosts share call (``self.tk``).
+        self.sb.tk = mtk
 
         # DCC-specific editor wiring: run when the shortcut editors are built.
         for name in ("shortcut_editor", "global_shortcuts"):
             self.sb.editors.add_post_build_hook(
                 name,
-                lambda editor: editor.add_collision_checker(mtk.maya_collision_checker),
+                lambda editor: editor.add_collision_checker(
+                    mtk.HotkeyCollisions.maya_collision_checker
+                ),
             )
 ```
 
@@ -209,7 +212,7 @@ On activation-key release, every visible standalone window gets a `request_hide(
 ### From slot classes
 
 ```python
-class CamerasSlots(SlotsMaya):
+class CamerasSlots(Slots):
     def btn_editor(self, widget):
         # Launch standalone editor from inside a radial menu
         self.sb.handlers.marking_menu.show("texture_editor")
@@ -308,4 +311,4 @@ Input-handoff logging (who holds the mouse grab, activation flags, launch/releas
 - [Cookbook — Marking menu recipes](COOKBOOK.md#marking-menu-recipes)
 - [Architecture — Handler ecosystem](ARCHITECTURE.md#handler-ecosystem)
 - [tentacle `tcl_maya.py`](https://github.com/m3trik/tentacle/blob/main/tentacle/tcl_maya.py) — working reference
-- [tentacle `slots/maya/`](https://github.com/m3trik/tentacle/tree/main/tentacle/slots/maya) — per-domain slot modules used by the marking menu
+- [tentacle `slots/`](https://github.com/m3trik/tentacle/tree/main/tentacle/slots) — per-domain slot modules used by the marking menu, one class per category for every host

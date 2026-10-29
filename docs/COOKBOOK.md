@@ -46,33 +46,33 @@ Callers use `ChannelsSlots.launch(sb=self.sb, targets=...)`.
 
 **Problem**: a 5000-line slot class file is unmaintainable, but all slots need access to shared DCC helpers.
 
-**Solution**: one slot class per UI, all inheriting a shared DCC base.
+**Solution**: one slot class per UI, all inheriting a shared base.
 
 ```
-tentacle/slots/maya/
-├── _slots_maya.py        # class SlotsMaya
-├── cameras.py            # class CamerasSlots(SlotsMaya)
-├── editors.py            # class EditorsSlots(SlotsMaya)
-├── selection.py          # class SelectionSlots(SlotsMaya)
-├── scene.py              # class SceneSlots(SlotsMaya)
-├── main.py               # class MainSlots(SlotsMaya)
-└── preferences.py        # class PreferencesSlots(SlotsMaya)
+tentacle/slots/
+├── _slots.py             # class Slots
+├── cameras.py            # class CamerasSlots(Slots)
+├── editors.py            # class EditorsSlots(Slots)
+├── selection.py          # class SelectionSlots(Slots)
+├── scene.py              # class SceneSlots(Slots)
+├── main.py               # class MainSlots(Slots)
+└── preferences.py        # class PreferencesSlots(Slots)
 ```
 
 ```python
-# _slots_maya.py — shared base
-class SlotsMaya:
+# _slots.py — shared base
+class Slots:
     def __init__(self, switchboard):
         self.sb = switchboard
-        # Common Maya setup, shared helpers
+        # Common setup, shared helpers
 ```
 
 ```python
 # selection.py — one class per UI
 from uitk import Signals, WidgetComboBox, ToolBox
-from tentacle.slots.maya._slots_maya import SlotsMaya
+from tentacle import Slots
 
-class SelectionSlots(SlotsMaya):
+class SelectionSlots(Slots):
     def __init__(self, switchboard):
         super().__init__(switchboard)
         self.ui = self.sb.loaded_ui.selection
@@ -105,7 +105,7 @@ class ShotsController:
                 w.setKeyboardTracking(False)     # no mid-edit valueChanged
 ```
 
-`setKeyboardTracking(False)` makes the spinbox only emit `valueChanged` on commit (Enter / focus loss / arrow click), not on every keystroke. Without it, clearing "100" to retype "200" emits `valueChanged(0)` mid-edit. See the `ShotsSlots.__init__` keyboard-tracking block in [mayatk shots_slots.py](https://github.com/m3trik/mayatk/blob/main/mayatk/anim_utils/shots/shots_slots.py) for the real scenario this guards against.
+`setKeyboardTracking(False)` makes the spinbox only emit `valueChanged` on commit (Enter / focus loss / arrow click), not on every keystroke. Without it, clearing "100" to retype "200" emits `valueChanged(0)` mid-edit. See the keyboard-tracking block of tentacle's Shots panel ([`slots/tools/_shots/controller.py`](https://github.com/m3trik/tentacle/blob/main/tentacle/slots/tools/_shots/controller.py)) for the real scenario this guards against.
 
 The uitk spin boxes go one step further: they report `adjusting` while a mouse button is held on the box or a typed edit is uncommitted, and the debounced dispatch waits for that to clear — so a slot that re-renders on every value (the Shadow Rig's Softness) runs once, when the user lets go. Both settings can live in the `.ui`: `keyboardTracking` is a Qt property, `debounce` a dynamic one (`stdset="0"`).
 
@@ -148,7 +148,7 @@ def list000_init(self, widget):
     widget.setVisible(True)
 ```
 
-From [tentacle main.py](https://github.com/m3trik/tentacle/blob/main/tentacle/slots/maya/main.py).
+From [tentacle main.py](https://github.com/m3trik/tentacle/blob/main/tentacle/slots/main.py).
 
 ---
 
@@ -442,7 +442,7 @@ Hover → navigates to a `#submenu` target. Click on a standalone target → lau
 ### Launching a standalone UI from a regular slot
 
 ```python
-class CamerasSlots(SlotsMaya):
+class CamerasSlots(Slots):
     def btn_texture_editor(self, widget):
         self.sb.handlers.marking_menu.show("texture_editor")
 ```

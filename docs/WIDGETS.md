@@ -667,8 +667,6 @@ A `QWidget` that becomes visible on mouse-over. Used by `MarkingMenu` to define 
 
 Signals: `labelToggled(str, bool)`, `valueChanged(str, object)`, `refreshRequested()`.
 
-Used by tools like [mayatk's Channels](https://github.com/m3trik/mayatk/blob/main/mayatk/node_utils/attributes/channels/).
-
 ## ExpandableList
 
 A cascade-style list where each item can have a `sublist` of further items. Used heavily in tentacle for hierarchical type browsers.

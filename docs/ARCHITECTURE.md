@@ -9,7 +9,7 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
 ## 1. Design principles
 
 1. **Convention over configuration.** Names carry meaning. UI filenames map to slot classes; `objectName`s map to methods; `#`-tags map to UI hierarchy. Every convention is overridable.
-2. **Composition over inheritance.** Widgets gain capabilities through narrow mixins (`MenuMixin`, `OptionBoxMixin`, `AttributesMixin`, `RichText`), not deep class trees. The Switchboard itself is split into private partials co-located in [uitk/switchboard/](../uitk/switchboard/) and glued together by `Switchboard` in `_core.py`.
+2. **Composition over inheritance.** Widgets gain capabilities through narrow mixins (`MenuMixin`, `OptionBoxMixin`, `AttributesMixin`, `RichText`), not deep class trees. The Switchboard itself is a facade (`_core.py`) over private collaborators in [uitk/switchboard/](../uitk/switchboard/), each owning one subsystem's state; every public method stays on `Switchboard`.
 3. **Lazy everything.** Widgets register on first access. UIs load on first attribute access (`sb.loaded_ui.editor`). Menus and option boxes create themselves only when touched. Slot signatures are introspected once, then cached.
 4. **Dependency injection, not global state.** Slot classes receive the `Switchboard` via constructor kwargs. Handlers are registered with the Switchboard. No singletons in the hot paths (`SingletonMixin` appears only where one-per-host *is* the semantics: `MarkingMenu`, and `BaseHandler` for handler instances).
 5. **Extend via registries and handlers.** New widgets, slots, icons, and UIs get added to typed registries. New behaviors (window positioning, styling, DCC integration) get added as handlers on `sb.handlers.*`.
@@ -330,7 +330,7 @@ Handlers extend UITK without subclassing `Switchboard`. Three touchpoints:
 - `apply_styles(ui)` — merges DEFAULT_STYLE with tag overrides (stacked menus get `translucentBgNoBorder`), applies to widget.
 - `show(ui, pos, force)` — positions window (`cursor`/`screen`/QPoint/tuple) with layout activation for accurate sizing.
 - `setup_lifecycle(ui, hide_signal)` — wires a hide signal (typically `marking_menu.key_show_release`) to `ui.request_hide()` for pin-aware auto-hide.
-- **Window persistence** — sole owner of pin-vs-hide chrome, for every init path (marking menu, launcher, already-open). `default_persistence(ui)` is the subclass hook for a per-window default (mayatk / blendertk declare their tool panels sticky there); `window_persistence` + `persistence_override(name)` are the persisted user choices the UI Browser edits. See [API_REFERENCE.md](API_REFERENCE.md#window-persistence).
+- **Window persistence** — sole owner of pin-vs-hide chrome, for every init path (marking menu, launcher, already-open). `default_persistence(ui)` is the per-window default (a UI registered under `UiHandler.PANEL_TAG`, a tool panel, is sticky; anything else transient; a subclass may override it); `window_persistence` + `persistence_override(name)` are the persisted user choices the UI Browser edits. See [API_REFERENCE.md](API_REFERENCE.md#window-persistence).
 
 `EditorHandler` ([handlers/editor_handler.py](../uitk/handlers/editor_handler.py)) — registered on every Switchboard as `sb.handlers.editor` (opt out with `handlers={"editor": None}`): lists the `sb.editors` windows as launcher rows, so the UI Browser finds itself.
 

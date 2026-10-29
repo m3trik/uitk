@@ -300,7 +300,7 @@ Rendered from the GitHub repository:
 - [Slots Contract](https://github.com/m3trik/uitk/blob/main/docs/SLOTS.md) — naming, signals, parameter injection, debounce, timeout, refresh
 - [Widgets](https://github.com/m3trik/uitk/blob/main/docs/WIDGETS.md) — per-widget reference with the sequencer and editors subpackages
 - [Marking Menu](https://github.com/m3trik/uitk/blob/main/docs/MARKING_MENU.md) — radial menu subsystem
-- [Architecture](https://github.com/m3trik/uitk/blob/main/docs/ARCHITECTURE.md) — Switchboard mixins, registries, lifecycle
+- [Architecture](https://github.com/m3trik/uitk/blob/main/docs/ARCHITECTURE.md) — the Switchboard and its collaborators, registries, lifecycle
 - [Cookbook](https://github.com/m3trik/uitk/blob/main/docs/COOKBOOK.md) — recipes from real consumers
 - [Tutorial](https://github.com/m3trik/uitk/blob/main/docs/EXAMPLES.md) — step-by-step walkthrough
 - [API Reference](https://github.com/m3trik/uitk/blob/main/docs/API_REFERENCE.md) — public signatures

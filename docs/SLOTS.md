@@ -286,17 +286,16 @@ Large apps split slot logic by domain. Each slot class handles one UI; a shared 
 
 ```
 slots/
-├── maya/
-│   ├── _slots_maya.py     # class SlotsMaya: shared DCC base
-│   ├── cameras.py         # class CamerasSlots(SlotsMaya)
-│   ├── editors.py         # class EditorsSlots(SlotsMaya)
-│   ├── selection.py       # class SelectionSlots(SlotsMaya)
-│   └── scene.py           # class SceneSlots(SlotsMaya)
+├── _slots.py          # class Slots: shared base
+├── cameras.py         # class CamerasSlots(Slots)
+├── editors.py         # class EditorsSlots(Slots)
+├── selection.py       # class SelectionSlots(Slots)
+└── scene.py           # class SceneSlots(Slots)
 ```
 
-Each slot class wires a single UI (`cameras.ui`, `editors.ui`, …). The shared `_slots_maya` base carries `self.sb` setup, logging, common helpers.
+Each slot class wires a single UI (`cameras.ui`, `editors.ui`, …). The shared `_slots` base carries `self.sb` setup, logging, common helpers.
 
-See `tentacle/tentacle/slots/maya/` for a full example.
+See `tentacle/tentacle/slots/` for a full example (one class per category serves every host, reaching it through an injected toolkit).
 
 ---
 
