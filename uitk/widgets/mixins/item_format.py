@@ -2,9 +2,9 @@
 # coding=utf-8
 """The shared core of uitk's item-view format mixins.
 
-``CellFormatMixin`` (``tableWidget.py``) and ``TreeFormatMixin``
-(``treeWidget.py``) register per-item / per-column formatters and colour items
-by a semantic key. What they share -- the semantic colour map, the formatter
+``TableWidget`` (``tableWidget.py``, through its ``_CellFormats``) and
+``TreeFormatMixin`` (``treeWidget.py``) register per-item / per-column
+formatters and colour items by a semantic key. What they share -- the semantic colour map, the formatter
 store, the colour resolution with its cached-default fallback, and the
 signal-blocked formatting pass -- lives here once, so the two cannot drift
 again (the tree copy once lacked the table's ``"current"`` key, and a consumer
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class ItemFormatMixin(ConvertMixin):
-    """Formatter store + semantic colours shared by the table and tree mixins."""
+    """Formatter store + semantic colours shared by the table and the tree."""
 
     #: Semantic key -> (foreground, background). ``None`` leaves that role alone.
     ACTION_COLOR_MAP = {

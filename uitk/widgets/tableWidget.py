@@ -1,12 +1,9 @@
 # !/usr/bin/python
 # coding=utf-8
-import inspect
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from qtpy import QtWidgets, QtGui, QtCore
-
-import pythontk as ptk
 
 # From this package:
 from uitk.widgets.mixins.item_format import ItemFormatMixin
@@ -16,435 +13,13 @@ from uitk.widgets.column_config import ColumnConfig
 from uitk.widgets.row_tags import RowTags
 from uitk.widgets.table_actions import TableActions
 from uitk.widgets.overflow_indicator import OverflowIndicator
-from uitk.managers.cursor_manager import CursorManager
-
-
-class HeaderMixin:
-    def _init_header_behavior(self):
-        self.horizontalHeader().setSectionsClickable(True)
-        self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-        self.horizontalHeader().setDefaultAlignment(
-            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
-        )
-        self.header_click_behavior = self.default_header_click_behavior
-        self.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
-        self._sort_order = {}
-        self.setSortingEnabled(True)
-
-    def default_header_click_behavior(self, col):
-        # Example: toggle ascending/descending
-        current_order = self._sort_order.get(col, QtCore.Qt.AscendingOrder)
-        order = (
-            QtCore.Qt.DescendingOrder
-            if current_order == QtCore.Qt.AscendingOrder
-            else QtCore.Qt.AscendingOrder
-        )
-        self.sortItems(col, order)
-        self._sort_order[col] = order
-
-    def _on_header_clicked(self, col):
-        self.header_click_behavior(col)
-
-
-class CellFormatMixin(ItemFormatMixin):
-    """Generic cell/column/header formatting for QTableWidget.
-
-    The colour map, formatter store and colour resolution are
-    :class:`~uitk.widgets.mixins.item_format.ItemFormatMixin`'s, shared with
-    the tree's ``TreeFormatMixin``.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._col_formatters = {}
-        self._header_formatters = {}
-        self._cell_formatters = {}
-        self._item_defaults = {}  # {(row, col): (fg, bg)}
-        self._column_truncation = {}  # {col: (length, mode, insert, head)}
-        self.cellChanged.connect(self._on_cell_edited)
-
-    # Public API
-    def set_column_formatter(self, col, formatter, append=False):
-        """Set a formatter for a specific column."""
-        idx = self._resolve_col(col)
-        if idx is None:
-            return
-        self._set_formatter(self._col_formatters, idx, formatter, append)
-
-    def set_header_formatter(self, header, formatter, append=False):
-        """Set a formatter for a specific header."""
-        idx = self._resolve_col(header)
-        if idx is None:
-            return
-        # Key by the resolved, canonical header text so storage matches the
-        # lookup in _get_formatters (which keys by self._header(col)). Storing
-        # under the raw `header` arg would miss when it is an int column index.
-        key = self._header(idx)
-        self._set_formatter(self._header_formatters, key, formatter, append)
-
-    def set_cell_formatter(self, row, col, formatter, append=False):
-        """Set a formatter for a specific cell (row, column)."""
-        self._set_formatter(self._cell_formatters, (row, col), formatter, append)
-
-    def clear_formatters(self):
-        """Clear all column, header, and cell formatters."""
-        self._col_formatters.clear()
-        self._header_formatters.clear()
-        self._cell_formatters.clear()
-        self._item_defaults.clear()
-
-    def set_column_truncation(
-        self, col, length=None, mode="start", insert="..", head=None
-    ):
-        """Shorten a column's *displayed* text, leaving its data untouched.
-
-        Purely a paint-time transform, applied by the item delegate through
-        :meth:`truncated_column_text`: ``item.text()``, the edit editor, the
-        tooltip, sorting and every formatter keep seeing the full value. That
-        separation is the point — the reason to want this (long filesystem
-        paths crowding a column) is also the reason the full value has to
-        survive for the commands reading the cell.
-
-        Parameters:
-            col (int/str): Column index or header text.
-            length (int): Maximum displayed characters. None/0 clears
-                truncation for the column.
-            mode (str): ``ptk.truncate`` mode — "start" keeps the tail (the
-                filename end of a path), "end" the head, "middle" both, "path"
-                both but cutting only at separators (whole path components).
-            insert (str): Characters marking the trimmed area.
-            head (int): "path" mode only — cap the leading components kept
-                (``head=1`` = drive/root), handing the rest of the budget to
-                the filename end. None grows the head greedily.
-        """
-        idx = self._resolve_col(col)
-        if idx is None:
-            return
-        if not length or int(length) <= 0:
-            self._column_truncation.pop(idx, None)
-        else:
-            self._column_truncation[idx] = (int(length), mode, insert, head)
-        self.viewport().update()
-
-    def column_truncation(self, col):
-        """Return a column's ``(length, mode, insert, head)`` spec, or None when off."""
-        idx = self._resolve_col(col)
-        return self._column_truncation.get(idx) if idx is not None else None
-
-    def truncated_column_text(self, col: int, text: str) -> str:
-        """Display form of ``text`` for ``col`` — the item's own data is unchanged.
-
-        The delegate hook behind :meth:`set_column_truncation`; returns
-        ``text`` verbatim for columns with no truncation configured.
-        """
-        spec = self._column_truncation.get(col)
-        if not spec or not text:
-            return text
-        length, mode, insert, head = spec
-        return ptk.truncate(text, length, mode=mode, insert=insert, head=head)
-
-    def apply_formatting(self):
-        """Apply formatting based on the registered formatters."""
-        # Block signals for the duration: format_item modifies item roles
-        # (foreground/background), which fires cellChanged → _on_cell_edited
-        # → formatters → format_item → cellChanged → ... (infinite recursion
-        # → stack overflow on tables with many formatted cells).
-        with self._formatting_signals_blocked():
-            for row in range(self.rowCount()):
-                for col in range(self.columnCount()):
-                    item = self.item(row, col)
-                    if not item:
-                        continue
-                    for fmt in self._get_formatters(row, col):
-                        fmt(
-                            item,
-                            item.data(QtCore.Qt.UserRole) or item.text(),
-                            row,
-                            col,
-                            self,
-                        )
-
-    def ensure_valid_color(self, color, color_type, item, row, col):
-        """Ensure a valid QColor, using fallback if needed."""
-        return self._valid_color(
-            color, color_type, lambda: self._get_default_colors(item, row, col)
-        )
-
-    def format_item(
-        self,
-        item: QtWidgets.QTableWidgetItem,
-        key: str = None,
-        italic: bool = None,
-        bold: bool = None,
-        fg: Any = None,
-        bg: Any = None,
-    ):
-        """
-        Apply formatting to a table item.
-
-        Args:
-            item: The item to format.
-            key: Semantic color key from ACTION_COLOR_MAP.
-            italic: True/False to set italic, None to ignore.
-            bold: True/False to set bold, None to ignore.
-            fg: Explicit foreground color. Overrides key.
-            bg: Explicit background color. Overrides key.
-        """
-        # Font
-        if italic is not None or bold is not None:
-            font = item.font()
-            if italic is not None:
-                font.setItalic(italic)
-            if bold is not None:
-                font.setBold(bold)
-            item.setFont(font)
-
-        # Colors
-        if key or fg is not None or bg is not None:
-            # Resolve colors from key
-            key_fg, key_bg = (None, None)
-            if key:
-                key_lower = str(key).lower()
-                key_fg, key_bg = self.ACTION_COLOR_MAP.get(key_lower, (None, None))
-
-                # Special handling for reset: clear roles to let stylesheet take over
-                if key_lower == "reset" and fg is None and bg is None:
-                    item.setData(QtCore.Qt.ForegroundRole, None)
-                    item.setData(QtCore.Qt.BackgroundRole, None)
-                    return
-
-            # Explicit overrides key
-            final_fg = fg if fg is not None else key_fg
-            final_bg = bg if bg is not None else key_bg
-
-            row, col = item.row(), item.column()
-
-            # Ensure defaults are cached before applying any changes
-            self._get_default_colors(item, row, col)
-
-            # Foreground
-            q_fg = self.ensure_valid_color(final_fg, "fg", item, row, col)
-            if q_fg:
-                item.setForeground(q_fg)
-
-            # Background logic
-            should_set_bg = False
-            if bg is not None:
-                should_set_bg = True
-            elif key:
-                key_lower = str(key).lower()
-                if key_lower == "reset":
-                    should_set_bg = True
-                else:
-                    # Check if key has a bg defined
-                    _, map_bg = self.ACTION_COLOR_MAP.get(key_lower, (None, None))
-                    if map_bg is not None:
-                        should_set_bg = True
-
-            if should_set_bg:
-                q_bg = self.ensure_valid_color(final_bg, "bg", item, row, col)
-                if q_bg:
-                    item.setBackground(q_bg)
-
-    def set_action_color(
-        self,
-        item: QtWidgets.QTableWidgetItem,
-        key: str,
-        row: int = -1,
-        col: int = -1,
-        use_bg: bool = False,
-    ):
-        """Apply semantic color, but skip reset if nothing defined."""
-        # Delegate to format_item for consistency, but maintain exact behavior
-        # set_action_color has specific behavior for 'reset' (returns early if no colors)
-        # and use_bg flag.
-
-        key_lower = str(key).lower()
-        fg_raw, bg_raw = self.ACTION_COLOR_MAP.get(key_lower, (None, None))
-
-        # Skip entirely if reset and nothing to restore (legacy behavior)
-        if key == "reset" and fg_raw is None and bg_raw is None:
-            return
-
-        # Use format_item logic but we need to respect use_bg
-        # If use_bg is False, we pass bg=None and ensure key doesn't trigger bg set
-        # But format_item logic for key triggers bg set if key has bg.
-        # So we might need to manually call ensure_valid_color here to preserve exact legacy behavior
-        # or update format_item to support use_bg.
-        # For now, let's keep set_action_color as is to avoid regression,
-        # but maybe update it to use ensure_valid_color which it already does.
-
-        fg = self.ensure_valid_color(fg_raw, "fg", item, row, col)
-        bg = self.ensure_valid_color(bg_raw, "bg", item, row, col) if use_bg else None
-
-        if row >= 0 and col >= 0:
-            default_fg, default_bg = self._get_default_colors(item, row, col)
-            fg = fg or self.to_qobject(default_fg, "QColor")
-            if use_bg:
-                bg = bg or self.to_qobject(default_bg, "QColor")
-
-        if fg:
-            item.setForeground(fg)
-        if use_bg and bg:
-            item.setBackground(bg)
-
-    def action_color_formatter(self, item, value, *_):
-        key = str(value).lower()
-        fg, bg = CellFormatMixin.ACTION_COLOR_MAP.get(key, (None, None))
-        fg = self.ensure_valid_color(fg, "fg", item, item.row(), item.column())
-        bg = self.ensure_valid_color(bg, "bg", item, item.row(), item.column())
-        item.setForeground(fg)
-        item.setBackground(bg)
-
-    def make_color_map_formatter(self, color_map: dict):
-        def _fmt(item, value, *_):
-            key = str(value).lower()
-            fg, bg = color_map.get(key, (None, None))
-            fg = self.ensure_valid_color(fg, "fg", item, item.row(), item.column())
-            bg = self.ensure_valid_color(bg, "bg", item, item.row(), item.column())
-            item.setForeground(fg)
-            item.setBackground(bg)
-
-        return _fmt
-
-    # -- Section / category rows -------------------------------------------
-
-    _SECTION_ROLE = QtCore.Qt.UserRole + 900
-
-    @staticmethod
-    def add_section_row(
-        table: QtWidgets.QTableWidget,
-        title: str,
-        row: int = -1,
-        col_count: int = None,
-        bg: Any = None,
-        fg: Any = "#999",
-        bold: bool = True,
-        font_delta: int = -1,
-        height: int = 22,
-    ) -> int:
-        """Insert a non-selectable section header that spans all columns.
-
-        Parameters
-        ----------
-        table : QTableWidget
-            Target table (works with plain QTableWidget or TableWidget).
-        title : str
-            Section label text.
-        row : int
-            Row index to insert at.  ``-1`` appends after the last row.
-        col_count : int, optional
-            Columns to span.  Defaults to ``table.columnCount()``.
-        bg : color, optional
-            Background colour.  Defaults to ``rgba(255,255,255,20)``.
-        fg : color, optional
-            Foreground colour.  Defaults to ``#999``.
-        bold : bool
-            Whether the label is bold.
-        font_delta : int
-            Point-size adjustment relative to the table font.
-        height : int
-            Row height in pixels.
-
-        Returns
-        -------
-        int
-            The row index immediately *after* the inserted section row,
-            convenient for chaining inserts.
-        """
-        if row < 0:
-            row = table.rowCount()
-        if col_count is None:
-            col_count = table.columnCount()
-        table.insertRow(row)
-
-        bg_color = bg or "transparent"
-        fg_color = fg or "#999"
-
-        # Tag column-0 item so is_section_row() works
-        tag_item = QtWidgets.QTableWidgetItem()
-        tag_item.setFlags(QtCore.Qt.ItemIsEnabled)
-        tag_item.setData(CellFormatMixin._SECTION_ROLE, True)
-        table.setItem(row, 0, tag_item)
-
-        for c in range(1, col_count):
-            filler = QtWidgets.QTableWidgetItem()
-            filler.setFlags(QtCore.Qt.ItemIsEnabled)
-            filler.setData(CellFormatMixin._SECTION_ROLE, True)
-            table.setItem(row, c, filler)
-
-        table.setSpan(row, 0, 1, col_count)
-
-        # Cell widget paints on top of QSS item backgrounds
-        label = QtWidgets.QLabel(title)
-        label.setIndent(4)
-        label_font = label.font()
-        label_font.setBold(bold)
-        if font_delta and label_font.pointSize() > 0:
-            label_font.setPointSize(max(label_font.pointSize() + font_delta, 6))
-        label.setFont(label_font)
-        label.setStyleSheet(
-            f"background: {bg_color}; color: {fg_color};"
-            f" border-bottom: 1px solid {fg_color}; padding-left: 2px;"
-        )
-        table.setCellWidget(row, 0, label)
-
-        table.setRowHeight(row, height)
-        return row + 1
-
-    @staticmethod
-    def is_section_row(table: QtWidgets.QTableWidget, row: int) -> bool:
-        """Return ``True`` if *row* is a section header."""
-        item = table.item(row, 0)
-        if item is None:
-            return False
-        return bool(item.data(CellFormatMixin._SECTION_ROLE))
-
-    # Private methods
-    def _on_cell_edited(self, row, col):
-        item = self.item(row, col)
-        if item:
-            for fmt in self._get_formatters(row, col):
-                fmt(item, item.data(QtCore.Qt.UserRole) or item.text(), row, col, self)
-
-    @staticmethod
-    def _get_default_colors(item, row: int, col: int):
-        """Get the cached default colors for the item at the given row and col."""
-        table = item.tableWidget()
-        if not hasattr(table, "_item_defaults"):
-            table._item_defaults = {}
-        key = (row, col)
-        cache = table._item_defaults
-        if key not in cache:
-            fg = item.foreground().color().name()
-            bg = item.background().color().name()
-            cache[key] = (fg, bg)
-        return cache[key]
-
-    def _get_formatters(self, row, col) -> list:
-        formatters = []
-        key = (row, col)
-        if key in self._cell_formatters:
-            formatters.extend(self._cell_formatters[key])
-        if col in self._col_formatters:
-            formatters.extend(self._col_formatters[col])
-        header = self._header(col)
-        if header in self._header_formatters:
-            formatters.extend(self._header_formatters[header])
-        return formatters
-
-    def _resolve_col(self, col):
-        if isinstance(col, int):
-            return col
-        for idx in range(self.columnCount()):
-            hi = self.horizontalHeaderItem(idx)
-            if hi and hi.text() == col:
-                return idx
-        return None
-
-    def _header(self, col):
-        hi = self.horizontalHeaderItem(col)
-        return hi.text() if hi else str(col)
+from uitk.widgets.table_widget_parts._cell_formats import _CellFormats
+from uitk.widgets.table_widget_parts._context_menu import _ContextMenu
+from uitk.widgets.table_widget_parts._gestures import (
+    _CellClicks,
+    _RowDrag,
+    _ScrubInput,
+)
 
 
 @dataclass(frozen=True)
@@ -617,10 +192,14 @@ class _ZeroSpacingEditorDelegate(QtWidgets.QStyledItemDelegate):
             QtCore.QTimer.singleShot(0, lambda: pending.on_commit(text))
 
 
-class TableWidget(
-    QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin
-):
+class TableWidget(QtWidgets.QTableWidget, MenuMixin, AttributesMixin, ItemFormatMixin):
     """Enhanced QTableWidget with cell formatting, sorting, and context menu support."""
+
+    # A facade: cell formatting, the scrub gestures, the LMB row drag, the
+    # per-column click behaviour and the context menu's registered actions are
+    # collaborators in ``table_widget_parts`` (``_CellFormats``, ``_ScrubInput``, ``_RowDrag``,
+    # ``_CellClicks``, ``_ContextMenu``), each owning its state and holding the
+    # table; every public method stays here, and the Qt event handlers ask them.
 
     # Qt Designer widget-box entry.
     designer_spec = {"icon": "table", "object_name": "tbl", "size": (280, 160)}
@@ -682,57 +261,22 @@ class TableWidget(
         """
         super().__init__(parent)
         self._init_header_behavior()
-        CellFormatMixin.__init__(self)
+        self._formats = _CellFormats(self)
         # Arrows at the top/bottom edge while rows are scrolled out of view.
         OverflowIndicator.attach(self)
 
         self._left_click_select_only = bool(left_click_select_only)
         self._non_selectable_columns = set()
         self._selection_validator = None
-        self._column_click_actions = {}
+        self._clicks = _CellClicks(self)
         self.actions = TableActions(self)
-        self._menu_action_registry: Dict[str, Dict[str, Any]] = {}
-        self._menu_dispatch_connected = False
+        self._context_menu = _ContextMenu(self)
         self._stretch_column = None
 
-        # Drag state (shared by editable-cell and action-column paths)
-        self._drag_start_pos = None
-        self._drag_occurred = False
-        self._drag_has_modifier = False
-        self._drag_column = None  # column where the drag started
-        self._drag_rows = []  # rows traversed during drag
-        self._drag_is_action = False  # True when dragging over an action column
-        # Latched over the release that ends a drag — see mouseReleaseEvent.
-        self._suppress_click_action = False
-        # A drag edit's fill: the cells, and the editor they belong to.
-        self._drag_selected_indexes = None
-        self._drag_editor = None
-
-        # Middle-mouse scrub-edit state.  ``_scrub_columns`` is the
-        # opt-in set of columns where MMB-drag scrubs the cell value;
-        # ``_scrub_active`` tracks an in-flight drag.
-        self._scrub_columns: set = set()
-        self._scrub_active: Optional[Dict[str, Any]] = None
-
-        # Wheel-scroll value adjustment (opt-in via ``set_wheel_scrub_columns``).
-        self._wheel_scrub_columns: set = set()
-
-        # Single-click-edit (opt-in via ``set_single_click_edit_columns``):
-        # LMB click + release without drag enters edit mode immediately,
-        # bypassing the default DoubleClicked edit trigger for those
-        # columns only.
-        self._single_click_edit_columns: set = set()
-
-        # Cell-widget click-forwarding (opt-in via
-        # ``set_cell_widget_click_columns``): a bare LMB click on the empty
-        # part of a cell hosting an embedded widget is forwarded to that
-        # widget. A cell widget can be narrower than its cell — e.g. a combo
-        # with ``AdjustToContents`` self-resizes to its content width after
-        # the view's layout and isn't re-stretched until the next relayout —
-        # leaving the rest of the cell interactive-looking but inert.
-        self._cell_widget_click_columns: set = set()
-
-        self.cellClicked.connect(self._on_cell_clicked)
+        # The LMB drag down a column (editable-cell and action-column paths),
+        # and the opt-in MMB / wheel scrub gestures.
+        self._drag = _RowDrag(self)
+        self._scrub = _ScrubInput(self)
 
         # Zero-spacing editor delegate keeps cell text from visibly
         # jumping when the cell enters edit mode.  Downstream consumers
@@ -759,6 +303,260 @@ class TableWidget(
         self.set_attributes(**kwargs)
 
     # ------------------------------------------------------------------
+    # Header click sorting
+    # ------------------------------------------------------------------
+
+    def _init_header_behavior(self):
+        self.horizontalHeader().setSectionsClickable(True)
+        self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        self.horizontalHeader().setDefaultAlignment(
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
+        )
+        self.header_click_behavior = self.default_header_click_behavior
+        self.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
+        self._sort_order = {}
+        self.setSortingEnabled(True)
+
+    def default_header_click_behavior(self, col):
+        # Example: toggle ascending/descending
+        current_order = self._sort_order.get(col, QtCore.Qt.AscendingOrder)
+        order = (
+            QtCore.Qt.DescendingOrder
+            if current_order == QtCore.Qt.AscendingOrder
+            else QtCore.Qt.AscendingOrder
+        )
+        self.sortItems(col, order)
+        self._sort_order[col] = order
+
+    def _on_header_clicked(self, col):
+        self.header_click_behavior(col)
+
+    # ------------------------------------------------------------------
+    # Cell formatting (``_CellFormats``)
+    # ------------------------------------------------------------------
+
+    def set_column_formatter(self, col, formatter, append=False):
+        """Set a formatter for a specific column."""
+        self._formats.set_column_formatter(col, formatter, append)
+
+    def set_header_formatter(self, header, formatter, append=False):
+        """Set a formatter for a specific header."""
+        self._formats.set_header_formatter(header, formatter, append)
+
+    def set_cell_formatter(self, row, col, formatter, append=False):
+        """Set a formatter for a specific cell (row, column)."""
+        self._formats.set_cell_formatter(row, col, formatter, append)
+
+    def clear_formatters(self):
+        """Clear all column, header, and cell formatters."""
+        self._formats.clear_formatters()
+
+    def set_column_truncation(
+        self, col, length=None, mode="start", insert="..", head=None
+    ):
+        """Shorten a column's *displayed* text, leaving its data untouched.
+
+        Purely a paint-time transform, applied by the item delegate through
+        :meth:`truncated_column_text`: ``item.text()``, the edit editor, the
+        tooltip, sorting and every formatter keep seeing the full value. That
+        separation is the point — the reason to want this (long filesystem
+        paths crowding a column) is also the reason the full value has to
+        survive for the commands reading the cell.
+
+        Parameters:
+            col (int/str): Column index or header text.
+            length (int): Maximum displayed characters. None/0 clears
+                truncation for the column.
+            mode (str): ``ptk.truncate`` mode — "start" keeps the tail (the
+                filename end of a path), "end" the head, "middle" both, "path"
+                both but cutting only at separators (whole path components).
+            insert (str): Characters marking the trimmed area.
+            head (int): "path" mode only — cap the leading components kept
+                (``head=1`` = drive/root), handing the rest of the budget to
+                the filename end. None grows the head greedily.
+        """
+        self._formats.set_column_truncation(col, length, mode, insert, head)
+
+    def column_truncation(self, col):
+        """Return a column's ``(length, mode, insert, head)`` spec, or None when off."""
+        return self._formats.column_truncation_of(col)
+
+    def truncated_column_text(self, col: int, text: str) -> str:
+        """Display form of ``text`` for ``col`` — the item's own data is unchanged.
+
+        The delegate hook behind :meth:`set_column_truncation`; returns
+        ``text`` verbatim for columns with no truncation configured.
+        """
+        return self._formats.truncated_column_text(col, text)
+
+    def apply_formatting(self):
+        """Apply formatting based on the registered formatters."""
+        self._formats.apply_formatting()
+
+    def ensure_valid_color(self, color, color_type, item, row, col):
+        """Ensure a valid QColor, using fallback if needed."""
+        return self._formats.ensure_valid_color(color, color_type, item, row, col)
+
+    def format_item(
+        self,
+        item: QtWidgets.QTableWidgetItem,
+        key: str = None,
+        italic: bool = None,
+        bold: bool = None,
+        fg: Any = None,
+        bg: Any = None,
+    ):
+        """
+        Apply formatting to a table item.
+
+        Args:
+            item: The item to format.
+            key: Semantic color key from ACTION_COLOR_MAP.
+            italic: True/False to set italic, None to ignore.
+            bold: True/False to set bold, None to ignore.
+            fg: Explicit foreground color. Overrides key.
+            bg: Explicit background color. Overrides key.
+        """
+        self._formats.format_item(item, key, italic, bold, fg, bg)
+
+    def set_action_color(
+        self,
+        item: QtWidgets.QTableWidgetItem,
+        key: str,
+        row: int = -1,
+        col: int = -1,
+        use_bg: bool = False,
+    ):
+        """Apply semantic color, but skip reset if nothing defined."""
+        self._formats.set_action_color(item, key, row, col, use_bg)
+
+    def action_color_formatter(self, item, value, *_):
+        self._formats.action_color_formatter(item, value)
+
+    def make_color_map_formatter(self, color_map: dict):
+        return self._formats.make_color_map_formatter(color_map)
+
+    @property
+    def _item_defaults(self):
+        # Where ``_CellFormats.default_colors`` finds this table's cache.
+        return self._formats.item_defaults
+
+    def _resolve_col(self, col):
+        if isinstance(col, int):
+            return col
+        for idx in range(self.columnCount()):
+            hi = self.horizontalHeaderItem(idx)
+            if hi and hi.text() == col:
+                return idx
+        return None
+
+    def _header(self, col):
+        hi = self.horizontalHeaderItem(col)
+        return hi.text() if hi else str(col)
+
+    # -- Section / category rows -------------------------------------------
+
+    _SECTION_ROLE = QtCore.Qt.UserRole + 900
+
+    @staticmethod
+    def add_section_row(
+        table: QtWidgets.QTableWidget,
+        title: str,
+        row: int = -1,
+        col_count: int = None,
+        bg: Any = None,
+        fg: Any = "#999",
+        bold: bool = True,
+        font_delta: int = -1,
+        height: int = 22,
+    ) -> int:
+        """Insert a non-selectable section header that spans all columns.
+
+        Parameters
+        ----------
+        table : QTableWidget
+            Target table (works with plain QTableWidget or TableWidget).
+        title : str
+            Section label text.
+        row : int
+            Row index to insert at.  ``-1`` appends after the last row.
+        col_count : int, optional
+            Columns to span.  Defaults to ``table.columnCount()``.
+        bg : color, optional
+            Background colour.  Defaults to ``rgba(255,255,255,20)``.
+        fg : color, optional
+            Foreground colour.  Defaults to ``#999``.
+        bold : bool
+            Whether the label is bold.
+        font_delta : int
+            Point-size adjustment relative to the table font.
+        height : int
+            Row height in pixels.
+
+        Returns
+        -------
+        int
+            The row index immediately *after* the inserted section row,
+            convenient for chaining inserts.
+        """
+        if row < 0:
+            row = table.rowCount()
+        if col_count is None:
+            col_count = table.columnCount()
+        table.insertRow(row)
+
+        bg_color = bg or "transparent"
+        fg_color = fg or "#999"
+
+        # Tag column-0 item so is_section_row() works
+        tag_item = QtWidgets.QTableWidgetItem()
+        tag_item.setFlags(QtCore.Qt.ItemIsEnabled)
+        tag_item.setData(TableWidget._SECTION_ROLE, True)
+        table.setItem(row, 0, tag_item)
+
+        for c in range(1, col_count):
+            filler = QtWidgets.QTableWidgetItem()
+            filler.setFlags(QtCore.Qt.ItemIsEnabled)
+            filler.setData(TableWidget._SECTION_ROLE, True)
+            table.setItem(row, c, filler)
+
+        table.setSpan(row, 0, 1, col_count)
+
+        # Cell widget paints on top of QSS item backgrounds
+        label = QtWidgets.QLabel(title)
+        label.setIndent(4)
+        label_font = label.font()
+        label_font.setBold(bold)
+        if font_delta and label_font.pointSize() > 0:
+            label_font.setPointSize(max(label_font.pointSize() + font_delta, 6))
+        label.setFont(label_font)
+        label.setStyleSheet(
+            f"background: {bg_color}; color: {fg_color};"
+            f" border-bottom: 1px solid {fg_color}; padding-left: 2px;"
+        )
+        table.setCellWidget(row, 0, label)
+
+        table.setRowHeight(row, height)
+        return row + 1
+
+    @staticmethod
+    def is_section_row(table: QtWidgets.QTableWidget, row: int) -> bool:
+        """Return ``True`` if *row* is a section header."""
+        item = table.item(row, 0)
+        if item is None:
+            return False
+        return bool(item.data(TableWidget._SECTION_ROLE))
+
+    # The opt-in column sets, read off the table by panels' tests.
+    @property
+    def _scrub_columns(self) -> set:
+        return self._scrub.columns
+
+    @property
+    def _single_click_edit_columns(self) -> set:
+        return self._clicks.edit_columns
+
+    # ------------------------------------------------------------------
     # Middle-mouse scrub-edit (opt-in — Maya channel-box virtual slider)
     # ------------------------------------------------------------------
 
@@ -772,19 +570,19 @@ class TableWidget(
         pixel deltas; consumers translate those into value changes
         appropriate for the underlying type / sensitivity.
         """
-        self._scrub_columns = set(int(c) for c in columns)
+        self._scrub.columns = set(int(c) for c in columns)
 
     def add_scrub_column(self, column: int) -> None:
         """Add a single column to the MMB-scrub set."""
-        self._scrub_columns.add(int(column))
+        self._scrub.columns.add(int(column))
 
     def remove_scrub_column(self, column: int) -> None:
         """Remove a column from the MMB-scrub set."""
-        self._scrub_columns.discard(int(column))
+        self._scrub.columns.discard(int(column))
 
     def is_scrubbing(self) -> bool:
         """``True`` while an MMB scrub-drag is in progress."""
-        return self._scrub_active is not None
+        return self._scrub.active is not None
 
     # ------------------------------------------------------------------
     # Wheel-scroll value adjustment (opt-in)
@@ -798,15 +596,15 @@ class TableWidget(
         are consumed (no fall-through to the table's own scroll bar).
         Pass an empty iterable to disable.
         """
-        self._wheel_scrub_columns = set(int(c) for c in columns)
+        self._scrub.wheel_columns = set(int(c) for c in columns)
 
     def add_wheel_scrub_column(self, column: int) -> None:
         """Add a single column to the wheel-scrub set."""
-        self._wheel_scrub_columns.add(int(column))
+        self._scrub.wheel_columns.add(int(column))
 
     def remove_wheel_scrub_column(self, column: int) -> None:
         """Remove a column from the wheel-scrub set."""
-        self._wheel_scrub_columns.discard(int(column))
+        self._scrub.wheel_columns.discard(int(column))
 
     # ------------------------------------------------------------------
     # Single-click edit (opt-in)
@@ -820,15 +618,15 @@ class TableWidget(
         normally — the click must release without movement.  Pass an
         empty iterable to disable.
         """
-        self._single_click_edit_columns = set(int(c) for c in columns)
+        self._clicks.edit_columns = set(int(c) for c in columns)
 
     def add_single_click_edit_column(self, column: int) -> None:
         """Add a single column to the single-click-edit set."""
-        self._single_click_edit_columns.add(int(column))
+        self._clicks.edit_columns.add(int(column))
 
     def remove_single_click_edit_column(self, column: int) -> None:
         """Remove a column from the single-click-edit set."""
-        self._single_click_edit_columns.discard(int(column))
+        self._clicks.edit_columns.discard(int(column))
 
     # ------------------------------------------------------------------
     # Cell-widget click-forwarding (opt-in)
@@ -849,277 +647,57 @@ class TableWidget(
         widget that received the click directly.  Pass an empty iterable
         to disable.
         """
-        self._cell_widget_click_columns = set(int(c) for c in columns)
+        self._clicks.widget_columns = set(int(c) for c in columns)
 
     def add_cell_widget_click_column(self, column: int) -> None:
         """Add a single column to the cell-widget click-forward set."""
-        self._cell_widget_click_columns.add(int(column))
+        self._clicks.widget_columns.add(int(column))
 
     def remove_cell_widget_click_column(self, column: int) -> None:
         """Remove a column from the cell-widget click-forward set."""
-        self._cell_widget_click_columns.discard(int(column))
-
-    # Widget types whose click has an unambiguous "activate" meaning.
-    _INTERACTIVE_CELL_WIDGETS = (
-        QtWidgets.QComboBox,
-        QtWidgets.QAbstractButton,
-        QtWidgets.QAbstractSpinBox,
-        QtWidgets.QLineEdit,
-        QtWidgets.QAbstractSlider,
-    )
+        self._clicks.widget_columns.discard(int(column))
 
     def _forward_click_to_cell_widget(self, widget: QtWidgets.QWidget) -> None:
-        """Activate *widget* (or its primary control) as if clicked.
-
-        Cells often wrap the real control in a centering container, so the
-        cell widget itself may be a plain ``QWidget`` — resolve to the first
-        interactive descendant before acting.  A combobox opens its popup, a
-        button is clicked, everything else focusable takes focus.
-        """
-        target = widget
-        if not isinstance(widget, self._INTERACTIVE_CELL_WIDGETS):
-            target = next(
-                (
-                    c
-                    for c in widget.findChildren(QtWidgets.QWidget)
-                    if isinstance(c, self._INTERACTIVE_CELL_WIDGETS)
-                ),
-                None,
-            )
-        if target is None:
-            return
-        if isinstance(target, QtWidgets.QComboBox):
-            target.showPopup()
-        elif isinstance(target, QtWidgets.QAbstractButton):
-            target.click()
-        elif target.focusPolicy() != QtCore.Qt.NoFocus:
-            target.setFocus(QtCore.Qt.MouseFocusReason)
+        self._clicks.forward(widget)
 
     # ------------------------------------------------------------------
-    # Drag-select: edit or action (Maya channel-box style)
+    # Mouse gestures: the scrubs, the LMB row drag, the click columns
     # ------------------------------------------------------------------
-
-    def _reset_drag_state(self):
-        """Clear all drag-tracking fields."""
-        self._drag_start_pos = None
-        self._drag_occurred = False
-        self._drag_has_modifier = False
-        self._drag_column = None
-        self._drag_rows = []
-        self._drag_is_action = False
 
     def mousePressEvent(self, event):
-        pos = event.pos()
-        index = self.indexAt(pos)
+        index = self.indexAt(event.pos())
 
         # Middle-mouse scrub-edit takes priority over the LMB drag-select
         # path so MMB on a scrub column never falls through to selection.
-        if (
-            event.button() == QtCore.Qt.MiddleButton
-            and self._scrub_columns
-            and index.isValid()
-            and index.column() in self._scrub_columns
-        ):
-            self._scrub_active = {
-                "row": index.row(),
-                "col": index.column(),
-                "start": pos,
-            }
-            CursorManager.push(self, QtCore.Qt.SizeHorCursor)
-            self.cellScrubStarted.emit(index.row(), index.column())
-            event.accept()
+        if self._scrub.press(event, index):
             return
-
-        self._drag_start_pos = pos
-        self._drag_has_modifier = bool(
-            event.modifiers() & (QtCore.Qt.ShiftModifier | QtCore.Qt.ControlModifier)
-        )
-        self._drag_occurred = False
-
-        # An action column has no selection for Shift / Ctrl to extend (its
-        # cells are non-selectable) and panels read those modifiers per row --
-        # the Channels Key column breaks a connection on Ctrl -- so a modifier
-        # drag tracks rows there; on any other column it stays a selection
-        # gesture and fires nothing.
-        is_action = index.isValid() and index.column() in self.actions._columns
-        if (
-            index.isValid()
-            and event.button() == QtCore.Qt.LeftButton
-            and (is_action or not self._drag_has_modifier)
-        ):
-            self._drag_column = index.column()
-            self._drag_rows = [index.row()]
-            self._drag_is_action = is_action
-        else:
-            self._drag_column = None
-            self._drag_rows = []
-            self._drag_is_action = False
-
+        self._drag.press(event, index)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         # Active MMB scrub: emit deltas, suppress base move handling so
         # selection rubber-band etc. don't interfere.
-        if self._scrub_active is not None:
-            start = self._scrub_active["start"]
-            dx = event.pos().x() - start.x()
-            dy = event.pos().y() - start.y()
-            self.cellScrubMoved.emit(
-                self._scrub_active["row"], self._scrub_active["col"], dx, dy
-            )
-            event.accept()
+        if self._scrub.move(event):
             return
-
-        if (
-            not self._drag_occurred
-            and self._drag_start_pos is not None
-            and (event.pos() - self._drag_start_pos).manhattanLength()
-            > QtWidgets.QApplication.startDragDistance()
-        ):
-            self._drag_occurred = True
-
-        # Track the rows the drag travels over, the skipped ones included.
-        if self._drag_column is not None and self._drag_occurred:
-            self._track_drag_row(event.pos())
-
+        self._drag.move(event)
         super().mouseMoveEvent(event)
-
-    def _track_drag_row(self, pos):
-        """Record the row under *pos* and every row between it and the last
-        row recorded.
-
-        Mouse moves are sampled, so a drag quicker than that sampling lands
-        events on a few rows only — without filling the gap a drag covers its
-        two ends and misses the rows in between.  The column is ignored: the
-        gesture belongs to the column the press started in, so drifting
-        sideways (or past the last row) doesn't drop rows.  Hidden rows are
-        left out, and a row crossed twice is recorded once.
-        """
-        row = self._drag_row_at(pos.y())
-        if row == -1 or not self._drag_rows:
-            return
-        last = self._drag_rows[-1]
-        step = 1 if row >= last else -1
-        for r in range(last + step, row + step, step):
-            if r not in self._drag_rows and not self.isRowHidden(r):
-                self._drag_rows.append(r)
-
-    def _drag_row_at(self, y):
-        """The row under viewport *y*, clamped to the nearest one past the ends.
-
-        ``rowAt`` reports -1 above the first row and below the last (including
-        the empty space under a short table), yet dragging out past the end is
-        exactly how one covers the final rows — clamping keeps them in the
-        gesture instead of ending it at the last row an event landed on.
-        """
-        row = self.rowAt(y)
-        if row != -1:
-            return row
-        visible = [r for r in range(self.rowCount()) if not self.isRowHidden(r)]
-        if not visible:
-            return -1
-        first_top = self.visualRect(self.model().index(visible[0], 0)).top()
-        return visible[0] if y < first_top else visible[-1]
 
     def mouseReleaseEvent(self, event):
         # Finish an active MMB scrub before falling through to the LMB
         # drag-select cleanup.
-        if event.button() == QtCore.Qt.MiddleButton and self._scrub_active is not None:
-            row = self._scrub_active["row"]
-            col = self._scrub_active["col"]
-            self._scrub_active = None
-            CursorManager.pop(self)
-            self.cellScrubFinished.emit(row, col)
-            event.accept()
+        if self._scrub.release(event):
             return
-
-        # The release point can sit rows away from the last move event.
-        if self._drag_occurred and self._drag_column is not None:
-            self._track_drag_row(event.pos())
-
-        was_drag = self._drag_occurred
-        had_modifier = self._drag_has_modifier
-        is_action = self._drag_is_action
-        drag_col = self._drag_column
-        drag_rows = list(self._drag_rows)
-
-        self._reset_drag_state()
+        gesture = self._drag.finish(event)
         # A drag ending on the cell it started from still emits ``clicked``;
         # the drag dispatch below owns every row it travelled, so the click
         # must not fire that row's action a second time.
-        self._suppress_click_action = was_drag
-        try:
+        with self._clicks.suppressed(gesture.was_drag):
             super().mouseReleaseEvent(event)
-        finally:
-            self._suppress_click_action = False
-
-        # Single-click edit: bare LMB click+release (no drag, no modifier)
-        # on a registered column opens the editor immediately.  Cells
-        # with an embedded widget (combobox, etc.) handle their own
-        # input — skip those.
-        if (
-            not was_drag
-            and not had_modifier
-            and event.button() == QtCore.Qt.LeftButton
-            and self._single_click_edit_columns
-        ):
-            index = self.indexAt(event.pos())
-            if (
-                index.isValid()
-                and index.column() in self._single_click_edit_columns
-                and self.cellWidget(index.row(), index.column()) is None
-            ):
-                item = self.item(index.row(), index.column())
-                if item and (item.flags() & QtCore.Qt.ItemIsEditable):
-                    self.editItem(item)
-                    return
-
-        # Cell-widget click-forward: a bare click on the empty part of a
-        # cell that hosts an embedded widget (so the click reached the
-        # table, not the widget) is routed to that widget.  Placed after
-        # single-click-edit so numeric/text cells still open their editor;
-        # only cells with a cell widget are forwarded.
-        if (
-            not was_drag
-            and not had_modifier
-            and event.button() == QtCore.Qt.LeftButton
-            and self._cell_widget_click_columns
-        ):
-            index = self.indexAt(event.pos())
-            if index.isValid() and index.column() in self._cell_widget_click_columns:
-                cell_widget = self.cellWidget(index.row(), index.column())
-                if cell_widget is not None:
-                    self._forward_click_to_cell_widget(cell_widget)
-                    return
-
-        if not (
-            was_drag
-            and event.button() == QtCore.Qt.LeftButton
-            and (is_action or not had_modifier)
-        ):
+        # A bare click: click-to-edit, else cell-widget forwarding; a drag:
+        # its own dispatch.
+        if self._clicks.release(event, gesture):
             return
-
-        if is_action and drag_col is not None and drag_rows:
-            # Action column — dispatch every traversed row
-            self.actions._on_drag(drag_rows, drag_col)
-        else:
-            # Editable column — open editor on release cell, propagate on commit
-            index = self.indexAt(event.pos())
-            item = self.item(index.row(), index.column()) if index.isValid() else None
-            if item and (item.flags() & QtCore.Qt.ItemIsEditable):
-                selected = [
-                    idx
-                    for idx in self.selectedIndexes()
-                    if idx.column() == index.column()
-                ]
-                self.editItem(item)
-                # Armed only for the editor this opened: a drag down a
-                # read-only column (selecting rows) opens none, and its cells
-                # must not be filled by a later, ordinary edit.
-                editor = self.indexWidget(index)
-                if editor is not None:
-                    self._drag_selected_indexes = selected
-                    self._drag_editor = editor
+        self._drag.dispatch(event, gesture)
 
     def wheelEvent(self, event):
         """Consume wheel events on wheel-scrub columns; emit signal.
@@ -1132,17 +710,8 @@ class TableWidget(
         :meth:`refresh_active_editor` to keep the editor display in
         sync with the model.
         """
-        if self._wheel_scrub_columns:
-            pos = (
-                event.position().toPoint()
-                if hasattr(event, "position")
-                else event.pos()
-            )
-            index = self.indexAt(pos)
-            if index.isValid() and index.column() in self._wheel_scrub_columns:
-                self._emit_wheel_scrub(index, event)
-                event.accept()
-                return
+        if self._scrub.wheel(event):
+            return
         super().wheelEvent(event)
 
     def eventFilter(self, obj, event):
@@ -1155,63 +724,15 @@ class TableWidget(
         while editing a wheel-scrub cell, route it through the same
         ``cellWheelScrolled`` path.
         """
-        if (
-            event.type() == QtCore.QEvent.Wheel
-            and self._wheel_scrub_columns
-            and self.state() == QtWidgets.QAbstractItemView.EditingState
-        ):
-            idx = self.currentIndex()
-            if idx.isValid() and idx.column() in self._wheel_scrub_columns:
-                self._emit_wheel_scrub(idx, event)
-                return True
+        # The type test first: the view filters events from construction on
+        # (``OverflowIndicator.attach`` in ``__init__`` already sends some),
+        # before the collaborators exist.
+        if event.type() == QtCore.QEvent.Wheel and self._scrub.editor_wheel(event):
+            return True
         return super().eventFilter(obj, event)
 
-    @staticmethod
-    def _wheel_signed_delta(event) -> int:
-        """Return whichever axis of ``event.angleDelta()`` carries the delta.
-
-        When Alt is held some platforms / Qt6 builds transpose the wheel
-        delta from ``.y()`` onto ``.x()``; reading only ``.y()`` would
-        miss Alt-modified scrolls entirely (the channels-cell symptom
-        where Alt and Ctrl+Alt did nothing).
-        """
-        delta = event.angleDelta()
-        return delta.y() or delta.x()
-
     def _emit_wheel_scrub(self, index, event):
-        """Emit ``cellWheelScrolled`` after quantizing the wheel angle
-        to whole notches.
-
-        ``event`` is the original ``QWheelEvent`` so we can both read
-        its modifier mask (passed via the signal so the receiver doesn't
-        race-poll ``QApplication.keyboardModifiers()``) and fall back to
-        the X axis when Alt has transposed the delta.
-
-        The slot is expected to update the underlying model
-        synchronously and then call :meth:`refresh_active_editor` to
-        sync any open editor.  Decoupling editor-refresh from
-        wheel-event delivery makes the behavior identical regardless
-        of which Qt path delivers the wheel (eventFilter vs
-        wheelEvent).
-        """
-        signed = self._wheel_signed_delta(event)
-        # Accumulate per cell so precision touchpads / free-spin wheels that
-        # only ever send sub-notch deltas (e.g. ±8) still reach a full notch
-        # across events — plain truncation made them permanently dead in both
-        # directions. Truncate toward zero (not floor) so equal-magnitude
-        # up/down accumulations quantize symmetrically, and keep the residual
-        # so nothing is lost between events. The residual resets when the
-        # hovered cell changes (no cross-cell carry-over).
-        cell = (index.row(), index.column())
-        if getattr(self, "_wheel_accum_cell", None) != cell:
-            self._wheel_accum_cell = cell
-            self._wheel_accum = 0
-        self._wheel_accum += signed
-        steps = int(self._wheel_accum / 120)
-        if not steps:
-            return
-        self._wheel_accum -= steps * 120
-        self.cellWheelScrolled.emit(cell[0], cell[1], int(steps), event.modifiers())
+        self._scrub.emit_wheel(index, event)
 
     def active_editor(self) -> Optional[QtWidgets.QWidget]:
         """Return the currently-open cell editor widget, or ``None``.
@@ -1359,7 +880,7 @@ class TableWidget(
             dot = text.rfind(".")
             select = (0, dot if dot > 0 else len(text))
         self._edit_as_pending = _EditAsRequest((row, column), text, on_commit, select)
-        self._drag_selected_indexes = None  # a drag's propagation is not this
+        self._drag.disarm()  # a drag's propagation is not this
         self.scrollToItem(item)
         self.editItem(item)
         # The editor took the request as it opened; with none open, nothing will.
@@ -1374,60 +895,12 @@ class TableWidget(
         than on close leaves a reverted edit (Esc) unfilled: Qt commits only
         an accepted one.
         """
-        if self._drag_selected_indexes is None or editor is not self._drag_editor:
-            super().commitData(editor)
-            return
-        # Plain cells, read before the commit: a host that rebuilds the table
-        # on ``cellChanged`` (blendertk's Channels) leaves the current index
-        # and the stored indexes stale after the first write.
-        current = self.currentIndex()
-        source = (current.row(), current.column())
-        targets = [
-            (i.row(), i.column())
-            for i in self._drag_selected_indexes
-            if i.row() != current.row()
-        ]
-        self.editBatchStarted.emit()
-        try:
-            super().commitData(editor)
-            if current.isValid():
-                self._propagate_drag_edit(source, targets)
-        finally:
-            # One fill per drag edit: the editor's focus-out after Enter
-            # commits again.
-            self._drag_selected_indexes = self._drag_editor = None
-            self.editBatchFinished.emit()
+        self._drag.commit(editor, super().commitData)
 
     def closeEditor(self, editor, hint):
         """End a drag edit, committed or reverted."""
         super().closeEditor(editor, hint)
-        self._drag_selected_indexes = self._drag_editor = None
-
-    def _propagate_drag_edit(self, source, targets):
-        """Copy the edited cell's value to every other drag-selected cell.
-
-        Parameters:
-            source (tuple[int, int]): The edited cell's ``(row, column)``.
-            targets (list[tuple[int, int]]): The cells to fill.  Cells, not
-                items: each write may make the host rebuild the table.
-        """
-        edited_item = self.item(*source)
-        if not edited_item:
-            return
-
-        new_text = edited_item.text()
-        new_data = edited_item.data(QtCore.Qt.UserRole)
-
-        for row, col in targets:
-            target = self.item(row, col)
-            if target:
-                target.setText(new_text)
-                if new_data is not None:
-                    target = self.item(row, col)  # rebuilt on the text write?
-                    if target:
-                        target.setData(QtCore.Qt.UserRole, new_data)
-
-        self.apply_formatting()
+        self._drag.disarm()
 
     def selectionCommand(self, index, event=None):
         """Optionally restrict selection changes."""
@@ -1471,14 +944,7 @@ class TableWidget(
             column: The column index.
             action: Function receiving (row, col).
         """
-        self._column_click_actions[column] = action
-
-    def _on_cell_clicked(self, row, col):
-        """Handle cell clicks and dispatch to registered actions."""
-        if self._suppress_click_action:
-            return
-        if col in self._column_click_actions:
-            self._column_click_actions[col](row, col)
+        self._clicks.click_actions[column] = action
 
     def set_left_click_select_only(self, enabled: bool):
         """Toggle whether non-left clicks can change selection."""
@@ -1518,16 +984,6 @@ class TableWidget(
     def set_selection_mode(self, mode_str):
         """Change the selection mode after initialization."""
         self._set_selection_mode(mode_str)
-
-    def _show_context_menu(self, position):
-        """Show the context menu at the given position."""
-        # Only show if menu exists and has items (avoid creating empty menu)
-        if self.has_menu and self.menu.contains_items:
-            self.context_menu_about_to_show.emit()
-            # Set the position before showing
-            global_pos = self.mapToGlobal(position)
-            self.menu.position = global_pos
-            self.menu.show()
 
     def item_data(self, row: int, column: int):
         item = self.item(row, column)
@@ -2016,117 +1472,32 @@ class TableWidget(
         pass_widget: bool = False,
     ):
         """Attach a context-menu item to a callable that receives selection data."""
-
-        if not object_name:
-            raise ValueError("object_name is required")
-        if not callable(handler):
-            raise TypeError("handler must be callable")
-
-        normalized = self._normalize_column_targets(columns)
-        self._menu_action_registry[object_name] = {
-            "handler": handler,
-            "columns": normalized,
-            "include_current": bool(include_current),
-            "allow_empty": bool(allow_empty),
-            "transform": transform,
-            "pass_widget": bool(pass_widget),
-        }
-        self._ensure_menu_dispatch_hook()
+        self._context_menu.register(
+            object_name,
+            handler,
+            columns,
+            include_current,
+            allow_empty,
+            transform,
+            pass_widget,
+        )
 
     def unregister_menu_action(self, object_name: str):
-        self._menu_action_registry.pop(object_name, None)
+        self._context_menu.unregister(object_name)
+
+    def _dispatch_registered_menu_action(self, widget: QtWidgets.QWidget):
+        # The menu's ``on_item_interacted`` slot (see ``_ContextMenu``).
+        self._context_menu.dispatch(widget)
+
+    def _show_context_menu(self, position):
+        # The popup's slot: connected in ``__init__``, and reconnected by a host
+        # that rewires ``customContextMenuRequested`` (tentacle's Channels runs
+        # its own pass first).
+        self._context_menu.show_at(position)
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _ensure_menu_dispatch_hook(self):
-        if self._menu_dispatch_connected:
-            return
-        menu = getattr(self, "menu", None)
-        signal = getattr(menu, "on_item_interacted", None)
-        if signal is None:
-            return
-        signal.connect(self._dispatch_registered_menu_action)
-        self._menu_dispatch_connected = True
-
-    def _dispatch_registered_menu_action(self, widget: QtWidgets.QWidget):
-        if widget is None:
-            return
-        object_name = widget.objectName()
-        if not object_name:
-            return
-        payload = self._menu_action_registry.get(object_name)
-        if not payload:
-            return
-
-        selections = self._build_selection_payload(
-            payload["columns"], payload["include_current"]
-        )
-        if not selections and not payload["allow_empty"]:
-            return
-
-        data = selections
-        transform = payload.get("transform")
-        if transform:
-            data = transform(selections)
-
-        handler = payload["handler"]
-
-        def _call_handler_with_compatible_arity(func, argv):
-            """Call handler with as many args as it can accept.
-
-            Supports legacy handlers that take no args (besides bound self),
-            and newer handlers that accept (data) or (data, widget).
-            """
-
-            try:
-                sig = inspect.signature(func)
-            except (TypeError, ValueError):
-                return func(*argv)
-
-            params = list(sig.parameters.values())
-
-            # If this is an unbound method/function, ignore explicit 'self'
-            if params and params[0].name == "self":
-                params = params[1:]
-
-            has_var_positional = any(
-                p.kind == inspect.Parameter.VAR_POSITIONAL for p in params
-            )
-            if has_var_positional:
-                return func(*argv)
-
-            positional = [
-                p
-                for p in params
-                if p.kind
-                in (
-                    inspect.Parameter.POSITIONAL_ONLY,
-                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                )
-            ]
-            max_positional = len(positional)
-
-            # Try to pass as much as possible, but degrade gracefully.
-            if len(argv) >= 2:
-                if max_positional >= 2:
-                    return func(argv[0], argv[1])
-                if max_positional >= 1:
-                    return func(argv[0])
-                return func()
-
-            if len(argv) == 1:
-                if max_positional >= 1:
-                    return func(argv[0])
-                return func()
-
-            return func()
-
-        if payload["pass_widget"]:
-            _call_handler_with_compatible_arity(handler, (data, widget))
-        else:
-            _call_handler_with_compatible_arity(handler, (data,))
-
     def _normalize_column_targets(
         self,
         columns: Optional[Union[Sequence[Union[int, str]], Dict[str, Union[int, str]]]],

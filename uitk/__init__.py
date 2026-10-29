@@ -348,6 +348,10 @@ MOVED_NAMES = {
     "SwitchboardEditorsMixin": ("uitk.Switchboard", "1.9.0"),
     "SwitchboardStyleMixin": ("uitk.Switchboard", "1.9.0"),
     "SwitchboardNamespaceMixin": ("uitk.Switchboard", "1.9.0"),
+    # TableWidget's single-use mixins: its header sorting is the class's own,
+    # its cell formatting a private collaborator; every method is TableWidget's.
+    "HeaderMixin": ("uitk.TableWidget", "1.9.0"),
+    "CellFormatMixin": ("uitk.TableWidget", "1.9.0"),
 }
 
 bootstrap_package(

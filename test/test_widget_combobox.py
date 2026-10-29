@@ -986,5 +986,139 @@ class TestWidgetComboBoxRowLabels(QtBaseTestCase):
         self.assertEqual(label.toolTip(), "Fail the export above this size.")
 
 
+class TestWidgetComboBoxSurface(QtBaseTestCase):
+    """What the rest of the public surface does: action rows, the current
+    widget, the field key, the actions section's switches and the "Restore
+    Defaults" action -- pinned so the combo's internals can be reorganized
+    behind it."""
+
+    def combo(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        return self.track_widget(WidgetComboBox())
+
+    @staticmethod
+    def section_buttons(combo):
+        last = combo._model.rowCount() - 1
+        inner = combo._row_containers.get(last).property("_embedded_widget")
+        return _LayoutItems.widgets(inner.layout())
+
+    def test_add_widget_action_rows(self):
+        combo = self.combo()
+        fired = []
+        plain = QtWidgets.QAction("Run", combo)
+        plain.triggered.connect(lambda: fired.append("run"))
+        row = combo.addWidgetAction(plain)
+        button = combo.widgetAt(row)
+        self.assertIsInstance(button, QtWidgets.QPushButton)
+        self.assertEqual(button.text(), "Run")
+        self.assertIs(combo.itemData(row), plain)
+        self.assertEqual(combo.itemText(row), "Run")
+        button.click()
+        self.assertEqual(fired, ["run"])
+
+        spin = QtWidgets.QSpinBox()
+        widget_action = QtWidgets.QWidgetAction(combo)
+        widget_action.setDefaultWidget(spin)
+        row = combo.addWidgetAction(widget_action, "Count", select=True)
+        self.assertIs(combo.widgetAt(row), spin)
+        self.assertEqual(combo.currentIndex(), row)
+        self.assertIs(combo.currentWidget(), spin)
+
+    def test_field_key(self):
+        combo = self.combo()
+        named = QtWidgets.QCheckBox()
+        named.setObjectName("chkNamed")
+        bare = QtWidgets.QCheckBox()
+        self.assertEqual(combo.field_key(named), "chkNamed")
+        self.assertIs(combo.field_key(bare), bare)
+
+    def test_actions_remove_and_clear(self):
+        combo = self.combo()
+        combo.add(["one", "two"])
+        combo.actions.add({"A": lambda: None, "B": lambda: None})
+        self.assertEqual(len(combo.actions), 2)
+        self.assertIn("A", combo.actions)
+        self.assertEqual(combo._model.rowCount(), 4, "two rows + separator + buttons")
+        self.assertTrue(combo.actions.remove("A"))
+        self.assertFalse(combo.actions.remove("A"))
+        self.assertEqual([b.text() for b in self.section_buttons(combo)], ["B"])
+        combo.actions.clear()
+        self.assertFalse(combo.actions)
+        self.assertEqual(combo._model.rowCount(), 2)
+        self.assertEqual(combo._action_row_count, 0)
+
+    def test_icon_only_and_no_separator(self):
+        combo = self.combo()
+        combo.add(["one"])
+        combo.actions.add("Edit", lambda: None)
+        combo.show_action_separator = False
+        self.assertFalse(combo.show_action_separator)
+        self.assertEqual(combo._action_row_count, 1)
+        self.assertEqual(combo._model.rowCount(), 2)
+        combo.action_icon_only = True
+        self.assertTrue(combo.action_icon_only)
+        (button,) = self.section_buttons(combo)
+        self.assertEqual(button.text(), "")
+        self.assertEqual(button.toolTip(), "Edit")
+        self.assertEqual((button.width(), button.height()), (24, 24))
+        combo.show_action_separator = True
+        self.assertEqual(combo._action_row_count, 2)
+
+    def test_clear_drops_the_actions_rows_and_their_bindings(self):
+        combo = self.combo()
+        combo.add(["one"])
+        combo.actions.add("Edit", lambda: None)
+        self.assertEqual(len(combo._action_button_conns), 1)
+        combo.clear()
+        self.assertEqual(combo._action_row_count, 0)
+        self.assertEqual(combo._action_button_conns, [])
+        self.assertEqual(combo._model.rowCount(), 0)
+        self.assertEqual(len(combo.actions), 1, "the actions themselves stay")
+
+    def test_restore_defaults_action(self):
+        combo = self.combo()
+        check = QtWidgets.QCheckBox("Flag")
+        check.setChecked(True)
+        spin = QtWidgets.QSpinBox()
+        spin.setValue(3)
+        combo.add([check, spin])
+        self.assertFalse(combo.add_defaults_button)
+        combo.add_defaults_button = True
+        self.assertTrue(combo.add_defaults_button)
+        self.assertIn("Restore Defaults", combo.actions)
+        check.setChecked(False)
+        spin.setValue(9)
+        (button,) = self.section_buttons(combo)
+        button.click()
+        self.assertTrue(check.isChecked())
+        self.assertEqual(spin.value(), 3)
+        combo.add_defaults_button = False
+        self.assertNotIn("Restore Defaults", combo.actions)
+
+    def test_a_snapshot_reads_each_kind_of_value(self):
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        line = QtWidgets.QLineEdit("text")
+        slider = QtWidgets.QSlider()
+        slider.setValue(4)
+        self.assertEqual(WidgetComboBox._snapshot_value(line), ("text", "text"))
+        self.assertEqual(WidgetComboBox._snapshot_value(slider), ("value", 4))
+        self.assertIsNone(WidgetComboBox._snapshot_value(QtWidgets.QLabel()))
+
+    def test_the_namespace_rebuilds_through_the_combo(self):
+        """``actions.add`` reaches ``_rebuild_actions_section`` on the combo,
+        so an override there (a host's, or a test's patch) sees every rebuild."""
+        from unittest import mock
+
+        combo = self.combo()
+        calls = []
+        with mock.patch.object(
+            combo, "_rebuild_actions_section", new=lambda: calls.append(1)
+        ):
+            combo.actions.add("Edit", lambda: None)
+        self.assertEqual(calls, [1])
+
+
 if __name__ == "__main__":
     unittest.main()

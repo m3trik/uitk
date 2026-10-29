@@ -204,10 +204,10 @@ class ColorMappingEditor(QtWidgets.QWidget):
 
     def _add_section_header(self, title: str, row: int, has_pairs: bool) -> int:
         """Insert a section header row spanning all columns."""
-        from uitk.widgets.tableWidget import CellFormatMixin
+        from uitk.widgets.tableWidget import TableWidget
 
         col_count = 4 if has_pairs else 3
-        return CellFormatMixin.add_section_row(
+        return TableWidget.add_section_row(
             self._table, title, row=row, col_count=col_count
         )
 

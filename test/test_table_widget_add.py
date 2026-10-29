@@ -69,7 +69,7 @@ class TestHeaderFormatterColumnRef(QtBaseTestCase):
     """set_header_formatter must key by resolved header text.
 
     Regression: it stored the formatter under the raw ``header`` argument, but
-    _get_formatters looks it up by ``self._header(col)`` (always the header
+    ``_CellFormats.formatters`` looks it up by ``table._header(col)`` (the header
     *text*). An integer column ref (set_header_formatter(1, fmt)) was therefore
     stored under the int key 1 and never matched the text-keyed lookup, so the
     formatter silently never ran.

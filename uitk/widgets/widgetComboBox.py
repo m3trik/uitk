@@ -9,110 +9,12 @@ from qtpy import QtWidgets, QtGui, QtCore
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.switchboard import Signals
 from uitk.widgets.comboBox import ComboBox
-
-
-class _ActionsNamespace:
-    """Lightweight helper surfaced as ``WidgetComboBox.actions``.
-
-    Provides a concise API for managing persistent action buttons that
-    appear below a separator at the bottom of the dropdown.
-
-    Usage::
-
-        combo.actions.add("✏ Rename…", on_rename)
-        combo.actions.add("＋ Add…", on_add)
-        # Or batch via dict / list of tuples:
-        combo.actions.add({
-            "✏ Rename…": on_rename,
-            "＋ Add…": on_add,
-        })
-
-        combo.actions.remove("＋ Add…")
-        combo.actions.clear()
-    """
-
-    __slots__ = ("_combo", "_actions")
-
-    def __init__(self, combo: "WidgetComboBox") -> None:
-        self._combo = combo
-        self._actions: list[QtWidgets.QAction] = []
-
-    # --- Public API ---
-
-    def add(self, label_or_items, callback=None):
-        """Add one or more persistent actions.
-
-        Accepts flexible input forms:
-            add("Label", callback)              — single action
-            add({"Label": callback, ...})       — dict of label→callback
-            add([("Label", callback), ...])     — list of (label, callback) pairs
-
-        Parameters:
-            label_or_items: A string label, a dict mapping labels to callables,
-                or a sequence of (label, callable) pairs.
-            callback: Callable triggered when the action is clicked.
-                Required when *label_or_items* is a string; ignored otherwise.
-
-        Returns:
-            The created QAction (single form) or list of QActions (batch form).
-        """
-        if isinstance(label_or_items, str):
-            action = self._make_action(label_or_items, callback)
-            self._actions.append(action)
-            self._combo._rebuild_actions_section()
-            return action
-
-        pairs = (
-            label_or_items.items()
-            if isinstance(label_or_items, dict)
-            else label_or_items
-        )
-        created = []
-        for label, cb in pairs:
-            action = self._make_action(label, cb)
-            self._actions.append(action)
-            created.append(action)
-        self._combo._rebuild_actions_section()
-        return created
-
-    def remove(self, label: str) -> bool:
-        """Remove the first action matching *label*.
-
-        Returns True if an action was removed, False otherwise.
-        """
-        for i, action in enumerate(self._actions):
-            if action.text() == label:
-                self._actions.pop(i)
-                self._combo._rebuild_actions_section()
-                return True
-        return False
-
-    def clear(self) -> None:
-        """Remove all persistent actions and the separator."""
-        self._actions.clear()
-        self._combo._strip_actions_section()
-
-    # --- Dunder helpers ---
-
-    def __len__(self) -> int:
-        return len(self._actions)
-
-    def __bool__(self) -> bool:
-        return bool(self._actions)
-
-    def __iter__(self):
-        return iter(self._actions)
-
-    def __contains__(self, label: str) -> bool:
-        return any(a.text() == label for a in self._actions)
-
-    # --- Internals ---
-
-    def _make_action(self, label: str, callback) -> QtWidgets.QAction:
-        action = QtWidgets.QAction(label, self._combo)
-        if callback is not None:
-            action.triggered.connect(callback)
-        return action
+from uitk.widgets.widget_combo_box_parts._actions import (
+    _ActionsNamespace,
+    _ActionsSection,
+)
+from uitk.widgets.widget_combo_box_parts._arrow_affordance import _ArrowAffordance
+from uitk.widgets.widget_combo_box_parts._widget_defaults import _WidgetDefaults
 
 
 class _RowHandle:
@@ -144,6 +46,12 @@ class WidgetComboBox(ComboBox):
     Uses QStandardItemModel + QListView instead of the default combo model
     to support setIndexWidget() for embedded widgets.
     """
+
+    # A facade over the rows it embeds: the persistent actions section, the
+    # dropdown affordance and the "Restore Defaults" snapshots are
+    # collaborators in ``widget_combo_box_parts`` (``_ActionsSection``, ``_ArrowAffordance``,
+    # ``_WidgetDefaults``), each owning its state and holding the combo; every
+    # public member stays here.
 
     # Qt Designer widget-box entry.
     designer_spec = {"icon": "list", "object_name": "cmb"}
@@ -205,20 +113,7 @@ class WidgetComboBox(ComboBox):
 
         # Persistent actions section (separator + action buttons at bottom of dropdown)
         self._actions_ns = _ActionsNamespace(self)
-        self._action_row_count: int = 0
-        # Action buttons are laid out in this many columns, filled row-major.
-        # Default 1 = a single vertical stack (back-compat).
-        self._action_columns: int = 1
-        # When True, action buttons show only their icon (no text) and render as
-        # compact square buttons — a toolbar-style row. Default False (text).
-        self._action_icon_only: bool = False
-        # Whether to draw the separator above the actions section. Default True.
-        self._show_action_separator: bool = True
-        # (action, slot) pairs binding each action's ``changed`` signal to its
-        # button's enabled state. Tracked so ``_strip_actions_section`` can
-        # disconnect them and not accumulate dangling connections to deleted
-        # buttons across rebuilds.
-        self._action_button_conns: list = []
+        self._actions_section = _ActionsSection(self)
 
         self.currentIndexChanged.connect(self._on_index_changed)
 
@@ -228,16 +123,11 @@ class WidgetComboBox(ComboBox):
         # a caller opts in via ``arrow_direction`` (chevron) or ``arrow_icon``
         # (custom icon).  ``arrow_alpha`` sets the affordance's opacity.  Size
         # auto-scales with the font.
-        self._arrow_direction: Optional[str] = None
-        self._arrow_icon: Optional[QtGui.QIcon] = None
-        self._arrow_alpha: float = 1.0
+        self._arrow = _ArrowAffordance(self)
 
-        # Snapshots of embedded-widget initial values, keyed by widget id, for
-        # the optional "Restore Defaults" action.  Captured lazily on first
-        # ``_add_widget_item`` so defaults reflect the widget's seeded state.
-        self._widget_defaults: dict[int, tuple] = {}
-        self._add_defaults_button: bool = False
-        self._defaults_action_label: str = "Restore Defaults"
+        # Embedded-widget initial values for the optional "Restore Defaults"
+        # action.
+        self._defaults = _WidgetDefaults(self)
 
     # ------------------------------------------------------------------
     # Deferred index-widget helpers
@@ -329,7 +219,7 @@ class WidgetComboBox(ComboBox):
         # this, an addWidgetItem after actions.add() buries the widget below the
         # action rows — it never gets height-synced and the next actions.add()
         # (via _strip_actions_section) deletes it and orphans the separator.
-        had_actions = self._action_row_count > 0
+        had_actions = self._actions_section.row_count > 0
         if had_actions:
             self._strip_actions_section()
 
@@ -363,22 +253,8 @@ class WidgetComboBox(ComboBox):
     ) -> int:
         """Insert a QWidgetAction (or plain QAction) as a widget row."""
 
-        if isinstance(action, QtWidgets.QWidgetAction):
-            created_widget = action.createWidget(self.view())
-            if created_widget is None:
-                created_widget = action.defaultWidget() or QtWidgets.QPushButton(
-                    action.text(), self.view()
-                )
-            if hasattr(created_widget, "setDefaultAction"):
-                created_widget.setDefaultAction(action)
-        else:
-            created_widget = QtWidgets.QPushButton(self.view())
-            created_widget.setDefault(False)
-            created_widget.setAutoDefault(False)
-            created_widget.setText(action.text())
-            created_widget.clicked.connect(action.trigger)  # type: ignore[attr-defined]
         return self.addWidgetItem(
-            created_widget,
+            self._action_to_widget(action),
             label or action.text(),
             data=action,
             select=select,
@@ -403,7 +279,7 @@ class WidgetComboBox(ComboBox):
         # Drop the widget's captured default so it can't leak across takes and
         # so a later widget that reuses this (freed) id can't inherit a stale,
         # wrong-type snapshot on Restore Defaults.
-        self._widget_defaults.pop(id(widget), None)
+        self._defaults.snapshots.pop(id(widget), None)
 
         if container is not None:
             container.deleteLater()
@@ -491,7 +367,7 @@ class WidgetComboBox(ComboBox):
         they do; a rebuilt registry starts from what the view shows, so it
         keeps the rows other rules had hidden.
         """
-        last = self._model.rowCount() - self._action_row_count
+        last = self._model.rowCount() - self._actions_section.row_count
         rows = [(r, w) for r, w in sorted(self._widget_items.items()) if r < last]
         signature = tuple(id(w) for _r, w in rows)
         if self._fields is not None and signature == self._fields_signature:
@@ -656,7 +532,7 @@ class WidgetComboBox(ComboBox):
         # Action rows live at the tail; iterate everything except those.
         # `_action_row_count` is the count of separator + container rows.
         total = self._model.rowCount()
-        last_tracked = total - self._action_row_count
+        last_tracked = total - self._actions_section.row_count
         for r in range(last_tracked):
             item = self._model.item(r)
             if item is None or self._is_separator_row(r):
@@ -678,7 +554,7 @@ class WidgetComboBox(ComboBox):
         tight so ``item_spacing`` is the only deliberate gap.
         """
         total = self._model.rowCount()
-        last_tracked = total - self._action_row_count
+        last_tracked = total - self._actions_section.row_count
         tallest = 0
         for r in range(last_tracked):
             widget = self._widget_items.get(r)
@@ -764,14 +640,11 @@ class WidgetComboBox(ComboBox):
         into a 2x2 grid, etc. Setting it re-lays out the actions section
         immediately.
         """
-        return self._action_columns
+        return self._actions_section.columns
 
     @action_columns.setter
     def action_columns(self, value: int) -> None:
-        value = max(1, int(value))
-        if value != self._action_columns:
-            self._action_columns = value
-            self._rebuild_actions_section()
+        self._actions_section.set_columns(value)
 
     @property
     def action_icon_only(self) -> bool:
@@ -781,195 +654,35 @@ class WidgetComboBox(ComboBox):
         buttons; the action text is still used as each button's tooltip. Default
         ``False`` (icon + centered text). Setting it re-lays out the section.
         """
-        return self._action_icon_only
+        return self._actions_section.icon_only
 
     @action_icon_only.setter
     def action_icon_only(self, value: bool) -> None:
-        value = bool(value)
-        if value != self._action_icon_only:
-            self._action_icon_only = value
-            self._rebuild_actions_section()
+        self._actions_section.set_icon_only(value)
 
     @property
     def show_action_separator(self) -> bool:
         """Whether a separator is drawn above the actions section (default True)."""
-        return self._show_action_separator
+        return self._actions_section.show_separator
 
     @show_action_separator.setter
     def show_action_separator(self, value: bool) -> None:
-        value = bool(value)
-        if value != self._show_action_separator:
-            self._show_action_separator = value
-            self._rebuild_actions_section()
+        self._actions_section.set_show_separator(value)
 
-    def _disconnect_action_buttons(self) -> None:
-        """Drop the action.changed→button bindings from the last rebuild."""
-        for action, slot in self._action_button_conns:
-            try:
-                action.changed.disconnect(slot)
-            except (RuntimeError, TypeError):
-                pass  # action deleted or already disconnected
-        self._action_button_conns.clear()
-
-    def _bind_button_to_action(
-        self, btn: QtWidgets.QPushButton, action: QtWidgets.QAction
-    ) -> None:
-        """Mirror *action*'s enabled state onto *btn*, now and on change.
-
-        Lets a caller ``action.setEnabled(False)`` to grey out the matching
-        button (e.g. disabling Rename/Delete for a read-only built-in preset)
-        without reaching into the popup's internal button widgets.
-        """
-        btn.setEnabled(action.isEnabled())
-
-        def _sync():
-            try:
-                btn.setEnabled(action.isEnabled())
-            except RuntimeError:
-                pass  # button deleted
-
-        action.changed.connect(_sync)
-        self._action_button_conns.append((action, _sync))
-
+    # The section's rows and bindings, as the namespace and hosts reach them.
     def _strip_actions_section(self) -> None:
-        """Remove existing action rows (separator + buttons) from the bottom."""
-        self._disconnect_action_buttons()
-        if self._action_row_count == 0:
-            return
-
-        total = self._model.rowCount()
-        for row in range(total - 1, total - self._action_row_count - 1, -1):
-            if row < 0:
-                break
-            container = self._row_containers.pop(row, None)
-            self._widget_items.pop(row, None)
-            if container is not None:
-                container.deleteLater()
-            self._model.removeRow(row)
-
-        remaining = self._model.rowCount()
-        self._pending_index_widgets = [
-            (r, c) for r, c in self._pending_index_widgets if r < remaining
-        ]
-        self._action_row_count = 0
-
-    # Square size (px) of an icon-only action button.
-    _ACTION_ICON_BUTTON_SIZE = 24
+        self._actions_section.strip()
 
     def _rebuild_actions_section(self) -> None:
-        """Rebuild the (optional separator +) action buttons at the bottom.
+        self._actions_section.rebuild()
 
-        Buttons are grouped inside a single container widget (zero margins)
-        added as one model row. They are arranged in :attr:`action_columns`
-        columns, filled row-major, so e.g. four actions with
-        ``action_columns == 2`` form a tidy 2x2 grid (or a single row when
-        ``action_columns`` equals the action count). When
-        :attr:`action_icon_only` is set the buttons are compact, icon-only
-        squares (text → tooltip) for a toolbar-style row; otherwise they show a
-        centered icon + text and expand to fill. The separator above the section
-        is drawn unless :attr:`show_action_separator` is False. Each button
-        mirrors its QAction's enabled state via :meth:`_bind_button_to_action`.
-        """
-        self._strip_actions_section()
-        if not self._actions_ns._actions:
-            return
+    @property
+    def _action_row_count(self) -> int:
+        return self._actions_section.row_count
 
-        row_count = 0
-        icon_only = self._action_icon_only
-
-        if self._show_action_separator:
-            from uitk.widgets.separator import Separator
-
-            # Default Separator HLine is too subtle against the popup background —
-            # strengthen it with a palette-aware border-top so the actions section
-            # reads as a distinct group from the items above.  Uses palette(text)
-            # so it stays visible on dark themes where palette(mid) blends in.
-            sep = Separator()
-            sep.setFrameShape(QtWidgets.QFrame.NoFrame)
-            sep.setFixedHeight(7)
-            sep.setStyleSheet(
-                "QFrame {"
-                " background: transparent;"
-                " border: none;"
-                " border-top: 1px solid palette(text);"
-                " margin: 3px 6px;"
-                "}"
-            )
-            sep_row = self._add_widget_item(
-                sep, "", None, ascending=False, track_height=False
-            )
-            # A NoFrame/HLine separator advertises an invalid sizeHint height, so
-            # _apply_uniform_height can't size its row and the view falls back to
-            # the delegate's font-based default — taller than the 7px line, which
-            # renders as dead space above and below it (and between the separator
-            # and the buttons). Pin the row to the separator's own fixed height.
-            sep_item = self._model.item(sep_row)
-            if sep_item is not None:
-                sep_item.setSizeHint(QtCore.QSize(0, sep.minimumHeight()))
-            row_count += 1
-
-        # Build a single container holding all action buttons in a grid.
-        ncols = max(1, self._action_columns)
-        container = QtWidgets.QWidget(self.view())
-        layout = QtWidgets.QGridLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setHorizontalSpacing(2)
-        layout.setVerticalSpacing(1)
-
-        max_btn_width = 0
-        for i, action in enumerate(self._actions_ns._actions):
-            btn = QtWidgets.QPushButton(container)
-            if action.icon() and not action.icon().isNull():
-                btn.setIcon(action.icon())
-            # Text becomes the tooltip in icon-only mode so the action is still
-            # discoverable without a visible label; the accessible name keeps it
-            # identifiable to screen readers (and tests) in both modes.
-            btn.setToolTip(action.toolTip() or action.text())
-            TooltipPresenter.manage(btn)
-            btn.setAccessibleName(action.text())
-            if icon_only:
-                side = self._ACTION_ICON_BUTTON_SIZE
-                btn.setIconSize(QtCore.QSize(side - 8, side - 8))
-                btn.setFixedSize(QtCore.QSize(side, side))
-            else:
-                btn.setText(action.text())
-                btn.setSizePolicy(
-                    QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-                )
-                btn.setStyleSheet("text-align: center;")
-            btn.setDefault(False)
-            btn.setAutoDefault(False)
-            btn.setProperty("class", "combobox-action")
-            btn.setCursor(QtCore.Qt.PointingHandCursor)
-            btn.clicked.connect(action.trigger)
-            btn.clicked.connect(self.hidePopup)
-            self._bind_button_to_action(btn, action)
-            layout.addWidget(btn, i // ncols, i % ncols)
-            # Track widest button via sizeHint (reliable for QPushButton).
-            w = btn.sizeHint().width()
-            if w > max_btn_width:
-                max_btn_width = w
-
-        # Equal-width columns so the grid reads as aligned pairs (and so
-        # compact icon buttons distribute evenly across the row).
-        for c in range(ncols):
-            layout.setColumnStretch(c, 1)
-
-        # Force the container to adopt a valid size before it's embedded.
-        container.setMinimumWidth(
-            max_btn_width * ncols + layout.horizontalSpacing() * (ncols - 1)
-        )
-        container.adjustSize()
-
-        row = self._add_widget_item(
-            container, "", None, ascending=False, track_height=False
-        )
-        item = self._model.item(row)
-        if item:
-            item.setFlags(item.flags() & ~QtCore.Qt.ItemIsSelectable)
-        row_count += 1
-
-        self._action_row_count = row_count
+    @property
+    def _action_button_conns(self) -> list:
+        return self._actions_section.button_conns
 
     def showPopup(self) -> None:
         """Override to expand the popup to the widest embedded widget."""
@@ -1013,10 +726,6 @@ class WidgetComboBox(ComboBox):
                     geo.setWidth(min_w + 4)
                     popup.setGeometry(geo)
 
-    # The unit vector each direction's chevron apex points along.
-    _ARROW_APEX = {"down": (0, 1), "up": (0, -1), "left": (-1, 0), "right": (1, 0)}
-    _ARROW_DIRECTIONS = (None, *_ARROW_APEX)
-
     @property
     def arrow_direction(self) -> Optional[str]:
         """Direction of the dropdown-affordance chevron drawn after the text.
@@ -1027,18 +736,11 @@ class WidgetComboBox(ComboBox):
         :attr:`arrow_icon` is set (the icon takes precedence).  Chevron size,
         stroke and gap auto-scale with the current font.
         """
-        return self._arrow_direction
+        return self._arrow.direction
 
     @arrow_direction.setter
     def arrow_direction(self, value: Optional[str]) -> None:
-        if value not in self._ARROW_DIRECTIONS:
-            raise ValueError(
-                f"arrow_direction must be one of {self._ARROW_DIRECTIONS}, got {value!r}"
-            )
-        if value == self._arrow_direction:
-            return
-        self._arrow_direction = value
-        self.update()
+        self._arrow.set_direction(value)
 
     @property
     def arrow_icon(self) -> Optional[QtGui.QIcon]:
@@ -1050,55 +752,22 @@ class WidgetComboBox(ComboBox):
         after the text regardless of ``arrow_direction``, at a font-scaled
         size and at :attr:`arrow_alpha` opacity.
         """
-        return self._arrow_icon
+        return self._arrow.icon
 
     @arrow_icon.setter
     def arrow_icon(self, icon: Optional[QtGui.QIcon]) -> None:
-        if icon is not None and not isinstance(icon, QtGui.QIcon):
-            raise TypeError(
-                f"arrow_icon must be a QIcon or None, got {type(icon).__name__}"
-            )
-        self._arrow_icon = icon
-        self.update()
+        self._arrow.set_icon(icon)
 
     @property
     def arrow_alpha(self) -> float:
         """Opacity (``0.0``–``1.0``) of the dropdown affordance — the chevron
         or the custom :attr:`arrow_icon`.  Default ``1.0`` (fully opaque);
         values are clamped to the valid range."""
-        return self._arrow_alpha
+        return self._arrow.alpha
 
     @arrow_alpha.setter
     def arrow_alpha(self, value: float) -> None:
-        value = max(0.0, min(1.0, float(value)))
-        if value == self._arrow_alpha:
-            return
-        self._arrow_alpha = value
-        self.update()
-
-    # Chevron extents as fractions of the font's ascent: 0.8 em across, 0.4 em
-    # deep -- the 2:1 of the icon set's ``chevron_down``.
-    _CHEVRON_HALF_SPAN = 0.4
-    _CHEVRON_HALF_DEPTH = 0.2
-
-    def _build_arrow_chevron(self, direction: str, em: float) -> QtGui.QPolygonF:
-        """Build the open chevron polyline (arm, apex, arm) centred on the origin.
-
-        ``em`` is a font-derived reference size (``fontMetrics.ascent``), so
-        the chevron scales with the font.  The apex points *direction*; the
-        arms spread across the perpendicular axis.
-        """
-        span = em * self._CHEVRON_HALF_SPAN
-        depth = em * self._CHEVRON_HALF_DEPTH
-        ax, ay = self._ARROW_APEX[direction]
-        px, py = abs(ay), abs(ax)  # the perpendicular the arms spread along
-        return QtGui.QPolygonF(
-            [
-                QtCore.QPointF(-ax * depth - px * span, -ay * depth - py * span),
-                QtCore.QPointF(ax * depth, ay * depth),
-                QtCore.QPointF(-ax * depth + px * span, -ay * depth + py * span),
-            ]
-        )
+        self._arrow.set_alpha(value)
 
     def paintEvent(self, event) -> None:
         """Paint the base combo, then overlay the optional dropdown affordance
@@ -1111,84 +780,7 @@ class WidgetComboBox(ComboBox):
         neither is set (the default).
         """
         super().paintEvent(event)
-
-        direction = self._arrow_direction
-        icon = self._arrow_icon
-        has_icon = icon is not None and not icon.isNull()
-        if direction is None and not has_icon:
-            return
-
-        # The text AlignedComboBox.paintEvent draws: the header when no item
-        # is current, otherwise the current item's text with its display-only
-        # adornments (prefix and " *" suffix), so the arrow follows all of it.
-        if self.currentIndex() == -1 and getattr(self, "header_text", None):
-            text = self.header_text
-            alignment = getattr(self, "header_alignment", QtCore.Qt.AlignLeft)
-        else:
-            text = self.format_current_display_text(self.currentText() or "")
-            alignment = QtCore.Qt.AlignLeft
-
-        if not text:
-            return
-
-        # Edit-field rect via the style → honours theme padding / frame.
-        opt = QtWidgets.QStyleOptionComboBox()
-        self.initStyleOption(opt)
-        field_rect = self.style().subControlRect(
-            QtWidgets.QStyle.CC_ComboBox,
-            opt,
-            QtWidgets.QStyle.SC_ComboBoxEditField,
-            self,
-        )
-
-        fm = QtGui.QFontMetrics(self.font())
-        text_width = fm.horizontalAdvance(text)
-        em = fm.ascent()  # font-relative sizing: bigger font, bigger glyph + gap
-
-        if has_icon:
-            # A square a touch larger than the chevron's span, so a glyph
-            # reads at a comparable weight.
-            side = max(8, int(round(em * 1.2)))
-            half_width = side / 2.0
-        else:
-            chevron = self._build_arrow_chevron(direction, em)
-            half_width = chevron.boundingRect().width() / 2.0
-        cx = (
-            self._compute_text_end_x(field_rect, text_width, alignment)
-            + em * 0.5  # the gap after the text, ~6 px at a 12 px ascent
-            + half_width
-        )
-        cy = field_rect.center().y() + 1
-
-        painter = QtGui.QPainter(self)
-        try:
-            painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            painter.setOpacity(self._arrow_alpha)
-
-            if has_icon:
-                # Honour the disabled state the same way the chevron dims via
-                # QPalette.Disabled.
-                mode = QtGui.QIcon.Normal if self.isEnabled() else QtGui.QIcon.Disabled
-                pixmap = icon.pixmap(QtCore.QSize(side, side), mode)
-                painter.drawPixmap(
-                    QtCore.QPointF(cx - side / 2.0, cy - side / 2.0), pixmap
-                )
-            else:
-                color = self.palette().color(
-                    QtGui.QPalette.Disabled
-                    if not self.isEnabled()
-                    else QtGui.QPalette.Active,
-                    QtGui.QPalette.Text,
-                )
-                # The icon set's stroke: 1.5 px at a 12 px ascent, round ends.
-                pen = QtGui.QPen(color, max(1.0, em * 0.125))
-                pen.setCapStyle(QtCore.Qt.RoundCap)
-                pen.setJoinStyle(QtCore.Qt.RoundJoin)
-                painter.setPen(pen)
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawPolyline(chevron.translated(cx, cy))
-        finally:
-            painter.end()
+        self._arrow.paint()
 
     @staticmethod
     def _compute_text_end_x(
@@ -1463,7 +1055,7 @@ class WidgetComboBox(ComboBox):
 
         self._widget_items[row] = widget
         self._row_containers[row] = container
-        self._capture_widget_default(widget)
+        self._defaults.capture(widget)
         return row
 
     # ------------------------------------------------------------------
@@ -1479,74 +1071,18 @@ class WidgetComboBox(ComboBox):
         state BEFORE calling ``add()`` if you want it preserved as the
         reset target.
         """
-        return self._add_defaults_button
+        return self._defaults.add_button
 
     @add_defaults_button.setter
     def add_defaults_button(self, value: bool) -> None:
-        value = bool(value)
-        if value == self._add_defaults_button:
-            return
-        self._add_defaults_button = value
-        if value:
-            if self._defaults_action_label not in self.actions:
-                self.actions.add(
-                    self._defaults_action_label, self._restore_widget_defaults
-                )
-        else:
-            self.actions.remove(self._defaults_action_label)
+        self._defaults.set_add_button(value)
 
-    def _capture_widget_default(self, widget: QtWidgets.QWidget) -> None:
-        """Snapshot *widget*'s current value for later defaults reset.
+    # The snapshots, as tests and value readers reach them on the combo.
+    _snapshot_value = staticmethod(_WidgetDefaults.snapshot_value)
 
-        Idempotent — the first captured value wins, so callers can re-add
-        items without losing the original default.
-        """
-        wid = id(widget)
-        if wid in self._widget_defaults:
-            return
-        snapshot = self._snapshot_value(widget)
-        if snapshot is not None:
-            self._widget_defaults[wid] = snapshot
-
-    @staticmethod
-    def _snapshot_value(widget: QtWidgets.QWidget) -> Optional[tuple]:
-        """Return a (kind, value) tuple describing the widget's current value,
-        or None if the widget has no resettable value.
-        """
-        if isinstance(widget, QtWidgets.QCheckBox):
-            return ("checked", widget.isChecked())
-        if isinstance(widget, QtWidgets.QComboBox):
-            from uitk.managers.value_manager import ValueManager
-
-            return ("currentIndex", ValueManager.combo_value(widget, "index"))
-        if isinstance(widget, QtWidgets.QLineEdit):
-            return ("text", widget.text())
-        if isinstance(widget, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
-            return ("value", widget.value())
-        if isinstance(widget, (QtWidgets.QSlider, QtWidgets.QDial)):
-            return ("value", widget.value())
-        if isinstance(widget, QtWidgets.QRadioButton):
-            return ("checked", widget.isChecked())
-        return None
-
-    @staticmethod
-    def _apply_snapshot(widget: QtWidgets.QWidget, snapshot: tuple) -> None:
-        kind, value = snapshot
-        if kind == "checked":
-            widget.setChecked(value)
-        elif kind == "currentIndex":
-            widget.setCurrentIndex(value)
-        elif kind == "text":
-            widget.setText(value)
-        elif kind == "value":
-            widget.setValue(value)
-
-    def _restore_widget_defaults(self) -> None:
-        """Reset every embedded option widget to its captured default."""
-        for widget in self._widget_items.values():
-            snapshot = self._widget_defaults.get(id(widget))
-            if snapshot is not None:
-                self._apply_snapshot(widget, snapshot)
+    @property
+    def _widget_defaults(self) -> dict:
+        return self._defaults.snapshots
 
     def _infer_label(self, widget: QtWidgets.QWidget, fallback: Optional[str]) -> str:
         """Infer a label from a widget."""
@@ -1621,15 +1157,14 @@ class WidgetComboBox(ComboBox):
     # Overrides
     # ------------------------------------------------------------------
     def clear(self) -> None:  # type: ignore[override]
-        self._disconnect_action_buttons()
+        self._actions_section.reset()
         for container in self._row_containers.values():
             if container:
                 container.deleteLater()
         self._row_containers.clear()
         self._widget_items.clear()
-        self._widget_defaults.clear()
+        self._defaults.snapshots.clear()
         self._pending_index_widgets.clear()
-        self._action_row_count = 0
         self._uniform_item_height = 0
         super().clear()
 
