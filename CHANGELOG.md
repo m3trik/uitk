@@ -1,6 +1,8 @@
 # uitk — Changelog
 
 ## 2026
+- **2026-10-28 -- New `PanelRenames.carry` (`managers/panel_renames.py`): a renamed or merged panel keeps its users' saved values.** Once per host it copies each former panel's widget states (their saved defaults included), its own keys, shortcut overrides (re-keyed to the new Slots class; the current class spelling wins over older ones) and window persistence into the panel that took its name. The new panel's own value wins, each former panel is marked as soon as it is carried, and a failure never reaches the launch. New `StateManager.rename_widget_key(key, renames)` is the one reader of the key format (`<name>/<signal>`, `defaults/<name>/<signal>`; `custom/` keys unchanged).
+  - Test(s): `test_panel_renames.py`, red first for the saved-default, legacy-shortcut and partial-failure cases.
 - **2026-10-28 -- Fix: `Switchboard(tag_delimiter=...)` reaches every tag and name method (`switchboard/names.py`).** Only `get_ui_relatives` honored it; `get_tags_from_name`, `edit_tags`, `filter_tags`, `get_unknown_tags` and `get_base_name` split on `'#'` whatever was passed.
   - Test(s): `test_switchboard.py::TestTagDelimiterOverride`, red first.
 - **2026-10-28 -- Deprecated: `Switchboard(ui_name_delimiters=...)` and `Switchboard.UI_NAME_DELIMITER`, removed in 1.10.0 (`switchboard/_core.py`).** Nothing ever read them. The keyword warns and is ignored; a positional argument still binds.

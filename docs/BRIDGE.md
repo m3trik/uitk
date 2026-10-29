@@ -25,7 +25,7 @@ The subsystem is six public modules under [`uitk/bridge/`](../uitk/bridge/), all
 
 ### The panel `.ui` contract
 
-`BridgeSlotsBase.__init__` resolves its panel via `self.sb.loaded_ui.<UI_NAME>` and injects rows into a fixed set of widgets the `.ui` file must provide (verified against tentacle's `ui/tools/blender_bridge.ui`):
+`BridgeSlotsBase.__init__` resolves its panel via `self.sb.loaded_ui.<UI_NAME>` and injects rows into a fixed set of widgets the `.ui` file must provide (verified against tentacle's `ui/tools/dcc_bridge.ui`):
 
 - `grp_process` — the group box whose layout receives the injected Output Dir row, "Parameters" group, and preset controls.
 - `cmb000` — the template combo (populated by the `cmb000_init` Switchboard hook).
@@ -67,14 +67,14 @@ Optional overrides:
 
 Init order in `__init__(switchboard)`: Output Dir row (if `REQUIRE_OUTPUT_DIR`) → parameter widgets → `action`-button wiring → preset controls → enablement-refresh wiring → log redirect + `anchorClicked` wiring → `STARTUP_INFO` → docs link (`DOCS_URL`). `cmb000_init` then populates the template combo (and builds its context menu) and fires the first `_on_template_changed`, which shows only the rows the template references, re-applies row enablement, re-points the preset dir (widget-state mode only), and logs the template's description.
 
-A concrete walk-through, from tentacle's Blender Bridge (`slots/tools/blender_bridge.py`, the Maya → Blender hand-off): `BlenderBridgeSlots` subclasses tentacle's `HostBridge` (a thin `BridgeSlotsBase` subclass that reaches the host toolkit for the engine, the `SCOPE` resolution and the presets folder), sets `UI_NAME` / `LOG_TAG` / `REQUIRE_OUTPUT_DIR = False` / `HELP_SPEC`, names its engine (`mayatk.BlenderBridge`, whose `params_registry()` and `TEMPLATE_DIR` the base serves as `params_module` and `template_dir`), and implements `b000` — which collects the parameter values, resolves the export set from the shared `SCOPE` parameter via `scoped_objects()`, reads the active `(template, mode)` pair via `_selected_template_mode()`, and calls:
+A concrete walk-through, from tentacle's DCC Bridge (`slots/tools/dcc_bridge.py`, the hand-off to the other DCC: the Blender Bridge in Maya, the Maya Bridge in Blender): `DccBridgeSlots` subclasses tentacle's `HostBridge` (a thin `BridgeSlotsBase` subclass that reaches the host toolkit for the engine, the `SCOPE` resolution and the presets folder), sets `UI_NAME` / `LOG_TAG` / `REQUIRE_OUTPUT_DIR = False`, computes its help (`help_spec()`, naming the target app), names its engine (the host's bridge to the other app, `EnvUtils.foreign_scene_bridge()`: in Maya `mayatk.BlenderBridge`, whose `params_registry()` and `TEMPLATE_DIR` the base serves as `params_module` and `template_dir`), and implements `b000` — which collects the parameter values, resolves the export set from the shared `SCOPE` parameter via `scoped_objects()`, reads the active `(template, mode)` pair via `_selected_template_mode()`, and calls:
 
 ```python
-# tentacle/slots/tools/blender_bridge.py — b000 (abridged)
+# tentacle/slots/tools/dcc_bridge.py — b000 (abridged)
 params = self.collect_param_values()
 selection = self.scoped_objects(params)   # SCOPE → Maya objects; logs when empty
 template, mode = self._selected_template_mode()
-with self.sb.progress(text=f"Working: Send to Blender ({template})"):
+with self.sb.progress(text=f"Working: Send to {self.target_app} ({template})"):
     self.bridge.send(
         objects=selection, template=template, mode=mode, params=params
     )
@@ -215,7 +215,7 @@ Every parameter widget's change signal (via `KindFactory.connect_changed`) re-ev
 5. **Slots class** — subclass `BridgeSlotsBase` (or a host-flavored base like tentacle's `HostBridge`) and fill in the contract:
 
 ```python
-# Modeled on tentacle's slots/tools/blender_bridge.py
+# Modeled on tentacle's slots/tools/dcc_bridge.py
 class MyBridgeSlots(BridgeSlotsBase):
     UI_NAME = "my_bridge"
     PRESETS_ROOT = Path("mytool/my_bridge")
