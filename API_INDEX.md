@@ -24,8 +24,8 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: referenced_keys, defaults, render_context, affix_parts
 
 ### `bridge/slots.py` — Generic DCC-bridge slot base class.
-- `class BridgeSlotsBase(_BridgeSlotsInternal)`
-  - methods: params_module, template_dir, make_bridge, list_template_modes, b000, optional_packages, optional_package_available, ensure_optional_package, resolve_scope_objects, empty_scope_message, scoped_objects, bridge, peek_bridge, panel_log, default_output_dir, ensure_bridge_temp_dir, resolved_output_dir, require_output_dir, format_param_tooltip, live_param_tooltips, live_param_tooltip_blocks, set_param_enabled, param_supersessions, collect_param_values, make_preset_store, select_initial_template_index, template_description, cmb000_init, refresh_templates, open_templates_folder, register_log_link_handler, docs_url, clear_log, header_menu_items, help_spec, header_init, reveal_folder
+- `class ParamPanelSlots(_ParamPanelSlotsInternal)`
+  - methods: params_module, template_dir, make_bridge, list_template_modes, b000, optional_packages, optional_package_available, ensure_optional_package, resolve_scope_objects, empty_scope_message, scoped_objects, bridge, peek_bridge, panel_log, default_output_dir, ensure_bridge_temp_dir, resolved_output_dir, require_output_dir, format_param_tooltip, live_param_tooltips, live_param_tooltip_blocks, set_param_enabled, param_supersessions, add_param_rows, collect_param_values, make_preset_store, select_initial_template_index, template_description, cmb000_init, refresh_templates, open_templates_folder, register_log_link_handler, docs_url, clear_log, header_menu_items, help_spec, header_init, reveal_folder
 
 ### `bridge/spec.py` — Kind-handler registry for parameterised forms (the Qt half of the contract).
 - constants: INT_MIN, INT_MAX, FLOAT_MIN, FLOAT_MAX
@@ -140,7 +140,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 ### `managers/preset_manager.py`
 - constants: PRESETS_ROOT_ENV_VAR
 - `class PresetManager(_PresetWidgetScope, _PresetRootMigration, pythontk.LoggingMixin)`
-  - methods: from_widgets, setup, preset_dir, builtin_dir, on_change, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, is_read_only, is_locked, key, notify, delete, rename, exists, read, refresh_combo, make_preset_combo, wire_combo, get_presets_root, scope, exclude, include, QStandardPaths_writableLocation, QStandardPaths_genericConfigLocation
+  - methods: from_widgets, setup, preset_dir, builtin_dir, on_change, active_preset, is_modified, on_modified_changed, refresh_modified_state, connect_value_widgets, save, load, list, source, is_read_only, is_locked, key, notify, delete, rename, exists, read, refresh_combo, make_preset_combo, wire_combo, carry_presets, get_presets_root, scope, exclude, include, QStandardPaths_writableLocation, QStandardPaths_genericConfigLocation
 
 ### `managers/preview_controller.py` — A live preview bound to its panel's widgets, over the host's scene session.
 - `class PreviewSession(Protocol)`
@@ -193,7 +193,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `switchboard/_core.py`
 - `class Switchboard(QtCore.QObject, pythontk.HelpMixin, pythontk.LoggingMixin)`
-  - methods: register_handler, iter_handler_entries, active_ui, current_ui, prev_ui, prev_slot, visible_windows, register, load_all_ui, load_ui, add_ui, get_ui, get_ui_relatives, find_ui_filename, save_ui_tags, ui_history, show_prev_ui, repeat_last, style, editors, get_cursor_offset_from_center, center_widget, invert_on_modifier, simulate_key_press, defer_with_timer, gc_protect, convert_to_legal_name, get_slot_class_names, get_slot_file_names, get_base_name, get_tags_from_name, has_tags, edit_tags, filter_tags, get_unknown_tags, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, enable_when, show_when, text_from, value_from, refresh_dependencies, busy_cursor, progress, progress_adapter, confirm, message_box, text_view_dialog, preview_dialog, data_view_dialog, save_data_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, modal_menu, unmet_policy, gate, recheck_gates, is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at, register_slots_shortcuts, widget_has_shortcut, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut, dispose_shortcuts, register_command, unregister_command, get_command_registry, set_command_shortcut, set_binding_hidden, set_binding_editable, get_default_signals, get_available_signals, slots_instantiated, get_slots_instance, init_slot, call_slot, get_slot, get_slot_from_widget, mark_missing_slot, notify_missing_slot, connect_slot, slot_history
+  - methods: register_handler, iter_handler_entries, active_ui, current_ui, prev_ui, prev_slot, visible_windows, register, load_all_ui, load_ui, register_ui, add_ui, get_ui, get_ui_relatives, find_ui_filename, save_ui_tags, ui_history, show_prev_ui, repeat_last, style, editors, get_cursor_offset_from_center, center_widget, invert_on_modifier, simulate_key_press, defer_with_timer, gc_protect, convert_to_legal_name, get_slot_class_names, get_slot_file_names, get_base_name, get_tags_from_name, has_tags, edit_tags, filter_tags, get_unknown_tags, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, enable_when, show_when, text_from, value_from, refresh_dependencies, busy_cursor, progress, progress_adapter, confirm, message_box, text_view_dialog, preview_dialog, data_view_dialog, save_data_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, modal_menu, unmet_policy, gate, recheck_gates, is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at, register_slots_shortcuts, widget_has_shortcut, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut, dispose_shortcuts, register_command, unregister_command, get_command_registry, set_command_shortcut, set_binding_hidden, set_binding_editable, get_default_signals, get_available_signals, slots_instantiated, get_slots_instance, init_slot, call_slot, get_slot, get_slot_from_widget, mark_missing_slot, notify_missing_slot, connect_slot, slot_history
 
 ### `switchboard/history.py` — Ordered, capped history with optional weak storage and key-based filtering.
 - `class History`
@@ -538,6 +538,8 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: is_compatible, widget, create_widget, setup_widget, on_wrap, sibling_options, restore_default, save_default, clear_saved_default, refresh, set_wrapped_widget
 - `class ButtonOption(BaseOption, pythontk.LoggingMixin)`
   - methods: create_widget, setup_widget, block_next_click, set_checked
+- `class HiddenWhileEmptyMixin`
+  - methods: setup_widget, eventFilter, set_wrapped_widget
 - `class GatingMixin`
 
 ### `widgets/optionBox/options/_persistence.py` — Shared persistence wiring for OptionBox plugins.
@@ -545,7 +547,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: host_suffix_for, settings_for
 
 ### `widgets/optionBox/options/action.py` — Action option for OptionBox - provides customizable action buttons.
-- `class ActionOption(PersistedOption, ButtonOption)`
+- `class ActionOption(HiddenWhileEmptyMixin, PersistedOption, ButtonOption)`
   - methods: create_widget, set_action_handler, current_state, set_states
 - `class MenuOption(ActionOption)`
   - methods: set_menu, set_wrapped_widget
@@ -566,8 +568,8 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
   - methods: value, is_active, set_value, toggle, restore_default, refresh, choices, choice_values, text_of, is_marked, build_menu, show_menu, setup_widget
 
 ### `widgets/optionBox/options/clear.py` — Clear option for OptionBox - provides a clear button for text widgets.
-- `class ClearOption(ButtonOption)`
-  - methods: create_widget, setup_widget, eventFilter, set_wrapped_widget
+- `class ClearOption(HiddenWhileEmptyMixin, ButtonOption)`
+  - methods: create_widget
 - `class ClearButton(QtWidgets.QPushButton)`
 
 ### `widgets/optionBox/options/disable.py` — Disable option for OptionBox — the universal "disable this widget" button.
@@ -739,7 +741,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class AttributeColorDialog(ColorMappingDialog)`
   - methods: load_color_map
 - `class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`
-  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, refresh_extent, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, shortcut_manager, context_entries, refresh, viewport_state, restore_viewport_state, clips, clip_attributes, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, content_span, timeline, range_highlight_item, add_layer, layer, add_track_item, remove_track_item, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_shot, frame_time_range, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_range_highlight, mark_flat_spans, add_flat_spans_option, zone_menu_enabled, shift_held_at_press, ctrl_held_at_press, record_press_modifiers, shortcut_overlay, shortcut_overlay_visible, shortcut_overlay_mode, shortcut_overlay_tracking, attribute_colors, set_attribute_color, row_metrics, register_editor, editor, editor_names, active_editor, set_editor, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips, selected_keys, select_keys, show_key_menu, refresh_key_scale_box, clear_key_scale_box, set_shift_held, modifiers_held, set_modifiers_held
+  - methods: window_shortcuts, showEvent, resizeEvent, eventFilter, event, keyPressEvent, add_track, refresh_extent, bulk_updates, add_clip, remove_clip, set_clip_label, set_clip_locked, remove_track, get_clip, get_track, tracks, shortcut_manager, context_entries, refresh, viewport_state, restore_viewport_state, clips, clip_attributes, swap_clips, set_playhead, set_audio_source, clear_audio_source, clear, clear_decorations, add_marker, remove_marker, get_marker, markers, clear_markers, set_range_highlight, clear_range_highlight, add_range_overlay, clear_range_overlays, content_span, timeline, range_highlight_item, add_layer, layer, add_track_item, remove_track_item, range_highlight, set_hidden_tracks, set_active_range, clear_active_range, step_forward, step_backward, go_to_next_key, go_to_prev_key, go_to_start, go_to_end, add_marker_at_playhead, frame_range, frame_time_range, undo, redo, snap_interval, snap_guides_enabled, snap_to_keys, alignment_times, nearest_alignment, set_snap_guides, clear_snap_guides, show_range_overlays, show_range_highlight, mark_flat_spans, add_flat_spans_option, zone_menu_enabled, shift_held_at_press, ctrl_held_at_press, record_press_modifiers, shortcut_overlay, shortcut_overlay_visible, shortcut_overlay_mode, shortcut_overlay_tracking, attribute_colors, set_attribute_color, row_metrics, register_editor, editor, editor_names, active_editor, set_editor, sub_row_height, sub_row_provider, expand_track, set_bg_curve_preview, collapse_track, is_track_expanded, toggle_track_expanded, selected_clips, selected_keys, select_keys, show_key_menu, refresh_key_scale_box, clear_key_scale_box, set_shift_held, modifiers_held, set_modifiers_held
 
 ### `widgets/sequencer/_timeline.py` — Timeline view, scene, and track-header widgets.
 - `class TrackHeaderWidget(QtWidgets.QWidget)`

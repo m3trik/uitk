@@ -2,8 +2,46 @@
 
 _Diff vs the last release (origin/main @ 8004002)._
 
-## Moved out (143)
+## Moved out (182)
 
+- `bridge/slots.py::BridgeSlotsBase` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.b000` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.bridge` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.clear_log` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.cmb000_init` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.collect_param_values` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.default_output_dir` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.docs_url` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.empty_scope_message` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.ensure_bridge_temp_dir` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.ensure_optional_package` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.format_param_tooltip` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.header_init` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.header_menu_items` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.help_spec` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.list_template_modes` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.live_param_tooltip_blocks` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.live_param_tooltips` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.make_bridge` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.make_preset_store` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.open_templates_folder` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.optional_package_available` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.optional_packages` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.panel_log` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.param_supersessions` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.params_module` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.peek_bridge` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.refresh_templates` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.register_log_link_handler` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.require_output_dir` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.resolve_scope_objects` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.resolved_output_dir` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.reveal_folder` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.scoped_objects` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.select_initial_template_index` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.set_param_enabled` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.template_description` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.template_dir` → `uitk.ParamPanelSlots` (from 1.9.0)
 - `switchboard/control_groups.py::SwitchboardControlGroupsMixin` → `uitk.Switchboard` (from 1.9.0)
 - `switchboard/control_groups.py::SwitchboardControlGroupsMixin.add_reset_buttons` → `uitk.Switchboard` (from 1.9.0)
 - `switchboard/control_groups.py::SwitchboardControlGroupsMixin.connect_multi` → `uitk.Switchboard` (from 1.9.0)
@@ -125,6 +163,7 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `widgets/sequencer/_sequencer.py::SequencerWidget.add_gap_overlay` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.add_gap_overlay` (from 1.9.0)
 - `widgets/sequencer/_sequencer.py::SequencerWidget.clear_gap_overlays` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_gap_overlays` (from 1.9.0)
 - `widgets/sequencer/_sequencer.py::SequencerWidget.clear_shot_blocks` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_shot_blocks` (from 1.9.0)
+- `widgets/sequencer/_sequencer.py::SequencerWidget.frame_shot` → `uitk.SequencerWidget.frame_range` (from 1.9.0)
 - `widgets/sequencer/_sequencer.py::SequencerWidget.selected_shot` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.selected_shot` (from 1.9.0)
 - `widgets/sequencer/_sequencer.py::SequencerWidget.set_all_gap_overlays_locked` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_all_gap_overlays_locked` (from 1.9.0)
 - `widgets/sequencer/_sequencer.py::SequencerWidget.set_shot_blocks` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_shot_blocks` (from 1.9.0)
@@ -148,11 +187,51 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `widgets/tableWidget.py::HeaderMixin` → `uitk.TableWidget` (from 1.9.0)
 - `widgets/tableWidget.py::HeaderMixin.default_header_click_behavior` → `uitk.TableWidget` (from 1.9.0)
 
-## Added (164)
+## Added (210)
 
+- `bridge/slots.py::ParamPanelSlots(class)`
+- `bridge/slots.py::ParamPanelSlots.add_param_rows(self) -> List[str]`
+- `bridge/slots.py::ParamPanelSlots.b000(self)`
+- `bridge/slots.py::ParamPanelSlots.bridge(self)`
+- `bridge/slots.py::ParamPanelSlots.clear_log(self) -> None`
+- `bridge/slots.py::ParamPanelSlots.cmb000_init(self, widget) -> None`
+- `bridge/slots.py::ParamPanelSlots.collect_param_values(self) -> Dict[str, Any]`
+- `bridge/slots.py::ParamPanelSlots.default_output_dir(self) -> str`
+- `bridge/slots.py::ParamPanelSlots.docs_url(self) -> str`
+- `bridge/slots.py::ParamPanelSlots.empty_scope_message(scope: str) -> str`
+- `bridge/slots.py::ParamPanelSlots.ensure_bridge_temp_dir(tag: str) -> str`
+- `bridge/slots.py::ParamPanelSlots.ensure_optional_package(self, spec: str, import_name: str = None, *, feature: str = None) -> bool`
+- `bridge/slots.py::ParamPanelSlots.format_param_tooltip(self, spec: AttributeSpec) -> str`
+- `bridge/slots.py::ParamPanelSlots.header_init(self, widget) -> None`
+- `bridge/slots.py::ParamPanelSlots.header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]`
+- `bridge/slots.py::ParamPanelSlots.help_spec(self) -> Optional[Dict[str, Any]]`
+- `bridge/slots.py::ParamPanelSlots.list_template_modes(self) -> List[Tuple[str, str]]`
+- `bridge/slots.py::ParamPanelSlots.live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]`
+- `bridge/slots.py::ParamPanelSlots.live_param_tooltips(self) -> Dict[str, Callable[[], str]]`
+- `bridge/slots.py::ParamPanelSlots.make_bridge(self)`
+- `bridge/slots.py::ParamPanelSlots.make_preset_store(self)`
+- `bridge/slots.py::ParamPanelSlots.open_templates_folder(self) -> None`
+- `bridge/slots.py::ParamPanelSlots.optional_package_available(spec: str, import_name: str = None) -> bool`
+- `bridge/slots.py::ParamPanelSlots.optional_packages(self)`
+- `bridge/slots.py::ParamPanelSlots.panel_log(self, message: str, level: str = 'info') -> None`
+- `bridge/slots.py::ParamPanelSlots.param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]`
+- `bridge/slots.py::ParamPanelSlots.params_module(self)`
+- `bridge/slots.py::ParamPanelSlots.peek_bridge(self)`
+- `bridge/slots.py::ParamPanelSlots.refresh_templates(self) -> None`
+- `bridge/slots.py::ParamPanelSlots.register_log_link_handler(handler: Callable) -> None`
+- `bridge/slots.py::ParamPanelSlots.require_output_dir(self, mode: Optional[str] = None) -> Optional[str]`
+- `bridge/slots.py::ParamPanelSlots.resolve_scope_objects(self, scope: str)`
+- `bridge/slots.py::ParamPanelSlots.resolved_output_dir(self) -> str`
+- `bridge/slots.py::ParamPanelSlots.reveal_folder(self, path) -> bool`
+- `bridge/slots.py::ParamPanelSlots.scoped_objects(self, params, warn: bool = True)`
+- `bridge/slots.py::ParamPanelSlots.select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int`
+- `bridge/slots.py::ParamPanelSlots.set_param_enabled(self, key: str, enabled: bool, reason: str = '') -> None`
+- `bridge/slots.py::ParamPanelSlots.template_description(self, template_path: Path) -> Optional[str]`
+- `bridge/slots.py::ParamPanelSlots.template_dir(self) -> Path`
 - `managers/panel_renames.py::PanelRenames(class)`
 - `managers/panel_renames.py::PanelRenames.carry(cls, switchboard, renamed_from: RenamedFrom, slot_class_names: Optional[Callable[[str], Sequence[str]]] = None) -> List[str]`
 - `managers/panel_renames.py::PanelRenames.renamed_key(key: str, widgets: Mapping[str, str], classes: Dict[str, str]) -> str`
+- `managers/preset_manager.py::PresetManager.carry_presets(cls, source: Union[str, Path], target: Union[str, Path]) -> List[Path]`
 - `managers/preview_controller.py::PreviewController(class)`
 - `managers/preview_controller.py::PreviewController.cleanup(self) -> None`
 - `managers/preview_controller.py::PreviewController.cleanup_all_instances(cls) -> None`
@@ -247,6 +326,7 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `switchboard/_core.py::Switchboard.refresh_dependencies(self, ui) -> None`
 - `switchboard/_core.py::Switchboard.register_command(self, name: str, callback: Optional[Callable] = None, *, label: Optional[str] = None, sequence: str = '', scope: str = 'application', doc: str = '', hidden: bool = False, editable: bool = True, bind: bool = True, clearable: bool = True, on_rebind: Optional[Callable[[str, str], None]] = None, value_getter: Optional[Callable[[], str]] = None) -> str`
 - `switchboard/_core.py::Switchboard.register_slots_shortcuts(self, ui: QtWidgets.QWidget, slots_instance: object) -> None`
+- `switchboard/_core.py::Switchboard.register_ui(self, name: str, build) -> None`
 - `switchboard/_core.py::Switchboard.register_widget(self, widget)`
 - `switchboard/_core.py::Switchboard.resolve_widget_class(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]`
 - `switchboard/_core.py::Switchboard.save_data_dialog(self, data: Any, title: str = '', path: str = '', parent=None) -> Optional[str]`
@@ -273,6 +353,10 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `widgets/footer.py::Footer.edit_status(self, text: str, on_commit: Callable[[str], None], on_cancel: Optional[Callable[[], None]] = None) -> QtWidgets.QLineEdit`
 - `widgets/footer.py::Footer.eventFilter(self, watched, event) -> bool`
 - `widgets/footer.py::Footer.is_editing_status(self) -> bool`
+- `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin(class)`
+- `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.eventFilter(self, obj, event)`
+- `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.set_wrapped_widget(self, widget)`
+- `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.setup_widget(self)`
 - `widgets/sequencer/_data.py::MenuUtils.menu_exec_pos(event) -> QtCore.QPoint`
 - `widgets/sequencer/_data.py::MenuUtils.styled_menu(parent=None) -> QtWidgets.QMenu`
 - `widgets/sequencer/_layer.py::SequencerLayer(class)`
@@ -292,6 +376,7 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `widgets/sequencer/_sequencer.py::SequencerWidget.add_layer(self, layer: SequencerLayer) -> None`
 - `widgets/sequencer/_sequencer.py::SequencerWidget.add_track_item(self, item: QtWidgets.QGraphicsItem) -> None`
 - `widgets/sequencer/_sequencer.py::SequencerWidget.content_span(self) -> Tuple[float, float]`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.frame_range(self) -> bool`
 - `widgets/sequencer/_sequencer.py::SequencerWidget.layer(self, name: str) -> SequencerLayer`
 - `widgets/sequencer/_sequencer.py::SequencerWidget.range_highlight_item(self) -> Optional[RangeHighlightItem]`
 - `widgets/sequencer/_sequencer.py::SequencerWidget.refresh_extent(self) -> None`
@@ -315,7 +400,15 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `widgets/tableWidget.py::TableWidget.set_header_formatter(self, header, formatter, append=False)`
 - `widgets/tableWidget.py::TableWidget.truncated_column_text(self, col: int, text: str) -> str`
 
-## Signature changed (3)
+## Moved (3)
+
+_Still resolvable at the same call site -- hoisted to a base class or re-exported from another module. NOT a removal: no alias or minor bump is owed._
+
+- `widgets/optionBox/options/clear.py::ClearOption.eventFilter`
+- `widgets/optionBox/options/clear.py::ClearOption.set_wrapped_widget`
+- `widgets/optionBox/options/clear.py::ClearOption.setup_widget`
+
+## Signature changed (5)
 
 - `switchboard/_core.py::Switchboard.register`
   - was: `(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None)`
@@ -326,3 +419,9 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `widgets/footer.py::Footer.setText`
   - was: `(self, text: str, level: Optional[str] = None) -> None`
   - now: `(self, text: str, level: Optional[str] = None, color: Optional[str] = None) -> None`
+- `widgets/optionBox/option_box_manager.py::OptionBoxManager.add_action`
+  - was: `(self, callback=None, icon='menu', tooltip='Options', text=None, states=None, settings_key=None)`
+  - now: `(self, callback=None, icon='menu', tooltip='Options', text=None, states=None, settings_key=None, hide_when_empty=False)`
+- `widgets/optionBox/option_box_manager.py::OptionBoxManager.set_action`
+  - was: `(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None)`
+  - now: `(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None, hide_when_empty=False)`

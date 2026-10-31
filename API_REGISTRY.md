@@ -175,8 +175,8 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 
 UITK - User Interface Toolkit for Qt/PySide applications.
 
-- [`DEFAULT_INCLUDE`](uitk/uitk/__init__.py#L54) — constant
-- [`MOVED_NAMES`](uitk/uitk/__init__.py#L290) — constant
+- [`DEFAULT_INCLUDE`](uitk/uitk/__init__.py#L55) — constant
+- [`MOVED_NAMES`](uitk/uitk/__init__.py#L291) — constant
 
 <a id="_bootstrap"></a>
 ### `_bootstrap.py`
@@ -245,44 +245,45 @@ Registry helpers for bridge parameter dicts.
 
 Generic DCC-bridge slot base class.
 
-- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L301)** — Base class for DCC-bridge slot panels.
-  - `BridgeSlotsBase.params_module(self)` *(property)*
-  - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
-  - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
-  - `BridgeSlotsBase.list_template_modes(self) -> List[Tuple[str, str]]`
-  - `BridgeSlotsBase.b000(self)` — Implement the per-bridge send action.
-  - `BridgeSlotsBase.optional_packages(self)` *(property)* — This panel's :class:`OptionalPackageManager` (built once, lazily).
-  - `BridgeSlotsBase.optional_package_available(spec: str, import_name: str = None) -> bool` *(static)* — Is an optional package importable in THIS interpreter? Silent.
-  - `BridgeSlotsBase.ensure_optional_package(self, spec: str, import_name: str = None, *, feature: str = None) -> bool` — Make an optional package importable, offering to install it on demand.
-  - `BridgeSlotsBase.resolve_scope_objects(self, scope: str)` — Hook: turn a ``SCOPE`` value into host objects.
-  - `BridgeSlotsBase.empty_scope_message(scope: str) -> str` *(static)* — The message shown when a scope resolves to nothing.
-  - `BridgeSlotsBase.scoped_objects(self, params, warn: bool = True)` — Objects for the ``SCOPE`` in *params*;
-  - `BridgeSlotsBase.bridge(self)` *(property)* — Lazy-instantiated bridge (caches a single instance per slot).
-  - `BridgeSlotsBase.peek_bridge(self)` — The bridge if it can be built, else ``None`` — never raises.
-  - `BridgeSlotsBase.panel_log(self, message: str, level: str = 'info') -> None` — Log to the panel, working whether or not the engine exists.
-  - `BridgeSlotsBase.default_output_dir(self) -> str` — Hook: fallback path when the user leaves Output Dir blank.
-  - `BridgeSlotsBase.ensure_bridge_temp_dir(tag: str) -> str` *(static)* — Create (once per host process) and return a temp Output Dir for *tag*.
-  - `BridgeSlotsBase.resolved_output_dir(self) -> str` — Return the current Output Dir text trimmed of whitespace.
-  - `BridgeSlotsBase.require_output_dir(self, mode: Optional[str] = None) -> Optional[str]` — Return the Output Dir for a run in *mode*, or log an error on empty.
-  - `BridgeSlotsBase.format_param_tooltip(self, spec: AttributeSpec) -> str` — Hook: build the rich-text tooltip for one parameter spec.
-  - `BridgeSlotsBase.live_param_tooltips(self) -> Dict[str, Callable[[], str]]` — Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.
-  - `BridgeSlotsBase.live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]` — Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.
-  - `BridgeSlotsBase.set_param_enabled(self, key: str, enabled: bool, reason: str = '') -> None` — Grey out (or re-enable) one parameter row, with *reason* as its tooltip.
-  - `BridgeSlotsBase.param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]` — The ``(trigger, governed, reason)`` triples in effect for this panel.
-  - `BridgeSlotsBase.collect_param_values(self) -> Dict[str, Any]` — Snapshot every widget's current value, regardless of visibility.
-  - `BridgeSlotsBase.make_preset_store(self)` — Hook: return a :class:`pythontk.PresetStore` to switch presets into
-  - `BridgeSlotsBase.select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int` — Return the index of the preferred initial entry in *pairs*.
-  - `BridgeSlotsBase.template_description(self, template_path: Path) -> Optional[str]` — Hook: extract a brief description from a template file.
-  - `BridgeSlotsBase.cmb000_init(self, widget) -> None` — Switchboard hook: populate the template combobox + wire change handler.
-  - `BridgeSlotsBase.refresh_templates(self) -> None` — Re-scan disk and rebuild the template combo + parameter UI.
-  - `BridgeSlotsBase.open_templates_folder(self) -> None` — Reveal :attr:`template_dir` in the OS file manager.
-  - `BridgeSlotsBase.register_log_link_handler(handler: Callable) -> None` *(static)* — Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel
-  - `BridgeSlotsBase.docs_url(self) -> str` — Hook: the panel's documentation URL, or ``""`` for no docs link.
-  - `BridgeSlotsBase.clear_log(self) -> None` — Clear the log panel (wired by subclass header menus).
-  - `BridgeSlotsBase.header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]` — Hook: the header-menu items.
-  - `BridgeSlotsBase.help_spec(self) -> Optional[Dict[str, Any]]` — Hook: the ``fmt()`` keyword dict for the header help, or ``None``.
-  - `BridgeSlotsBase.header_init(self, widget) -> None` — Default header menu: a "Utilities" separator, the declared
-  - `BridgeSlotsBase.reveal_folder(self, path) -> bool` — Open *path* in the OS file manager (logs + returns False if missing).
+- **[`class ParamPanelSlots(_ParamPanelSlotsInternal)`](uitk/uitk/bridge/slots.py#L303)** — A parameter panel: a template picker, parameter rows built from specs,
+  - `ParamPanelSlots.params_module(self)` *(property)*
+  - `ParamPanelSlots.template_dir(self) -> Path` *(property)*
+  - `ParamPanelSlots.make_bridge(self)` — Return a fresh bridge instance.
+  - `ParamPanelSlots.list_template_modes(self) -> List[Tuple[str, str]]`
+  - `ParamPanelSlots.b000(self)` — Implement the per-bridge send action.
+  - `ParamPanelSlots.optional_packages(self)` *(property)* — This panel's :class:`OptionalPackageManager` (built once, lazily).
+  - `ParamPanelSlots.optional_package_available(spec: str, import_name: str = None) -> bool` *(static)* — Is an optional package importable in THIS interpreter? Silent.
+  - `ParamPanelSlots.ensure_optional_package(self, spec: str, import_name: str = None, *, feature: str = None) -> bool` — Make an optional package importable, offering to install it on demand.
+  - `ParamPanelSlots.resolve_scope_objects(self, scope: str)` — Hook: turn a ``SCOPE`` value into host objects.
+  - `ParamPanelSlots.empty_scope_message(scope: str) -> str` *(static)* — The message shown when a scope resolves to nothing.
+  - `ParamPanelSlots.scoped_objects(self, params, warn: bool = True)` — Objects for the ``SCOPE`` in *params*;
+  - `ParamPanelSlots.bridge(self)` *(property)* — Lazy-instantiated bridge (caches a single instance per slot).
+  - `ParamPanelSlots.peek_bridge(self)` — The bridge if it can be built, else ``None`` — never raises.
+  - `ParamPanelSlots.panel_log(self, message: str, level: str = 'info') -> None` — Log to the panel, working whether or not the engine exists.
+  - `ParamPanelSlots.default_output_dir(self) -> str` — Hook: fallback path when the user leaves Output Dir blank.
+  - `ParamPanelSlots.ensure_bridge_temp_dir(tag: str) -> str` *(static)* — Create (once per host process) and return a temp Output Dir for *tag*.
+  - `ParamPanelSlots.resolved_output_dir(self) -> str` — Return the current Output Dir text trimmed of whitespace.
+  - `ParamPanelSlots.require_output_dir(self, mode: Optional[str] = None) -> Optional[str]` — Return the Output Dir for a run in *mode*, or log an error on empty.
+  - `ParamPanelSlots.format_param_tooltip(self, spec: AttributeSpec) -> str` — Hook: build the rich-text tooltip for one parameter spec.
+  - `ParamPanelSlots.live_param_tooltips(self) -> Dict[str, Callable[[], str]]` — Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.
+  - `ParamPanelSlots.live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]` — Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.
+  - `ParamPanelSlots.set_param_enabled(self, key: str, enabled: bool, reason: str = '') -> None` — Grey out (or re-enable) one parameter row, with *reason* as its tooltip.
+  - `ParamPanelSlots.param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]` — The ``(trigger, governed, reason)`` triples in effect for this panel.
+  - `ParamPanelSlots.add_param_rows(self) -> List[str]` — Build a row for each registry key that has none yet;
+  - `ParamPanelSlots.collect_param_values(self) -> Dict[str, Any]` — Snapshot every widget's current value, regardless of visibility.
+  - `ParamPanelSlots.make_preset_store(self)` — Hook: return a :class:`pythontk.PresetStore` to switch presets into
+  - `ParamPanelSlots.select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int` — Return the index of the preferred initial entry in *pairs*.
+  - `ParamPanelSlots.template_description(self, template_path: Path) -> Optional[str]` — Hook: extract a brief description from a template file.
+  - `ParamPanelSlots.cmb000_init(self, widget) -> None` — Switchboard hook: populate the template combobox + wire change handler.
+  - `ParamPanelSlots.refresh_templates(self) -> None` — Re-scan disk and rebuild the template combo + parameter UI.
+  - `ParamPanelSlots.open_templates_folder(self) -> None` — Reveal :attr:`template_dir` in the OS file manager.
+  - `ParamPanelSlots.register_log_link_handler(handler: Callable) -> None` *(static)* — Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel
+  - `ParamPanelSlots.docs_url(self) -> str` — Hook: the panel's documentation URL, or ``""`` for no docs link.
+  - `ParamPanelSlots.clear_log(self) -> None` — Clear the log panel (wired by subclass header menus).
+  - `ParamPanelSlots.header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]` — Hook: the header-menu items.
+  - `ParamPanelSlots.help_spec(self) -> Optional[Dict[str, Any]]` — Hook: the ``fmt()`` keyword dict for the header help, or ``None``.
+  - `ParamPanelSlots.header_init(self, widget) -> None` — Default header menu: a "Utilities" separator, the declared
+  - `ParamPanelSlots.reveal_folder(self, path) -> bool` — Open *path* in the OS file manager (logs + returns False if missing).
 
 <a id="bridge--spec"></a>
 ### `bridge/spec.py`
@@ -424,7 +425,7 @@ Launchable-contract front end for the Switchboard's bundled editors.
 
 Register, install-on-demand, and launch external Python apps as subprocesses.
 
-- **[`class ExternalAppHandler(BaseHandler)`](uitk/uitk/handlers/external_app_handler.py#L40)** — Switchboard handler for launching external Python apps.
+- **[`class ExternalAppHandler(BaseHandler)`](uitk/uitk/handlers/external_app_handler.py#L102)** — Switchboard handler for launching external Python apps.
   - `ExternalAppHandler.discover(self, groups: Optional[Iterable[str]] = None) -> int` — Auto-register every app advertised under a uitk entry-point group.
   - `ExternalAppHandler.add_provider(self, install_spec: str, *, probe_module: Optional[str] = None, group: Optional[str] = None, python: Optional[str] = None) -> None` — Register a provider package that ships discoverable apps.
   - `ExternalAppHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None, description: Optional[str] = None) -> None` — Pre-register an app so it can be launched by name.
@@ -643,8 +644,8 @@ Keep widgets in step with a model uitk never sees: read on change, write on edit
 
 Provisioning for optional packages a panel needs importable in THIS session.
 
-- **[`class OptionalPackageManager(_OptionalPackageManagerInternal)`](uitk/uitk/managers/optional_package_manager.py#L71)** — Probe for, and offer to install, an optional package.
-  - `OptionalPackageManager.available(spec: str, import_name: str = None) -> bool` *(static)* — Is *spec* importable in THIS interpreter, at or above any floor? Silent.
+- **[`class OptionalPackageManager(_OptionalPackageManagerInternal)`](uitk/uitk/managers/optional_package_manager.py#L87)** — Probe for, and offer to install, an optional package.
+  - `OptionalPackageManager.available(spec: str, import_name: str = None) -> bool` *(static)* — Is *spec* importable in THIS interpreter, inside any version range? Silent.
   - `OptionalPackageManager.pip_python() -> Optional[str]` *(static)* — Interpreter to drive pip with, for an install this session must import.
   - `OptionalPackageManager.default_install(spec: str) -> None` *(static)* — ``pip install --user`` *spec* against the running interpreter.
   - `OptionalPackageManager.install(self, spec: str) -> None` — Install *spec* via the injected installer, else :meth:`default_install`.
@@ -664,7 +665,7 @@ Carry a renamed panel's saved values to the panel that took its name.
 <a id="managers--preset_manager"></a>
 ### `managers/preset_manager.py`
 
-- [`PRESETS_ROOT_ENV_VAR`](uitk/uitk/managers/preset_manager.py#L1195) — constant
+- [`PRESETS_ROOT_ENV_VAR`](uitk/uitk/managers/preset_manager.py#L1240) — constant
 - **[`class PresetManager(_PresetWidgetScope, _PresetRootMigration, pythontk.LoggingMixin)`](uitk/uitk/managers/preset_manager.py#L28)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
@@ -691,6 +692,7 @@ Carry a renamed panel's saved values to the panel that took its name.
   - `PresetManager.refresh_combo(self, select_name: Optional[str] = None) -> None` — Repopulate the wired preset combo from disk (no-op when none).
   - `PresetManager.make_preset_combo(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None, placeholder: Optional[str] = None) -> 'QtWidgets.QWidget'` — Create a fully-wired preset selector and return its layout container.
   - `PresetManager.wire_combo(self, combo, on_loaded=None, placeholder=None)` — Wire a uitk ``ComboBox`` as a fully-functional preset selector.
+  - `PresetManager.carry_presets(cls, source: Union[str, Path], target: Union[str, Path]) -> List[Path]` *(class)* — Copy the presets saved under *source* into *target*, never over one there.
   - `PresetManager.get_presets_root() -> Path` *(static)* — Root directory under which every relative ``preset_dir`` is resolved.
   - `PresetManager.scope(self) -> str` *(property)* — Which widget set a save/load operates on.
   - `PresetManager.exclude(self, *names_or_widgets) -> 'PresetManager'` — Exclude widgets (by ``objectName`` or instance) from capture/restore.
@@ -917,6 +919,7 @@ How a window follows the height of what it is holding.
   - `Switchboard.register(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None, exclude=None)` — Add new locations to the Switchboard registries.
   - `Switchboard.load_all_ui(self) -> list` — Extends the 'load_ui' method to load all UI from a given path.
   - `Switchboard.load_ui(self, file: str) -> QtWidgets.QMainWindow` — Load a UI from the given .ui path via the configured loader delegate.
+  - `Switchboard.register_ui(self, name: str, build) -> None` — Register a UI built in code, as a ``.ui`` file registers one built in
   - `Switchboard.add_ui(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow`
   - `Switchboard.get_ui(self, ui=None) -> QtWidgets.QWidget` — Get a dynamic UI using its string name, or if no argument is given, return the current UI.
   - `Switchboard.get_ui_relatives(self, ui, upstream=False, exact=False, downstream=False, reverse=False)` — Get UIs related to the given UI via shared base name.
@@ -978,7 +981,7 @@ How a window follows the height of what it is holding.
   - `Switchboard.unmet_policy(self) -> str` *(property)* — How tools whose requirement is unmet are presented (persisted).
   - `Switchboard.gate(self, widget, available, reason: str = '') -> bool` — Present *widget* according to whether its requirement is met.
   - `Switchboard.recheck_gates(self) -> int` — Re-apply every live gate;
-  - `Switchboard.is_registered_ui(self, name: str) -> bool` — True if *name* matches a known UI file stem in the registry (no load is triggered).
+  - `Switchboard.is_registered_ui(self, name: str) -> bool` — True if *name* is a registered UI -- a ``.ui`` file stem, or a name
   - `Switchboard.ui_name_resolves(self, name: str) -> bool` — True if *name* resolves to a UI, without triggering a load.
   - `Switchboard.menu_button_target_name(self, widget) -> Optional[str]` — The registered UI name a ``MenuButton`` navigates to, or ``None``.
   - `Switchboard.menu_button_target_resolves(self, widget) -> bool` — True if a ``MenuButton``'s ``target`` resolves to a registered UI.
@@ -2358,8 +2361,8 @@ The :class:`OptionBoxManager` facade -- ``widget.option_box``.
   - `OptionBoxManager.option_order(self)` *(property)* — Get/set option ordering: ['clear', 'action'] or ['action', 'clear']
   - `OptionBoxManager.pin(self, settings_key: Optional[str] = None, *, double_click_to_edit: bool = False, single_click_restore: bool = False)` — Enable pin values option (fluent interface).
   - `OptionBoxManager.recent(self, settings_key: Optional[str] = None, *, max_recent: int = 10, **kwargs)` — Enable recent values option (fluent interface).
-  - `OptionBoxManager.set_action(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None)` — Set the action handler (fluent interface).
-  - `OptionBoxManager.add_action(self, callback=None, icon='menu', tooltip='Options', text=None, states=None, settings_key=None)` — Add an action button without replacing existing ones.
+  - `OptionBoxManager.set_action(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None, hide_when_empty=False)` — Set the action handler (fluent interface).
+  - `OptionBoxManager.add_action(self, callback=None, icon='menu', tooltip='Options', text=None, states=None, settings_key=None, hide_when_empty=False)` — Add an action button without replacing existing ones.
   - `OptionBoxManager.set_toggle(self, *, icon: str = 'filter', icon_off: Optional[str] = None, tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, disabled_color: Optional[str] = None, active_color: Optional[str] = None, gated_widgets=(), gate_wrapped: bool = False, keep_enabled_when_wrapped_disabled: bool = True, settings_key=None, replace: bool = True, on_toggled=None)` — Add a persisted binary toggle button (fluent interface).
   - `OptionBoxManager.add_toggle(self, **kwargs)` — Add a toggle without replacing existing ones.
   - `OptionBoxManager.set_filter(self, *, settings, text_key: str, on_changed, enabled_key: Optional[str] = None, initial_enabled: bool = True, on_toggled=None, tooltip_on: str = 'Filter enabled. Click to disable.', tooltip_off: str = 'Filter disabled. Click to enable.', scopes=None, scope_key: Optional[str] = None, default_scope: Optional[str] = None, on_scope_changed=None, replace: bool = True)` — Turn the wrapped text widget into a filter field (fluent interface).
@@ -2420,7 +2423,11 @@ The :class:`OptionBoxManager` facade -- ``widget.option_box``.
   - `ButtonOption.setup_widget(self)` — Setup button connections.
   - `ButtonOption.block_next_click(self)` — Block the next click event (used when popup closes to prevent immediate reopen).
   - `ButtonOption.set_checked(self, checked)` — Set the checked state of the button.
-- **[`class GatingMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L416)** — Reusable *gating button* capability for option plugins.
+- **[`class HiddenWhileEmptyMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L416)** — Show a button option only while its wrapped field holds a value.
+  - `HiddenWhileEmptyMixin.setup_widget(self)`
+  - `HiddenWhileEmptyMixin.eventFilter(self, obj, event)`
+  - `HiddenWhileEmptyMixin.set_wrapped_widget(self, widget)`
+- **[`class GatingMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L488)** — Reusable *gating button* capability for option plugins.
 
 <a id="widgets--optionBox--options--_persistence"></a>
 ### `widgets/optionBox/options/_persistence.py`
@@ -2436,12 +2443,12 @@ Shared persistence wiring for OptionBox plugins.
 
 Action option for OptionBox - provides customizable action buttons.
 
-- **[`class ActionOption(PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/action.py#L9)** — A customizable action button option.
+- **[`class ActionOption(HiddenWhileEmptyMixin, PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/action.py#L9)** — A customizable action button option.
   - `ActionOption.create_widget(self)` — Create the action button widget.
   - `ActionOption.set_action_handler(self, handler)` — Set or update the action handler.
   - `ActionOption.current_state(self)` *(property)* — The current state index (0-based).
   - `ActionOption.set_states(self, states)` — Set multiple cycling states.
-- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L212)** — A menu action option specifically for showing menus.
+- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L217)** — A menu action option specifically for showing menus.
   - `MenuOption.set_menu(self, menu)` — Set or update the menu.
   - `MenuOption.set_wrapped_widget(self, widget)` — Update wrapped widget and reparent menu if needed.
 
@@ -2506,12 +2513,9 @@ Choice option for OptionBox -- an icon button that picks from a popup.
 
 Clear option for OptionBox - provides a clear button for text widgets.
 
-- **[`class ClearOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/clear.py#L10)** — A clear button option that can clear text from input widgets.
+- **[`class ClearOption(HiddenWhileEmptyMixin, ButtonOption)`](uitk/uitk/widgets/optionBox/options/clear.py#L9)** — A clear button option that can clear text from input widgets.
   - `ClearOption.create_widget(self)` — Create the clear button widget.
-  - `ClearOption.setup_widget(self)` — Setup button connections and show event handling.
-  - `ClearOption.eventFilter(self, obj, event)` — Filter show events to update visibility after state restoration.
-  - `ClearOption.set_wrapped_widget(self, widget)` — Set the wrapped widget and connect text change signals.
-- **[`class ClearButton(QtWidgets.QPushButton)`](uitk/uitk/widgets/optionBox/options/clear.py#L153)** — A standalone clear button (legacy compatibility).
+- **[`class ClearButton(QtWidgets.QPushButton)`](uitk/uitk/widgets/optionBox/options/clear.py#L67)** — A standalone clear button (legacy compatibility).
 
 <a id="widgets--optionBox--options--disable"></a>
 ### `widgets/optionBox/options/disable.py`
@@ -2948,7 +2952,7 @@ The graph editor: animation curves in value space, edited like Maya's.
   - `GraphEditor.auto_load(self) -> bool` *(property)* — Follow the host's object selection (Maya's Auto Load Selected
   - `GraphEditor.live(self) -> bool` *(property)* — Raise :attr:`curves_previewed` while a drag shapes the curves, so
   - `GraphEditor.dim_outside(self) -> bool` *(property)* — Veil the time outside :attr:`focus_range` (the shots on screen).
-  - `GraphEditor.focus_range(self) -> Optional[Tuple[float, float]]` *(property)* — ``(t0, t1)`` the host is working in -- the shots its scope shows --
+  - `GraphEditor.focus_range(self) -> Optional[Tuple[float, float]]` *(property)* — ``(t0, t1)`` the host is working in -- the range its scope shows --
   - `GraphEditor.displayed_curve_ids(self) -> List[str]`
   - `GraphEditor.curve(self, curve_id: str)` — The curve as drawn: the drag's preview, else the host's.
   - `GraphEditor.selected_keys(self) -> List[Tuple[str, List[float]]]` — ``[(curve_id, [time, ...]), ...]`` in display order.
@@ -3187,7 +3191,7 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.go_to_start(self)` — Jump the playhead to frame 0.
   - `SequencerWidget.go_to_end(self)` — Jump the playhead to the end of the last clip.
   - `SequencerWidget.add_marker_at_playhead(self)` — Add a marker at the current playhead position.
-  - `SequencerWidget.frame_shot(self) -> bool` — Zoom and scroll the timeline to frame the active shot range.
+  - `SequencerWidget.frame_range(self) -> bool` — Zoom and scroll the timeline to frame the active range.
   - `SequencerWidget.frame_time_range(self, t_min: float, t_max: float, fit_values: bool = True)` — Zoom and scroll so ``[t_min, t_max]`` fills the timeline's width.
   - `SequencerWidget.undo(self)` — Revert to the previous clip state.
   - `SequencerWidget.redo(self)` — Re-apply a previously undone change.
