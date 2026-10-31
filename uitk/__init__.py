@@ -250,6 +250,9 @@ DEFAULT_INCLUDE = {
     "managers.reset_gesture": "ResetGesture",
     "managers.value_manager": "ValueManager",
     "managers.model_binding": "ModelBinding",
+    # A preview panel's widgets bound over a host's scene session (Qt-free:
+    # each host library's ``Preview`` binds its own session to it).
+    "managers.preview_controller": ["PreviewController", "PreviewSession"],
     "themes.style_sheet": "StyleSheet",
 }
 
