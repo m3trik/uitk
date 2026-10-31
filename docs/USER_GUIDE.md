@@ -188,6 +188,8 @@ See [WIDGETS.md](WIDGETS.md) for the full widget catalog.
 
 UITK auto-saves widget values on change and restores them on next show. No setup required.
 
+They live under `QSettings("uitk", "shared")` (on Windows, the registry key `HKCU\Software\uitk\shared`), one branch per UI name and host. So two apps that each have a UI named `editor` share its saved values: give an app's UIs distinctive names.
+
 ```python
 # User types in txt_path, closes app.
 # Next launch: txt_path still has that text.

@@ -1,6 +1,6 @@
 # Cookbook
 
-Patterns extracted from real UITK consumers — primarily [mayatk](https://github.com/m3trik/mayatk) (Maya utilities) and [tentacle](https://github.com/m3trik/tentacle) (DCC shell). Each recipe shows the setup, the code, and when to use it.
+Patterns extracted from real UITK apps — among them [mayatk](https://github.com/m3trik/mayatk) (Maya utilities) and [tentacle](https://github.com/m3trik/tentacle) (a DCC launcher). Each recipe shows the setup, the code, and when to use it; the host apps named are examples, and the patterns work in any Qt app.
 
 **Nav**: [← README](README.md) · [User Guide](USER_GUIDE.md) · [Slots](SLOTS.md) · [Widgets](WIDGETS.md) · [Marking Menu](MARKING_MENU.md) · [Architecture](ARCHITECTURE.md) · [API](API_REFERENCE.md)
 
@@ -8,7 +8,7 @@ Patterns extracted from real UITK consumers — primarily [mayatk](https://githu
 
 ## Hosted vs. standalone launch
 
-**Problem**: your tool should run inside the tentacle DCC shell when available, but also work standalone for `__main__` testing or when tentacle isn't installed.
+**Problem**: your tool should run inside a host app's shell when one is running (tentacle's marking menu, here), but also work standalone for `__main__` testing or when that shell isn't installed.
 
 **Solution**: an optional `sb` parameter on a static `launch` method of the slots class. If present, use the caller's Switchboard via the marking menu handler. If absent, build a private one.
 

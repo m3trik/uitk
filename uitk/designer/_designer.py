@@ -395,7 +395,7 @@ class DesignerPlugin(_DesignerPluginInternal):
     ``register`` takes a scan location, so a downstream package publishes its own
     widgets the same way uitk does::
 
-        DesignerPlugin.register("widgets", base_dir=MAYATK_DIR, group="mayatk")
+        DesignerPlugin.register("widgets", base_dir=MY_PACKAGE_DIR, group="my_package")
 
     Example:
         >>> catalog = DesignerPlugin.collect()
