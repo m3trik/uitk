@@ -10,6 +10,7 @@ from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
 from uitk._bootstrap import Bootstrap
+from uitk._facade import _Forward
 
 # Collaborators — private to this package; the Switchboard delegates to them:
 from uitk.switchboard.slots import _Slots
@@ -36,30 +37,6 @@ from uitk.widgets.mixins.convert import ConvertMixin
 from uitk.widgets.mixins.tooltip_mixin import TooltipNamespace
 from uitk.managers.settings_manager import SettingsManager
 from uitk.loaders import CompiledLoader, RuntimeLoader
-
-
-class _Forward:
-    """A Switchboard name that forwards to one of its collaborators' attributes.
-
-    Keeps the private names that code outside the switchboard reads, and that one
-    collaborator reads of another's (``sb._find_slots_class``, ``sb._commands``),
-    on the collaborator that owns them. Reads, writes and deletes all forward, so
-    ``mock.patch.object(sb, name)`` reaches the collaborator's own calls too.
-    """
-
-    def __init__(self, collaborator: str, name: str):
-        self.collaborator, self.name = collaborator, name
-
-    def __get__(self, sb, owner=None):
-        if sb is None:
-            return self
-        return getattr(getattr(sb, self.collaborator), self.name)
-
-    def __set__(self, sb, value):
-        setattr(getattr(sb, self.collaborator), self.name, value)
-
-    def __delete__(self, sb):
-        delattr(getattr(sb, self.collaborator), self.name)
 
 
 class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):

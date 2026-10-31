@@ -12,7 +12,7 @@ the one the user keeps: which sections are folded.
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from qtpy import QtCore, QtWidgets
 
@@ -22,84 +22,88 @@ from uitk.managers.field_visibility import FieldVisibility
 from uitk.managers.window_height import WindowHeight
 
 from uitk.bridge.spec import AttributeSpec, KindFactory
-from uitk.bridge.tooltip import Tooltip
+
+if TYPE_CHECKING:  # annotation only; the facade imports this module
+    from uitk.bridge.slots import BridgeSlotsBase
 
 
-class _ParamRowsMixin(object):
-    """Parameter rows: build, read/write, tooltips, visibility and enablement.
+class _ParamRows(object):
+    """A bridge panel's parameter rows: build, read/write, tooltips, visibility, enablement.
 
-    Reads the composed panel's ``params_module`` (``PARAMS`` /
-    ``referenced_keys`` / ``SUPERSESSIONS``), ``ui``, ``sb.tooltip`` and the
-    template combo's selection (for the default relevance hook).
+    Owns the rows and their index (control, row, label, section per key), the
+    section dividers, the panel's :class:`FieldVisibility`, the folded sections
+    and the key set on screen. Reads the panel's ``params_module``, ``ui``,
+    ``sb.tooltip`` and knobs, and calls every hook a subclass may override
+    (``format_param_tooltip``, ``_relevant_param_keys``, ``_fold_section``,
+    ``_refresh_param_enablement`` ...) through the panel.
     """
 
-    # ------------------ Widget kind -- multi-line types ---------------
-    # Kinds whose widgets are composite (line edit + button, list +
-    # buttons, ...) or list-shaped, and must NOT have their parent row
-    # clamped to 19px because they are taller than one input line.
-    TALL_KINDS: Tuple[str, ...] = ("path", "file", "files", "file_list", "check_list")
-
-    # ------------------ Supersessions ---------------------------------
-    # ``(trigger key, governed keys, reason)`` triples: while *trigger* reads
-    # truthy, the *governed* rows grey out with *reason* as their tooltip --
-    # the "an Auto toggle takes over the controls it replaces" shape, declared
-    # as data. Read from the parameter REGISTRY (``params_module.SUPERSESSIONS``)
-    # when it declares them, because which knob supersedes which is a property
-    # of the parameter set, not of a DCC's panel -- so both DCCs' panels
-    # sharing one registry behave identically without either restating it.
-    # This class attr is the fallback for a panel whose registry declares none.
-    PARAM_SUPERSESSIONS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = ()
-
-    # ------------------ Foldable sections -----------------------------
-    #: Whether a section's titled divider folds its rows (a disclosure). The
-    #: folded set is the user's and is remembered per panel through the
-    #: window's custom store; False keeps plain section captions.
-    FOLDABLE_SECTIONS: bool = True
+    #: Dynamic property holding a widget's own tooltip, captured before any
+    #: live provider could overwrite it (see :meth:`pristine_tooltip`).
+    STATIC_TOOLTIP_PROP = "_bridge_static_tooltip"
+    #: An opening tag, as opposed to a bare ``<`` used as a less-than sign.
+    HTML_TAG_RE = re.compile(r"<[a-zA-Z/!]")
     #: The custom-store key the folded sections are kept under.
-    _FOLDED_SECTIONS_KEY = "bridge_folded_sections"
+    FOLDED_SECTIONS_KEY = "bridge_folded_sections"
 
-    def format_param_tooltip(self, spec: AttributeSpec) -> str:
-        """Hook: build the rich-text tooltip for one parameter spec."""
-        return Tooltip.format_param_tooltip(spec)
+    def __init__(self, panel: "BridgeSlotsBase") -> None:
+        self._panel = panel
+        self.widgets: Dict[str, QtWidgets.QWidget] = {}
+        self.rows: Dict[str, QtWidgets.QWidget] = {}
+        # The row's caption, kept alongside its control so a live tooltip
+        # provider can cover BOTH hover targets (see live_param_tooltips).
+        self.labels: Dict[str, QtWidgets.QLabel] = {}
+        # Category dividers: section name -> Separator, plus each param's section,
+        # so a divider can hide when its whole section is hidden for the mode.
+        self.section_separators: Dict[str, QtWidgets.QWidget] = {}
+        self.section: Dict[str, str] = {}
+        # Built in build_widgets from the dicts above; the rows stay the
+        # tooltip and value code's index, this is only the visibility.
+        self.fields: Optional[FieldVisibility] = None
+        self.group: Optional[QtWidgets.QGroupBox] = None
+        self.folded_sections: set = set()
+        # The key set last shown (refresh_visibility); None before the first.
+        self.rows_shown: Optional[frozenset] = None
 
     # ------------------ Parameter widgets -----------------------------
 
-    def _build_param_widgets(self) -> None:
+    def build_widgets(self) -> None:
         """Inject a 'Parameters' group between the Output Dir row and Send.
 
         Builds one row widget per registered :class:`AttributeSpec` via
         :meth:`uitk.bridge.spec.KindFactory.make_widget` -- the shared registry powers
         every kind including custom ones the bridge registered. A spec with
         ``inline`` set is appended to the PREVIOUS row instead of claiming one
-        of its own (see :meth:`_build_inline_cell`).
+        of its own (see :meth:`build_inline_cell`).
         """
-        grp = QtWidgets.QGroupBox("Parameters", self.ui.grp_process)
+        panel = self._panel
+        grp = QtWidgets.QGroupBox("Parameters", panel.ui.grp_process)
         vbox = QtWidgets.QVBoxLayout(grp)
         vbox.setContentsMargins(2, 4, 2, 2)
         vbox.setSpacing(0)
 
         host_row: Optional[QtWidgets.QWidget] = None
-        for key, spec in self.params_module.PARAMS.items():
+        for key, spec in panel.params_module.PARAMS.items():
             # Start of a new category -> a titled divider above its first row.
             # (One separator per section; sections are expected contiguous.)
             section = getattr(spec, "section", "") or ""
-            self._param_section[key] = section
-            new_section = bool(section) and section not in self._section_separators
+            self.section[key] = section
+            new_section = bool(section) and section not in self.section_separators
             if new_section:
-                sep = Separator(grp, title=section, checkable=self.FOLDABLE_SECTIONS)
-                if self.FOLDABLE_SECTIONS:
+                sep = Separator(grp, title=section, checkable=panel.FOLDABLE_SECTIONS)
+                if panel.FOLDABLE_SECTIONS:
                     sep.setChecked(True)
                     sep.setToolTip("Click to fold or unfold this section.")
                 vbox.addWidget(sep)
-                self._section_separators[section] = sep
+                self.section_separators[section] = sep
 
-            tooltip_html = self.format_param_tooltip(spec)
+            tooltip_html = panel.format_param_tooltip(spec)
             # An inline spec joins the previous row; a section's opening spec
             # starts one regardless, so a divider is never followed by a row
             # whose first control belongs to the section above it.
             inline = getattr(spec, "inline", False) and host_row is not None
             if inline and not new_section:
-                self._build_inline_cell(spec, key, host_row, tooltip_html)
+                self.build_inline_cell(spec, key, host_row, tooltip_html)
                 continue
 
             row = QtWidgets.QWidget(grp)
@@ -108,104 +112,105 @@ class _ParamRowsMixin(object):
             hbox.setSpacing(2)
 
             label = QtWidgets.QLabel(spec.display_label + ":", row)
-            label.setMinimumWidth(self.LABEL_MIN_WIDTH)
+            label.setMinimumWidth(panel.LABEL_MIN_WIDTH)
             label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
             label.setToolTip(tooltip_html)
-            self._param_labels[key] = label
+            self.labels[key] = label
 
-            widget = self._make_param_widget(spec, key, row, tooltip_html)
+            widget = self.make_param_widget(spec, key, row, tooltip_html)
 
             hbox.addWidget(label)
             hbox.addWidget(widget, 1)
             vbox.addWidget(row)
 
-            self._param_rows[key] = row
+            self.rows[key] = row
             host_row = row
 
-        parent_layout = self.ui.grp_process.layout()
-        insert_at = parent_layout.indexOf(self.ui.b000)
+        parent_layout = panel.ui.grp_process.layout()
+        insert_at = parent_layout.indexOf(panel.ui.b000)
         parent_layout.insertWidget(insert_at, grp)
-        self._param_group = grp
-        self._fit_label_column()
+        self.group = grp
+        self.fit_label_column()
 
         # Everything the panel shows conditionally, in one registry. The
         # dividers and the group are registered WITH the rows rather than
         # chased separately at refresh time, which is the bookkeeping this
         # used to carry by hand.
         fields = FieldVisibility()
-        for key, row in self._param_rows.items():
-            fields.register(key, row, section=self._param_section.get(key))
-        for section, sep in self._section_separators.items():
+        for key, row in self.rows.items():
+            fields.register(key, row, section=self.section.get(key))
+        for section, sep in self.section_separators.items():
             fields.divider(section, sep)
-        self._param_fields = fields.group(grp)
-        self._build_section_folds()
+        self.fields = fields.group(grp)
+        self.build_section_folds()
 
-    def _build_section_folds(self) -> None:
+    def build_section_folds(self) -> None:
         """Wire each foldable divider to its rows, and fold what was folded."""
-        self._folded_sections = set()
-        if not self.FOLDABLE_SECTIONS:
+        panel = self._panel
+        self.folded_sections = set()
+        if not panel.FOLDABLE_SECTIONS:
             return
-        store = getattr(self.ui, "state", None)
-        folded = store.load_custom(self._FOLDED_SECTIONS_KEY, []) if store else []
+        store = getattr(panel.ui, "state", None)
+        folded = store.load_custom(self.FOLDED_SECTIONS_KEY, []) if store else []
         # A list as saved; anything else is no fold (a string would match by
         # substring under ``in``).
         folded = set(folded) if isinstance(folded, (list, tuple)) else set()
-        for section, sep in self._section_separators.items():
+        for section, sep in self.section_separators.items():
+            # Through the panel, so a subclass's _fold_section is the one run.
             sep.toggled.connect(
-                lambda opened, s=section: self._fold_section(s, not opened)
+                lambda opened, s=section: panel._fold_section(s, not opened)
             )
             if section in folded:
                 sep.setChecked(False)
 
-    def _fold_section(self, section: str, folded: bool) -> None:
+    def fold_section(self, section: str, folded: bool) -> None:
         """Fold or unfold *section*'s rows, remember it, and re-fit the window.
 
         Unfolding brings back only the rows the panel shows: relevance is the
-        panel's (:meth:`_refresh_param_visibility`), the fold the user's. Rows
-        go through :meth:`FieldVisibility.set_widget_visible`, so a folded row
+        panel's (``_refresh_param_visibility``), the fold the user's. Rows go
+        through :meth:`FieldVisibility.set_widget_visible`, so a folded row
         carries the mark a container that re-shows its children respects.
         """
-        (self._folded_sections.add if folded else self._folded_sections.discard)(
-            section
-        )
-        shown = getattr(self, "_param_rows_shown", None)
-        for key, row in self._param_rows.items():
-            if self._param_section.get(key) == section:
+        (self.folded_sections.add if folded else self.folded_sections.discard)(section)
+        shown = self.rows_shown
+        for key, row in self.rows.items():
+            if self.section.get(key) == section:
                 FieldVisibility.set_widget_visible(
                     row, not folded and (shown is None or key in shown)
                 )
-        store = getattr(self.ui, "state", None)
+        store = getattr(self._panel.ui, "state", None)
         if store is not None:
-            store.save_custom(self._FOLDED_SECTIONS_KEY, sorted(self._folded_sections))
-        WindowHeight.fit_host_later(self._param_group)
+            store.save_custom(self.FOLDED_SECTIONS_KEY, sorted(self.folded_sections))
+        WindowHeight.fit_host_later(self.group)
 
-    def _fit_label_column(self) -> None:
+    def fit_label_column(self) -> None:
         """One label column: every row label takes the widest one's width.
 
-        :attr:`LABEL_MIN_WIDTH` is only the floor; a label past it used to size
+        ``LABEL_MIN_WIDTH`` is only the floor; a label past it used to size
         itself, so the values of a panel with longer labels started at as many
         x as it had lengths. Hidden rows count, so the column holds still as
         rows come and go; an inline cell's label is a suffix, not a column, and
-        is left alone. The width is kept as the instance's
-        :attr:`LABEL_MIN_WIDTH`, so a row a subclass builds afterwards from it
+        is left alone. The width is kept as the panel's own
+        ``LABEL_MIN_WIDTH``, so a row a subclass builds afterwards from it
         (a Model File row, say) lines up too. Measured once: the theme sets no
         row-label font, so a label keeps the font it is built with.
         """
+        panel = self._panel
         # A row hangs off the group; an inline cell off the row it joined.
         labels = [
-            self._param_labels[key]
-            for key, row in self._param_rows.items()
-            if row.parent() is self._param_group and key in self._param_labels
+            self.labels[key]
+            for key, row in self.rows.items()
+            if row.parent() is self.group and key in self.labels
         ]
-        output_dir = getattr(self, "_output_dir_label", None)
+        output_dir = panel._output_dir_label
         if output_dir is not None:
             labels.append(output_dir)
-        width = max([self.LABEL_MIN_WIDTH] + [lb.sizeHint().width() for lb in labels])
+        width = max([panel.LABEL_MIN_WIDTH] + [lb.sizeHint().width() for lb in labels])
         for label in labels:
             label.setMinimumWidth(width)
-        self.LABEL_MIN_WIDTH = width
+        panel.LABEL_MIN_WIDTH = width
 
-    def _make_param_widget(
+    def make_param_widget(
         self,
         spec: AttributeSpec,
         key: str,
@@ -217,14 +222,14 @@ class _ParamRowsMixin(object):
         # Prefix the registry key so two panels in the same window
         # can host the same AttributeSpec without objectName clashes.
         widget.setObjectName(f"param_{key.lower()}")
-        if spec.kind not in self.TALL_KINDS:
+        if spec.kind not in self._panel.TALL_KINDS:
             widget.setMinimumHeight(19)
             widget.setMaximumHeight(19)
         widget.setToolTip(tooltip_html)
-        self._param_widgets[key] = widget
+        self.widgets[key] = widget
         return widget
 
-    def _build_inline_cell(
+    def build_inline_cell(
         self,
         spec: AttributeSpec,
         key: str,
@@ -234,8 +239,8 @@ class _ParamRowsMixin(object):
         """Append *spec* to the right of *host_row*'s widget, as its own cell.
 
         The cell (label + widget) is what gets registered as this key's "row",
-        so :meth:`set_param_enabled` greys only this control and
-        :meth:`_refresh_param_visibility` can hide it without taking the host
+        so ``set_param_enabled`` greys only this control and
+        ``_refresh_param_visibility`` can hide it without taking the host
         control with it. The label carries no minimum width -- an inline
         modifier reads as a suffix to the value beside it, not as a second
         left-aligned column -- and the cell takes no stretch, so the host
@@ -249,83 +254,29 @@ class _ParamRowsMixin(object):
         label = QtWidgets.QLabel(spec.display_label + ":", cell)
         label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         label.setToolTip(tooltip_html)
-        self._param_labels[key] = label
+        self.labels[key] = label
 
-        widget = self._make_param_widget(spec, key, cell, tooltip_html)
+        widget = self.make_param_widget(spec, key, cell, tooltip_html)
 
         hbox.addWidget(label)
         hbox.addWidget(widget)
         host_row.layout().addWidget(cell)
 
-        self._param_rows[key] = cell
+        self.rows[key] = cell
         return widget
 
-    def live_param_tooltips(self) -> Dict[str, Callable[[], str]]:
-        """Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.
+    # ------------------ Tooltips --------------------------------------
 
-        :meth:`format_param_tooltip` runs once, at build time, so a row that
-        describes something the *session* owns -- a scene set the user defines
-        from a selection, a path that resolves per scene -- is stale the moment
-        that state moves. A provider registered here is called on every hover
-        instead (:mod:`uitk.widgets.mixins.tooltip_mixin`), so the row can
-        answer "what is captured right now?" with no refresh plumbing.
-
-        A provider returns the WHOLE tooltip, so fold the static text back in
-        with ``self.format_param_tooltip(spec)`` -- binding replaces the
-        widget's tooltip rather than appending to it. Pair it with
-        :meth:`pythontk.TooltipFormat.stored_items`
-        for the usual "here is what you captured" list.
-
-        Bound to the row's label AND its control -- both are hover targets for
-        the same row. An ``action`` row's buttons keep their own per-choice
-        tips: those describe the *click*, not the contents.
-
-        Returns:
-            (dict) Param key -> zero-argument callable returning tooltip HTML.
-            Prefer a bound method over a closure: the tooltip surface weakrefs
-            bound-method providers, so the binding can't outlive this panel.
-            Unknown keys are ignored, so a shared base may offer a row that
-            only some of its panels register.
-        """
-        return {}
-
-    def live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]:
-        """Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.
-
-        The composable counterpart to :meth:`live_param_tooltips`. That one owns
-        the WHOLE tooltip, which is right for a row whose static text is the
-        thing going stale -- and wrong for an ``action`` row, whose buttons each
-        carry their own per-choice description. Replacing three specific answers
-        ("what does Clear do?") with one general one is a bad trade, and the
-        buttons are exactly where the user is standing when they wonder what the
-        row currently holds.
-
-        A block provider returns only the live part, so every hover target on
-        the row -- label, control, and each action button -- keeps its own text
-        and gains the current contents underneath it.
-
-        Register a key in ONE of the two hooks: binding replaces a widget's
-        provider rather than stacking, and blocks are installed second, so a
-        key in both silently loses its whole-tooltip provider on the label and
-        the control while the buttons keep only the block.
-
-        Returns:
-            (dict) Param key -> zero-argument callable returning the live HTML
-            block (see
-            :meth:`pythontk.TooltipFormat.stored_items`).
-            Unknown keys are ignored.
-        """
-        return {}
-
-    def _bind_live_param_tooltips(self) -> None:
+    def bind_live_tooltips(self) -> None:
         """Install every live tooltip provider on its row."""
-        for key, provider in (self.live_param_tooltips() or {}).items():
-            targets = [self._param_widgets.get(key), self._param_labels.get(key)]
-            self.sb.tooltip.bind([t for t in targets if t is not None], provider)
-        for key, provider in (self.live_param_tooltip_blocks() or {}).items():
-            self._bind_live_param_block(key, provider)
+        panel = self._panel
+        for key, provider in (panel.live_param_tooltips() or {}).items():
+            targets = [self.widgets.get(key), self.labels.get(key)]
+            panel.sb.tooltip.bind([t for t in targets if t is not None], provider)
+        for key, provider in (panel.live_param_tooltip_blocks() or {}).items():
+            self.bind_live_block(key, provider)
 
-    def _bind_live_param_block(self, key: str, provider) -> None:
+    def bind_live_block(self, key: str, provider) -> None:
         """Append *provider*'s live block to every hover target of row *key*.
 
         The composed providers are plain closures, so the tooltip surface stores
@@ -333,29 +284,24 @@ class _ParamRowsMixin(object):
         this slot alive exactly as long as the widgets it bound -- which the
         panel owns and destroys together -- rather than beyond them.
         """
-        params = getattr(self.params_module, "PARAMS", {}) or {}
+        panel = self._panel
+        params = getattr(panel.params_module, "PARAMS", {}) or {}
         spec = params.get(key)
         if spec is None:
             return
-        widget = self._param_widgets.get(key)
-        static = self.format_param_tooltip(spec)
-        targets = [
-            (t, static) for t in (widget, self._param_labels.get(key)) if t is not None
-        ]
+        widget = self.widgets.get(key)
+        static = panel.format_param_tooltip(spec)
+        targets = [(t, static) for t in (widget, self.labels.get(key)) if t is not None]
         # An action row's buttons: each keeps its own per-choice description,
-        # promoted to HTML first (see :meth:`_as_tooltip_html`).
+        # promoted to HTML first (see :meth:`as_tooltip_html`).
         for button in (getattr(widget, "_action_buttons", None) or {}).values():
-            own = self._pristine_tooltip(button)
-            targets.append((button, self._as_tooltip_html(own) if own else static))
+            own = self.pristine_tooltip(button)
+            targets.append((button, self.as_tooltip_html(own) if own else static))
         for target, base in targets:
-            self.sb.tooltip.bind(target, lambda _base=base, _p=provider: _base + _p())
-
-    #: Dynamic property holding a widget's own tooltip, captured before any
-    #: live provider could overwrite it (see :meth:`_pristine_tooltip`).
-    _STATIC_TOOLTIP_PROP = "_bridge_static_tooltip"
+            panel.sb.tooltip.bind(target, lambda _base=base, _p=provider: _base + _p())
 
     @classmethod
-    def _pristine_tooltip(cls, widget) -> str:
+    def pristine_tooltip(cls, widget) -> str:
         """The widget's OWN tooltip, from before a live provider rewrote it.
 
         The tooltip surface writes each computed string back onto the widget as
@@ -365,17 +311,14 @@ class _ParamRowsMixin(object):
         (measured: two hovers, two lists). The first read is stashed as a Qt
         dynamic property and reused from then on, so binding is idempotent.
         """
-        stored = widget.property(cls._STATIC_TOOLTIP_PROP)
+        stored = widget.property(cls.STATIC_TOOLTIP_PROP)
         if stored is None:
             stored = widget.toolTip()
-            widget.setProperty(cls._STATIC_TOOLTIP_PROP, stored)
+            widget.setProperty(cls.STATIC_TOOLTIP_PROP, stored)
         return stored
 
-    #: An opening tag, as opposed to a bare ``<`` used as a less-than sign.
-    _HTML_TAG_RE = re.compile(r"<[a-zA-Z/!]")
-
     @classmethod
-    def _as_tooltip_html(cls, text: str) -> str:
+    def as_tooltip_html(cls, text: str) -> str:
         """Promote a plain-text tooltip to HTML, preserving its line breaks.
 
         Qt renders a tooltip as rich text the moment it contains a tag, so
@@ -385,61 +328,43 @@ class _ParamRowsMixin(object):
         ``<``, so a tip that merely says ``width < height`` is still escaped
         instead of having the comparison swallowed as markup.
         """
-        if not text or cls._HTML_TAG_RE.search(text):
+        if not text or cls.HTML_TAG_RE.search(text):
             return text
         from html import escape
 
         return "<p style='margin:0'>" + escape(text).replace("\n", "<br>") + "</p>"
 
-    def _wire_action_params(self) -> None:
+    # ------------------ Actions and enablement ------------------------
+
+    def wire_action_params(self) -> None:
         """Connect ``action``-kind param buttons to same-named slot methods.
 
         An ``action`` row's container exposes ``_action_buttons``
         (``{action_id: QPushButton}``, see :mod:`uitk.bridge.spec`); each id
-        that names a callable on this slot is wired to it, so a registry can
+        that names a callable on the panel is wired to it, so a registry can
         declare panel actions as data with zero per-panel wiring code. An id
         with no matching method is disabled rather than silently inert.
         """
-        for key, widget in self._param_widgets.items():
+        panel = self._panel
+        for key, widget in self.widgets.items():
             buttons = getattr(widget, "_action_buttons", None)
             if not buttons:
                 continue
             for action_id, btn in buttons.items():
-                handler = getattr(self, action_id, None)
+                handler = getattr(panel, action_id, None)
                 if callable(handler):
                     btn.clicked.connect(handler)
                 else:
                     btn.setEnabled(False)
                     btn.setToolTip(
-                        f"No handler '{action_id}' on {type(self).__name__}."
+                        f"No handler '{action_id}' on {type(panel).__name__}."
                     )
 
     def set_param_enabled(self, key: str, enabled: bool, reason: str = "") -> None:
-        """Grey out (or re-enable) one parameter row, with *reason* as its tooltip.
-
-        For parameters whose relevance depends on live session state rather
-        than on the template -- e.g. a suffix-pairing fallback that the scene's
-        explicit set makes moot. Visibility already answers "does this template
-        use the knob?" (:meth:`_refresh_param_visibility`); this answers "is it
-        in effect right now?", which is a different question and reads better
-        greyed than hidden -- the user can still see the value that *would*
-        apply, and why it doesn't.
-
-        The row container itself stays enabled and carries *reason*: Qt does
-        not deliver tooltip events to disabled widgets, but a disabled child
-        doesn't consume the hover either, so the parent's tooltip is what
-        surfaces. Unknown keys are ignored -- a shared base can offer the row
-        without every panel registering it.
-
-        Another parameter's inline cell (see :meth:`_build_inline_cell`) lives
-        inside this row but is NOT part of it, so it is skipped: greying the
-        value an "Auto" toggle superseded must not grey the toggle sitting
-        beside it, or the user cannot turn it back off.
-        """
-        row = self._param_rows.get(key)
+        row = self.rows.get(key)
         if row is None:
             return
-        others = {r for k, r in self._param_rows.items() if k != key}
+        others = {r for k, r in self.rows.items() if k != key}
         layout = row.layout()
         children = _LayoutItems.widgets(layout) if layout is not None else []
         for child in children:
@@ -447,8 +372,8 @@ class _ParamRowsMixin(object):
                 child.setEnabled(enabled)
         row.setToolTip("" if enabled else reason)
 
-    def _wire_enablement_refresh(self) -> None:
-        """Re-run :meth:`_refresh_param_enablement` on panel show + trigger edits.
+    def wire_enablement_refresh(self) -> None:
+        """Re-run ``_refresh_param_enablement`` on panel show + trigger edits.
 
         Enablement keys off LIVE session state, which can change while the
         panel is closed (a new scene, a set deleted from the outliner). The
@@ -464,103 +389,68 @@ class _ParamRowsMixin(object):
         A panel whose root widget isn't a uitk ``MainWindow`` has no
         ``on_show`` to hook; that's a no-op, not an error.
         """
-        on_show = getattr(self.ui, "on_show", None)
+        panel = self._panel
+        on_show = getattr(panel.ui, "on_show", None)
         if on_show is not None:
-            on_show.connect(self._refresh_param_enablement)
-        for trigger, _governed, _reason in self.param_supersessions():
-            widget = self._param_widgets.get(trigger)
+            on_show.connect(panel._refresh_param_enablement)
+        for trigger, _governed, _reason in panel.param_supersessions():
+            widget = self.widgets.get(trigger)
             if widget is not None:
                 KindFactory.connect_changed(
-                    widget, lambda *_: self._refresh_param_enablement()
+                    widget, lambda *_: panel._refresh_param_enablement()
                 )
 
-    def param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]:
-        """The ``(trigger, governed, reason)`` triples in effect for this panel.
-
-        The registry's own declaration wins; :attr:`PARAM_SUPERSESSIONS` is the
-        fallback. Override to compute them.
-        """
-        declared = getattr(self.params_module, "SUPERSESSIONS", None)
-        return tuple(declared if declared is not None else self.PARAM_SUPERSESSIONS)
-
-    def _refresh_param_enablement(self) -> None:
-        """Re-evaluate which rows are *in effect*, and grey the rest.
-
-        Called on every template change, every panel show, and every edit of a
-        supersession trigger; panels also call it themselves after an action
-        that changes the state it keys off. The default applies the declared
-        supersessions (:meth:`param_supersessions`); a subclass adds the
-        checks that need live session state -- calling ``super()`` first, or
-        the declared ones stop being applied -- driving
-        :meth:`set_param_enabled` for each.
-
-        Must not touch ``self.bridge``: this runs during panel construction,
-        where the engine may be an optional package the user declined to
-        install.
-        """
-        for trigger, governed, reason in self.param_supersessions():
-            if trigger not in self._param_widgets:
+    def refresh_enablement(self) -> None:
+        """The declared supersessions (see ``_refresh_param_enablement``)."""
+        panel = self._panel
+        for trigger, governed, reason in panel.param_supersessions():
+            if trigger not in self.widgets:
                 continue
-            active = bool(self._read_param(trigger))
+            active = bool(panel._read_param(trigger))
             for key in governed:
-                self.set_param_enabled(key, not active, reason if active else "")
+                panel.set_param_enabled(key, not active, reason if active else "")
 
-    def _read_param(self, key: str) -> Any:
+    # ------------------ Values ----------------------------------------
+
+    def read(self, key: str) -> Any:
         """Extract the current value via the registered KindHandler."""
-        return KindFactory.read_value(self._param_widgets[key])
+        return KindFactory.read_value(self.widgets[key])
 
-    def _write_param(self, key: str, value: Any) -> None:
+    def write(self, key: str, value: Any) -> None:
         """Push *value* into the widget for *key* via the KindHandler."""
-        KindFactory.set_value(self._param_widgets[key], value)
+        KindFactory.set_value(self.widgets[key], value)
 
-    def _set_param_choices(self, key: str, choices) -> None:
-        """Repopulate the entries of a choice-driven param (``choice`` /
-        ``check_list``) at runtime.
+    def set_choices(self, key: str, choices) -> None:
+        """Repopulate the entries of a choice-driven param at runtime."""
+        KindFactory.set_choices(self.widgets[key], choices)
 
-        The hook for parameters whose real entry set is only knowable in the
-        live session -- installed app versions, deployable scripts, scene
-        contents. The registry declares the kind and any static entries; the
-        panel pushes the discovered ones in here from its ``__init__``.
-        """
-        KindFactory.set_choices(self._param_widgets[key], choices)
-
-    def collect_param_values(self) -> Dict[str, Any]:
-        """Snapshot every widget's current value, regardless of visibility.
-
-        ``action`` rows carry no value (their buttons are commands, not
-        data) and are excluded, so send params stay purely value-shaped.
-        """
+    def collect_values(self) -> Dict[str, Any]:
+        panel = self._panel
         return {
-            key: self._read_param(key)
-            for key, widget in self._param_widgets.items()
+            key: panel._read_param(key)
+            for key, widget in self.widgets.items()
             if not hasattr(widget, "_action_buttons")
         }
 
-    def _relevant_param_keys(self) -> Optional[set]:
-        """Hook: the param keys whose rows should be visible for the current
-        selection, or ``None`` to skip the visibility update entirely (no
-        template selected / unreadable source).
+    # ------------------ Visibility ------------------------------------
 
-        Default: the placeholder keys referenced by the active template file
-        (the script-substitution bridges). Run-mode panels — e.g. a single
-        runner driven by a ``--stop-after``-style mode rather than per-template
-        files — override this to gate visibility on the selected mode, so the
-        parameter UI stays dynamic the same way the DCC bridges' does.
-        """
-        pair = self._selected_template_mode()
+    def relevant_keys(self) -> Optional[set]:
+        """The default relevance: the keys the active template file references."""
+        panel = self._panel
+        pair = panel._selected_template_mode()
         if not pair:
             return None
         template, _mode = pair
-        path = self.template_dir / f"{template}{self.TEMPLATE_EXTENSION}"
+        path = panel.template_dir / f"{template}{panel.TEMPLATE_EXTENSION}"
         if not path.is_file():
             return None
-        return self.params_module.referenced_keys(path.read_text(encoding="utf-8"))
+        return panel.params_module.referenced_keys(path.read_text(encoding="utf-8"))
 
-    def _refresh_param_visibility(self) -> None:
+    def refresh_visibility(self) -> None:
         """Show only the rows relevant to the current selection.
 
-        Delegates the "which keys are relevant?" decision to
-        :meth:`_relevant_param_keys` so subclasses can drive visibility from a
+        Delegates the "which keys are relevant?" decision to the panel's
+        ``_relevant_param_keys`` so subclasses can drive visibility from a
         template file (default) or a run mode; the row toggling, the dividers,
         the empty group and the height re-fit are :class:`FieldVisibility`.
 
@@ -569,15 +459,15 @@ class _ParamRowsMixin(object):
         snap a height the user dragged back on every keystroke. The first
         refresh always applies -- before it, every row shows.
         """
-        used = self._relevant_param_keys()
-        if used is None or self._param_fields is None:
+        used = self._panel._relevant_param_keys()
+        if used is None or self.fields is None:
             return
         used = frozenset(used)
-        if used == getattr(self, "_param_rows_shown", None):
+        if used == self.rows_shown:
             return
-        self._param_rows_shown = used
-        self._param_fields.show(used)
+        self.rows_shown = used
+        self.fields.show(used)
         # A folded section keeps its rows down; its divider stays to reopen it.
-        for key, row in self._param_rows.items():
-            if self._param_section.get(key) in self._folded_sections:
+        for key, row in self.rows.items():
+            if self.section.get(key) in self.folded_sections:
                 FieldVisibility.set_widget_visible(row, False)

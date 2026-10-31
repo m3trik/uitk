@@ -9,19 +9,20 @@ its registration with the owning window; the lookups (``get_items``,
 placeholder a menu shows when opened empty, and the filter that hides items
 whose action already has a keyboard shortcut.
 
-One part of :class:`~uitk.widgets.menu.Menu`, which inherits it; it holds no
-state of its own (``Menu.__init__`` declares every attribute used here) and
-is never instantiated alone.
+One part of :class:`~uitk.widgets.menu.Menu` (see ``menu_parts``).
 """
 
 import inspect
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Union
 
 from qtpy import QtCore, QtWidgets
 
 from uitk.managers.shortcut_manager import ShortcutManager
 from uitk.widgets._layout_items import _LayoutItems
 from uitk.widgets.separator import Separator
+
+if TYPE_CHECKING:
+    from uitk.widgets.menu import Menu
 
 # Widget type cache for faster widget creation
 _WIDGET_TYPE_CACHE: Dict[str, type] = {
@@ -40,7 +41,7 @@ _WIDGET_TYPE_CACHE: Dict[str, type] = {
 
 # Names whose target class would create an import cycle at module load
 # (e.g. ComboBox transitively imports this module via MenuMixin). Resolved
-# and cached on first use by _resolve_widget_class.
+# and cached on first use by _MenuItems.resolve_widget_class.
 _LAZY_WIDGET_TYPES: Dict[str, Tuple[str, str]] = {
     "QComboBox": ("uitk.widgets.comboBox", "ComboBox"),
 }
@@ -62,11 +63,42 @@ _HEIGHT_CONSTRAINED_TYPES = (
 )
 
 
-class _MenuItemsMixin:
-    """What the menu holds: adding, finding and removing items."""
+class _MenuItems:
+    """What a :class:`Menu` holds: adding, finding and removing items.
+
+    Owns the bulk-add bookkeeping (the ``on_item_added`` queue and the add
+    depth), the empty-state placeholder and its timer, and the items the
+    shortcut filter hid. The item data (``widget_data``) and the grid
+    (``gridLayout``) stay public attributes of the menu it holds; every hook a
+    subclass may override (``add``, ``_shortcut_filter_candidates``,
+    ``_shortcut_filter_emptied``) is called through the menu.
+    """
+
+    def __init__(
+        self, menu: "Menu", empty_message: Optional[str], empty_timeout_ms: int
+    ) -> None:
+        self._menu = menu
+        # ``add()`` blocks signals for the duration of the (potentially
+        # recursive, bulk) insert so Qt's internal layout churn doesn't
+        # cascade.  ``on_item_added`` emits land in this queue while blocked
+        # and are flushed once the OUTERMOST add() unwinds (tracked by
+        # ``add_depth``) and the menu is settled — otherwise the documented
+        # signal never reaches listeners.
+        self.pending_item_added_emits: list = []
+        self.add_depth: int = 0
+        # Empty-state behavior: when shown with no items, display a brief
+        # message ("No options" by default) then auto-hide.  An
+        # ``empty_message`` of None or an ``empty_timeout_ms`` of 0 disables it.
+        self.empty_message = empty_message
+        self.empty_timeout_ms = max(0, int(empty_timeout_ms))
+        self.empty_placeholder: Optional[QtWidgets.QLabel] = None
+        self.empty_timer: Optional[QtCore.QTimer] = None
+        # Items this menu hid because their action already has a shortcut —
+        # tracked so only those are restored when the preference goes off.
+        self.shortcut_hidden_items: list = []
 
     @staticmethod
-    def _resolve_widget_class(name: str):
+    def resolve_widget_class(name: str):
         cls = _WIDGET_TYPE_CACHE.get(name)
         if cls is not None:
             return cls
@@ -79,47 +111,81 @@ class _MenuItemsMixin:
         _WIDGET_TYPE_CACHE[name] = cls
         return cls
 
-    @property
     def contains_items(self) -> bool:
-        """Check if the QMenu contains any genuine items.
-
-        The transient empty-state placeholder (see :meth:`_add_empty_placeholder`)
-        is intentionally excluded — callers asking "does this menu have
-        anything to offer?" should get False while only the placeholder
-        is on screen.
-        """
+        grid = self._menu.gridLayout
         # Handle lazy initialization - gridLayout may not exist yet
-        if self.gridLayout is None:
+        if grid is None:
             return False
-        count = self.gridLayout.count()
-        if self._empty_placeholder is not None:
+        count = grid.count()
+        if self.empty_placeholder is not None:
             count -= 1
         return count > 0
 
-    def _add_empty_placeholder(self) -> None:
+    # ------------------------------------------------------------------
+    # The empty state
+    # ------------------------------------------------------------------
+
+    def start_empty_state(self) -> None:
+        """Show the placeholder and arm its auto-hide (a show with no items)."""
+        self.add_empty_placeholder()
+        if self.empty_timeout_ms > 0:
+            if self.empty_timer is None:
+                # Its timeout reaches the menu's slot, so the connection dies
+                # with the menu (the timer is the menu's child anyway).
+                self.empty_timer = QtCore.QTimer(self._menu)
+                self.empty_timer.setSingleShot(True)
+                self.empty_timer.timeout.connect(self._menu._on_empty_timeout)
+            self.empty_timer.start(self.empty_timeout_ms)
+
+    def end_empty_state(self) -> None:
+        """Stop the auto-hide and drop the placeholder (a hide, a real item)."""
+        if self.empty_timer is not None:
+            self.empty_timer.stop()
+        self.remove_empty_placeholder()
+
+    def add_empty_placeholder(self) -> None:
         """Insert the transient "No options" message when shown with no items."""
-        if self._empty_placeholder is not None or not self._empty_message:
+        grid = self._menu.gridLayout
+        if self.empty_placeholder is not None or not self.empty_message:
             return
-        if self.gridLayout is None:
+        if grid is None:
             return
-        label = QtWidgets.QLabel(self._empty_message)
+        label = QtWidgets.QLabel(self.empty_message)
         label.setAlignment(QtCore.Qt.AlignCenter)
         label.setObjectName("menuEmptyMessage")
         label.setProperty("class", "menuEmptyMessage")
-        if self.min_item_height:
-            label.setMinimumHeight(self.min_item_height)
+        if self._menu.min_item_height:
+            label.setMinimumHeight(self._menu.min_item_height)
         # Bypass add() — this widget is purely informational and must not
         # be counted by contains_items, registered with the main window,
         # or get the usual item event-filter treatment.
-        self.gridLayout.addWidget(label, 0, 0, 1, max(1, self.gridLayout.columnCount()))
-        self._empty_placeholder = label
+        grid.addWidget(label, 0, 0, 1, max(1, grid.columnCount()))
+        self.empty_placeholder = label
 
-    def _shortcut_filter_candidates(self) -> list:
-        """Items the shortcut filter may hide (overridden where the body is
-        not the grid — see :class:`~uitk.widgets.context_menu.ContextMenu`)."""
-        return self.get_items()
+    def remove_empty_placeholder(self) -> None:
+        """Tear down the empty placeholder if present."""
+        label = self.empty_placeholder
+        self.empty_placeholder = None
+        if label is None:
+            return
+        grid = self._menu.gridLayout
+        if grid is not None:
+            grid.removeWidget(label)
+        label.setParent(None)
+        label.deleteLater()
 
-    def _item_has_shortcut(self, item) -> bool:
+    def on_empty_timeout(self) -> None:
+        """Hide the menu when the empty-state timer fires (unless items arrived)."""
+        if self.empty_placeholder is None:
+            return  # Real items appeared while shown — leave the menu open.
+        if self._menu.isVisible():
+            self._menu.hide()
+
+    # ------------------------------------------------------------------
+    # The shortcut-bound item filter
+    # ------------------------------------------------------------------
+
+    def item_has_shortcut(self, item) -> bool:
         """Whether *item*'s action currently holds a keyboard shortcut.
 
         An item is matched to a command by objectName through the Switchboard
@@ -134,10 +200,10 @@ class _MenuItemsMixin:
         try:
             return bool(sb.widget_has_shortcut(item))
         except Exception as e:  # a menu must open whatever the registry does
-            self.logger.debug(f"[_item_has_shortcut] {name}: {e}")
+            self._menu.logger.debug(f"[_item_has_shortcut] {name}: {e}")
             return False
 
-    def _apply_shortcut_item_filter(self) -> None:
+    def apply_shortcut_item_filter(self) -> None:
         """Hide items whose action already has a shortcut, when asked to.
 
         Driven by the global ``ShortcutManager.hide_bound_menu_items()``
@@ -147,7 +213,7 @@ class _MenuItemsMixin:
         restores exactly the items this hid, leaving rows hidden for any other
         reason alone.
         """
-        restored, self._shortcut_hidden_items = self._shortcut_hidden_items, []
+        restored, self.shortcut_hidden_items = self.shortcut_hidden_items, []
         for item in restored:
             try:
                 item.setVisible(True)
@@ -157,50 +223,24 @@ class _MenuItemsMixin:
         if not ShortcutManager.hide_bound_menu_items():
             return
 
-        candidates = self._shortcut_filter_candidates()
+        menu = self._menu
+        candidates = menu._shortcut_filter_candidates()
         for item in candidates:
-            if item.isHidden() or not self._item_has_shortcut(item):
+            if item.isHidden() or not self.item_has_shortcut(item):
                 continue
             item.setVisible(False)
-            self._shortcut_hidden_items.append(item)
+            self.shortcut_hidden_items.append(item)
 
         # Filtering everything away would otherwise open a bare empty popup.
-        if self._shortcut_hidden_items and all(item.isHidden() for item in candidates):
-            self._shortcut_filter_emptied()
+        if self.shortcut_hidden_items and all(item.isHidden() for item in candidates):
+            menu._shortcut_filter_emptied()
 
-    def _shortcut_filter_emptied(self) -> None:
-        """Every filterable item is hidden — show the empty-state placeholder
-        instead of a bare popup."""
-        self._add_empty_placeholder()
-
-    def _remove_empty_placeholder(self) -> None:
-        """Tear down the empty placeholder if present."""
-        label = self._empty_placeholder
-        self._empty_placeholder = None
-        if label is None:
-            return
-        if self.gridLayout is not None:
-            self.gridLayout.removeWidget(label)
-        label.setParent(None)
-        label.deleteLater()
-
-    def _on_empty_timeout(self) -> None:
-        """Hide the menu when the empty-state timer fires (unless items arrived)."""
-        if self._empty_placeholder is None:
-            return  # Real items appeared while shown — leave the menu open.
-        if self.isVisible():
-            self.hide()
+    # ------------------------------------------------------------------
+    # Lookups
+    # ------------------------------------------------------------------
 
     def get_items(self, types=None):
-        """Get all items in the list, optionally filtered by type.
-
-        Parameters:
-            types (str, type, list of str, list of type, optional): The type(s) or type name(s) of widgets to retrieve. Defaults to None.
-
-        Returns:
-            list: A list of all QWidget items in the list, filtered by type if specified.
-        """
-        items = _LayoutItems.widgets(self.gridLayout)
+        items = _LayoutItems.widgets(self._menu.gridLayout)
 
         if types is not None:
             # Ensure types is a list for easier processing
@@ -223,7 +263,7 @@ class _MenuItemsMixin:
                         # Caught in the field: a tb004 whose state was read from
                         # get_items("CheckBox") was False no matter what the boxes
                         # said, so its label could never say ON.
-                        self.logger.warning(
+                        self._menu.logger.warning(
                             f"[get_items] {type_item!r} is not a QtWidgets class; "
                             f"nothing can match it (pass the class itself, or the "
                             f"Q-prefixed base name)."
@@ -240,18 +280,8 @@ class _MenuItemsMixin:
         return items
 
     def get_item(self, identifier):
-        """Return a QAction or QWidgetAction by index or text.
-
-        Parameters:
-            identifier (int or str): If an int, treats it as an index. If a str, treats it as the text of the item.
-
-        Raises:
-            ValueError: If the identifier is not an integer (index) or string (text).
-
-        Returns:
-            QAction or QWidgetAction: The item found by the identifier.
-        """
-        items = self.get_items()
+        menu = self._menu
+        items = menu.get_items()
 
         if isinstance(identifier, int):  # get by index
             if identifier < 0 or identifier >= len(items):
@@ -262,7 +292,7 @@ class _MenuItemsMixin:
                 # Resolve each item's label via the guarded helper — not every
                 # item type exposes text() (combos use currentText(), spin boxes
                 # value(), etc.), so a bare i.text() would AttributeError.
-                if self.get_item_text(i) == identifier:
+                if menu.get_item_text(i) == identifier:
                     item = i
                     break
             else:
@@ -274,18 +304,8 @@ class _MenuItemsMixin:
 
         return item
 
-    def get_item_text(self, widget: QtWidgets.QWidget) -> Optional[str]:
-        """Get the textual representation of a widget.
-
-        This method attempts to retrieve text from various widget types by trying
-        common text-retrieval methods in order of likelihood.
-
-        Parameters:
-            widget: The widget to get text from.
-
-        Returns:
-            str: The text associated with the widget, or None if unavailable.
-        """
+    @staticmethod
+    def get_item_text(widget: QtWidgets.QWidget) -> Optional[str]:
         # Try text() method (most common for QLabel, QPushButton, etc.)
         if hasattr(widget, "text") and callable(widget.text):
             return widget.text()
@@ -304,62 +324,28 @@ class _MenuItemsMixin:
 
         return None
 
-    def get_item_data(self, widget):
-        """Get data associated with a widget in the list or its sublists.
-
-        This method returns the data associated with the widget in the list or any sublist. If the widget is not found, it returns None.
-
-        Parameters:
-            widget (QtWidgets.QWidget): The widget to get the data for.
-
-        Returns:
-            Any: The data associated with the widget, or None if the widget is not found.
-        """
-        try:
-            return self.widget_data.get(widget)
-        except KeyError:
-            return None
-
-    def set_item_data(self, widget, data):
-        """Set data associated with a widget in the list or its sublists.
-
-        This method sets the data associated with a widget in the list. If the widget is not found, it does nothing.
-
-        Parameters:
-            widget (QtWidgets.QWidget): The widget to set the data for.
-            data: The data to associate with the widget.
-        """
-        if widget in self.get_items():
-            self.widget_data[widget] = data
+    # ------------------------------------------------------------------
+    # Removing
+    # ------------------------------------------------------------------
 
     def remove_widget(self, widget):
-        """Remove a widget from the layout.
-
-        The item filter :meth:`add` installed comes off with it: this hands
-        the widget's lifetime back to the caller, and a menu that goes on
-        filtering a widget it no longer owns both pins the menu alive through
-        the widget's filter list and keeps answering that widget's events.
-
-        If this results in an empty menu, the PARENT trigger hooks are
-        uninstalled too (:meth:`_uninstall_event_filters`, which covers only
-        those -- never the per-item filters).
-        """
-        self.logger.debug(
+        menu = self._menu
+        menu.logger.debug(
             f"Menu.remove_widget: Removing widget={widget.objectName() or type(widget).__name__}"
         )
-        self._remove_item_event_filter(widget)
-        self.gridLayout.removeWidget(widget)
-        if widget in self.widget_data:
-            del self.widget_data[widget]
+        self.remove_item_event_filter(widget)
+        menu.gridLayout.removeWidget(widget)
+        if widget in menu.widget_data:
+            del menu.widget_data[widget]
 
         # Uninstall event filters if menu is now empty
-        if not self.contains_items:
-            self._uninstall_event_filters()
-            self.logger.debug(
+        if not menu.contains_items:
+            menu._uninstall_event_filters()
+            menu.logger.debug(
                 "Menu.remove_widget: Menu now empty, event filters uninstalled"
             )
 
-    def _remove_item_event_filter(self, widget) -> None:
+    def remove_item_event_filter(self, widget) -> None:
         """Undo the ``installEventFilter`` :meth:`add` puts on every item.
 
         The counterpart that was missing. Tolerates a widget whose C++ object
@@ -367,53 +353,46 @@ class _MenuItemsMixin:
         wrapper that raises has no filter list left to clean anyway.
         """
         try:
-            widget.removeEventFilter(self)
+            widget.removeEventFilter(self._menu)
         except (RuntimeError, AttributeError):
             pass
 
     def clear(self) -> None:
-        """Clear all items in the list.
-
-        Each item gives up the filter :meth:`add` installed on it BEFORE it is
-        deleted. ``deleteLater`` only schedules the destruction, so an item
-        keeps receiving events until the loop drains it -- with the menu still
-        filtering them, through ``widget in items`` / ``objectName()`` /
-        :meth:`_resolve_hide_on_trigger` on an object being torn down.
-
-        :meth:`_uninstall_event_filters` below does NOT cover this: it removes
-        the PARENT/trigger hooks only, which is what its own name means.
-        """
-        if self.gridLayout is None:
+        menu = self._menu
+        grid = menu.gridLayout
+        if grid is None:
             return
 
         # Tear down any transient empty-state placeholder first, while its
         # C++ object is still alive (before the reverse-delete loop's
         # deleteLater is processed). This mirrors add()'s teardown so the
-        # placeholder can't dangle: leaving self._empty_placeholder set would
-        # (1) make the next empty show no-op and (2) let _empty_timer fire
-        # _on_empty_timeout -> hide() -> _remove_empty_placeholder() on an
-        # already-destroyed label, raising RuntimeError from the timer.
-        if self._empty_placeholder is not None:
-            if self._empty_timer is not None:
-                self._empty_timer.stop()
-            self._remove_empty_placeholder()
+        # placeholder can't dangle: leaving it set would (1) make the next
+        # empty show no-op and (2) let the empty timer fire on_empty_timeout
+        # -> hide() -> remove_empty_placeholder() on an already-destroyed
+        # label, raising RuntimeError from the timer.
+        if self.empty_placeholder is not None:
+            self.end_empty_state()
 
-        item_count = self.gridLayout.count()
-        self.logger.debug(f"Menu.clear: Clearing {item_count} items")
+        item_count = grid.count()
+        menu.logger.debug(f"Menu.clear: Clearing {item_count} items")
 
         # Last item first.
-        for widget in reversed(_LayoutItems.widgets(self.gridLayout)):
-            self._remove_item_event_filter(widget)
-            self.gridLayout.removeWidget(widget)
+        for widget in reversed(_LayoutItems.widgets(grid)):
+            self.remove_item_event_filter(widget)
+            grid.removeWidget(widget)
             widget.setParent(None)
             widget.deleteLater()
 
         # Reset the widget_data dictionary
-        self.widget_data = {}
+        menu.widget_data = {}
 
         # Uninstall event filters since menu is now empty
-        self._uninstall_event_filters()
-        self.logger.debug("Menu.clear: All items cleared, event filters uninstalled")
+        menu._uninstall_event_filters()
+        menu.logger.debug("Menu.clear: All items cleared, event filters uninstalled")
+
+    # ------------------------------------------------------------------
+    # Adding
+    # ------------------------------------------------------------------
 
     def add(
         self,
@@ -425,74 +404,59 @@ class _MenuItemsMixin:
         colSpan: Optional[int] = None,
         **kwargs,
     ) -> Union[QtWidgets.QWidget, list]:
-        """Add an item or multiple items to the list.
-
-        The function accepts a string, an object, or a collection of items (a dictionary, list, tuple, set, or map).
-
-        Parameters:
-            x (str, object, dict, list, tuple, set, map): The item or items to add.
-            data: Data to associate with the added item or items. Default is None.
-            row (int): The row index at which to add the widget. Default is the last row.
-            col (int): The column index at which to add the widget. Default is 0.
-            rowSpan (int): The number of rows the widget should span. Default is 1.
-            colSpan (int): The number of columns the widget should span. Default is the total number of columns.
-            **kwargs: Additional arguments to set on the added item or items.
-
-        Returns:
-            widget/list: The added widget or list of added widgets.
-        """
+        menu = self._menu
         # CRITICAL OPTIMIZATION: Disable updates AND layout recalculation during add
         # This prevents Qt from recalculating layout/geometry on every operation
-        updates_were_enabled = self.updatesEnabled()
-        self.setUpdatesEnabled(False)
+        updates_were_enabled = menu.updatesEnabled()
+        menu.setUpdatesEnabled(False)
 
         # Block signals to prevent cascading updates
-        was_blocked = self.blockSignals(True)
+        was_blocked = menu.blockSignals(True)
 
         # If a transient empty-state placeholder is on screen, drop it now —
         # a real item is arriving and should take its place without leaving
         # the "No options" label behind.
-        if self._empty_placeholder is not None:
-            if self._empty_timer is not None:
-                self._empty_timer.stop()
-            self._remove_empty_placeholder()
+        if self.empty_placeholder is not None:
+            self.end_empty_state()
 
         # Suspend layout activation if layout exists
         layout_was_enabled = False
-        if self.gridLayout:
-            layout_was_enabled = self.gridLayout.isEnabled()
-            self.gridLayout.setEnabled(False)
+        if menu.gridLayout:
+            layout_was_enabled = menu.gridLayout.isEnabled()
+            menu.gridLayout.setEnabled(False)
 
         try:
             # Track recursion so the outermost call (depth back to 0) owns the
             # on_item_added flush, regardless of whether signals were already
             # blocked on entry (collection adds recurse with signals blocked).
-            self._add_depth += 1
+            self.add_depth += 1
 
             # Lazy initialization: create layout on first item add
-            self._ensure_layout_created()
+            menu._ensure_layout_created()
 
+            # A collection recurses through the menu, so an override of
+            # ``add`` (ContextMenu's) sees every member.
             if isinstance(x, dict):
-                return [self.add(key, data=val, **kwargs) for key, val in x.items()]
+                return [menu.add(key, data=val, **kwargs) for key, val in x.items()]
 
             elif isinstance(x, (list, tuple, set)):
-                return [self.add(item, **kwargs) for item in x]
+                return [menu.add(item, **kwargs) for item in x]
 
             elif isinstance(x, zip):
-                return [self.add(item, data, **kwargs) for item, data in x]
+                return [menu.add(item, data, **kwargs) for item, data in x]
 
             elif isinstance(x, map):
-                return [self.add(item, **kwargs) for item in list(x)]
+                return [menu.add(item, **kwargs) for item in list(x)]
 
             elif isinstance(x, QtWidgets.QAction):
-                return self._add_action_widget(
+                return self.add_action_widget(
                     x, row=row, col=col, rowSpan=rowSpan, colSpan=colSpan
                 )
 
             if isinstance(x, str):
                 # OPTIMIZATION: Create widgets WITHOUT parent to avoid Qt tree overhead
                 # Parent will be assigned implicitly when added to gridLayout
-                widget_class = _MenuItemsMixin._resolve_widget_class(x)
+                widget_class = _MenuItems.resolve_widget_class(x)
                 if widget_class:
                     widget = widget_class()
                 else:
@@ -512,34 +476,33 @@ class _MenuItemsMixin:
                     f"Unsupported item type: expected str, QWidget, QAction, or a collection (list, tuple, set, dict, zip, map), got '{type(x)}'"
                 )
 
-            widget.item_text = lambda i=widget: self.get_item_text(i)
-            widget.item_data = lambda i=widget: self.get_item_data(i)
+            widget.item_text = lambda i=widget: menu.get_item_text(i)
+            widget.item_data = lambda i=widget: menu.get_item_data(i)
 
             if row is None:
-                row = _LayoutItems.first_free_row(self.gridLayout, col)
+                row = _LayoutItems.first_free_row(menu.gridLayout, col)
 
             if colSpan is None:
-                colSpan = self.gridLayout.columnCount() or 1
+                colSpan = menu.gridLayout.columnCount() or 1
 
-            # DEBUG: Print row assignment
             # Install event filters when adding the first item
-            was_empty = not self.contains_items
+            was_empty = not menu.contains_items
 
-            self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
-            # Defer the notification: signals are blocked here (see the
-            # _pending_item_added_emits comment in __init__). Emitting now is a
-            # no-op for connected slots, so queue it for the outermost add()'s
+            menu.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
+            # Defer the notification: signals are blocked here (see
+            # pending_item_added_emits in __init__). Emitting now is a no-op
+            # for connected slots, so queue it for the outermost add()'s
             # finally to flush once blocking is lifted and the widget is fully
             # configured (attributes/height applied below).
-            self._pending_item_added_emits.append(widget)
-            self.set_item_data(widget, data)
+            self.pending_item_added_emits.append(widget)
+            menu.set_item_data(widget, data)
 
             # Apply item height constraints only to appropriate widget types
             if isinstance(widget, _HEIGHT_CONSTRAINED_TYPES):
                 has_height_constraint = (
-                    self.min_item_height is not None
-                    or self.max_item_height is not None
-                    or self.fixed_item_height is not None
+                    menu.min_item_height is not None
+                    or menu.max_item_height is not None
+                    or menu.fixed_item_height is not None
                 )
                 # Use Fixed policy when explicit height is set, Preferred otherwise
                 # Both prevent unwanted vertical expansion while respecting natural size
@@ -550,16 +513,16 @@ class _MenuItemsMixin:
                 )
                 widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, vertical_policy)
 
-                if self.min_item_height is not None:
-                    widget.setMinimumHeight(self.min_item_height)
-                if self.max_item_height is not None:
-                    widget.setMaximumHeight(self.max_item_height)
-                if self.fixed_item_height is not None:
-                    widget.setFixedHeight(self.fixed_item_height)
+                if menu.min_item_height is not None:
+                    widget.setMinimumHeight(menu.min_item_height)
+                if menu.max_item_height is not None:
+                    widget.setMaximumHeight(menu.max_item_height)
+                if menu.fixed_item_height is not None:
+                    widget.setFixedHeight(menu.fixed_item_height)
 
-            self.set_attributes(widget, **kwargs)
-            widget.installEventFilter(self)
-            self._expose_as_attribute(widget)
+            menu.set_attributes(widget, **kwargs)
+            widget.installEventFilter(menu)
+            self.expose_as_attribute(widget)
 
             # Container items (e.g. ExpandableList) drive their own
             # interaction and consume their internal mouse releases, so the
@@ -572,7 +535,7 @@ class _MenuItemsMixin:
                 getattr(nested_signal, "connect", None)
             ):
                 nested_signal.connect(
-                    lambda item, w=widget: self._handle_nested_trigger(w, item)
+                    lambda item, w=widget: menu._handle_nested_trigger(w, item)
                 )
 
             # Defer registration to the next event-loop tick so it happens
@@ -582,52 +545,52 @@ class _MenuItemsMixin:
             # is still running — causing flashes and layout corruption.
             # Coalesced into a single drain so N items = 1 timer, not N.
             if widget.objectName():
-                self._schedule_registration(widget)
+                menu._schedule_registration(widget)
 
             # Only resize if menu is visible (prevents flash during lazy initialization)
-            if self.isVisible():
-                self.resize(self.sizeHint())
-            self._layout.invalidate()
+            if menu.isVisible():
+                menu.resize(menu.sizeHint())
+            menu._layout.invalidate()
 
             # Ensure trigger event filters are installed once the menu has content
             # This allows trigger_button clicks to work before the first show()
-            if self._trigger_button is not False and not (
-                self._event_filters_installed or self._parent_signal_source
+            if menu._trigger_button is not False and not (
+                menu._event_filters_installed or menu._parent_signal_source
             ):
-                self._ensure_trigger_hook()
+                menu._ensure_trigger_hook()
 
             # Setup apply button on first item add (if requested and has connections)
             if was_empty:
                 # Don't create apply button here - defer to showEvent when connections exist
                 # Update apply button visibility for first item (if button already exists)
-                if self.add_apply_button:
-                    self._update_apply_button_visibility()
-            elif self.add_apply_button:
+                if menu.add_apply_button:
+                    menu._update_apply_button_visibility()
+            elif menu.add_apply_button:
                 # Only update visibility if apply button exists and is enabled
                 # This avoids redundant checks when add_apply_button=False
-                self._update_apply_button_visibility()
+                menu._update_apply_button_visibility()
 
             return widget
 
         finally:
             # CRITICAL: Re-enable layout and restore state
-            if self.gridLayout and layout_was_enabled:
-                self.gridLayout.setEnabled(True)
+            if menu.gridLayout and layout_was_enabled:
+                menu.gridLayout.setEnabled(True)
 
             # Restore signal blocking
-            self.blockSignals(was_blocked)
+            menu.blockSignals(was_blocked)
 
             # Re-enable updates - this triggers single update instead of one per operation
             if updates_were_enabled:
-                self.setUpdatesEnabled(True)
+                menu.setUpdatesEnabled(True)
 
             # Activate layout to apply all changes at once.
             # Skip when invisible: Qt re-activates layouts before paint, so
             # the work is wasted if nothing is on screen.  Bulk-add (40+
             # items during slot init) is the dominant caller and is always
             # invisible — saves 1 activate per item.
-            if self._layout and self.isVisible():
-                self._layout.activate()
+            if menu._layout and menu.isVisible():
+                menu._layout.activate()
 
             # Flush queued on_item_added notifications once the OUTERMOST add()
             # has fully unwound and the menu is settled (updates re-enabled,
@@ -636,17 +599,17 @@ class _MenuItemsMixin:
             # what makes the documented signal reach listeners. ``signalsBlocked``
             # is honored, so an externally pre-blocked add() drops its
             # notifications rather than leaking them into a later unblocked call.
-            self._add_depth -= 1
-            if self._add_depth == 0 and self._pending_item_added_emits:
-                pending, self._pending_item_added_emits = (
-                    self._pending_item_added_emits,
+            self.add_depth -= 1
+            if self.add_depth == 0 and self.pending_item_added_emits:
+                pending, self.pending_item_added_emits = (
+                    self.pending_item_added_emits,
                     [],
                 )
-                if not self.signalsBlocked():
+                if not menu.signalsBlocked():
                     for added in pending:
-                        self.on_item_added.emit(added)
+                        menu.on_item_added.emit(added)
 
-    def _expose_as_attribute(self, widget: QtWidgets.QWidget) -> None:
+    def expose_as_attribute(self, widget: QtWidgets.QWidget) -> None:
         """Expose an item as ``menu.<objectName>`` for ergonomic access.
 
         Never clobbers Menu's own API: an item named "clear"/"show"/"add"
@@ -654,14 +617,15 @@ class _MenuItemsMixin:
         non-widget attribute is skipped with a warning. Shared by ``add`` and
         ``add_row`` so nested-container rows expose their children identically.
         """
+        menu = self._menu
         item_name = widget.objectName()
         if not item_name:
             return
-        existing = getattr(self, item_name, None)
+        existing = getattr(menu, item_name, None)
         if existing is None or isinstance(existing, QtWidgets.QWidget):
-            setattr(self, item_name, widget)
+            setattr(menu, item_name, widget)
         else:
-            self.logger.warning(
+            menu.logger.warning(
                 f"[Menu.add] item objectName {item_name!r} collides with "
                 f"an existing Menu attribute; skipping attribute exposure."
             )
@@ -675,46 +639,9 @@ class _MenuItemsMixin:
         justify: Optional[str] = None,
         **shared_kwargs,
     ) -> list:
-        """Add a single horizontal row of widgets, optionally under a titled separator.
-
-        The menu's default is one widget per full-width row. ``add_row`` places
-        several controls side-by-side by nesting them in a lightweight container
-        so the surrounding single-column rows are never reflowed (adding raw
-        multi-column grid cells would grow the grid's column count and squeeze
-        every other row into the first column). Each child is still exposed as
-        ``menu.<objectName>`` and is discoverable via ``findChildren``, so the
-        preset system and ``getattr(menu, name)`` lookups behave exactly as they
-        do for widgets added one-per-row.
-
-        Parameters:
-            items (list): One entry per column. Each entry is a widget-type
-                string (e.g. ``"QCheckBox"``), a ``QWidget`` instance/subclass,
-                or a ``(spec, kwargs)`` tuple whose ``kwargs`` configure that one
-                widget (``setObjectName`` / ``setText`` / ``setChecked`` /
-                ``setToolTip`` / ``addItems`` / …).
-            title (str, optional): When given, a titled ``Separator`` is added on
-                the row above (mirrors ``add("Separator", setTitle=title)``).
-            spacing (int): Horizontal spacing, in px, between the row's widgets.
-            stretch (bool): Legacy left-pack toggle used only when ``justify`` is
-                ``None``: ``True`` appends a trailing stretch so the widgets pack
-                to the left; ``False`` lets them fill the row.
-            justify (str, optional): How to distribute the widgets across the
-                container's full width (the container itself always spans the
-                menu column). Overrides ``stretch`` when given. One of:
-                ``"left"`` (trailing stretch — same as the legacy default),
-                ``"right"`` (leading stretch), ``"center"`` (stretch both ends),
-                ``"between"`` (equal gaps between widgets, first/last flush to the
-                edges — spans the width), ``"around"`` (equal gaps including the
-                ends), or ``"expand"`` (every widget gets an equal stretch factor,
-                so each occupies an equal-width slot).
-            **shared_kwargs: Applied to every widget in the row (an item's own
-                kwargs win on conflict).
-
-        Returns:
-            list: The created widgets, in column order.
-        """
+        menu = self._menu
         if title is not None:
-            self.add("Separator", setTitle=title)
+            menu.add("Separator", setTitle=title)
 
         container = QtWidgets.QWidget()
         hbox = QtWidgets.QHBoxLayout(container)
@@ -732,8 +659,8 @@ class _MenuItemsMixin:
         widgets = []
         for i, item in enumerate(items):
             spec, item_kwargs = item if isinstance(item, tuple) else (item, {})
-            widget = self._create_row_widget(spec)
-            self.set_attributes(widget, **{**shared_kwargs, **item_kwargs})
+            widget = self.create_row_widget(spec)
+            menu.set_attributes(widget, **{**shared_kwargs, **item_kwargs})
             # "expand" gives every widget an equal stretch factor so the slots are
             # equal-width; the others add bare (natural-width) widgets.
             hbox.addWidget(widget, 1 if mode == "expand" else 0)
@@ -741,7 +668,7 @@ class _MenuItemsMixin:
             # the last widget for "between", which keeps the last one edge-flush).
             if i < len(items) - 1 and mode in ("between", "around"):
                 hbox.addStretch(1)
-            self._expose_as_attribute(widget)
+            self.expose_as_attribute(widget)
             widgets.append(widget)
 
         trail = mode in ("left", "center", "around")
@@ -751,15 +678,14 @@ class _MenuItemsMixin:
         # One grid cell, full width: the grid stays single-column so no sibling
         # row is reflowed. A bare QWidget isn't height-constrained, so the row
         # keeps the natural height of its checkboxes.
-        self.add(container)
+        menu.add(container)
         return widgets
 
-    def _create_row_widget(
-        self, x: Union[str, QtWidgets.QWidget, type]
-    ) -> QtWidgets.QWidget:
+    @staticmethod
+    def create_row_widget(x: Union[str, QtWidgets.QWidget, type]) -> QtWidgets.QWidget:
         """Resolve one ``add_row`` item spec to a widget (mirror of ``add``'s dispatch)."""
         if isinstance(x, str):
-            widget_class = _MenuItemsMixin._resolve_widget_class(x)
+            widget_class = _MenuItems.resolve_widget_class(x)
             if widget_class:
                 return widget_class()
             try:
@@ -776,7 +702,7 @@ class _MenuItemsMixin:
             f"add_row: unsupported item type {type(x)!r}; expected str, QWidget, or (spec, kwargs)."
         )
 
-    def _add_action_widget(
+    def add_action_widget(
         self,
         action: QtWidgets.QAction,
         row: Optional[int] = None,
@@ -784,6 +710,7 @@ class _MenuItemsMixin:
         rowSpan: int = 1,
         colSpan: Optional[int] = None,
     ) -> Optional[QtWidgets.QWidget]:
+        menu = self._menu
         # No temporary QMenu: the old realization path built a real QMenu,
         # SHOWED it (a momentary empty popup on screen during add() — an
         # init flash) and pumped the event loop to materialize
@@ -794,20 +721,20 @@ class _MenuItemsMixin:
             # The action carries its own widget — take it directly.
             widget = action.defaultWidget()
             if widget is not None:
-                widget.setParent(self)
+                widget.setParent(menu)
         if widget is None:
             # Plain QAction (or a QWidgetAction without a default widget):
             # host it in a QToolButton, the standard QAction carrier —
             # trigger/text/icon/enabled state all track the action.
-            button = QtWidgets.QToolButton(self)
+            button = QtWidgets.QToolButton(menu)
             button.setDefaultAction(action)
             button.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
             widget = button
 
         if row is None:
-            row = _LayoutItems.first_free_row(self.gridLayout, col)
+            row = _LayoutItems.first_free_row(menu.gridLayout, col)
         if colSpan is None:
-            colSpan = self.gridLayout.columnCount() or 1
+            colSpan = menu.gridLayout.columnCount() or 1
 
-        self.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
+        menu.gridLayout.addWidget(widget, row, col, rowSpan, colSpan)
         return widget

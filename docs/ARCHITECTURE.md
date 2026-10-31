@@ -579,7 +579,7 @@ uitk/
 │   ├── mainWindow.py          # MainWindow (UI wrapper)
 │   ├── menu.py                # Menu facade (frozen path): construction, show/hide lifecycle,
 │   │                          #   placement (MenuPositioner), MenuConfig
-│   ├── menu_parts/            # Menu's parts, one mixin per concept: _layout, _items,
+│   ├── menu_parts/            # Menu's collaborators, one per concept, each owning its state: _layout, _items,
 │   │                          #   _triggers, _leave, _popup_window, _actions, _persistent_mode,
 │   │                          #   _registration
 │   ├── popup/                 # popup kit Menu / ExpandableList / MainWindow share:

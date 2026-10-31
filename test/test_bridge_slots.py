@@ -368,7 +368,7 @@ class TestRequireOutputDir(BaseTestCase):
 
         tag = "test_bridge_outlives"
         code = (
-            "from uitk.bridge._output_dir import _OutputDirMixin as M\n"
+            "from uitk.bridge.slots import BridgeSlotsBase as M\n"
             f"print(M.ensure_bridge_temp_dir({tag!r}))\n"
         )
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
@@ -2856,6 +2856,147 @@ class TestModeComboHidesWithNothingToChoose(BaseTestCase):
     def test_a_template_combo_with_one_entry_keeps_its_menu_on_screen(self):
         _slot, combo = self._populate([("bake", "")], template_menu=True)
         self.assertFalse(combo.isHidden())
+
+
+class TestBridgeSlotsFacade(BaseTestCase):
+    """What a bridge panel's subclasses and its tests reach, whatever object
+    behind the panel does the work: the hooks a subclass overrides are the
+    ones the machinery runs, an instance attribute a stub sets is the one it
+    reads, and the private names tentacle's panels use keep their meaning."""
+
+    @staticmethod
+    def _ui(slot):
+        """A stub ``ui``: grp_process holding cmb000 then b000, and a log pane."""
+        slot.ui = QtWidgets.QWidget()
+        slot.ui.grp_process = QtWidgets.QGroupBox(slot.ui)
+        QtWidgets.QVBoxLayout(slot.ui.grp_process)
+        slot.ui.cmb000 = QtWidgets.QComboBox(slot.ui.grp_process)
+        slot.ui.b000 = QtWidgets.QPushButton(slot.ui.grp_process)
+        slot.ui.grp_process.layout().addWidget(slot.ui.cmb000)
+        slot.ui.grp_process.layout().addWidget(slot.ui.b000)
+        slot.ui.txt000 = QtWidgets.QTextEdit(slot.ui)
+        return slot.ui
+
+    def test_a_stub_built_with_new_reads_the_names_it_set(self):
+        """tentacle's panel tests build a panel with ``__new__`` and set only
+        what the method under test reads."""
+        slot = _bare_slot(type("_Registry", (), {"PARAMS": PARAMS}))
+        slot._output_dir_edit = QtWidgets.QLineEdit("  C:/out  ")
+        self.assertEqual(slot.resolved_output_dir(), "C:/out")
+        spin = KindFactory.make_widget(PARAMS["align_downscale"])
+        slot._param_widgets = {"align_downscale": spin}
+        slot._write_param("align_downscale", 4)
+        self.assertEqual(slot._read_param("align_downscale"), 4)
+        self.assertEqual(slot.collect_param_values(), {"align_downscale": 4})
+
+    def test_instance_overrides_reach_the_internal_callers(self):
+        """A stub's ``slots.resolved_output_dir = lambda: ...`` (and the like)
+        is what the resolution chain and the supersessions read."""
+        slot = _bare_slot(type("_Registry", (), {"PARAMS": PARAMS}))
+        slot.LOG_TAG = "facade_probe"
+        slot.resolved_output_dir = lambda: "C:/typed"
+        self.assertEqual(slot.require_output_dir(), "C:/typed")
+
+        greyed = {}
+        slot.param_supersessions = lambda: (("depth_filter", ("face_count",), "why"),)
+        slot._param_widgets = {"depth_filter": object()}
+        slot._read_param = lambda key: True
+        slot.set_param_enabled = lambda key, on, reason="": greyed.__setitem__(
+            key, (on, reason)
+        )
+        slot._refresh_param_enablement()
+        self.assertEqual(greyed, {"face_count": (False, "why")})
+
+    def test_the_protected_hooks_a_subclass_overrides_are_the_ones_run(self):
+        calls = []
+
+        class _Registry:
+            pass
+
+        _Registry.PARAMS = {
+            "a": AttributeSpec(key="a", kind="int", default=1, section="One")
+        }
+
+        class _Panel(BridgeSlotsBase):
+            params_module = _Registry
+            template_dir = Path(".")
+            TEMPLATE_MENU = False
+
+            def list_template_modes(self):
+                return [("first", "send"), ("second", "send")]
+
+            @staticmethod
+            def _format_combo_label(template, mode):
+                calls.append(("label", template))
+                return template.upper()
+
+            def _relevant_param_keys(self):
+                calls.append("relevant")
+                return {"a"}
+
+            def _refresh_param_enablement(self):
+                calls.append("enablement")
+                super()._refresh_param_enablement()
+
+            def _log_template_description(self):
+                calls.append("describe")
+
+            def _fold_section(self, section, folded):
+                calls.append(("fold", section, folded))
+                super()._fold_section(section, folded)
+
+        slot = _Panel.__new__(_Panel)
+        self._ui(slot)
+        # What __init__ would have set; a stub sets it by hand.
+        slot._param_widgets, slot._param_rows, slot._param_labels = {}, {}, {}
+        slot._param_section, slot._section_separators = {}, {}
+        slot._preset_mgr = None
+        slot._build_param_widgets()
+        slot._populate_template_combo(slot.ui.cmb000)
+        self.assertEqual(slot.ui.cmb000.itemText(0), "FIRST")
+        slot._on_template_changed()
+        self.assertEqual(
+            calls,
+            [
+                ("label", "first"),
+                ("label", "second"),
+                "relevant",
+                "enablement",
+                "describe",
+            ],
+        )
+        slot._section_separators["One"].setChecked(False)
+        self.assertEqual(calls[-1], ("fold", "One", True))
+        self.assertIn("One", slot._folded_sections)
+
+    def test_super_reaches_the_default_of_each_hook(self):
+        """A subclass that extends a hook (``super()._apply_param_dict`` in the
+        photogrammetry panels, ``super()._refresh_param_visibility`` in the
+        WebXR preview) gets the shared default."""
+        slot = _bare_slot(type("_Registry", (), {"PARAMS": PARAMS}))
+        spin = KindFactory.make_widget(PARAMS["align_downscale"])
+        slot._param_widgets = {"align_downscale": spin}
+        applied = BridgeSlotsBase._apply_param_dict(
+            slot, {"align_downscale": 3, "unknown": 1}
+        )
+        self.assertEqual(applied, 1)
+        self.assertEqual(slot._read_param("align_downscale"), 3)
+
+    def test_a_panel_rebuilds_its_state_on_init(self):
+        """``__init__`` starts each part fresh, as the attribute resets it
+        replaced did."""
+        import types
+
+        slot = _bare_slot(type("_Registry", (), {"PARAMS": {}}))
+        slot.UI_NAME = "facade_probe"
+        slot.REQUIRE_OUTPUT_DIR = False
+        slot._param_widgets = {"stale": object()}
+        sb = types.SimpleNamespace(loaded_ui=types.SimpleNamespace())
+        sb.loaded_ui.facade_probe = self._ui(slot)
+        # No PRESETS_ROOT: the build stops at the preset controls, past the reset.
+        with self.assertRaises(ValueError):
+            BridgeSlotsBase.__init__(slot, sb)
+        self.assertNotIn("stale", slot._param_widgets)
 
 
 if __name__ == "__main__":
