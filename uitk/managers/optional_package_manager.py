@@ -23,49 +23,65 @@ from __future__ import annotations
 import importlib
 import re
 import sys
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Optional, Tuple
+
+import pythontk as ptk
 
 __all__ = ["OptionalPackageManager"]
 
 
 class _OptionalPackageManagerInternal(object):
-    """Requirement-string parsing for :class:`OptionalPackageManager`."""
+    """Requirement-string reading for :class:`OptionalPackageManager`, over
+    ``ptk.PackageRequirement`` -- the one reader of a requirement's range, which
+    ``ExternalAppHandler`` checks a provider's range with too."""
 
-    #: Where a PEP 508 requirement stops being the distribution name.
+    #: Where a PEP 508 requirement stops being the distribution name: the
+    #: fallback for a spec the reader does not parse (a URL).
     _REQ_BOUNDARY = re.compile(r"[<>=!~;\[\s]")
+
+    #: Specifiers that state an inclusive lower bound.
+    _FLOOR_OPS = (">=", "~=", "==")
+
+    @staticmethod
+    def _requirement(spec: str) -> Optional["ptk.PackageRequirement"]:
+        """*spec* parsed, or None when the reader does not read it (a URL)."""
+        try:
+            return ptk.PackageRequirement(spec)
+        except ValueError:
+            return None
 
     @staticmethod
     def version_tuple(text: str) -> Tuple[int, ...]:
         """``"0.0.8"`` -> ``(0, 0, 8)``; stops at the first non-numeric segment.
 
-        Deliberately not a full PEP 440 parser: the ecosystem versions are plain
-        ``X.Y.Z``, and truncating at a suffix (``1.2.0rc1`` -> ``(1, 2)``) errs
-        toward "older", which is the safe direction for a floor check.
+        A coarse key that never raises (``ptk.PackageRequirement.release``):
+        ``"1.2.0rc1"`` -> ``(1, 2, 0)``. Range checks do not use it --
+        :meth:`available` compares with ``PackageRequirement.contains``, which
+        orders a pre-release below its release.
         """
-        parts: List[int] = []
-        for chunk in str(text).split("."):
-            digits = ""
-            for ch in chunk:
-                if not ch.isdigit():
-                    break
-                digits += ch
-            if not digits:
-                break
-            parts.append(int(digits))
-        return tuple(parts)
+        return ptk.PackageRequirement.release(text)
 
     @staticmethod
     def split_requirement(spec: str) -> Tuple[str, Optional[Tuple[int, ...]]]:
         """``"unitytk>=0.0.8"`` -> ``("unitytk", (0, 0, 8))``; a bare name -> floor None.
 
-        One string carries both the pip requirement and the runtime floor, so a
-        caller can never let the two drift apart. Only ``>=`` is read -- that is
-        the constraint an optional-package floor is ever expressed with here.
+        One string carries both the pip requirement and the runtime range, so a
+        caller can never let the two drift apart. Every specifier
+        ``ptk.PackageRequirement`` reads is accepted; the floor is the highest
+        inclusive lower bound among them (``>=``, ``~=``, ``==``), so
+        ``"extapps>=0.8.0,<0.9"`` -> ``("extapps", (0, 8, 0))`` and a cap alone
+        states none. A spec the reader does not parse (a URL) yields its name
+        and no floor.
         """
         cls = _OptionalPackageManagerInternal
-        name = cls._REQ_BOUNDARY.split(spec, 1)[0].strip()
-        match = re.search(r">=\s*([0-9][0-9A-Za-z.]*)", spec)
-        return name, (cls.version_tuple(match.group(1)) if match else None)
+        requirement = cls._requirement(spec)
+        if requirement is None:
+            return cls._REQ_BOUNDARY.split(str(spec), 1)[0].strip(), None
+        floors = [v for op, v in requirement.specifiers if op in cls._FLOOR_OPS]
+        if not floors:
+            return requirement.name, None
+        floor = max(floors, key=ptk.PackageRequirement.version_key)
+        return requirement.name, cls.version_tuple(floor)
 
 
 class OptionalPackageManager(_OptionalPackageManagerInternal):
@@ -102,7 +118,7 @@ class OptionalPackageManager(_OptionalPackageManagerInternal):
     # ------------------------------------------------------------- probing
     @staticmethod
     def available(spec: str, import_name: str = None) -> bool:
-        """Is *spec* importable in THIS interpreter, at or above any floor? Silent.
+        """Is *spec* importable in THIS interpreter, inside any version range? Silent.
 
         Never prompts, never installs, never raises -- the probe implicit code
         paths use. A panel whose engine lives in an optional distribution must be
@@ -121,15 +137,16 @@ class OptionalPackageManager(_OptionalPackageManagerInternal):
         level down) and then every attribute access fails. A module with no
         ``__file__`` is exactly that case and reads as unavailable.
 
-        A version floor (``"unitytk>=0.0.8"``) makes an installed-but-TOO-OLD
-        package read as unavailable too. That case is not hypothetical: a
-        pyproject extra only constrains a fresh install, so a session already
-        carrying the older release imports fine and then raises ``AttributeError``
-        on the API the caller came for. A package that declares no ``__version__``
-        cannot clear a floor, and refusing is the safe direction -- the same rule
-        as "present but broken reads as unavailable".
+        A version range (``"unitytk>=0.0.8"``, ``"extapps>=0.8.0,<0.9"``) makes a
+        package installed outside it read as unavailable too. That case is not
+        hypothetical: a pyproject extra only constrains a fresh install, so a
+        session already carrying the older release imports fine and then raises
+        ``AttributeError`` on the API the caller came for. A package that
+        declares no ``__version__`` cannot satisfy a range, and refusing is the
+        safe direction -- the same rule as "present but broken reads as
+        unavailable".
         """
-        name, floor = OptionalPackageManager.split_requirement(spec)
+        name, _floor = OptionalPackageManager.split_requirement(spec)
         module = import_name or name.replace("-", "_")
         try:
             mod = importlib.import_module(module)
@@ -137,12 +154,10 @@ class OptionalPackageManager(_OptionalPackageManagerInternal):
             return False
         if getattr(mod, "__file__", None) is None:
             return False
-        if floor is None:
+        requirement = OptionalPackageManager._requirement(spec)
+        if requirement is None or not requirement.specifiers:
             return True
-        return (
-            OptionalPackageManager.version_tuple(getattr(mod, "__version__", ""))
-            >= floor
-        )
+        return requirement.contains(getattr(mod, "__version__", None))
 
     # ---------------------------------------------------------- installing
     @staticmethod
@@ -204,37 +219,41 @@ class OptionalPackageManager(_OptionalPackageManagerInternal):
         to dismiss it. Implicit paths use :meth:`available` and report through the
         log instead.
 
-        A *spec* carrying a version floor also catches an installed-but-too-old
-        package, which mere importability let through. That case offers an
+        A *spec* carrying a version range also catches a package installed
+        outside it, which mere importability let through. That case offers an
         *update* and then returns **False with a restart notice**: a package
         already in ``sys.modules`` cannot be swapped in place, so the freshly
-        written files are not what this session would call.
+        written files are not what this session would call. The question and
+        the notice are the handler's (``ExternalAppHandler`` asks the same
+        before updating an app outside its range), so the two cannot drift.
 
         Returns:
-            bool: True only when the package is usable **in this session** at or
-            above any floor -- an upgrade written to disk returns False.
+            bool: True only when the package is usable **in this session** inside
+            any range -- an upgrade written to disk returns False.
         """
+        from uitk.handlers.external_app_handler import _InstallOffer
+
         if self.available(spec, import_name):
             return True
         if self.prompt is None:
             self._log("info", f"{spec} is unavailable and no prompt is configured.")
             return False
 
-        name, floor = self.split_requirement(spec)
-        # Present-but-too-old is a different sentence from absent -- and the only
+        name, _floor = self.split_requirement(spec)
+        requirement = self._requirement(spec)
+        # Present-but-outside is a different sentence from absent -- and the only
         # one of the two the user can't act on by reading "install it".
-        stale = floor is not None and self.available(name, import_name)
+        stale = bool(requirement is not None and requirement.specifiers) and (
+            self.available(name, import_name)
+        )
+        installed = None
+        if stale:
+            module = sys.modules.get(import_name or name.replace("-", "_"))
+            installed = str(getattr(module, "__version__", "") or "")
         label = feature or "This panel"
         verb = "update" if stale else "install"
 
-        answer = self.prompt(
-            f"<b>{label} needs the optional <i>{spec}</i> package"
-            f"{' (the installed one is older)' if stale else ''}.</b><br><br>"
-            f"{verb.capitalize()} it now?",
-            "Yes",
-            "No",
-        )
-        if answer != "Yes":
+        if not _InstallOffer.ask(self.prompt, spec, label=label, installed=installed):
             self._log("info", f"{spec} {verb} declined; {label} is unavailable.")
             return False
 
@@ -255,12 +274,7 @@ class OptionalPackageManager(_OptionalPackageManagerInternal):
             # still get the old class. Report the on-disk result and stop; the
             # probe below would read the cached ``__version__`` anyway and
             # mis-report the upgrade as a failed install.
-            self.prompt(
-                f"<b>Updated {name} on disk.</b><br><br>"
-                f"Restart this session to pick it up — a package already "
-                f"imported cannot be swapped in place.",
-                "Ok",
-            )
+            _InstallOffer.restart(self.prompt, name)
             self._log("info", f"Updated {spec}; restart required.")
             return False
 

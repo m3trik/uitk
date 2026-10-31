@@ -360,7 +360,7 @@ Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handler
 |:---|:---|
 | `register(name, *, module, entry=None, install_spec=None, python=None, show_kwargs=None, mode="subprocess", tags=None, hidden_in=None, description=None)` | Pre-register an app so it can be launched by name |
 | `discover(groups=None) -> int` | Auto-register every app advertised under a uitk entry-point group |
-| `add_provider(install_spec, *, probe_module=None, group=None, python=None)` | Register a provider package that ships discoverable apps |
+| `add_provider(install_spec, *, probe_module=None, group=None, python=None)` | Register a provider package that ships discoverable apps. A version range in the spec (`"pkg>=0.8.0,<0.9"`) covers every app it ships: a missing one installs inside it, and one installed outside it is offered an update through the handler's `prompt` (`(message, *buttons) -> button`, default `sb.message_box`) instead of launching. With no range nothing about the version is read |
 | `is_registered(name)` / `unregister(name)` | Query / remove |
 | `launch(name=None, *, module=None, entry=None, install_spec=None, python=None, show_kwargs=None, mode=None, show=True)` | Launch a registered app, or an ad-hoc app from kwargs |
 | `entries()` / `close(name)` / `is_visible(name)` / `save_tags(name, tags)` | Launchable contract + tag persistence |
