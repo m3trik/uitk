@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""The template combo of a bridge panel: one part of :class:`~uitk.bridge.slots.BridgeSlotsBase`.
+"""The template combo of a parameter panel: one part of :class:`~uitk.bridge.slots.ParamPanelSlots`.
 
 ``cmb000``: the ``(template, mode)`` entries, the Refresh / Open Folder context
 menu, and what a change re-runs (row visibility, enablement, the preset dir,
@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional, Tuple
 
 if TYPE_CHECKING:  # annotation only; the facade imports this module
-    from uitk.bridge.slots import BridgeSlotsBase
+    from uitk.bridge.slots import ParamPanelSlots
 
 
 class _TemplateCombo(object):
@@ -26,7 +26,7 @@ class _TemplateCombo(object):
     """
 
     @staticmethod
-    def active_template(panel: "BridgeSlotsBase") -> str:
+    def active_template(panel: "ParamPanelSlots") -> str:
         """Active template stem (mode-agnostic preset key)."""
         pair = panel._selected_template_mode()
         if pair:
@@ -35,7 +35,7 @@ class _TemplateCombo(object):
         return pairs[0][0] if pairs else "default"
 
     @staticmethod
-    def init_combo(panel: "BridgeSlotsBase", widget) -> None:
+    def init_combo(panel: "ParamPanelSlots", widget) -> None:
         """Populate *widget*, wire its change handler and its context menu."""
         panel._populate_template_combo(widget)
         widget.currentIndexChanged.connect(lambda _: panel._on_template_changed())
@@ -62,7 +62,7 @@ class _TemplateCombo(object):
         panel._on_template_changed()
 
     @staticmethod
-    def populate(panel: "BridgeSlotsBase", widget) -> None:
+    def populate(panel: "ParamPanelSlots", widget) -> None:
         """Fill cmb000 with ``"<template> (<mode>)"`` entries.
 
         A mode combo (``TEMPLATE_MENU`` off) with one entry or none offers
@@ -87,7 +87,7 @@ class _TemplateCombo(object):
         widget.setVisible(panel.TEMPLATE_MENU or len(pairs) > 1)
 
     @staticmethod
-    def selected_template_mode(panel: "BridgeSlotsBase") -> Optional[Tuple[str, str]]:
+    def selected_template_mode(panel: "ParamPanelSlots") -> Optional[Tuple[str, str]]:
         """``(template, mode)`` for the active combo entry, or *None*.
 
         ``itemData`` stores a ``(template, mode)`` tuple, but some PySide
@@ -104,7 +104,7 @@ class _TemplateCombo(object):
         return None
 
     @staticmethod
-    def on_template_changed(panel: "BridgeSlotsBase") -> None:
+    def on_template_changed(panel: "ParamPanelSlots") -> None:
         """Re-show/-enable rows + re-point preset dir + log description on combo change.
 
         In semantic-preset mode the preset set is template-agnostic (one shared
@@ -122,7 +122,7 @@ class _TemplateCombo(object):
         panel._log_template_description()
 
     @staticmethod
-    def log_template_description(panel: "BridgeSlotsBase") -> None:
+    def log_template_description(panel: "ParamPanelSlots") -> None:
         """Surface the active template's docstring in the log panel."""
         pair = panel._selected_template_mode()
         if not pair:

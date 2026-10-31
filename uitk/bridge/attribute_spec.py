@@ -55,7 +55,7 @@ class AttributeSpec:
             :meth:`uitk.bridge.tooltip.Tooltip.format_param_tooltip` to build
             a rich-text version with type/range/default rows.
         section: Optional category label. A builder that groups specs (e.g.
-            :class:`uitk.bridge.BridgeSlotsBase`) inserts a titled
+            :class:`uitk.bridge.ParamPanelSlots`) inserts a titled
             :class:`~uitk.widgets.separator.Separator` before the first spec of
             each new section, so related params read as a labelled block.
             Empty (default) = no divider. Sections are expected contiguous in
@@ -64,7 +64,7 @@ class AttributeSpec:
             on its own row -- for a compact modifier of the value beside it (an
             "Auto" toggle next to the number it overrides). The builder still
             keeps it a separately addressable row, so visibility and
-            :meth:`~uitk.bridge.BridgeSlotsBase.set_param_enabled` work per key.
+            :meth:`~uitk.bridge.ParamPanelSlots.set_param_enabled` work per key.
             It rides the host row's visibility, so an inline spec must be
             referenced by the same templates as the spec it follows. Ignored on
             the first spec of a registry (nothing to attach to) and on the first

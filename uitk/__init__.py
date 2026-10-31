@@ -97,7 +97,7 @@ DEFAULT_INCLUDE = {
     # .TestSlotImportDiscipline) -- it reaches uitk through ``self.sb``, which
     # resolves exactly this namespace.
     "bridge.parameters": ["Parameters", "ParamRegistry"],
-    "bridge.slots": "BridgeSlotsBase",
+    "bridge.slots": "ParamPanelSlots",
     "bridge.tooltip": "Tooltip",
     "widgets.checkBox": "CheckBox",
     "widgets.collapsableGroup": "CollapsableGroup",
@@ -289,6 +289,8 @@ def _uitk_getattr(name: str):
 #: accounts for a member's move at release (``generate_api_registry.py``); only
 #: a root name answers at runtime.
 MOVED_NAMES = {
+    # A parameter panel, not only a DCC bridge's (2026-10-31).
+    "BridgeSlotsBase": ("uitk.ParamPanelSlots", "1.9.0"),
     # A generic timeline frames a range, not a shot (2026-10-31).
     "SequencerWidget.frame_shot": ("uitk.SequencerWidget.frame_range", "1.9.0"),
     # The sequencer's shot layer -- the shot lane under the ruler and the gaps

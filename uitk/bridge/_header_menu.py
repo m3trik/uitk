@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""The header menu of a bridge panel: one part of :class:`~uitk.bridge.slots.BridgeSlotsBase`.
+"""The header menu of a parameter panel: one part of :class:`~uitk.bridge.slots.ParamPanelSlots`.
 
 The ``header_init`` Switchboard hook: a "Utilities" separator, the declared
 menu items (data, not code), and the rich-text help button.
@@ -12,7 +12,7 @@ import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # annotation only; the facade imports this module
-    from uitk.bridge.slots import BridgeSlotsBase
+    from uitk.bridge.slots import ParamPanelSlots
 
 
 class _HeaderMenu(object):
@@ -24,7 +24,7 @@ class _HeaderMenu(object):
     """
 
     @staticmethod
-    def header_init(panel: "BridgeSlotsBase", widget) -> None:
+    def header_init(panel: "ParamPanelSlots", widget) -> None:
         widget.menu.add("Separator", setTitle=panel.HEADER_MENU_TITLE)
         for label, name, tooltip, handler in panel.header_menu_items():
             widget.menu.add(
@@ -48,7 +48,7 @@ class _HeaderMenu(object):
                 pass
 
     @staticmethod
-    def reveal_folder(panel: "BridgeSlotsBase", path) -> bool:
+    def reveal_folder(panel: "ParamPanelSlots", path) -> bool:
         if not path or not os.path.isdir(str(path)):
             panel.bridge.logger.info(f"Folder not found: {path or '(unset)'}")
             return False

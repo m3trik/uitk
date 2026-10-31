@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""BridgeSlotsBase semantic-preset integration (no switchboard / .ui needed).
+"""ParamPanelSlots semantic-preset integration (no switchboard / .ui needed).
 
 The DCC bridges (marmoset / substance / rizom) use *widget-state* presets. A
 runner panel opts into *semantic* presets by overriding ``make_preset_store()``
@@ -28,7 +28,7 @@ app = setup_qt_application()
 import pythontk as ptk  # noqa: E402
 from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from uitk.switchboard import Switchboard  # noqa: E402
-from uitk.bridge.slots import BridgeSlotsBase  # noqa: E402
+from uitk.bridge.slots import ParamPanelSlots  # noqa: E402
 from uitk.bridge.spec import (  # noqa: E402
     AttributeSpec,
     KindFactory,
@@ -63,7 +63,7 @@ PARAMS = {
 
 
 class TestBridgeSemanticPresets(BaseTestCase):
-    """Semantic-preset path of BridgeSlotsBase wired to a real PresetStore."""
+    """Semantic-preset path of ParamPanelSlots wired to a real PresetStore."""
 
     def setUp(self):
         super().setUp()
@@ -83,11 +83,11 @@ class TestBridgeSemanticPresets(BaseTestCase):
             encoding="utf-8",
         )
 
-        # Build a BridgeSlotsBase WITHOUT running __init__ (which needs a
+        # Build a ParamPanelSlots WITHOUT running __init__ (which needs a
         # switchboard + loaded .ui). Wire only the pieces the semantic-preset
         # path touches: the param-widget map (normally built by
         # _build_param_widgets from the registry).
-        self.slots = object.__new__(BridgeSlotsBase)
+        self.slots = object.__new__(ParamPanelSlots)
         self.slots._param_widgets = {
             key: KindFactory.make_widget(spec) for key, spec in PARAMS.items()
         }
@@ -177,7 +177,7 @@ class TestBridgeLogLinkOpen(BaseTestCase):
         from qtpy import QtCore
         import uitk.bridge.slots as bs
 
-        slots = object.__new__(BridgeSlotsBase)
+        slots = object.__new__(ParamPanelSlots)
         tmp = tempfile.mkdtemp(prefix="bridge_open_")
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         # Build the anchor exactly as LoggingMixin.log_link() does, parse the
@@ -185,7 +185,7 @@ class TestBridgeLogLinkOpen(BaseTestCase):
         href = ptk.LoggingMixin.log_link(tmp, "open", path=tmp)
         url = QtCore.QUrl(re.search(r'href="([^"]+)"', href).group(1))
         with mock.patch.object(
-            bs._BridgeSlotsInternal, "_open_in_file_manager"
+            bs._ParamPanelSlotsInternal, "_open_in_file_manager"
         ) as opener:
             slots._on_log_link_clicked(url)
         opener.assert_called_once()
@@ -219,7 +219,7 @@ class TestBridgeDocsLink(BaseTestCase):
         class _Bridge:
             logger = _Logger()
 
-        slots = object.__new__(BridgeSlotsBase)
+        slots = object.__new__(ParamPanelSlots)
         slots.LOG_TAG = "docs_test"
         if docs_url is not None:
             slots.DOCS_URL = docs_url
@@ -246,7 +246,7 @@ class TestBridgeDocsLink(BaseTestCase):
         self.assertIn(f'<a href="{url}">{url}</a>', line)
 
     def test_docs_url_hook_overrides_the_attr(self):
-        class _Computed(BridgeSlotsBase):
+        class _Computed(ParamPanelSlots):
             DOCS_URL = "https://static.invalid/"
 
             def docs_url(self):
@@ -304,7 +304,7 @@ class TestRequireOutputDir(BaseTestCase):
             def __init__(self):
                 self.logger = _Logger()
 
-        slots = object.__new__(BridgeSlotsBase)
+        slots = object.__new__(ParamPanelSlots)
         slots.REQUIRE_OUTPUT_DIR = require
         slots.TEMP_OUTPUT_FALLBACK = temp_fallback
         slots.LOG_TAG = tag
@@ -335,10 +335,10 @@ class TestRequireOutputDir(BaseTestCase):
 
     def test_temp_fallback_creates_written_back_and_cleans_up(self):
         import os
-        from uitk.bridge.slots import _BridgeSlotsInternal
+        from uitk.bridge.slots import _ParamPanelSlotsInternal
 
         tag = "test_bridge_temp"
-        self.addCleanup(_BridgeSlotsInternal._remove_bridge_temp_dir, tag)
+        self.addCleanup(_ParamPanelSlotsInternal._remove_bridge_temp_dir, tag)
         s = self._make(default="", temp_fallback=True, tag=tag)
         r = s.require_output_dir()
         self.assertTrue(r and os.path.isdir(r))
@@ -349,9 +349,9 @@ class TestRequireOutputDir(BaseTestCase):
         s2 = self._make(default="", temp_fallback=True, tag=tag)
         self.assertEqual(s2.require_output_dir(), r)
         # An early reclaim removes the directory.
-        _BridgeSlotsInternal._remove_bridge_temp_dir(tag)
+        _ParamPanelSlotsInternal._remove_bridge_temp_dir(tag)
         self.assertFalse(os.path.isdir(r))
-        self.assertNotIn(tag, _BridgeSlotsInternal._BRIDGE_TEMP_DIRS)
+        self.assertNotIn(tag, _ParamPanelSlotsInternal._BRIDGE_TEMP_DIRS)
 
     def test_temp_fallback_outlives_the_host_process(self):
         """The fallback folder must survive the host's exit.
@@ -368,7 +368,7 @@ class TestRequireOutputDir(BaseTestCase):
 
         tag = "test_bridge_outlives"
         code = (
-            "from uitk.bridge.slots import BridgeSlotsBase as M\n"
+            "from uitk.bridge.slots import ParamPanelSlots as M\n"
             f"print(M.ensure_bridge_temp_dir({tag!r}))\n"
         )
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
@@ -403,10 +403,10 @@ class TestRequireOutputDir(BaseTestCase):
 
         import pythontk as ptk
 
-        from uitk.bridge.slots import _BridgeSlotsInternal
+        from uitk.bridge.slots import _ParamPanelSlotsInternal
 
         tag = "test_bridge_swept"
-        self.addCleanup(_BridgeSlotsInternal._remove_bridge_temp_dir, tag)
+        self.addCleanup(_ParamPanelSlotsInternal._remove_bridge_temp_dir, tag)
         s = self._make(default="", temp_fallback=True, tag=tag)
         path = s.require_output_dir()
         self.addCleanup(shutil.rmtree, path, True)
@@ -414,7 +414,7 @@ class TestRequireOutputDir(BaseTestCase):
 
         # Simulate the killed host: the process is gone, so the exit hook never
         # ran and the in-process registry is gone with it.
-        _BridgeSlotsInternal._BRIDGE_TEMP_DIRS.pop(tag, None)
+        _ParamPanelSlotsInternal._BRIDGE_TEMP_DIRS.pop(tag, None)
         self.assertTrue(os.path.isdir(path), "precondition: the leftover is on disk")
 
         # Backdate it into a PREVIOUS session, which is the case being modelled.
@@ -467,13 +467,13 @@ class LogLinkDispatchTest(unittest.TestCase):
     uitk handles ``action://open`` itself and delegates node actions
     (``select`` / ``reveal``) to handlers the DCC packages register — so uitk
     never imports mayatk/blendertk. Exercises the real
-    ``BridgeSlotsBase._on_log_link_clicked`` against a minimal fake ``self``.
+    ``ParamPanelSlots._on_log_link_clicked`` against a minimal fake ``self``.
     """
 
     def setUp(self):
-        from uitk.bridge.slots import _BridgeSlotsInternal
+        from uitk.bridge.slots import _ParamPanelSlotsInternal
 
-        self._registry = _BridgeSlotsInternal._LOG_LINK_HANDLERS
+        self._registry = _ParamPanelSlotsInternal._LOG_LINK_HANDLERS
         self._saved = list(self._registry)
         self._registry.clear()
 
@@ -493,32 +493,32 @@ class LogLinkDispatchTest(unittest.TestCase):
     def _dispatch(url_str):
         from qtpy.QtCore import QUrl
 
-        BridgeSlotsBase._on_log_link_clicked(
+        ParamPanelSlots._on_log_link_clicked(
             LogLinkDispatchTest._fake_slots(), QUrl(url_str)
         )
 
     def test_register_is_idempotent(self):
-        from uitk.bridge.slots import BridgeSlotsBase
+        from uitk.bridge.slots import ParamPanelSlots
 
         def handler(url, logger):
             return True
 
-        BridgeSlotsBase.register_log_link_handler(handler)
-        BridgeSlotsBase.register_log_link_handler(handler)
+        ParamPanelSlots.register_log_link_handler(handler)
+        ParamPanelSlots.register_log_link_handler(handler)
         self.assertEqual(self._registry.count(handler), 1)
 
     def test_public_registrar_is_the_class_method(self):
-        # register_log_link_handler is now a staticmethod on BridgeSlotsBase
+        # register_log_link_handler is now a staticmethod on ParamPanelSlots
         # (class-only; no module-level re-export). The class is exported from
         # both uitk.bridge and uitk.bridge.slots.
-        from uitk.bridge import BridgeSlotsBase as reexported
-        from uitk.bridge.slots import BridgeSlotsBase as canonical
+        from uitk.bridge import ParamPanelSlots as reexported
+        from uitk.bridge.slots import ParamPanelSlots as canonical
 
         self.assertIs(reexported, canonical)
         self.assertTrue(callable(canonical.register_log_link_handler))
 
     def test_registered_handler_receives_non_open_action(self):
-        from uitk.bridge.slots import BridgeSlotsBase
+        from uitk.bridge.slots import ParamPanelSlots
 
         seen = []
 
@@ -526,38 +526,38 @@ class LogLinkDispatchTest(unittest.TestCase):
             seen.append(url.host())
             return True
 
-        BridgeSlotsBase.register_log_link_handler(handler)
+        ParamPanelSlots.register_log_link_handler(handler)
         self._dispatch("action://select?node=pCube1")
         self.assertEqual(seen, ["select"])
 
     def test_first_handler_to_report_handled_short_circuits(self):
-        from uitk.bridge.slots import BridgeSlotsBase
+        from uitk.bridge.slots import ParamPanelSlots
 
         order = []
-        BridgeSlotsBase.register_log_link_handler(
+        ParamPanelSlots.register_log_link_handler(
             lambda u, log: (order.append("a"), True)[1]
         )
-        BridgeSlotsBase.register_log_link_handler(
+        ParamPanelSlots.register_log_link_handler(
             lambda u, log: (order.append("b"), True)[1]
         )
         self._dispatch("action://reveal?node=x")
         self.assertEqual(order, ["a"])  # 'b' never tried once 'a' handled it
 
     def test_handler_returning_false_falls_through(self):
-        from uitk.bridge.slots import BridgeSlotsBase
+        from uitk.bridge.slots import ParamPanelSlots
 
         order = []
-        BridgeSlotsBase.register_log_link_handler(
+        ParamPanelSlots.register_log_link_handler(
             lambda u, log: (order.append("a"), False)[1]
         )
-        BridgeSlotsBase.register_log_link_handler(
+        ParamPanelSlots.register_log_link_handler(
             lambda u, log: (order.append("b"), True)[1]
         )
         self._dispatch("action://select?node=x")
         self.assertEqual(order, ["a", "b"])
 
     def test_raising_handler_does_not_shadow_the_next(self):
-        from uitk.bridge.slots import BridgeSlotsBase
+        from uitk.bridge.slots import ParamPanelSlots
 
         order = []
 
@@ -565,18 +565,18 @@ class LogLinkDispatchTest(unittest.TestCase):
             order.append("boom")
             raise RuntimeError("handler blew up")
 
-        BridgeSlotsBase.register_log_link_handler(boom)
-        BridgeSlotsBase.register_log_link_handler(
+        ParamPanelSlots.register_log_link_handler(boom)
+        ParamPanelSlots.register_log_link_handler(
             lambda u, log: (order.append("ok"), True)[1]
         )
         self._dispatch("action://select?node=x")  # must not raise
         self.assertEqual(order, ["boom", "ok"])
 
     def test_open_action_never_reaches_handlers(self):
-        from uitk.bridge.slots import BridgeSlotsBase
+        from uitk.bridge.slots import ParamPanelSlots
 
         reached = []
-        BridgeSlotsBase.register_log_link_handler(
+        ParamPanelSlots.register_log_link_handler(
             lambda u, log: (reached.append(1), True)[1]
         )
         self._dispatch("action://open?path=")  # empty path → internal no-op
@@ -596,10 +596,10 @@ class LogLinkDispatchTest(unittest.TestCase):
         non-ASCII all survive the query string."""
         import types
         from qtpy.QtCore import QUrl
-        from uitk.bridge.slots import BridgeSlotsBase
+        from uitk.bridge.slots import ParamPanelSlots
 
         reached, said = [], []
-        BridgeSlotsBase.register_log_link_handler(
+        ParamPanelSlots.register_log_link_handler(
             lambda u, log: (reached.append(1), True)[1]
         )
         slots = types.SimpleNamespace(
@@ -616,7 +616,7 @@ class LogLinkDispatchTest(unittest.TestCase):
                 pane.setHtml(ptk.LoggingMixin.log_link("[copy]", "copy", text=text))
                 href = pane.document().find("[copy]").charFormat().anchorHref()
                 QtWidgets.QApplication.clipboard().setText("")
-                BridgeSlotsBase._on_log_link_clicked(slots, QUrl(href))
+                ParamPanelSlots._on_log_link_clicked(slots, QUrl(href))
                 self.assertEqual(QtWidgets.QApplication.clipboard().text(), text)
                 self.assertEqual(len(said), 1, said)
                 self.assertIn("copied", said[0].lower())
@@ -908,7 +908,7 @@ class TestActionKind(BaseTestCase):
 
     ``read`` returns None (nothing to collect or preset), the change-wirer is
     a deliberate no-op (clicks never dirty a preset), and
-    ``BridgeSlotsBase._wire_action_params`` connects each action id to the
+    ``ParamPanelSlots._wire_action_params`` connects each action id to the
     same-named slot method -- or disables the button when none exists.
     """
 
@@ -940,7 +940,7 @@ class TestActionKind(BaseTestCase):
         self.assertEqual(fired, [])
 
     def test_wire_action_params_connects_and_disables(self):
-        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        slot = ParamPanelSlots.__new__(ParamPanelSlots)
         w = self._widget(choices=self.CHOICES)
         slot._param_widgets = {"acts": w}
         calls = []
@@ -953,7 +953,7 @@ class TestActionKind(BaseTestCase):
         self.assertIn("do_clear", w._action_buttons["do_clear"].toolTip())
 
     def test_collect_param_values_excludes_action_rows(self):
-        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        slot = ParamPanelSlots.__new__(ParamPanelSlots)
         slot._param_widgets = {
             "acts": self._widget(choices=self.CHOICES),
             "depth": KindFactory.make_widget(
@@ -995,7 +995,7 @@ class TestActionKindIconButtons(BaseTestCase):
                 self.assertEqual(buttons[key].toolTip(), f"{key.split(chr(95))[1]} tip")
 
     def test_icon_actions_wire_and_disable_like_text_ones(self):
-        slot = BridgeSlotsBase.__new__(BridgeSlotsBase)
+        slot = ParamPanelSlots.__new__(ParamPanelSlots)
         w = self._widget()
         slot._param_widgets = {"acts": w}
         calls = []
@@ -1154,12 +1154,12 @@ class _ShowableUi(QtCore.QObject):
 def _bare_slot(params_module=None):
     """An unconstructed slot whose ``params_module`` is a stand-in registry.
 
-    ``BridgeSlotsBase.params_module`` is an abstract property; a subclass
+    ``ParamPanelSlots.params_module`` is an abstract property; a subclass
     supplies it, so a test that exercises registry-reading machinery has to as
     well (a class attribute shadows the property, exactly as a real subclass's
     override does).
     """
-    cls = type("_StubSlots", (BridgeSlotsBase,), {"params_module": params_module})
+    cls = type("_StubSlots", (ParamPanelSlots,), {"params_module": params_module})
     return cls.__new__(cls)
 
 
@@ -1564,7 +1564,7 @@ class TestOneLabelColumn(BaseTestCase):
     def test_row_labels_share_the_widest_labels_width(self):
         slot = _built_rows(self._specs())
         short, long = slot._param_labels["SHORT"], slot._param_labels["LONG"]
-        self.assertGreater(long.sizeHint().width(), BridgeSlotsBase.LABEL_MIN_WIDTH)
+        self.assertGreater(long.sizeHint().width(), ParamPanelSlots.LABEL_MIN_WIDTH)
         self.assertEqual(short.minimumWidth(), long.minimumWidth())
         self.assertGreaterEqual(long.minimumWidth(), long.sizeHint().width())
 
@@ -1576,11 +1576,11 @@ class TestOneLabelColumn(BaseTestCase):
         """The fitted width is the instance's LABEL_MIN_WIDTH, which is what
         the panels' own rows (Model File, Project Name) are built with."""
         slot = _built_rows(self._specs())
-        self.assertGreater(slot.LABEL_MIN_WIDTH, BridgeSlotsBase.LABEL_MIN_WIDTH)
+        self.assertGreater(slot.LABEL_MIN_WIDTH, ParamPanelSlots.LABEL_MIN_WIDTH)
         self.assertEqual(
             slot.LABEL_MIN_WIDTH, slot._param_labels["LONG"].minimumWidth()
         )
-        self.assertEqual(BridgeSlotsBase.LABEL_MIN_WIDTH, 90, "the class floor stays")
+        self.assertEqual(ParamPanelSlots.LABEL_MIN_WIDTH, 90, "the class floor stays")
 
     def test_short_labels_keep_the_floor(self):
         slot = _built_rows({"A": AttributeSpec(key="A", label="A", kind="int")})
@@ -2027,7 +2027,7 @@ class TestCheckListKind(BaseTestCase):
     def test_tall_kinds_escape_the_one_line_row_clamp(self):
         """A list-shaped row must not be squashed to the 19px input height the
         scalar params use."""
-        self.assertIn("check_list", BridgeSlotsBase.TALL_KINDS)
+        self.assertIn("check_list", ParamPanelSlots.TALL_KINDS)
 
 
 class TestEnsureOptionalPackage(unittest.TestCase):
@@ -2058,7 +2058,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
             self.prompts.append((text, buttons))
             return self.answer
 
-    class _Slots(BridgeSlotsBase):
+    class _Slots(ParamPanelSlots):
         def __init__(self, sb):
             import logging
 
@@ -2148,19 +2148,19 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         try:
             ptk.__version__ = "0.0.7"
             self.assertFalse(
-                BridgeSlotsBase.optional_package_available("pythontk>=0.0.8")
+                ParamPanelSlots.optional_package_available("pythontk>=0.0.8")
             )
             ptk.__version__ = "0.0.8"
             self.assertTrue(
-                BridgeSlotsBase.optional_package_available("pythontk>=0.0.8")
+                ParamPanelSlots.optional_package_available("pythontk>=0.0.8")
             )
             # Equal meets the floor; a bare spec ignores version entirely.
             ptk.__version__ = "0.0.9"
             self.assertTrue(
-                BridgeSlotsBase.optional_package_available("pythontk>=0.0.8")
+                ParamPanelSlots.optional_package_available("pythontk>=0.0.8")
             )
             ptk.__version__ = "0.0.1"
-            self.assertTrue(BridgeSlotsBase.optional_package_available("pythontk"))
+            self.assertTrue(ParamPanelSlots.optional_package_available("pythontk"))
         finally:
             ptk.__version__ = real
 
@@ -2173,10 +2173,10 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         try:
             del ptk.__version__
             self.assertFalse(
-                BridgeSlotsBase.optional_package_available("pythontk>=0.0.1")
+                ParamPanelSlots.optional_package_available("pythontk>=0.0.1")
             )
             # ... but with no floor asked for, it is still available.
-            self.assertTrue(BridgeSlotsBase.optional_package_available("pythontk"))
+            self.assertTrue(ParamPanelSlots.optional_package_available("pythontk"))
         finally:
             ptk.__version__ = real
 
@@ -2228,11 +2228,11 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         dialogs, no installs — it is what ``make_bridge`` implementations use
         (they run from ``__init__`` via the log wiring, where a modal would be
         parented to a window that does not exist yet)."""
-        self.assertTrue(BridgeSlotsBase.optional_package_available("pythontk"))
+        self.assertTrue(ParamPanelSlots.optional_package_available("pythontk"))
 
     def test_silent_probe_false_for_a_missing_package(self):
         self.assertFalse(
-            BridgeSlotsBase.optional_package_available("uitk-not-a-real-pkg")
+            ParamPanelSlots.optional_package_available("uitk-not-a-real-pkg")
         )
 
     def test_silent_probe_rejects_a_namespace_shadow(self):
@@ -2253,7 +2253,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
             _sys.path.insert(0, tmp)
             try:
                 self.assertFalse(
-                    BridgeSlotsBase.optional_package_available("uitk_fake_nsp_pkg")
+                    ParamPanelSlots.optional_package_available("uitk_fake_nsp_pkg")
                 )
             finally:
                 _sys.path.remove(tmp)
@@ -2277,7 +2277,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         through ``self.sb`` or this raises AttributeError on the decline path.
         """
 
-        class _NoLoggerSlots(BridgeSlotsBase):
+        class _NoLoggerSlots(ParamPanelSlots):
             def __init__(self, sb):
                 self.sb = sb  # deliberately NO self.logger
 
@@ -2296,7 +2296,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         never a dialog. Letting the raising ``bridge`` property reach the
         constructor took the panel down and stranded the modal it had opened."""
 
-        class _NoEngineSlots(BridgeSlotsBase):
+        class _NoEngineSlots(ParamPanelSlots):
             def __init__(self):
                 self._bridge = None
 
@@ -2321,7 +2321,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
             def __init__(self):
                 self.txt000 = _Txt()
 
-        class _NoEngineSlots(BridgeSlotsBase):
+        class _NoEngineSlots(ParamPanelSlots):
             def __init__(self, sb):
                 self.sb = sb
                 self.ui = _Ui()
@@ -2341,7 +2341,7 @@ class TestEnsureOptionalPackage(unittest.TestCase):
         convert that into one clear error rather than letting NoneType leak.
         """
 
-        class _NoEngineSlots(BridgeSlotsBase):
+        class _NoEngineSlots(ParamPanelSlots):
             def __init__(self):
                 self._bridge = None
 
@@ -2470,34 +2470,34 @@ class TestScopedObjects(unittest.TestCase):
         slot = types.SimpleNamespace(
             bridge=types.SimpleNamespace(logger=logger),
             resolve_scope_objects=lambda scope: asked.append(scope) or list(objects),
-            empty_scope_message=BridgeSlotsBase.empty_scope_message,
+            empty_scope_message=ParamPanelSlots.empty_scope_message,
         )
         return slot, asked, logger
 
     def test_a_panel_without_scope_resolves_the_selection(self):
         slot, asked, _logger = self._slot(["a"])
-        self.assertEqual(BridgeSlotsBase.scoped_objects(slot, {}), ["a"])
-        self.assertEqual(BridgeSlotsBase.scoped_objects(slot, None), ["a"])
+        self.assertEqual(ParamPanelSlots.scoped_objects(slot, {}), ["a"])
+        self.assertEqual(ParamPanelSlots.scoped_objects(slot, None), ["a"])
         self.assertEqual(asked, ["selected", "selected"])
 
     def test_the_param_value_reaches_the_resolver(self):
         slot, asked, _logger = self._slot(["a"])
-        BridgeSlotsBase.scoped_objects(slot, {"SCOPE": "visible"})
+        ParamPanelSlots.scoped_objects(slot, {"SCOPE": "visible"})
         self.assertEqual(asked, ["visible"])
 
     def test_an_empty_scope_warns_in_its_own_words(self):
         slot, _asked, logger = self._slot([])
         with self.assertLogs(logger, "WARNING") as logs:
-            BridgeSlotsBase.scoped_objects(slot, {"SCOPE": "all"})
+            ParamPanelSlots.scoped_objects(slot, {"SCOPE": "all"})
         self.assertIn("scene contains no mesh", logs.output[0])
         from unittest import mock
 
         with mock.patch.object(logger, "warning") as warning:
-            BridgeSlotsBase.scoped_objects(slot, {"SCOPE": "all"}, warn=False)
+            ParamPanelSlots.scoped_objects(slot, {"SCOPE": "all"}, warn=False)
         warning.assert_not_called()
 
     def test_messages_follow_the_scope_words(self):
-        message = BridgeSlotsBase.empty_scope_message
+        message = ParamPanelSlots.empty_scope_message
         self.assertIn("Nothing selected", message("selected"))
         self.assertIn("Nothing selected", message("bogus"))
         self.assertIn("scene contains no mesh", message("all"))
@@ -2542,7 +2542,7 @@ class TestParamRegistry(unittest.TestCase):
         )
 
     def test_it_is_a_params_module(self):
-        """What BridgeSlotsBase reads: PARAMS, referenced_keys, SUPERSESSIONS."""
+        """What ParamPanelSlots reads: PARAMS, referenced_keys, SUPERSESSIONS."""
         rule = (("FAST", ("SIZE",), "Inactive while Fast is on."),)
         reg = self._registry(SUPERSESSIONS=rule)
         slot = _bare_slot(params_module=reg)
@@ -2604,11 +2604,11 @@ class TestOutputDirRowPersistence(BaseTestCase):
         return slots._output_dir_edit
 
     def test_default_persists(self):
-        self.assertTrue(BridgeSlotsBase.OUTPUT_DIR_PERSISTS)
-        self.assertTrue(self._build(BridgeSlotsBase).restore_state)
+        self.assertTrue(ParamPanelSlots.OUTPUT_DIR_PERSISTS)
+        self.assertTrue(self._build(ParamPanelSlots).restore_state)
 
     def test_opt_out_marks_the_edit_non_restoring(self):
-        class _Transient(BridgeSlotsBase):
+        class _Transient(ParamPanelSlots):
             LOG_TAG = "transient_bridge"
             OUTPUT_DIR_PERSISTS = False
 
@@ -2617,14 +2617,14 @@ class TestOutputDirRowPersistence(BaseTestCase):
     def test_clear_button_opt_in_through_the_options_hook(self):
         from uitk.widgets.optionBox.options.clear import ClearOption
 
-        class _Clearable(BridgeSlotsBase):
+        class _Clearable(ParamPanelSlots):
             LOG_TAG = "clearable_bridge"
 
             def _configure_output_dir_options(self, edit):
                 super()._configure_output_dir_options(edit)
                 edit.option_box.clear_option = True
 
-        plain = self._build(BridgeSlotsBase).option_box.get_options()
+        plain = self._build(ParamPanelSlots).option_box.get_options()
         self.assertFalse([o for o in plain if isinstance(o, ClearOption)])
 
         opted_in = self._build(_Clearable).option_box.get_options()
@@ -2666,7 +2666,7 @@ class TestLiveParamsStayOutOfPresets(BaseTestCase):
             else None
         )
 
-        class Panel(BridgeSlotsBase):
+        class Panel(ParamPanelSlots):
             PRESETS_ROOT = tmp / "widget_state"
             params_module = type("Params", (), {"PARAMS": specs})
 
@@ -2917,7 +2917,7 @@ class TestBridgeSlotsFacade(BaseTestCase):
             "a": AttributeSpec(key="a", kind="int", default=1, section="One")
         }
 
-        class _Panel(BridgeSlotsBase):
+        class _Panel(ParamPanelSlots):
             params_module = _Registry
             template_dir = Path(".")
             TEMPLATE_MENU = False
@@ -2976,7 +2976,7 @@ class TestBridgeSlotsFacade(BaseTestCase):
         slot = _bare_slot(type("_Registry", (), {"PARAMS": PARAMS}))
         spin = KindFactory.make_widget(PARAMS["align_downscale"])
         slot._param_widgets = {"align_downscale": spin}
-        applied = BridgeSlotsBase._apply_param_dict(
+        applied = ParamPanelSlots._apply_param_dict(
             slot, {"align_downscale": 3, "unknown": 1}
         )
         self.assertEqual(applied, 1)
@@ -2995,7 +2995,7 @@ class TestBridgeSlotsFacade(BaseTestCase):
         sb.loaded_ui.facade_probe = self._ui(slot)
         # No PRESETS_ROOT: the build stops at the preset controls, past the reset.
         with self.assertRaises(ValueError):
-            BridgeSlotsBase.__init__(slot, sb)
+            ParamPanelSlots.__init__(slot, sb)
         self.assertNotIn("stale", slot._param_widgets)
 
 

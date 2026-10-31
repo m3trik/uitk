@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""The log pane of a bridge panel: one part of :class:`~uitk.bridge.slots.BridgeSlotsBase`.
+"""The log pane of a parameter panel: one part of :class:`~uitk.bridge.slots.ParamPanelSlots`.
 
 ``txt000``: the bridge logger redirected into it, its ``action://`` links (the
 DCC-agnostic ``open`` handled here, node actions delegated to handlers the DCC
@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Callable, List
 import pythontk as ptk
 
 if TYPE_CHECKING:  # annotation only; the facade imports this module
-    from uitk.bridge.slots import BridgeSlotsBase
+    from uitk.bridge.slots import ParamPanelSlots
 
 
 class _LogPane(object):
@@ -32,7 +32,7 @@ class _LogPane(object):
     # --- Log-panel link dispatch (dependency inversion) --------------------
     # uitk handles the DCC-agnostic ``action://open`` link itself; the DCC-specific
     # actions (``select`` / ``reveal`` a node) are delegated to handlers the DCC
-    # package registers via ``BridgeSlotsBase.register_log_link_handler``. This keeps
+    # package registers via ``ParamPanelSlots.register_log_link_handler``. This keeps
     # the dependency direction honest: uitk sits ABOVE pythontk and BELOW
     # mayatk/blendertk, so it must not import them — each DCC registers its
     # ``dispatch_log_link`` from its ``UiHandler.__init__`` instead. (Before this,
@@ -60,7 +60,7 @@ class _LogPane(object):
     # ------------------ Log panel -------------------------------------
 
     @staticmethod
-    def redirect_log_to_panel(panel: "BridgeSlotsBase") -> None:
+    def redirect_log_to_panel(panel: "ParamPanelSlots") -> None:
         """Pipe the bridge logger into ``txt000``, no-op if redirect unavailable."""
         try:
             handler_cls = panel.sb.registered_widgets.TextEditLogHandler
@@ -78,7 +78,7 @@ class _LogPane(object):
             pass
 
     @staticmethod
-    def on_log_link_clicked(panel: "BridgeSlotsBase", url) -> None:
+    def on_log_link_clicked(panel: "ParamPanelSlots", url) -> None:
         """Route ``action://`` URIs from the log panel to their handler.
 
         The ``open`` action (reveal a file/folder) is DCC-agnostic, so it is
@@ -143,7 +143,7 @@ class _LogPane(object):
         return text
 
     @staticmethod
-    def show_startup_info(panel: "BridgeSlotsBase") -> None:
+    def show_startup_info(panel: "ParamPanelSlots") -> None:
         """Pipe the bridge's ``STARTUP_INFO`` into the log panel once.
 
         No-op when the bridge doesn't declare a ``STARTUP_INFO`` constant
@@ -159,7 +159,7 @@ class _LogPane(object):
             panel.panel_log(info)
 
     @staticmethod
-    def show_docs_link(panel: "BridgeSlotsBase") -> None:
+    def show_docs_link(panel: "ParamPanelSlots") -> None:
         """Log the panel's documentation link once at startup (opt-in).
 
         ``"<DOCS_LABEL>: <a href=url>url</a>"`` -- the same closing line the

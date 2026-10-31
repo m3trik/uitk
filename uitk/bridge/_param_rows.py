@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""The parameter rows of a bridge panel: one part of :class:`~uitk.bridge.slots.BridgeSlotsBase`.
+"""The parameter rows of a parameter panel: one part of :class:`~uitk.bridge.slots.ParamPanelSlots`.
 
 The "Parameters" group built from the registry's :class:`AttributeSpec` rows
 (sections, inline cells, action buttons), their tooltips (static and live), and
@@ -24,7 +24,7 @@ from uitk.managers.window_height import WindowHeight
 from uitk.bridge.spec import AttributeSpec, KindFactory
 
 if TYPE_CHECKING:  # annotation only; the facade imports this module
-    from uitk.bridge.slots import BridgeSlotsBase
+    from uitk.bridge.slots import ParamPanelSlots
 
 
 class _ParamRows(object):
@@ -46,7 +46,7 @@ class _ParamRows(object):
     #: The custom-store key the folded sections are kept under.
     FOLDED_SECTIONS_KEY = "bridge_folded_sections"
 
-    def __init__(self, panel: "BridgeSlotsBase") -> None:
+    def __init__(self, panel: "ParamPanelSlots") -> None:
         self._panel = panel
         self.widgets: Dict[str, QtWidgets.QWidget] = {}
         self.rows: Dict[str, QtWidgets.QWidget] = {}

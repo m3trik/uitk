@@ -10,7 +10,7 @@ open and work without a restart.
 
 A service object rather than methods on a slot class. The two halves of this one
 policy used to live apart -- the subprocess half in ``ExternalAppHandler``, the
-in-process half inlined into ``BridgeSlotsBase`` -- to the point that the latter
+in-process half inlined into ``ParamPanelSlots`` -- to the point that the latter
 reached into the former for ``_pip_capable_python`` to stop them drifting. That
 cross-import was the design asking for this module.
 

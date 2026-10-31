@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""The Output Dir row of a bridge panel: one part of :class:`~uitk.bridge.slots.BridgeSlotsBase`.
+"""The Output Dir row of a parameter panel: one part of :class:`~uitk.bridge.slots.ParamPanelSlots`.
 
 The optional "Output Dir" field above the parameters, its option-box buttons
 (persisted recent values + a directory browse), and the chain a send resolves it
@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 from qtpy import QtCore, QtWidgets
 
 if TYPE_CHECKING:  # annotation only; the facade imports this module
-    from uitk.bridge.slots import BridgeSlotsBase
+    from uitk.bridge.slots import ParamPanelSlots
 
 
 class _OutputDirRow(object):
@@ -40,7 +40,7 @@ class _OutputDirRow(object):
     # newest file in it.
     TEMP_MAX_AGE_DAYS: float = 7
 
-    def __init__(self, panel: "BridgeSlotsBase") -> None:
+    def __init__(self, panel: "ParamPanelSlots") -> None:
         self._panel = panel
         self.edit: Optional[QtWidgets.QLineEdit] = None
         self.label: Optional[QtWidgets.QLabel] = None

@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""The presets of a bridge panel: one part of :class:`~uitk.bridge.slots.BridgeSlotsBase`.
+"""The presets of a parameter panel: one part of :class:`~uitk.bridge.slots.ParamPanelSlots`.
 
 The user-preset combo and the Reset to Defaults button above the send button:
 widget-state presets per template (the default) or semantic presets shared with
@@ -23,7 +23,7 @@ from uitk.managers.state_manager import StateManager
 from uitk.bridge.spec import KindFactory
 
 if TYPE_CHECKING:  # annotation only; the facade imports this module
-    from uitk.bridge.slots import BridgeSlotsBase
+    from uitk.bridge.slots import ParamPanelSlots
 
 
 class _BridgeDefaults(object):
@@ -43,7 +43,7 @@ class _BridgeDefaults(object):
 
     KEY = "bridge_saved_defaults"
 
-    def __init__(self, slots: "BridgeSlotsBase"):
+    def __init__(self, slots: "ParamPanelSlots"):
         self._slots = slots
 
     def reset_all(self, block_signals=False, widgets=None, factory=False) -> None:
@@ -104,7 +104,7 @@ class _Presets(object):
     active template (the per-template preset dir).
     """
 
-    def __init__(self, panel: "BridgeSlotsBase") -> None:
+    def __init__(self, panel: "ParamPanelSlots") -> None:
         self._panel = panel
         self.mgr: Optional[PresetManager] = None
         self.store = None  # set in build_controls (semantic mode)

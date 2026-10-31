@@ -39,9 +39,9 @@ collaborator per concept, each owning its state and holding the panel --
 combo + Reset to Defaults), ``_template_combo`` (``_TemplateCombo``:
 ``cmb000``), ``_log_panel`` (``_LogPane``: ``txt000`` and its links) and
 ``_header_menu`` (``_HeaderMenu``); the last three own no state, so they take
-the panel per call. :class:`BridgeSlotsBase` keeps the contract
+the panel per call. :class:`ParamPanelSlots` keeps the contract
 (every hook and knob, overridable on a subclass) and is the one public name;
-:class:`_BridgeSlotsInternal` holds the protected hooks the parts call
+:class:`_ParamPanelSlotsInternal` holds the protected hooks the parts call
 through the panel and the private names that read a part's state.
 """
 
@@ -66,11 +66,11 @@ from uitk.bridge._log_panel import _LogPane
 from uitk.bridge._header_menu import _HeaderMenu
 
 
-class _BridgeSlotsInternal(object):
-    """Private side of :class:`BridgeSlotsBase`: its parts and protected hooks.
+class _ParamPanelSlotsInternal(object):
+    """Private side of :class:`ParamPanelSlots`: its parts and protected hooks.
 
     Each part is a collaborator holding the panel (see the module docstring),
-    built fresh by ``BridgeSlotsBase.__init__`` -- and on first access, so a
+    built fresh by ``ParamPanelSlots.__init__`` -- and on first access, so a
     panel stubbed with ``__new__`` (or a subclass reaching a part before
     ``super().__init__``) still has one. A part calls every hook, knob and
     sibling through the panel, never through another part, so a subclass
@@ -298,8 +298,10 @@ class _BridgeSlotsInternal(object):
         _LogPane.show_docs_link(self)
 
 
-class BridgeSlotsBase(_BridgeSlotsInternal):
-    """Base class for DCC-bridge slot panels.
+class ParamPanelSlots(_ParamPanelSlotsInternal):
+    """A parameter panel: a template picker, parameter rows built from specs,
+    presets, a log and a Run button, for any job that renders a template's
+    parameters and hands them to a process (a DCC bridge is one).
 
     Subclasses **must** set:
 
@@ -327,7 +329,7 @@ class BridgeSlotsBase(_BridgeSlotsInternal):
     * :attr:`TEMPLATE_EXTENSION` -- ``.py`` (default), ``.lua``, etc.
 
     Every hook and knob is declared on this class (the protected ones on
-    :class:`_BridgeSlotsInternal`); the concept parts read them through the
+    :class:`_ParamPanelSlotsInternal`); the concept parts read them through the
     panel, so a subclass's value is the one in effect.
     """
 

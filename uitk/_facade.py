@@ -4,7 +4,7 @@
 
 uitk's large objects are facades over collaborators that own their state
 (:class:`~uitk.switchboard.Switchboard`, :class:`~uitk.widgets.menu.Menu`,
-:class:`~uitk.bridge.slots.BridgeSlotsBase`).
+:class:`~uitk.bridge.slots.ParamPanelSlots`).
 :class:`_Forward` keeps a private name that code outside the facade still
 reads -- tests, subclasses, sibling widgets -- on the collaborator that owns
 it; :class:`_Part` builds a collaborator on first access, for a facade whose
