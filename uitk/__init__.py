@@ -289,6 +289,8 @@ def _uitk_getattr(name: str):
 #: accounts for a member's move at release (``generate_api_registry.py``); only
 #: a root name answers at runtime.
 MOVED_NAMES = {
+    # A generic timeline frames a range, not a shot (2026-10-31).
+    "SequencerWidget.frame_shot": ("uitk.SequencerWidget.frame_range", "1.9.0"),
     # The sequencer's shot layer -- the shot lane under the ruler and the gaps
     # between shots -- is the Shot Sequencer's, and plugs back in through
     # ``SequencerWidget.add_layer``.

@@ -139,7 +139,7 @@ class GraphEditor(SequencerEditor):
         ("View", "Alt+Middle-drag", "Pan"),
         ("View", "Alt+Right-drag", "Zoom each axis (Shift: one)"),
         ("View", "Wheel", "Zoom (Ctrl: time only, Shift: value only)"),
-        ("View", "A / F", "Frame all / the selection, else the shot"),
+        ("View", "A / F", "Frame all / the selection, else the range"),
         ("View", "I / Delete", "Key the curves at the playhead / delete keys"),
     )
 
@@ -234,7 +234,7 @@ class GraphEditor(SequencerEditor):
             (
                 "Display",
                 "dim",
-                "Dim Outside Shots",
+                "Dim Outside Range",
                 "dim_outside",
                 "Veil the time outside the shots on screen (the scope)",
             ),
@@ -290,7 +290,7 @@ class GraphEditor(SequencerEditor):
     def key_bindings(self):
         return [
             ("A", self.frame_all, "Frame all curves"),
-            ("F", self.frame_selection, "Frame the selected keys, else the shot"),
+            ("F", self.frame_selection, "Frame the selected keys, else the range"),
             ("Delete", self.delete_selection, "Delete the selected keys"),
             ("I", self.insert_keys_at_playhead, "Key the curves at the playhead"),
             ("Ctrl+A", self.select_all, "Select every key"),
@@ -454,7 +454,7 @@ class GraphEditor(SequencerEditor):
 
     @property
     def focus_range(self) -> Optional[Tuple[float, float]]:
-        """``(t0, t1)`` the host is working in -- the shots its scope shows --
+        """``(t0, t1)`` the host is working in -- the range its scope shows --
         or None; what lies outside is veiled while :attr:`dim_outside`."""
         return self._focus_range
 
@@ -544,12 +544,12 @@ class GraphEditor(SequencerEditor):
 
     def frame_selection(self) -> None:
         """Frame the selected keys; with none, the active shot -- its time,
-        and the values the curves take there (``SequencerWidget.frame_shot``,
+        and the values the curves take there (``SequencerWidget.frame_range``,
         what F does in the track view) -- or, with no shot, every curve
         (:meth:`frame_all`)."""
         if not self._sel:
             self._framed_once = True
-            if not self.sequencer.frame_shot():
+            if not self.sequencer.frame_range():
                 self.frame_all()
             return
         times = [t for _cid, t in self._sel]
@@ -921,7 +921,7 @@ class GraphEditor(SequencerEditor):
         # The host's rows for the selection, above the view rows.
         self.key_menu_requested.emit(menu, self.selected_keys())
         menu.addSeparator()
-        menu.addAction("Frame Shot", self.sequencer.frame_shot)
+        menu.addAction("Frame Range", self.sequencer.frame_range)
         menu.addAction("Frame Selection", self.frame_selection).setEnabled(has_sel)
         menu.addAction("Frame All", self.frame_all)
         for row in self.options():  # the Options menu's rows, one source

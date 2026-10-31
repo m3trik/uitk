@@ -1909,12 +1909,12 @@ class TestPlayheadNavigation(BaseTestCase):
 
 
 # =========================================================================
-# Frame Shot / Frame All
+# Frame Range / Frame All
 # =========================================================================
 
 
 class TestFrameShot(BaseTestCase):
-    """frame_shot viewport framing."""
+    """frame_range viewport framing."""
 
     def setUp(self):
         self.w = SequencerWidget()
@@ -1925,23 +1925,23 @@ class TestFrameShot(BaseTestCase):
         self.w.close()
         self.w.deleteLater()
 
-    def test_frame_shot_adjusts_ppu(self):
-        """frame_shot changes pixels-per-unit to fit the range."""
+    def test_frame_range_adjusts_ppu(self):
+        """frame_range changes pixels-per-unit to fit the range."""
         tid = self.w.add_track("T")
         self.w.add_clip(tid, 100, 200)
         old_ppu = self.w._timeline.pixels_per_unit
         self.w.set_active_range(100, 300)
         self.w.set_range_highlight(100, 300)
-        self.w.frame_shot()
+        self.w.frame_range()
         # PPU should have changed to fit the 200-unit span
         self.assertNotAlmostEqual(self.w._timeline.pixels_per_unit, old_ppu)
 
-    def test_frame_shot_noop_empty(self):
-        """frame_shot does nothing with no clips or range."""
-        self.w.frame_shot()  # should not raise
+    def test_frame_range_noop_empty(self):
+        """frame_range does nothing with no clips or range."""
+        self.w.frame_range()  # should not raise
 
     def test_retired_frame_all_alias_stays_removed(self):
-        """``frame_all`` was a silent alias of ``frame_shot`` from 2026-03-19
+        """``frame_all`` was a silent alias of ``frame_shot`` (now ``frame_range``) from 2026-03-19
         and was retired 2026-09-21 with no caller left; it must not return."""
         self.assertFalse(hasattr(type(self.w), "frame_all"))
 
@@ -2438,7 +2438,7 @@ class TestGraphEditor(BaseTestCase):
                 "Display",
                 "Normalize",
                 "Show Infinity",
-                "Dim Outside Shots",
+                "Dim Outside Range",
                 "Mark Flat Spans",
                 "Behavior",
                 "Auto Load Selected",
@@ -4633,16 +4633,16 @@ class TestKeyboardDispatch(BaseTestCase):
             modifiers = self.QtCore.Qt.NoModifier
         return self.QtGui.QKeyEvent(self.QtCore.QEvent.KeyPress, key, modifiers)
 
-    def test_f_key_dispatches_frame_shot_on_widget(self):
-        """F key on SequencerWidget calls frame_shot."""
+    def test_f_key_dispatches_frame_range_on_widget(self):
+        """F key on SequencerWidget calls frame_range."""
         tid = self.w.add_track("T")
         self.w.add_clip(tid, 100, 50)
         ev = self._make_key_event(self.QtCore.Qt.Key_F)
         self.w.keyPressEvent(ev)
         self.assertTrue(ev.isAccepted())
 
-    def test_f_key_dispatches_frame_shot_on_timeline(self):
-        """F key on TimelineView calls frame_shot."""
+    def test_f_key_dispatches_frame_range_on_timeline(self):
+        """F key on TimelineView calls frame_range."""
         tid = self.w.add_track("T")
         self.w.add_clip(tid, 100, 50)
         ev = self._make_key_event(self.QtCore.Qt.Key_F)
@@ -8169,7 +8169,7 @@ class TestTheActiveShotIsFramedOnFirstShow(BaseTestCase):
     def test_opting_out_never_frames(self):
         """A consumer that manages its own view must keep it."""
         calls = []
-        self.w.frame_shot = lambda: calls.append(1)
+        self.w.frame_range = lambda: calls.append(1)
         self.w.frame_on_first_show = False
         self.w.set_range_highlight(3000.0, 3200.0)
         self.w.resize(900, 400)
@@ -11019,7 +11019,7 @@ class TestItemsHoldTheGeometryTheSceneIndexed(BaseTestCase):
             "w = SequencerWidget(); w.resize(900, 400); w.show(); app.processEvents()\n"
             "w.clear(); tid = w.add_track('ctlB')\n"
             "w.add_clip(track_id=tid, start=60.0, duration=40.0)\n"
-            "w.set_playhead(1.0); w.set_active_range(1.0, 120.0); w.frame_shot()\n"
+            "w.set_playhead(1.0); w.set_active_range(1.0, 120.0); w.frame_range()\n"
             "app.processEvents()\n"
             "with w.bulk_updates():\n"
             "    w.clear(keep_range_highlight=True); tid = w.add_track('ctlB')\n"
@@ -11722,10 +11722,10 @@ class TestPrivateNamesOtherCodeReads(BaseTestCase):
 class TestInternalCallsReachTheFacade(BaseTestCase):
     """An instance override of a name other code may call -- a test's spy, a
     host's wrapper -- reaches the callers inside the widget, as it did when
-    the widget was one class (``self.w.frame_shot = ...``, tentacle's
+    the widget was one class (``self.w.frame_range = ...``, tentacle's
     ``self.w._set_gesture_context = ...``): one case per internal caller of
     a name that stayed on the widget (first-show framing reaching
-    ``frame_shot``: ``TestTheActiveShotIsFramedOnFirstShow``)."""
+    ``frame_range``: ``TestTheActiveShotIsFramedOnFirstShow``)."""
 
     def tearDown(self):
         for w in getattr(self, "_widgets", []):
@@ -11864,8 +11864,8 @@ class TestInternalCallsReachTheFacade(BaseTestCase):
                 None,
                 lambda w, _: setattr(w, "snap_guides_enabled", False),
             ),
-            ("range_highlight", None, lambda w, _: w.frame_shot()),
-            ("frame_time_range", self._decorated, lambda w, _: w.frame_shot()),
+            ("range_highlight", None, lambda w, _: w.frame_range()),
+            ("frame_time_range", self._decorated, lambda w, _: w.frame_range()),
             ("add_marker", None, lambda w, _: w.add_marker_at_playhead()),
             ("_move_playhead", None, lambda w, _: w.step_forward()),
             ("_move_playhead", None, lambda w, _: w.step_backward()),

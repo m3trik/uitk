@@ -1193,16 +1193,16 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """Add a marker at the current playhead position."""
         return self._marker_set.add_at_playhead()
 
-    def frame_shot(self) -> bool:
-        """Zoom and scroll the timeline to frame the active shot range.
+    def frame_range(self) -> bool:
+        """Zoom and scroll the timeline to frame the active range.
 
         Checks range highlight first, then active range (column tint),
         then falls back to framing all clips.
 
         Returns:
-            Whether anything was framed: ``False`` with no shot and no clip.
+            Whether anything was framed: ``False`` with no range and no clip.
         """
-        return self._navigation.frame_shot()
+        return self._navigation.frame_range()
 
     def frame_time_range(self, t_min: float, t_max: float, fit_values: bool = True):
         """Zoom and scroll so ``[t_min, t_max]`` fills the timeline's width.

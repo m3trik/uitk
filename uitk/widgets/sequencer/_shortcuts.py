@@ -137,7 +137,7 @@ class _KeyRouting:
             ("Home", sq.go_to_start, "Jump playhead to start"),
             ("End", sq.go_to_end, "Jump playhead to last clip end"),
             ("M", sq.add_marker_at_playhead, "Add marker at playhead"),
-            ("F", sq.frame_shot, "Frame the active shot range"),
+            ("F", sq.frame_range, "Frame the active range"),
             ("Delete", sq._delete_selected_keys, "Delete selected keyframes"),
             ("Escape", sq._cancel_active_drag, "Cancel the active drag"),
         ]

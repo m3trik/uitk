@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from uitk.widgets.sequencer._sequencer import SequencerWidget
 
-#: Pixels of margin :meth:`SequencerWidget.frame_shot` leaves on each side.
+#: Pixels of margin :meth:`SequencerWidget.frame_range` leaves on each side.
 _FRAME_PADDING = 40
 #: A viewport narrower than this is not laid out yet -- framing into it sets a
 #: zoom the user then has to undo, so the first-show framing waits for a resize.
@@ -96,7 +96,7 @@ class _Navigation:
         sq._move_playhead(max((cd.end for cd in sq._clips.values()), default=0.0))
 
     # -- the view ------------------------------------------------------------
-    def frame_shot(self) -> bool:
+    def frame_range(self) -> bool:
         sq = self._sequencer
         rh = sq.range_highlight()
         if rh is not None:
@@ -136,7 +136,7 @@ class _Navigation:
         if sq.range_highlight() is None and sq._active_range is None and not sq._clips:
             return  # nothing to frame yet; a later show/resize retries
         self.pending_first_frame = False
-        sq.frame_shot()
+        sq.frame_range()
 
     def viewport_state(self) -> dict:
         sq = self._sequencer
