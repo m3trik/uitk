@@ -82,7 +82,7 @@ No `.connect()` calls. No `findChild()`. No manual state restore.
 | [Slots Contract](docs/SLOTS.md) | The slot method spec — naming, signals, `@Signals`, parameter injection, debounce, timeout |
 | [Widgets](docs/WIDGETS.md) | Every enhanced widget — `.menu`, `.option_box`, sequencer, editors, marking menu; and [using them in Qt Designer](docs/WIDGETS.md#using-the-widgets-in-qt-designer) (`python -m uitk.designer`) |
 | [Marking Menu](docs/MARKING_MENU.md) | Radial gesture menus — bindings, chords, DCC integration |
-| [Architecture](docs/ARCHITECTURE.md) | Internals — Switchboard mixins, registries, MainWindow lifecycle, handler ecosystem |
+| [Architecture](docs/ARCHITECTURE.md) | Internals — the Switchboard facade and its collaborators, registries, MainWindow lifecycle, handler ecosystem |
 | [Cookbook](docs/COOKBOOK.md) | Recipes from real consumers — hosted-vs-standalone launch, per-domain slots, presets, cross-UI sync |
 | [Tutorial](docs/EXAMPLES.md) | Step-by-step walkthrough from empty folder to working app |
 | [API Reference](docs/API_REFERENCE.md) | Public signatures — `Switchboard`, `MainWindow`, `Signals`, `UiHandler`, `MarkingMenu` |

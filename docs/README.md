@@ -7,7 +7,7 @@
 # uitk
 
 <!-- short_description_start -->
-**Name it, and it connects.** UITK is a convention-driven Qt framework that eliminates boilerplate. Design in Qt Designer, name your widgets, write matching Python methods — UITK discovers the files, auto-wires signals, persists state, and applies themes. Every convention is overridable when you need control.
+**Name it, and it connects.** UITK is a convention-driven Qt framework that eliminates boilerplate. Build the UI in Qt Designer or in code (`sb.register_ui`), name your widgets, write matching Python methods — UITK discovers the files, auto-wires signals, persists state, and applies themes. Every convention is overridable when you need control.
 <!-- short_description_end -->
 
 Built on `qtpy` over PySide6. Runs standalone or hosted inside DCCs (Maya, Blender, 3ds Max) through a pluggable handler ecosystem, and ships a marking-menu subsystem for radial-menu tool shells.

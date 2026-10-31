@@ -172,7 +172,7 @@ class TclMaya(MarkingMenu):
             )
 ```
 
-Instantiate once: `main = TclMaya(); main.show()`. The activation `GlobalShortcut` is auto-installed when a `parent` is supplied.
+Instantiate once: `main = TclMaya(); main.show()`. The activation `GlobalShortcut` is auto-installed when a `parent` is supplied. (Condensed: tentacle builds this same chord table with its `Tcl.chord_bindings` and picks the key with `Tcl.resolve_key`; any table of chord strings works.)
 
 ---
 

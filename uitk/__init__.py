@@ -2,7 +2,8 @@
 # coding=utf-8
 """UITK - User Interface Toolkit for Qt/PySide applications.
 
-A comprehensive UI framework that extends Qt Designer workflows with:
+A Qt UI framework for Designer ``.ui`` files or widget trees built in code
+(``sb.register_ui``), with:
 - Dynamic UI loading via Switchboard
 - Custom widget classes with enhanced functionality
 - Automatic signal-slot connection management
