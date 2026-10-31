@@ -89,6 +89,22 @@ class TestRequiresTag(_PolicyTestBase):
         self.register(b, "b904")
         self.assertFalse(b.isHidden())
 
+    def test_a_hidden_child_stays_hidden_when_its_group_expands(self):
+        """Bug: the policy hid with a bare setVisible(False), and a
+        CollapsableGroup re-shows every unmarked child on expand, so the other
+        host's widget came back. Fixed: 2026-10-31"""
+        from uitk.widgets.collapsableGroup import CollapsableGroup
+
+        group = CollapsableGroup("Advanced", self.ui)
+        group.setLayout(QtWidgets.QVBoxLayout())
+        b = QtWidgets.QPushButton()
+        b.setProperty("requires", "blender")
+        group.layout().addWidget(b)
+        self.register(b, "b905")
+        group.setChecked(False)
+        group.setChecked(True)
+        self.assertTrue(b.isHidden(), "the expand re-showed a requires-hidden child")
+
 
 class TestRequiresIgnoredWithoutContext(_PolicyTestBase):
     """Empty context_tags (standalone/dev) disables requires filtering entirely."""

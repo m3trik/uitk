@@ -225,7 +225,6 @@ DEFAULT_INCLUDE = {
     "widgets.mixins.option_box_mixin": "OptionBoxMixin",
     "widgets.mixins.text": [
         "RichTextFormatter",
-        "TextTruncation",
         "RichText",
         "TextOverlay",
     ],
@@ -355,6 +354,9 @@ MOVED_NAMES = {
     # its cell formatting a private collaborator; every method is TableWidget's.
     "HeaderMixin": ("uitk.TableWidget", "1.9.0"),
     "CellFormatMixin": ("uitk.TableWidget", "1.9.0"),
+    # An elision mixin nothing inherited: characters elide through
+    # ``pythontk.StrUtils.truncate``, pixels through ``QFontMetrics.elidedText``.
+    "TextTruncation": ("pythontk.StrUtils.truncate", "1.9.0"),
 }
 
 bootstrap_package(

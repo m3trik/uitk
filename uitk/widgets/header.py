@@ -1656,9 +1656,11 @@ class Header(
     def _sync_menu_button_visibility(self, *_):
         """Show the header's menu button only when its menu has real content.
 
-        The transient "No options" placeholder is excluded — ``Menu``'s
-        ``contains_items`` already ignores it — so an empty (or placeholder-
-        only) menu keeps the button hidden. Wired to the menu's
+        The transient "No options" placeholder and every hidden item are
+        excluded — ``Menu``'s ``contains_items`` ignores them — so an empty,
+        placeholder-only or all-hidden menu (each row one the host cannot
+        serve) keeps the button hidden; the header's show re-syncs it, as a
+        hide made after ``add`` fires no signal. Wired to the menu's
         ``on_item_added`` signal so populating the menu later auto-shows the
         button; ``*_`` absorbs the added-widget argument the signal carries.
         Reads ``_menu`` directly rather than the ``menu`` property to avoid

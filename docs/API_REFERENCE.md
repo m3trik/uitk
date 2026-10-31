@@ -706,12 +706,11 @@ Mixin-provided properties:
 
 ---
 
-## Text mixins — `RichTextFormatter`, `TextTruncation`, `RichText`, `TextOverlay`
+## Text mixins — `RichTextFormatter`, `RichText`, `TextOverlay`
 
 Source: [widgets/mixins/text.py](../uitk/widgets/mixins/text.py)
 
 - **`RichTextFormatter`** — stateless HTML pipeline shared by the rich-text widgets. `RichTextFormatter.format(string, *, align="left", font_color="white", font_size=None)` applies the standard pipeline; `apply_prefix_styles(string)` colors level-prefix tokens (`Error:`, `Warning:`, …), `apply_inline_styles(string)` upgrades bare HTML tags, `wrap_font_color(string, color)` / `wrap_font_size(string, size)` / `resolve_background(background)` are the primitives.
-- **`TextTruncation`** — reusable elision: `calculate_text_truncation` (pixel-based via font metrics), `calculate_character_truncation`, `calculate_word_truncation`, `calculate_path_truncation`, plus `apply_text_truncation` / `create_truncated_button` / `create_truncated_label` / `update_widget_text_truncation`.
 - **`RichText`** / **`TextOverlay`** — the widget-inheritance mixins (HTML text via an internal label; overlay text). Which widgets carry them: [Widgets](WIDGETS.md).
 
 ---

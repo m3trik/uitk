@@ -312,6 +312,25 @@ class TestWidgetComboBoxActionsSection(QtBaseTestCase):
             "separator row height must match the separator widget's own height",
         )
 
+    def test_refresh_shows_an_icon_set_after_add(self):
+        """``actions.refresh`` re-renders the section after an action is edited
+        in place: a caller that sets icons once ``add`` returned them reached
+        the private rebuild to see them."""
+        from qtpy import QtGui
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+
+        combo = self.track_widget(WidgetComboBox())
+        (action,) = combo.actions.add({"Rename": lambda: None})
+        pixmap = QtGui.QPixmap(8, 8)
+        pixmap.fill(QtGui.QColor("red"))
+        action.setIcon(QtGui.QIcon(pixmap))
+        (stale,) = self._action_buttons(combo)
+        self.assertTrue(stale.icon().isNull())
+        combo.actions.refresh()
+        (btn,) = self._action_buttons(combo)
+        self.assertFalse(btn.icon().isNull())
+        self.assertEqual(combo._action_row_count, 2)
+
     def test_button_mirrors_action_enabled_state(self):
         """Toggling ``action.setEnabled`` greys out / restores its button."""
         from uitk.widgets.widgetComboBox import WidgetComboBox

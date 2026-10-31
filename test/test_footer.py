@@ -20,7 +20,7 @@ from conftest import QtBaseTestCase, QtWait, setup_qt_application
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
 
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtTest
 
 from uitk.widgets.footer import Footer, FooterStatusController
 
@@ -122,6 +122,23 @@ class TestFooterStatusText(QtBaseTestCase):
         footer.setStatusText("Fine")
         self.assertNotIn("color:", footer.status_label.styleSheet())
 
+    def test_an_explicit_color_tints_the_label_until_the_next_plain_text(self):
+        """A host's own colour (not a severity) through the public API: the
+        Shot panels styled the private label by hand, behind the level cache."""
+        footer = self.track_widget(Footer())
+        footer.setText("Moved 2 keys.", color="#E0A0A0")
+        self.assertIn("color: #E0A0A0", footer.status_label.styleSheet())
+        self.assertIn("background: transparent", footer.status_label.styleSheet())
+        footer.setText("Plain")
+        self.assertNotIn("color:", footer.status_label.styleSheet())
+
+    def test_an_explicit_color_outranks_the_level(self):
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Boom", level="error", color="#123456")
+        qss = footer.status_label.styleSheet()
+        self.assertIn("#123456", qss)
+        self.assertNotIn(Footer.LEVEL_COLORS["error"], qss)
+
     def _shown(self, width):
         from qtpy import QtWidgets
 
@@ -161,6 +178,71 @@ class TestFooterStatusText(QtBaseTestCase):
         self.assertEqual(Footer.LEVEL_COLORS["error"], log_colors["ERROR"])
         self.assertEqual(Footer.LEVEL_COLORS["warning"], log_colors["WARNING"])
         self.assertEqual(Footer.LEVEL_COLORS["success"], log_colors["SUCCESS"])
+
+
+class TestFooterStatusEdit(QtBaseTestCase):
+    """The status text edited in place (``edit_status``), and the double-click
+    that asks for it (``status_double_clicked``)."""
+
+    def _editing(self, text="cube"):
+        footer = self.track_widget(Footer())
+        footer.setStatusText(text)
+        footer.resize(300, 19)
+        footer.show()
+        committed, cancelled = [], []
+        editor = footer.edit_status(
+            text, on_commit=committed.append, on_cancel=lambda: cancelled.append(1)
+        )
+        QtWidgets.QApplication.processEvents()
+        return footer, editor, committed, cancelled
+
+    def test_editing_shows_a_field_holding_the_text_in_the_labels_place(self):
+        footer, editor, _, _ = self._editing()
+        self.assertTrue(footer.is_editing_status)
+        self.assertIsInstance(editor, QtWidgets.QLineEdit)
+        self.assertEqual(editor.text(), "cube")
+        self.assertTrue(editor.isVisible())
+        self.assertFalse(footer.status_label.isVisible())
+
+    def test_enter_commits_the_edit_once_and_shows_the_label(self):
+        footer, editor, committed, cancelled = self._editing()
+        editor.setText("box")
+        QtTest.QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        editor.clearFocus()  # the focus loss after Enter must not commit again
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(committed, ["box"])
+        self.assertEqual(cancelled, [])
+        self.assertFalse(footer.is_editing_status)
+        self.assertTrue(footer.status_label.isVisible())
+
+    def test_escape_cancels_without_committing(self):
+        footer, editor, committed, cancelled = self._editing()
+        editor.setText("box")
+        QtTest.QTest.keyClick(editor, QtCore.Qt.Key_Escape)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(committed, [])
+        self.assertEqual(cancelled, [1])
+        self.assertFalse(footer.is_editing_status)
+
+    def test_a_new_edit_cancels_the_one_it_replaces(self):
+        """Its caller hears the end of every edit it started."""
+        footer, editor, committed, cancelled = self._editing("first")
+        second = []
+        footer.edit_status("second", on_commit=second.append)
+        self.assertEqual(cancelled, [1], "the superseded edit is cancelled")
+        QtTest.QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        self.assertEqual(committed, [])
+        self.assertEqual(second, ["second"])
+
+    def test_a_double_click_on_the_status_is_announced(self):
+        footer = self.track_widget(Footer())
+        footer.resize(300, 19)
+        footer.show()
+        QtWidgets.QApplication.processEvents()
+        heard = []
+        footer.status_double_clicked.connect(lambda: heard.append(1))
+        QtTest.QTest.mouseDClick(footer.status_label, QtCore.Qt.LeftButton)
+        self.assertEqual(heard, [1])
 
 
 class TestFooterDefaultStatusText(QtBaseTestCase):

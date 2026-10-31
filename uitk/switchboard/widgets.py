@@ -286,11 +286,15 @@ class _Widgets:
         return self._sb.menu_button_target_name(widget) is not None
 
     def apply_visibility_policy(self, widget) -> bool:
+        from uitk.managers.field_visibility import FieldVisibility
+
         requires = widget.property("requires")
         if requires and self._sb.context_tags:
             tags = {t for t in re.split(r"[|,\s]+", str(requires)) if t}
             if tags and not (tags & self._sb.context_tags):
-                widget.setVisible(False)
+                # As a field, so a container that re-shows its contents
+                # wholesale (CollapsableGroup's expand) leaves it hidden.
+                FieldVisibility.set_widget_visible(widget, False)
                 widget.hidden_by_policy = "requires"
                 return True
 
@@ -299,7 +303,7 @@ class _Widgets:
         if isinstance(widget, MenuButton):
             target = widget.target
             if target and not self._sb.menu_button_target_resolves(widget):
-                widget.setVisible(False)
+                FieldVisibility.set_widget_visible(widget, False)
                 widget.hidden_by_policy = "nav-unresolved"
                 return True
         return False

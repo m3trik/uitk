@@ -35,6 +35,10 @@ class _ActionsNamespace:
 
         combo.actions.remove("＋ Add…")
         combo.actions.clear()
+
+        # After editing an action in place (an icon, its text):
+        action.setIcon(icon)
+        combo.actions.refresh()
     """
 
     __slots__ = ("_combo", "_actions")
@@ -97,6 +101,15 @@ class _ActionsNamespace:
         """Remove all persistent actions and the separator."""
         self._actions.clear()
         self._combo._strip_actions_section()
+
+    def refresh(self) -> None:
+        """Re-render the section from the actions as they are now.
+
+        ``add`` renders each action's text, icon and tooltip once; an edit made
+        to an action afterwards (icons set on the returned actions) shows after
+        this. Its enabled state needs no refresh: each button follows it live.
+        """
+        self._combo._rebuild_actions_section()
 
     # --- Dunder helpers ---
 

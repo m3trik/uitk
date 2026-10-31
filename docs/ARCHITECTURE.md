@@ -608,7 +608,7 @@ uitk/
 │       ├── attributes.py      # set_attributes / set_flags
 │       ├── menu_mixin.py      # .menu descriptor
 │       ├── option_box_mixin.py # .option_box descriptor
-│       ├── text.py            # RichText, TextOverlay, TextTruncation
+│       ├── text.py            # RichTextFormatter, RichText, TextOverlay
 │       ├── tooltip_mixin.py   # TooltipPresenter + widget.tooltip / sb.tooltip (the DSL is pythontk.TooltipFormat)
 │       ├── item_format.py     # ItemFormatMixin: the table/tree format mixins' shared core
 │       ├── convert.py, size_grip.py, feedback.py,

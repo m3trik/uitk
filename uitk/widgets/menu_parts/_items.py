@@ -116,10 +116,32 @@ class _MenuItems:
         # Handle lazy initialization - gridLayout may not exist yet
         if grid is None:
             return False
-        count = grid.count()
-        if self.empty_placeholder is not None:
-            count -= 1
-        return count > 0
+        for index in range(grid.count()):
+            widget = grid.itemAt(index).widget()
+            if widget is None:
+                return True  # a layout or spacer row
+            if widget is self.empty_placeholder or self._absent(widget):
+                continue
+            return True
+        return False
+
+    def _absent(self, widget) -> bool:
+        """Whether *widget* offers nothing now: hidden as a field (a host's
+        exclusion, a mode's rule) or hidden outright (a gate), unless the
+        bound-items filter hid it -- that filter restores its rows on the
+        next show, so they are content."""
+        from uitk.managers.field_visibility import FieldVisibility
+
+        if FieldVisibility.is_hidden_field(widget):
+            return True
+        # Hidden on purpose (an explicit hide), not merely not shown yet: a row
+        # added to a menu already on screen reads isHidden() until it shows.
+        explicit = widget.testAttribute(QtCore.Qt.WA_WState_ExplicitShowHide)
+        return (
+            explicit
+            and widget.isHidden()
+            and widget not in self.shortcut_hidden_items
+        )
 
     # ------------------------------------------------------------------
     # The empty state

@@ -589,8 +589,15 @@ Status bar with integrated size grip. Opt-in on `MainWindow`: pass `add_footer=T
 ```python
 self.ui.footer.setDefaultStatusText("Select an item to view details")  # fallback text
 self.ui.footer.setText("Loaded 42 items", level="success")  # level: info/success/warning/error
+self.ui.footer.setText("Moved 2 keys", color="#E0A0A0")  # a host's own colour outranks the level
 self.ui.footer.add_action_button("Refresh", callback=self.refresh)
 ```
+
+The status text edits in place: `footer.edit_status(text, on_commit, on_cancel=None)`
+swaps the label for a frameless line edit holding *text*; Enter (or focus
+loss) calls `on_commit(text)`, Escape `on_cancel()`, and the label shows again
+first; a second call cancels the edit it replaces. `footer.status_double_clicked` fires on a double-click of the text --
+the cue an inline rename listens for (`is_editing_status` says one is open).
 
 `add_action_button(states=[...])` makes a state-cycling toggle (same state
 dicts as `option_box.set_action(states=...)`: optional `icon`/`color`/

@@ -27,11 +27,20 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
     for text; the spinner (:meth:`set_busy`) is the one sign of life a
     3px bar cannot give during a long synchronous step.
 
+    The status text can also be edited in place (:meth:`edit_status`): a line
+    edit takes the label's page in the stack until Enter commits or Escape
+    cancels, and a double-click on the text says so (:attr:`status_double_clicked`)
+    -- what a panel offering an inline rename in its footer listens for.
+
     Attributes:
         progress_bar (ProgressBar): The embedded progress bar widget
         status_label (QLabel): The status text label
         busy_indicator (QLabel): The spinner shown beside the status text
     """
+
+    #: A double-click on the status text (it is not consumed: the label still
+    #: gets it). A panel starts :meth:`edit_status` from it.
+    status_double_clicked = QtCore.Signal()
 
     # Qt Designer widget-box entry.
     designer_spec = {
@@ -87,8 +96,13 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         self._status_text = ""
         self._default_status_text = ""
         self._status_level = None
+        self._status_color = None
         self._size_grip = None
         self._center_spacer_added = False
+        # The in-place status editor (:meth:`edit_status`), built on first use,
+        # and the (on_commit, on_cancel) pair of the edit under way, if any.
+        self._status_editor = None
+        self._status_edit = None
 
         # Hold-to-cancel relay: ProgressBar emits holdStarted/holdEnded;
         # we swap the status text and restore it on release.
@@ -136,6 +150,8 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         )
         text_row.addWidget(self._status_label)
         content_layout.addLayout(text_row)
+        # Watched for the double-click that asks for an in-place edit.
+        self._status_label.installEventFilter(self)
 
         self._busy_frames: list = []
         self._busy_frame = 0
@@ -449,7 +465,9 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         """
         self._size_grip = value
 
-    def setText(self, text: str, level: Optional[str] = None) -> None:
+    def setText(
+        self, text: str, level: Optional[str] = None, color: Optional[str] = None
+    ) -> None:
         """Set the status text (convenience method matching QLabel API).
 
         Parameters:
@@ -457,8 +475,10 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
             level (str, optional): Severity for colour coding — one of
                 ``LEVEL_COLORS`` (``info``/``success``/``warning``/``error``).
                 ``None`` leaves the theme default colour.
+            color (str, optional): An explicit foreground colour (any CSS
+                colour), outranking *level*'s. ``None`` uses *level*'s.
         """
-        self.setStatusText(text, level)
+        self.setStatusText(text, level, color)
 
     def text(self) -> str:
         """Get the current displayed text (convenience method matching QLabel API).
@@ -469,7 +489,10 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         return self._status_label.text()
 
     def setStatusText(
-        self, text: str | None = None, level: Optional[str] = None
+        self,
+        text: str | None = None,
+        level: Optional[str] = None,
+        color: Optional[str] = None,
     ) -> None:
         """Set the status text of the footer.
 
@@ -479,26 +502,33 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
                 ``LEVEL_COLORS`` (``info``/``success``/``warning``/``error``).
                 ``None`` (default) restores the theme default colour, so
                 existing callers are unaffected.
+            color (str, optional): An explicit foreground colour (any CSS
+                colour) for a host's own palette, outranking *level*'s.
+                ``None`` (default) uses *level*'s.
         """
         self._status_text = text or ""
-        self._apply_status_level(level)
+        self._apply_status_level(level, color)
         self._elide_status_text()
 
-    def _apply_status_level(self, level: Optional[str]) -> None:
-        """Colour the status label by severity, preserving its transparency.
+    def _apply_status_level(
+        self, level: Optional[str], color: Optional[str] = None
+    ) -> None:
+        """Colour the status label by severity (or the explicit *color*),
+        preserving its transparency.
 
-        No-ops when the level is unchanged so the common case (every plain
-        ``setStatusText`` call, which passes ``level=None``) never triggers a
-        redundant stylesheet re-polish. On a change it re-applies the
+        No-ops when the level and colour are unchanged so the common case
+        (every plain ``setStatusText`` call, which passes neither) never
+        triggers a redundant stylesheet re-polish. On a change it re-applies the
         transparent/no-border base so switching from a coloured level back to
         ``info``/``None`` cleanly drops the colour override. The base string
         matches :meth:`_apply_transparent_style` exactly, so the initial
         ``None`` state is already correct without a restyle.
         """
-        if level == self._status_level:
+        if level == self._status_level and color == self._status_color:
             return
         self._status_level = level
-        color = self.LEVEL_COLORS.get(level)
+        self._status_color = color
+        color = color or self.LEVEL_COLORS.get(level)
         base = "background: transparent; border: none;"
         self._status_label.setStyleSheet(base + (f" color: {color};" if color else ""))
 
@@ -542,6 +572,99 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
         ``.ui`` property into a ``set<Name>`` call, so the pair has to exist.
         """
         self.setStatusText(value)
+
+    # -- in-place edit --------------------------------------------------------
+
+    @property
+    def is_editing_status(self) -> bool:
+        """Whether :meth:`edit_status` has the status label's place."""
+        return self._status_edit is not None
+
+    def edit_status(
+        self,
+        text: str,
+        on_commit: Callable[[str], None],
+        on_cancel: Optional[Callable[[], None]] = None,
+    ) -> QtWidgets.QLineEdit:
+        """Edit *text* in place of the status label.
+
+        A frameless line edit takes the label's page, holding *text*
+        selected. Enter -- or the field losing focus -- calls *on_commit* with
+        the edited text, Escape calls *on_cancel*; either way the label shows
+        again first, so a callback that sets the status is shown. One edit at a
+        time: a second call cancels the first (its *on_cancel* runs) and starts
+        over with the new text and callbacks.
+
+        Parameters:
+            text (str): The text to edit.
+            on_commit (callable): ``(text) -> None``, with the field's text.
+            on_cancel (callable, optional): ``() -> None`` on Escape.
+
+        Returns:
+            QLineEdit: The field (styled to blend with the footer).
+        """
+        editor = self._status_editor
+        if editor is None:
+            editor = self._status_editor = QtWidgets.QLineEdit()
+            editor.setFrame(False)
+            editor.setStyleSheet("QLineEdit { background: transparent; border: none; }")
+            editor.editingFinished.connect(self._commit_status_edit)
+            editor.installEventFilter(self)
+            self._stacked_widget.addWidget(editor)
+        superseded, self._status_edit = self._status_edit, None
+        if superseded is not None and superseded[1] is not None:
+            superseded[1]()
+        self._status_edit = (on_commit, on_cancel)
+        was_blocked = editor.blockSignals(True)
+        editor.setText(text or "")
+        editor.blockSignals(was_blocked)
+        editor.setFont(self._status_label.font())
+        self._stacked_widget.setCurrentWidget(editor)
+        editor.selectAll()
+        editor.setFocus()
+        return editor
+
+    def _end_status_edit(self):
+        """Give the label its page back; the edit's callbacks, or None."""
+        edit, self._status_edit = self._status_edit, None
+        self._stacked_widget.setCurrentIndex(0)
+        return edit
+
+    def _commit_status_edit(self) -> None:
+        # Enter and the focus loss after it both emit editingFinished: only the
+        # first finds an edit under way.
+        edit = self._end_status_edit() if self._status_edit else None
+        if edit is not None:
+            edit[0](self._status_editor.text())
+
+    def _cancel_status_edit(self) -> None:
+        editor = self._status_editor
+        # Blocked, so the focus loss does not emit editingFinished and commit
+        # the very edit Escape cancels.
+        was_blocked = editor.blockSignals(True)
+        try:
+            edit = self._end_status_edit()
+            editor.clearFocus()
+        finally:
+            editor.blockSignals(was_blocked)
+        if edit is not None and edit[1] is not None:
+            edit[1]()
+
+    def eventFilter(self, watched, event) -> bool:
+        """The status label's double-click (:attr:`status_double_clicked`) and
+        the status editor's Escape (:meth:`edit_status`)."""
+        etype = event.type()
+        if watched is self._status_label and etype == QtCore.QEvent.MouseButtonDblClick:
+            self.status_double_clicked.emit()
+        elif (
+            watched is self._status_editor
+            and etype == QtCore.QEvent.KeyPress
+            and event.key() == QtCore.Qt.Key_Escape
+            and self._status_edit is not None
+        ):
+            self._cancel_status_edit()
+            return True
+        return super().eventFilter(watched, event)
 
     # -- Qt Designer properties ----------------------------------------------
     # ``status`` rather than ``statusText``: the getter of that name is an

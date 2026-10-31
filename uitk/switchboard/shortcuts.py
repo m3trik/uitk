@@ -19,6 +19,7 @@ Public surface re-exported from :mod:`uitk.switchboard`:
 """
 
 import inspect
+import re
 from typing import Any, Callable, Dict, List, Optional
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -257,6 +258,23 @@ class _Shortcuts:
                     self._sb.settings.setValue(twin, self._sb.settings.value(key))
         self._sb.configurable.setValue(marker, True)
 
+    @staticmethod
+    def excluded_slot(ui: QtWidgets.QWidget, name: str) -> bool:
+        """Whether the slot *name* on *ui* is one this host cannot serve: a
+        widget of that name, or a group holding it, is hidden by a hard
+        exclusion (``hidden_by_policy == "requires"``: a ``requires`` tag,
+        tentacle's ``Slots.requires`` or ``Slots.hide_unless``). Such a slot is
+        no shortcut target: not listed, not bound, and a key bound before the
+        hide does nothing."""
+        find = getattr(ui, "findChildren", None)
+        for widget in find(QtWidgets.QWidget, name) if find is not None else ():
+            node = widget
+            while node is not None and node is not ui:
+                if getattr(node, "hidden_by_policy", None) == "requires":
+                    return True
+                node = node.parentWidget()
+        return False
+
     def register_slots_shortcuts(
         self, ui: QtWidgets.QWidget, slots_instance: object
     ) -> None:
@@ -335,6 +353,9 @@ class _Shortcuts:
             # Nothing to bind: no decorator default AND no (non-empty) override.
             if not final_sequence:
                 continue
+            # A slot the host cannot serve takes no key (excluded_slot).
+            if self.excluded_slot(ui, name):
+                continue
 
             # 4. Register
             self._create_switchboard_shortcut(
@@ -403,8 +424,13 @@ class _Shortcuts:
             shortcut.setContext(context)
 
         # Adapt the call: a shortcut trigger sends no arguments, so inject
-        # widget=None for slots that expect a widget.
-        wrapper = self._adapt_shortcut_callback(method)
+        # widget=None for slots that expect a widget. Checked at the press as
+        # well: a panel's *_init can hide its widget after this binds.
+        call = self._adapt_shortcut_callback(method)
+
+        def wrapper():
+            if not self.excluded_slot(ui, method_name):
+                call()
         if robust:
             shortcut.pressed.connect(wrapper)
         else:
@@ -457,6 +483,9 @@ class _Shortcuts:
         ):
             if getattr(method, "_shortcut_meta", {}).get("sequence"):
                 slot_method_names.add(name)
+        slot_method_names = {
+            name for name in slot_method_names if not self.excluded_slot(ui, name)
+        }
 
         # Override store: the live UI's per-UI QSettings, or None when the UI
         # carries no settings store.
@@ -619,12 +648,24 @@ class _Shortcuts:
 
         top = root.find("widget")  # the main window element itself
         top_name = top.get("name") if top is not None else None
+        tags = self._sb.context_tags
+
+        def excluded(w) -> bool:
+            """A ``requires`` tag this host shares nothing with (the static
+            half of :meth:`excluded_slot`)."""
+            requires = w.findtext("property[@name='requires']/string")
+            if not (requires and tags):
+                return False
+            wanted = {t for t in re.split(r"[|,\s]+", requires) if t}
+            return bool(wanted) and not (wanted & tags)
+
         return {
             name
             for w in root.iter("widget")
             if (name := w.get("name"))
             and name != top_name
             and not name.startswith("qt_")
+            and not excluded(w)
         }
 
     def set_user_shortcut(
@@ -1212,6 +1253,8 @@ class _Shortcuts:
                 return
             instance = self._sb.get_slots_instance(ui)
             slot = getattr(instance, method, None) if instance else None
+            if slot is not None and self.excluded_slot(ui, method):
+                return  # built, and the host cannot serve it
             if slot is None:
                 self._sb.logger.debug(
                     f"[deferred-slot] {ui_name}.{method} not found after build"

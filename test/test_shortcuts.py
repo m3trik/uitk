@@ -10,6 +10,8 @@ Uses the real Switchboard with the examples module to test:
 """
 
 import unittest
+from unittest import mock
+
 from qtpy import QtWidgets, QtCore, QtGui
 
 # Base Test
@@ -347,6 +349,71 @@ class TestUndecoratedSlotShortcutPersistence(QtBaseTestCase):
         slots = self.sb.get_slots_instance(self.ui)
         self.sb.register_slots_shortcuts(self.ui, slots)
         self.assertNotIn(self.method, getattr(slots, "_connected_shortcuts", {}))
+
+
+class TestHostExcludedSlotShortcuts(QtBaseTestCase):
+    """Bug: a slot whose widget the host hides (``hidden_by_policy ==
+    "requires"``: a ``.ui`` tag, ``Slots.requires``, a capability hide) stayed
+    a shortcut target -- listed in the editor and bound -- so a key reached an
+    operation the host's engine lacks (Tube Rig's Remove in Blender raised
+    AttributeError). Fixed: 2026-10-31"""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(ui_source=self.example_module, slot_source=ExampleSlots)
+        self.ui = self.sb.loaded_ui.example
+        self.ui.show()
+        QtWidgets.QApplication.processEvents()
+        self.method = "cmb_options"
+        self.key = f"shortcuts.ExampleSlots.{self.method}"
+        self.ui.settings.setValue(self.key, "Ctrl+Alt+J")
+        self.widget = self.ui.findChild(QtWidgets.QWidget, self.method)
+
+    def tearDown(self):
+        self.ui.settings.clear(self.key)
+        self.ui.close()
+        super().tearDown()
+
+    def _listed(self):
+        return {e["method"] for e in self.sb.get_shortcut_registry(self.ui)}
+
+    def test_an_excluded_slot_is_neither_listed_nor_bound(self):
+        slots = self.sb.get_slots_instance(self.ui)
+        self.widget.hidden_by_policy = "requires"
+        self.assertNotIn(self.method, self._listed())
+        slots._connected_shortcuts = {}
+        self.sb.register_slots_shortcuts(self.ui, slots)
+        self.assertNotIn(self.method, slots._connected_shortcuts)
+
+    def test_a_slot_inside_an_excluded_group_is_excluded_too(self):
+        parent = self.widget.parentWidget()
+        parent.hidden_by_policy = "requires"
+        self.addCleanup(setattr, parent, "hidden_by_policy", None)
+        self.assertNotIn(self.method, self._listed())
+
+    def test_a_key_bound_before_the_exclusion_does_nothing(self):
+        """A hide made after the shortcuts bound (a panel's ``*_init``)."""
+        slots = self.sb.get_slots_instance(self.ui)
+        self.assertIn(self.method, self._listed())
+        calls = []
+        with mock.patch.object(
+            type(slots), self.method, new=lambda _self: calls.append(1)
+        ):
+            self.sb.register_slots_shortcuts(self.ui, slots)
+            shortcut = slots._connected_shortcuts[self.method]
+            self.widget.hidden_by_policy = "requires"
+            shortcut.activated.emit()
+            self.assertEqual(calls, [])
+            self.widget.hidden_by_policy = None
+            shortcut.activated.emit()
+            self.assertEqual(calls, [1])
 
 
 class TestDeferredAppScopedSlotShortcuts(QtBaseTestCase):
