@@ -32,9 +32,12 @@ checking.  With no layer added the widget is the plain timeline: the ruler
 alone above the rows.
 """
 
-from typing import List, Optional, Protocol, Sequence, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Protocol, Sequence, Tuple
 
 from qtpy import QtCore, QtGui
+
+if TYPE_CHECKING:
+    from uitk.widgets.sequencer._sequencer import SequencerWidget
 
 #: ``(group, keys, what it does)`` -- a legend row (``SequencerEditor.gestures``).
 Gesture = Tuple[str, str, str]
@@ -103,3 +106,70 @@ class SequencerLayer(Protocol):
     def clear(self) -> None:
         """Drop what this layer shows: the widget was cleared
         (``clear``, ``clear_decorations``), or another layer took its name."""
+
+
+class _LayerRegistry:
+    """The layers (the protocol above) in the order they were added, the lanes
+    they stack under the ruler, and the header's height -- the ruler and
+    every lane -- that the content starts below, *ruler_height* the
+    ruler's own."""
+
+    def __init__(self, sequencer: "SequencerWidget", ruler_height: float):
+        self._sequencer = sequencer
+        self.ruler_height = float(ruler_height)
+        #: name -> layer (:meth:`SequencerWidget.add_layer`), in the order
+        #: they were added.
+        self.layers: Dict[str, SequencerLayer] = {}
+        #: ``[(layer, lane height), ...]`` top to bottom under the ruler, and
+        #: the y the content starts at below them: read on every paint and
+        #: press, so kept rather than derived.
+        self.lane_stack: List[Tuple[SequencerLayer, int]] = []
+        self.header_height: float = self.ruler_height
+
+    def add(self, layer: SequencerLayer) -> None:
+        previous = self.layers.get(layer.name)
+        if previous is not None and previous is not layer:
+            clear = getattr(previous, "clear", None)
+            if clear is not None:
+                clear()
+        self.layers[layer.name] = layer  # a taken name keeps its place
+        self.restack()
+
+    def restack(self) -> None:
+        """Re-stack the lanes and re-lay the header, the content and the
+        legend out after a layer came or went."""
+        sq = self._sequencer
+        heights = (
+            (layer, int(getattr(layer, "lane_height", 0) or 0))
+            for layer in self.layers.values()
+        )
+        self.lane_stack = [(layer, h) for layer, h in heights if h > 0]
+        self.header_height = self.ruler_height + sum(h for _lyr, h in self.lane_stack)
+        top = int(self.header_height)
+        sq._header.set_top_margin(top)
+        sq._timeline._scene.ruler.set_height(self.header_height)
+        sq._options_band.sync_geometry()
+        sq._apply_legend()
+        sq._timeline._refresh_all()
+
+    def clear(self) -> None:
+        """Each layer drops what it shows (:meth:`SequencerWidget.clear`,
+        :meth:`SequencerWidget.clear_decorations`)."""
+        for layer in self.layers.values():
+            clear = getattr(layer, "clear", None)
+            if clear is not None:
+                clear()
+
+    def relayout(self) -> None:
+        """Each layer re-places its items (the rows changed)."""
+        for layer in self.layers.values():
+            relayout = getattr(layer, "relayout", None)
+            if relayout is not None:
+                relayout()
+
+    def claims_press(self, scene_pos) -> bool:
+        for layer in self.layers.values():
+            claims = getattr(layer, "claims_press", None)
+            if claims is not None and claims(scene_pos):
+                return True
+        return False

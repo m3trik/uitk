@@ -17,9 +17,12 @@ graph editor, ``_graph_editor.py``) takes the area over by answering what it
 changes.  Each hook's default here is "not handled".
 """
 
-from typing import Callable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
-from qtpy import QtCore, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
+
+if TYPE_CHECKING:
+    from uitk.widgets.sequencer._sequencer import SequencerWidget
 
 #: ``(group, keys, what it does)`` -- a gesture legend row.
 Gesture = Tuple[str, str, str]
@@ -217,3 +220,68 @@ class TrackEditor(SequencerEditor):
     def __init__(self, sequencer):
         super().__init__(sequencer)
         sequencer.add_flat_spans_option(self)  # the clips' and rows' curves
+
+
+class _EditorRegistry:
+    """The editors the content area can show (the classes above): each built on
+    first use from the factory registered for it, and the one shown now."""
+
+    def __init__(self, sequencer: "SequencerWidget"):
+        self._sequencer = sequencer
+        #: name -> editor instance, or the factory that builds it on first use
+        #: (the graph editor's module loads only when it is first shown).
+        self.editors: Dict[str, object] = {}
+        self.active_name = TrackEditor.name
+
+    @staticmethod
+    def graph_editor_factory(sequencer) -> SequencerEditor:
+        """Build the graph editor; its module loads on first use only."""
+        from uitk.widgets.sequencer._graph_editor import GraphEditor
+
+        return GraphEditor(sequencer)
+
+    def register(self, name: str, factory) -> None:
+        if isinstance(self.editors.get(name), SequencerEditor):
+            raise ValueError(f"The {name!r} editor is already built.")
+        self.editors[name] = factory
+
+    def get(self, name: str) -> SequencerEditor:
+        sq = self._sequencer
+        entry = self.editors[name]
+        if not isinstance(entry, SequencerEditor):
+            entry = self.editors[name] = entry(sq)
+            # Its page is the pane's from the start: a page first parented
+            # when the editor is shown was a top-level the editor's Python
+            # side alone held, destroyed by whichever garbage collection
+            # reached it after the sequencer was gone -- mid-way through
+            # another widget's events.
+            page = entry.header_widget()
+            if page is not None and sq._header_stack.indexOf(page) < 0:
+                sq._header_stack.addWidget(page)
+        return entry
+
+    def show(self, name: str) -> None:
+        sq = self._sequencer
+        if name == self.active_name:
+            return
+        new = sq.editor(name)
+        old = sq.active_editor
+        sq._selection_suppressed += 1
+        try:
+            old.deactivate()
+            self.active_name = name
+            new.activate()
+            sq._apply_legend(new)
+        finally:
+            sq._selection_suppressed -= 1
+        page = new.header_widget() or sq._header_scroll
+        if sq._header_stack.indexOf(page) < 0:
+            sq._header_stack.addWidget(page)
+        sq._header_stack.setCurrentWidget(page)
+        sq._editor_keys = {
+            QtGui.QKeySequence(key).toString(): {"action": fn, "description": desc}
+            for key, fn, desc in new.key_bindings()
+        }
+        sq._sync_shortcut_sequences()
+        sq._timeline._refresh_all()
+        sq.editor_changed.emit(name)

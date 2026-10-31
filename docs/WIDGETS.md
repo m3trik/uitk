@@ -853,7 +853,7 @@ Both capture delegates emit `captured(int, int, str)` (row, column, value) and h
 
 ## Sequencer package
 
-`uitk/widgets/sequencer/` (~16 modules) — an NLE-style timeline widget family, naming no domain: tentacle's Shot Sequencer adds its shots to it as a layer (below). `SequencerWidget` is a split-view `QSplitter`: track headers on the left, a `TimelineView` scene on the right.
+`uitk/widgets/sequencer/` (~21 modules) — an NLE-style timeline widget family, naming no domain; `SequencerWidget` is a facade over parts that own their state (`_rows`, `_selection`, `_shortcuts`, `_navigation`, and the registries beside the items they own): tentacle's Shot Sequencer adds its shots to it as a layer (below). `SequencerWidget` is a split-view `QSplitter`: track headers on the left, a `TimelineView` scene on the right.
 
 Capabilities, with the key `SequencerWidget` API:
 

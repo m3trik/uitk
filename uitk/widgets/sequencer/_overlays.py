@@ -4,15 +4,20 @@
 
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 
 from qtpy import QtWidgets, QtGui, QtCore
 
 if TYPE_CHECKING:
+    from uitk.widgets.sequencer._sequencer import SequencerWidget
     from uitk.widgets.sequencer._timeline import TimelineView
 
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
-from uitk.widgets.sequencer._draggable import DraggableItemMixin, HeldGeometryMixin
+from uitk.widgets.sequencer._draggable import (
+    DraggableItemMixin,
+    HeldGeometryMixin,
+    ItemRetirement,
+)
 from uitk.managers.cursor_manager import CursorManager
 
 # ---------------------------------------------------------------------------
@@ -489,3 +494,162 @@ class RangeHighlightItem(
         # consumer.
         self.finish_edge_drag()
         event.accept()
+
+
+class _Ranges:
+    """The time ranges drawn over the rows: the interactive highlight (the
+    active shot's), the static overlays, and the active range's column tint,
+    with the highlight's and the overlays' visibility toggles."""
+
+    def __init__(self, sequencer: "SequencerWidget"):
+        self._sequencer = sequencer
+        self.highlight: Optional[RangeHighlightItem] = None
+        self.overlays: List[QtWidgets.QGraphicsItem] = []
+        self.show_overlays: bool = True  # toggle for the range overlays
+        self.show_highlight: bool = True  # toggle for the range highlight
+        self.active: Optional[tuple] = None  # (start, end) in frames
+        self.active_color = QtGui.QColor(90, 140, 220, 25)  # semi-transparent blue
+
+    def set_highlight(
+        self, start: float, end: float, color: Optional[str], alpha: int
+    ) -> None:
+        sq = self._sequencer
+        if self.highlight is None:
+            self.highlight = RangeHighlightItem(sq._timeline)
+            sq.add_track_item(self.highlight)
+        self.highlight.set_range(start, end)
+        self.highlight.setVisible(self.show_highlight)
+        if color is not None:
+            c = QtGui.QColor(color)
+            c.setAlpha(alpha)
+            self.highlight.color = c
+        elif alpha != self.highlight.opacity_value:
+            self.highlight.opacity_value = alpha
+        sq.refresh_extent()
+
+    def clear_highlight(self) -> None:
+        if self.highlight is not None:
+            ItemRetirement.retire(self.highlight)
+            self.highlight = None
+
+    def highlight_span(self) -> Optional[tuple]:
+        if self.highlight is None:
+            return None
+        return (self.highlight.start, self.highlight.end)
+
+    def add_overlay(self, start: float, end: float, color: str, alpha: int) -> None:
+        sq = self._sequencer
+        item = _StaticRangeOverlay(sq._timeline, start, end, color, alpha)
+        item.setVisible(self.show_overlays)
+        sq.add_track_item(item)
+        self.overlays.append(item)
+        sq.refresh_extent()
+
+    def clear_overlays(self) -> None:
+        for item in self.overlays:
+            ItemRetirement.retire(item)
+        self.overlays.clear()
+
+    def set_show_overlays(self, value: bool) -> None:
+        self.show_overlays = value
+        for item in self.overlays:
+            item.setVisible(value)
+
+    def set_show_highlight(self, value: bool) -> None:
+        self.show_highlight = value
+        if self.highlight is not None:
+            self.highlight.setVisible(value)
+
+    def set_active(self, start: float, end: float) -> None:
+        sq = self._sequencer
+        self.active = (start, end)
+        sq.refresh_extent()
+        sq._timeline.viewport().update()
+
+    def clear_active(self) -> None:
+        self.active = None
+        self._sequencer._timeline.viewport().update()
+
+
+class _Snapping:
+    """Where a drag lands: the time grid (:attr:`SequencerWidget.snap_interval`)
+    and the frames that already carry a key -- the candidates a drag aligns
+    to, the capture radius that makes one a match, and the guide drawn at it."""
+
+    def __init__(self, sequencer: "SequencerWidget"):
+        self._sequencer = sequencer
+        self.interval: float = 1.0  # 1 = per-frame snap (default)
+        self.guide = None  # _SnapGuideItem, created lazily
+        self.guides_enabled: bool = True  # draw alignment guides on drag
+        self.to_keys: bool = False  # also SNAP the drag to those frames
+        self.capture_px: float = 6.0  # guide/snap capture radius, px
+
+    def set_guides_enabled(self, value: bool) -> None:
+        self.guides_enabled = bool(value)
+        if not value:
+            self._sequencer.clear_snap_guides()
+
+    def alignment_times(
+        self, exclude_clip_ids=(), exclude_times=(), exclude_spans=()
+    ) -> List[float]:
+        exclude = set(exclude_clip_ids)
+        ex_times = {round(float(t), 3) for t in exclude_times}
+        spans = [(tid, lo - 1e-3, hi + 1e-3) for tid, lo, hi in exclude_spans]
+
+        def _dropped(track_id, t):
+            if t in ex_times:
+                return True
+            return any(tid == track_id and lo <= t <= hi for tid, lo, hi in spans)
+
+        times: set = set()
+        for cd in self._sequencer._clips.values():
+            if cd.clip_id in exclude:
+                continue
+            for t in self._clip_candidate_times(cd):
+                if not _dropped(cd.track_id, t):
+                    times.add(t)
+        return sorted(times)
+
+    @staticmethod
+    def _clip_candidate_times(cd):
+        """Yield one clip's alignment candidates, rounded to the grain."""
+        yield round(cd.start, 3)
+        if cd.duration > 0:
+            yield round(cd.end, 3)
+        for t in cd.shown_key_times():
+            yield round(t, 3)
+
+    def nearest_alignment(
+        self, time: float, candidates, tolerance: Optional[float] = None
+    ) -> Optional[float]:
+        if not candidates:
+            return None
+        if tolerance is None:
+            ppu = self._sequencer._timeline.pixels_per_unit or 1.0
+            tolerance = self.capture_px / ppu
+        best = None
+        best_d = tolerance
+        for t in candidates:
+            d = abs(t - time)
+            if d <= best_d:
+                best, best_d = t, d
+        return best
+
+    def set_guides(self, times) -> None:
+        if not self.guides_enabled:
+            return
+        times = [float(t) for t in times]
+        if not times:
+            if self.guide is not None:
+                self.guide.set_times([])
+            return
+        if self.guide is None:
+            sq = self._sequencer
+            self.guide = _SnapGuideItem(sq._timeline, color=sq.SNAP_GUIDE_COLOR)
+            sq._timeline._scene.addItem(self.guide)
+        self.guide.set_times(times)
+
+    def clear_guides(self) -> None:
+        if self.guide is not None:
+            ItemRetirement.retire(self.guide)
+            self.guide = None

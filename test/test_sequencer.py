@@ -11505,3 +11505,451 @@ class TestLayerSeam(BaseTestCase):
                 self.assertEqual(version, "1.9.0")
         for signal in ("shot_switch_requested", "gap_resized", "shots_changed"):
             self.assertFalse(hasattr(SequencerWidget, signal), signal)
+
+
+# ---------------------------------------------------------------------------
+# The facade: what code outside the widget reaches through it
+# ---------------------------------------------------------------------------
+
+from qtpy import QtGui  # noqa: E402
+
+
+class TestPrivateNamesOtherCodeReads(BaseTestCase):
+    """The private names the timeline, its items, tentacle's layer and the
+    hosts' tests read off the widget are its live state -- the containers it
+    acts on, the flags it obeys -- whichever part of the widget owns them."""
+
+    def setUp(self):
+        self.w = SequencerWidget()
+        self.w.resize(900, 400)
+
+    def tearDown(self):
+        self.w.close()
+        self.w.deleteLater()
+
+    def _keyed_sub_row(self):
+        """A track expanded onto one keyed sub-row: ``(track_id, sub item)``."""
+        tid = self.w.add_track("A")
+        extra = {"curve_preview": _PREVIEW, "obj": "a", "attr_name": "tx"}
+        self.w.expand_track(tid, [("tx", [(0, 20, "tx", "#8888ff", extra)])])
+        sub = [i for i in self.w._clip_items.values() if i.clip_data.sub_row][0]
+        return tid, sub
+
+    def test_the_rows_are_the_live_containers(self):
+        tid = self.w.add_track("A")
+        cid = self.w.add_clip(tid, 0, 10)
+        self.assertIs(self.w._clips[cid], self.w.get_clip(cid))
+        self.assertIs(self.w._clip_items[cid].clip_data, self.w.get_clip(cid))
+        self.assertIs(self.w._tracks[0], self.w.get_track(tid))
+        self.w._clips[cid].start = 30  # written in place, as the tests do
+        self.assertEqual(self.w.get_clip(cid).start, 30)
+        other = self.w.add_track("B")
+        self.w._expanded_tracks[other] = ["tx"]
+        self.assertTrue(self.w.is_track_expanded(other))
+        self.w.set_bg_curve_preview(tid, "tx", {"keys": []})
+        self.assertIn((tid, "tx"), self.w._bg_curve_previews)
+        self.assertIs(getattr(self.w, "_clip_items"), self.w._clip_items)
+        self.assertIs(
+            getattr(self.w, "_bg_curve_previews", {}), self.w._bg_curve_previews
+        )
+
+    def test_the_row_geometry_methods(self):
+        tid = self.w.add_track("A")
+        y, h = self.w._row_position(tid)
+        self.assertEqual(y, self.w._content_top)
+        self.assertEqual(self.w._visual_rows(), [(y, h, False, tid)])
+        self.assertEqual(self.w._total_row_height(), h + self.w.row_metrics.padding)
+
+    def test_markers_and_ranges(self):
+        mid = self.w.add_marker(5.0)
+        self.assertIs(self.w._markers[mid], self.w.get_marker(mid))
+        self.assertIn(mid, self.w._marker_items)
+        self.w.set_range_highlight(0.0, 10.0)
+        self.assertIs(self.w._range_highlight, self.w.range_highlight_item)
+        self.w.add_range_overlay(20.0, 30.0)
+        self.assertEqual(len(self.w._range_overlays), 1)
+        self.w.set_active_range(1.0, 5.0)
+        self.assertEqual(self.w._active_range, (1.0, 5.0))
+        self.assertIsInstance(self.w._active_range_color, QtGui.QColor)
+
+    def test_the_undo_stacks(self):
+        tid = self.w.add_track("A")
+        cid = self.w.add_clip(tid, 0, 10)
+        self.assertEqual(self.w._snapshot(), {cid: (0, 10)})
+        self.w._capture_undo()
+        self.assertEqual(len(self.w._undo_stack), 1)
+        self.w.undo()
+        self.assertEqual((len(self.w._undo_stack), len(self.w._redo_stack)), (0, 1))
+        self.w._redo_stack.append({})  # seeded in place, as the tests do
+        self.assertEqual(len(self.w._redo_stack), 2)
+        self.assertFalse(self.w._cancel_active_drag())
+
+    def test_snapping(self):
+        self.w.snap_interval = 2.0
+        self.assertEqual(self.w._snap_interval, 2.0)
+        self.w.set_snap_guides([5.0])
+        self.assertIsNotNone(self.w._snap_guide)
+
+    def test_selection_suppression_is_writable(self):
+        tid = self.w.add_track("A")
+        cid = self.w.add_clip(tid, 0, 10)
+        seen = []
+        self.w.selection_changed.connect(seen.append)
+        self.w._selection_suppressed += 1  # as ClipItem does, around a rebuild
+        self.w._clip_items[cid].setSelected(True)
+        self.assertEqual(seen, [])
+        self.w._selection_suppressed -= 1
+        self.w._clip_items[cid].setSelected(False)
+        self.assertEqual(seen, [[]])
+
+    def test_the_tangent_drag_flag_holds_the_scale_box_down(self):
+        _tid, sub = self._keyed_sub_row()
+        for key in sub._keyframe_items:
+            key.setSelected(True)
+        self.w._tangent_drag_active = True  # as TangentHandleItem does
+        self.w.set_shift_held(True)
+        self.assertIsNone(self.w._key_scale_box)
+        self.w._tangent_drag_active = False
+        self.w.refresh_key_scale_box()
+        self.assertIsNotNone(self.w._key_scale_box)
+        self.assertEqual(len(self.w._scalable_keys()), len(sub._keyframe_items))
+
+    def test_layers_and_the_legend(self):
+        layer = _FakeLayer()
+        self.w.add_layer(layer)
+        self.assertIs(self.w._layers["probe"], layer)
+        self.assertEqual(self.w._lane_stack, [(layer, 10)])
+        self.assertEqual(self.w._content_top, _RULER_HEIGHT + 10)
+        self.assertEqual(self.w._legend[0], ("Probe", "Drag", "Probe the lane"))
+        self.w._set_gesture_context("Probe")
+        self.assertEqual(self.w._gesture_context, "Probe")
+        self.assertFalse(self.w._layer_claims_press(QtCore.QPointF()))
+        layer.claim = True
+        self.assertTrue(self.w._layer_claims_press(QtCore.QPointF()))
+
+    def test_editors_shortcuts_audio_and_the_header(self):
+        self.assertIs(self.w._editors["tracks"], self.w.editor("tracks"))
+        self.assertIs(self.w._shortcut_mgr, self.w.shortcut_manager)
+        self.assertIs(getattr(self.w, "_shortcut_mgr", None), self.w.shortcut_manager)
+        self.w._sync_shortcut_sequences()
+        home = QtGui.QKeyEvent(
+            QtCore.QEvent.KeyPress, QtCore.Qt.Key_Home, QtCore.Qt.NoModifier
+        )
+        self.assertIsNotNone(self.w._match_shortcut(home))
+        self.assertIsNone(getattr(self.w, "_scrub_player", None))
+        self.assertEqual(getattr(self.w, "_audio_fps", None), 24.0)
+        self.w.set_hidden_tracks(["A"])
+        self.assertEqual(self.w._hidden_tracks, ["A"])
+        self.assertIs(self.w._header_stack.widget(0), self.w._header_scroll)
+
+    def test_the_header_background_menu(self):
+        """The host's rows first, then one Show row per hidden track, sorted;
+        no rows, no menu."""
+        from unittest.mock import patch
+
+        menus = []
+
+        def run(menu, *_args, **_kwargs):
+            menus.append([a.text() for a in menu.actions()])
+            menu.actions()[-2].trigger()  # "Show: a"
+
+        shown = []
+        self.w.track_shown.connect(shown.append)
+        with patch.object(QtWidgets.QMenu, "exec_", run):
+            self.w._header.customContextMenuRequested.emit(QtCore.QPoint(1, 1))
+            self.assertEqual(menus, [])  # nothing to offer
+            self.w.set_hidden_tracks(["b", "a"])
+            self.w.header_menu_requested.connect(lambda m: m.addAction("Host"))
+            self.w._header.customContextMenuRequested.emit(QtCore.QPoint(1, 1))
+        self.assertEqual(menus, [["Host", "", "Show: a", "Show: b"]])
+        self.assertEqual(shown, ["a"])
+        self.assertEqual(self.w._header._hidden_track_names, ["b", "a"])
+
+    def test_the_splitter_snaps_the_header_closed_and_remembers_its_width(self):
+        from uitk.managers.settings_manager import SettingsManager
+
+        settings = SettingsManager(namespace="sequencer/layout")
+        saved = settings.value("header_width")
+        try:
+            settings.setValue("header_width", 150)
+            w = SequencerWidget()
+            w.resize(800, 300)
+            w.show()
+            w.splitterMoved.emit(30, 1)  # under the threshold: snaps closed
+            self.assertEqual(w.sizes()[0], 0)
+            w.splitterMoved.emit(80, 1)  # dragged open: the width it was saved at
+            self.assertEqual(w.sizes()[0], 150)
+            w.splitterMoved.emit(220, 1)  # a new width is remembered
+            self.assertEqual(int(settings.value("header_width")), 220)
+            w.splitterMoved.emit(10, 2)  # another handle: ignored
+            self.assertEqual(w.sizes()[0], 150)
+            w.close()
+            w.deleteLater()
+        finally:
+            if saved is None:
+                settings.remove("header_width")
+            else:
+                settings.setValue("header_width", saved)
+
+    def test_the_audio_scrub(self):
+        self.assertFalse(self.w.set_audio_source("no_such_file.wav", fps=30.0))
+        player = self.w._scrub_player
+        self.assertIs(player.parent(), self.w)
+        self.assertEqual(self.w._audio_fps, 30.0)
+        grains = []
+        player.play_at_frame = lambda frame, fps: grains.append((frame, fps))
+        self.w._move_playhead(5.0)  # a user move scrubs; set_playhead does not
+        self.w.set_playhead(9.0)
+        self.assertEqual(grains, [(5.0, 30.0)])
+        self.w.set_audio_source("no_such_file.wav", fps=0)
+        self.assertEqual(self.w._audio_fps, 24.0)
+        self.assertIs(self.w._scrub_player, player)
+
+    def test_the_playhead_and_key_methods(self):
+        tid = self.w.add_track("A")
+        self.w.add_clip(tid, 10, 10)
+        self.assertEqual(self.w._key_times(), [10, 20])
+        self.w._move_playhead(15.0)
+        self.assertEqual(self.w._timeline._scene.playhead.time, 15.0)
+        _tid, sub = self._keyed_sub_row()
+        sub._keyframe_items[0].setSelected(True)
+        deleted = []
+        self.w.keys_deleted.connect(lambda cid, times: deleted.append(times))
+        self.w._delete_selected_keys()
+        self.assertEqual(deleted, [[0.0]])
+
+
+class TestInternalCallsReachTheFacade(BaseTestCase):
+    """An instance override of a name other code may call -- a test's spy, a
+    host's wrapper -- reaches the callers inside the widget, as it did when
+    the widget was one class (``self.w.frame_shot = ...``, tentacle's
+    ``self.w._set_gesture_context = ...``): one case per internal caller of
+    a name that stayed on the widget (first-show framing reaching
+    ``frame_shot``: ``TestTheActiveShotIsFramedOnFirstShow``)."""
+
+    def tearDown(self):
+        for w in getattr(self, "_widgets", []):
+            w.close()
+            w.deleteLater()
+
+    def _widget(self):
+        w = SequencerWidget()
+        w.resize(900, 400)
+        self._widgets = getattr(self, "_widgets", []) + [w]
+        return w
+
+    @staticmethod
+    def _spy(w, name):
+        calls = []
+        original = getattr(w, name)
+
+        def spy(*args, **kwargs):
+            calls.append(args)
+            return original(*args, **kwargs)
+
+        setattr(w, name, spy)
+        return calls
+
+    # -- setups: each returns what its action takes --------------------------
+    @staticmethod
+    def _track(w):
+        return w.add_track("A")
+
+    @staticmethod
+    def _clip(w):
+        tid = w.add_track("A")
+        return tid, w.add_clip(tid, 0, 10)
+
+    @staticmethod
+    def _two_clips(w):
+        tid = w.add_track("A")
+        return w.add_clip(tid, 0, 10), w.add_clip(tid, 20, 10)
+
+    @staticmethod
+    def _expanded(w):
+        tid = w.add_track("A")
+        w.expand_track(tid, [("tx", [(0, 5)])])
+        return tid
+
+    @staticmethod
+    def _provided(w):
+        w.sub_row_provider = lambda _tid, _name: [("tx", [(0, 5)])]
+        return w.add_track("A")
+
+    @staticmethod
+    def _decorated(w):
+        w.add_marker(5.0)
+        w.set_range_highlight(0.0, 10.0)
+        w.add_range_overlay(20.0, 30.0)
+        w.set_snap_guides([5.0])
+
+    @staticmethod
+    def _selected_keys(w):
+        tid = w.add_track("A")
+        extra = {"curve_preview": _PREVIEW, "obj": "a", "attr_name": "tx"}
+        w.expand_track(tid, [("tx", [(0, 20, "tx", "#8888ff", extra)])])
+        sub = [i for i in w._clip_items.values() if i.clip_data.sub_row][0]
+        for key in sub._keyframe_items:
+            key.setSelected(True)
+
+    @staticmethod
+    def _undoable(w):
+        w.add_clip(w.add_track("A"), 0, 10)
+        w._capture_undo()
+
+    @staticmethod
+    def _selected_clip(w):
+        tid = w.add_track("A")
+        cid = w.add_clip(tid, 0, 10)
+        w._clip_items[cid].setSelected(True)
+        return tid
+
+    @staticmethod
+    def _shortcut_event(kind, key=QtCore.Qt.Key_Home):
+        return QtGui.QKeyEvent(kind, key, QtCore.Qt.NoModifier)
+
+    def _cases(self):
+        """``(callee, setup, action)``: *action* must reach ``w.<callee>``."""
+        C = QtCore
+        override = C.QEvent.ShortcutOverride
+        return (
+            ("refresh_extent", None, lambda w, _: w.add_track("A")),
+            ("refresh_extent", self._track, lambda w, t: w.add_clip(t, 0, 10)),
+            ("add_track_item", self._track, lambda w, t: w.add_clip(t, 0, 10)),
+            ("add_track_item", None, lambda w, _: w.set_range_highlight(0, 10)),
+            ("refresh_extent", None, lambda w, _: w.set_range_highlight(0, 10)),
+            ("add_track_item", None, lambda w, _: w.add_range_overlay(0, 10)),
+            ("refresh_extent", None, lambda w, _: w.add_range_overlay(0, 10)),
+            ("refresh_extent", None, lambda w, _: w.set_active_range(0, 10)),
+            ("remove_clip", self._clip, lambda w, ids: w.remove_track(ids[0])),
+            ("get_track", self._provided, lambda w, t: w.expand_track(t)),
+            (
+                "add_clip",
+                self._track,
+                lambda w, t: w.expand_track(t, [("tx", [(0, 5)])]),
+            ),
+            (
+                "remove_clip",
+                self._expanded,
+                lambda w, t: w.expand_track(t, [("ty", [(0, 5)])]),
+            ),
+            ("remove_clip", self._expanded, lambda w, t: w.collapse_track(t)),
+            ("is_track_expanded", self._track, lambda w, t: w.toggle_track_expanded(t)),
+            ("expand_track", self._provided, lambda w, t: w.toggle_track_expanded(t)),
+            ("collapse_track", self._expanded, lambda w, t: w.toggle_track_expanded(t)),
+            (
+                "toggle_track_expanded",
+                self._provided,
+                lambda w, _: w._header.track_expand_requested.emit(0),
+            ),
+            ("get_track", self._expanded, lambda w, _: w.viewport_state()),
+            ("clear_markers", self._decorated, lambda w, _: w.clear()),
+            ("clear_range_highlight", self._decorated, lambda w, _: w.clear()),
+            ("clear_range_overlays", self._decorated, lambda w, _: w.clear()),
+            ("clear_snap_guides", self._decorated, lambda w, _: w.clear()),
+            ("clear_key_scale_box", self._decorated, lambda w, _: w.clear()),
+            ("clear_markers", self._decorated, lambda w, _: w.clear_decorations()),
+            (
+                "clear_range_highlight",
+                self._decorated,
+                lambda w, _: w.clear_decorations(),
+            ),
+            (
+                "clear_range_overlays",
+                self._decorated,
+                lambda w, _: w.clear_decorations(),
+            ),
+            (
+                "clear_snap_guides",
+                None,
+                lambda w, _: setattr(w, "snap_guides_enabled", False),
+            ),
+            ("range_highlight", None, lambda w, _: w.frame_shot()),
+            ("frame_time_range", self._decorated, lambda w, _: w.frame_shot()),
+            ("add_marker", None, lambda w, _: w.add_marker_at_playhead()),
+            ("_move_playhead", None, lambda w, _: w.step_forward()),
+            ("_move_playhead", None, lambda w, _: w.step_backward()),
+            ("_move_playhead", None, lambda w, _: w.go_to_start()),
+            ("_move_playhead", self._clip, lambda w, _: w.go_to_end()),
+            ("_key_times", None, lambda w, _: w.go_to_next_key()),
+            ("_key_times", None, lambda w, _: w.go_to_prev_key()),
+            ("_capture_undo", self._two_clips, lambda w, ids: w.swap_clips(*ids)),
+            (
+                "_capture_undo",
+                self._selected_keys,
+                lambda w, _: w._delete_selected_keys(),
+            ),
+            (
+                "selected_keys",
+                self._selected_keys,
+                lambda w, _: w._delete_selected_keys(),
+            ),
+            ("selected_keys", None, lambda w, _: w.show_key_menu(C.QPoint())),
+            ("selected_clips", None, lambda w, _: w.select_keys([])),
+            ("selected_keys", None, lambda w, _: w.select_keys([])),
+            ("refresh_key_scale_box", None, lambda w, _: w.select_keys([])),
+            ("set_modifiers_held", None, lambda w, _: w.set_shift_held(True)),
+            (
+                "refresh_key_scale_box",
+                None,
+                lambda w, _: w.set_modifiers_held(C.Qt.ShiftModifier),
+            ),
+            ("clear_key_scale_box", None, lambda w, _: w.refresh_key_scale_box()),
+            (
+                "add_track_item",
+                self._selected_keys,
+                lambda w, _: w.set_shift_held(True),
+            ),
+            (
+                "editor",
+                None,
+                lambda w, _: w.add_track_item(QtWidgets.QGraphicsRectItem()),
+            ),
+            ("editor", None, lambda w, _: w.set_editor("graph")),
+            ("_sync_shortcut_sequences", None, lambda w, _: w.set_editor("graph")),
+            ("_iter_rows", self._track, lambda w, t: w._row_position(t)),
+            ("_iter_rows", self._track, lambda w, _: w._total_row_height()),
+            ("_iter_rows", self._track, lambda w, _: w._visual_rows()),
+            ("_total_row_height", None, lambda w, _: w.content_span()),
+            ("_sync_row_bound_items", None, lambda w, _: w.add_track("A")),
+            ("_snapshot", self._clip, lambda w, _: w._capture_undo()),
+            ("_snapshot", self._undoable, lambda w, _: w.undo()),
+            ("_snapshot", self._undoable, lambda w, _: (w.undo(), w.redo())),
+            ("_on_scene_selection", None, lambda w, _: w.select_keys([])),
+            (
+                "_on_scene_selection",
+                self._selected_clip,
+                lambda w, t: w.expand_track(t, [("tx", [(0, 5)])]),
+            ),
+            ("_apply_legend", None, lambda w, _: w.add_layer(_FakeLayer())),
+            ("_apply_legend", None, lambda w, _: w.set_editor("graph")),
+            (
+                "_scalable_keys",
+                self._selected_keys,
+                lambda w, _: w.set_shift_held(True),
+            ),
+            (
+                "_match_shortcut",
+                None,
+                lambda w, _: w.event(self._shortcut_event(override)),
+            ),
+            (
+                "_match_shortcut",
+                None,
+                lambda w, _: w.keyPressEvent(self._shortcut_event(C.QEvent.KeyPress)),
+            ),
+            (
+                "_match_shortcut",
+                lambda w: setattr(w, "window_shortcuts", True),
+                lambda w, _: w.eventFilter(w, self._shortcut_event(override)),
+            ),
+        )
+
+    def test_each_internal_caller_reaches_an_instance_override(self):
+        for callee, setup, action in self._cases():
+            with self.subTest(callee=callee, action=action.__code__.co_firstlineno):
+                w = self._widget()
+                arg = setup(w) if setup else None
+                calls = self._spy(w, callee)
+                action(w, arg)
+                self.assertTrue(calls, f"{callee} was not reached")

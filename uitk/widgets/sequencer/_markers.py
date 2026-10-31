@@ -4,11 +4,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from qtpy import QtWidgets, QtGui, QtCore
 
 if TYPE_CHECKING:
+    from uitk.widgets.sequencer._sequencer import SequencerWidget
     from uitk.widgets.sequencer._timeline import TimelineView
 
 from uitk.widgets.sequencer._data import (
@@ -17,7 +18,11 @@ from uitk.widgets.sequencer._data import (
     MenuUtils,
 )
 from uitk.widgets.sequencer._drag_tooltip import FrameTooltip
-from uitk.widgets.sequencer._draggable import DraggableItemMixin, HeldGeometryMixin
+from uitk.widgets.sequencer._draggable import (
+    DraggableItemMixin,
+    HeldGeometryMixin,
+    ItemRetirement,
+)
 from uitk.managers.cursor_manager import CursorManager
 
 _MARKER_TRI_SIZE = 8  # size of the triangle pennant in pixels
@@ -421,3 +426,67 @@ class MarkerItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)
             self._data.line_style = chosen.data()
             self.update()
             widget.marker_changed.emit(self._data.marker_id)
+
+
+class _MarkerSet:
+    """The markers: their data and scene items, under ids handed out in order
+    from 0 again after every clear."""
+
+    def __init__(self, sequencer: "SequencerWidget"):
+        self._sequencer = sequencer
+        self.markers: Dict[int, MarkerData] = {}
+        self.items: Dict[int, MarkerItem] = {}
+        self.next_id = 0
+
+    def add(
+        self,
+        time: float,
+        note: str,
+        color: Optional[str],
+        draggable: bool,
+        style: str,
+        line_style: str,
+        opacity: float,
+        data: Optional[Dict[str, Any]],
+    ) -> int:
+        timeline = self._sequencer._timeline
+        mid = self.next_id
+        self.next_id += 1
+        md = MarkerData(
+            marker_id=mid,
+            time=time,
+            note=note,
+            color=color or "#E8A84A",
+            draggable=draggable,
+            style=style,
+            line_style=line_style,
+            opacity=opacity,
+            data=dict(data or {}),
+        )
+        self.markers[mid] = md
+        item = MarkerItem(md, timeline)
+        self.items[mid] = item
+        timeline._scene.addItem(item)
+        # Pin the new marker to the current viewport top (matches the
+        # ruler/playhead pinning applied on every vertical scroll).
+        timeline._sync_ruler_pos()
+        return mid
+
+    def add_at_playhead(self) -> None:
+        sq = self._sequencer
+        t = sq._timeline._scene.playhead.time
+        mid = sq.add_marker(t)
+        sq.marker_added.emit(mid, t)
+
+    def remove(self, marker_id: int) -> None:
+        existed = marker_id in self.markers
+        self.markers.pop(marker_id, None)
+        ItemRetirement.retire(self.items.pop(marker_id, None))
+        if existed:
+            self._sequencer.marker_removed.emit(marker_id)
+
+    def clear(self) -> None:
+        for mid in list(self.markers):
+            ItemRetirement.retire(self.items.pop(mid, None))
+        self.markers.clear()
+        self.next_id = 0

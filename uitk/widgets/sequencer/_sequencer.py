@@ -34,7 +34,6 @@ from uitk.managers.shortcut_manager import ShortcutManager
 
 from uitk.widgets.sequencer._data import (
     ClipData,
-    MenuUtils,
     TrackData,
     MarkerData,
     RowMetrics,
@@ -42,33 +41,24 @@ from uitk.widgets.sequencer._data import (
     DISPLAY_COLORS,
     SELECTED_ACCENT,
 )
-from uitk.widgets.sequencer._clip import ClipItem
-from uitk.widgets.sequencer._editor import SequencerEditor, TrackEditor
-from uitk.widgets.sequencer._layer import SequencerLayer
-from uitk.widgets.sequencer._overlays import (
-    _StaticRangeOverlay,
-    RangeHighlightItem,
+from uitk.widgets.sequencer._editor import (
+    SequencerEditor,
+    TrackEditor,
+    _EditorRegistry,
 )
-from uitk.widgets.sequencer._markers import MarkerItem
+from uitk.widgets.sequencer._layer import SequencerLayer, _LayerRegistry
+from uitk.widgets.sequencer._overlays import RangeHighlightItem, _Ranges, _Snapping
+from uitk.widgets.sequencer._markers import _MarkerSet
 from uitk.widgets.sequencer._draggable import ItemRetirement
 from uitk.widgets.sequencer._timeline import (
     TrackHeaderWidget,
     TimelineView,
-    _ALT_MOD,
-    _CTRL_MOD,
     _SHIFT_MOD,
 )
-
-#: What "On Modifier" answers to -- the three the legend is about.  As plain
-#: ints, the form the timeline banks a chord in.
-_LEGEND_MODIFIERS = _ALT_MOD | _CTRL_MOD | _SHIFT_MOD
-
-
-#: Pixels of margin :meth:`SequencerWidget.frame_shot` leaves on each side.
-_FRAME_PADDING = 40
-#: A viewport narrower than this is not laid out yet -- framing into it sets a
-#: zoom the user then has to undo, so the first-show framing waits for a resize.
-_MIN_FRAME_VIEWPORT_WIDTH = _FRAME_PADDING * 3
+from uitk.widgets.sequencer._rows import _TrackRows
+from uitk.widgets.sequencer._selection import _KeyScaleBox, _Selection
+from uitk.widgets.sequencer._shortcuts import _KeyRouting, _ShortcutLegend
+from uitk.widgets.sequencer._navigation import _Navigation
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +264,172 @@ class _OptionsBand(QtWidgets.QWidget):
         return [self.combo.widgetAt(i) for i in range(self.combo.count())]
 
 
+# ---------------------------------------------------------------------------
+#  SequencerWidget's parts: each owns its state and holds the widget, calling
+#  its public methods through it (an override of one reaches every caller).
+#  The larger ones live in modules of their own (``_rows.py``,
+#  ``_selection.py``, ``_shortcuts.py``, ``_navigation.py``) or beside the
+#  items they own (``_markers.py``, ``_overlays.py``, ``_layer.py``,
+#  ``_editor.py``).
+# ---------------------------------------------------------------------------
+
+
+class _UndoStack:
+    """The clip-position undo the widget falls back on when no host rebuilds
+    it from :attr:`SequencerWidget.undo_requested`: ``{clip_id: (start,
+    duration)}`` snapshots, the newest last, :attr:`max_undo` deep."""
+
+    def __init__(self, sequencer: "SequencerWidget"):
+        self._sequencer = sequencer
+        self.undo_stack: List[Dict[int, tuple]] = []  # (start, duration) per clip_id
+        self.redo_stack: List[Dict[int, tuple]] = []
+        self.max_undo = 50
+
+    def snapshot(self) -> Dict[int, tuple]:
+        clips = self._sequencer._clips
+        return {cid: (cd.start, cd.duration) for cid, cd in clips.items()}
+
+    def capture(self) -> None:
+        self.undo_stack.append(self._sequencer._snapshot())
+        if len(self.undo_stack) > self.max_undo:
+            self.undo_stack.pop(0)
+        self.redo_stack.clear()
+
+    def restore(self, snapshot: Dict[int, tuple]) -> None:
+        """Apply a saved snapshot to all clips."""
+        clips = self._sequencer._clips
+        for cid, (start, dur) in snapshot.items():
+            cd = clips.get(cid)
+            if cd is not None:
+                cd.start = start
+                cd.duration = dur
+        self._sequencer._timeline._refresh_all()
+
+    def undo(self) -> None:
+        sq = self._sequencer
+        sq.undo_requested.emit()
+        if not self.undo_stack:
+            return
+        self.redo_stack.append(sq._snapshot())
+        self.restore(self.undo_stack.pop())
+
+    def redo(self) -> None:
+        sq = self._sequencer
+        sq.redo_requested.emit()
+        if not self.redo_stack:
+            return
+        self.undo_stack.append(sq._snapshot())
+        self.restore(self.redo_stack.pop())
+
+    def drop_last(self) -> None:
+        """Forget the newest step: the one a cancelled drag captured."""
+        if self.undo_stack:
+            self.undo_stack.pop()
+
+    def clear(self) -> None:
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+
+
+class _AudioScrub:
+    """The audio scrub: the bound source's player (a ``ScrubPlayer``, built
+    on first use) and the frame rate a playhead move becomes a grain at."""
+
+    def __init__(self, sequencer: "SequencerWidget"):
+        self._sequencer = sequencer
+        self.player = None  # type: Optional[ScrubPlayer]
+        self.fps: float = 24.0
+
+    def set_source(self, path: str, fps: float) -> bool:
+        from uitk.widgets.sequencer._scrub_player import ScrubPlayer
+
+        if self.player is None:
+            self.player = ScrubPlayer(self._sequencer)
+        self.fps = float(fps) if fps and fps > 0 else 24.0
+        return self.player.set_source(path)
+
+    def clear_source(self) -> None:
+        if self.player is not None:
+            self.player.clear_source()
+
+    def on_playhead_moved(self, time: float) -> None:
+        if self.player is None:
+            return
+        self.player.play_at_frame(time, self.fps)
+
+
+class _HeaderPane:
+    """The left pane's behaviour: its width -- snapped closed below a
+    threshold, remembered across sessions -- and the background menu that
+    brings hidden tracks back."""
+
+    def __init__(self, sequencer: "SequencerWidget"):
+        self._sequencer = sequencer
+        # Snap-close: collapse the header pane when dragged below threshold
+        self.snap_width = 140  # default / open width
+        self.snap_threshold = 60  # collapse if narrower
+        self.settings: Optional[SettingsManager] = None  # built by restore()
+        self.hidden_tracks: List[str] = []
+
+    def restore(self) -> None:
+        """Open the pane at the width the user left it at."""
+        # Persistent layout settings
+        self.settings = SettingsManager(namespace="sequencer/layout")
+        saved_width = self.settings.value("header_width")
+        if saved_width is not None:
+            try:
+                self.snap_width = int(saved_width)
+            except (ValueError, TypeError):
+                pass
+        self._sequencer.setSizes([self.snap_width, 600])
+
+    def set_hidden_tracks(self, names: List[str]) -> None:
+        self.hidden_tracks = list(names)
+        self._sequencer._header._hidden_track_names = list(names)
+
+    def show_hidden_menu(self, pos) -> None:
+        """Right-click on header background → menu with consumer actions
+        and hidden-track entries."""
+        sq = self._sequencer
+        # Parented to the header for positioning, so it must be
+        # explicitly released — otherwise every right-click leaks one
+        # QMenu child for the life of the panel.
+        menu = QtWidgets.QMenu(sq._header)
+        StyleSheet.cast_shadow(menu)
+        try:
+            # Let consumers add their own actions first
+            sq.header_menu_requested.emit(menu)
+            if self.hidden_tracks:
+                if not menu.isEmpty():
+                    menu.addSeparator()
+                for name in sorted(self.hidden_tracks):
+                    menu.addAction(
+                        f"Show: {name}", lambda n=name: sq.track_shown.emit(n)
+                    )
+            if menu.isEmpty():
+                return
+            menu.exec_(sq._header.mapToGlobal(pos))
+        finally:
+            menu.deleteLater()
+
+    def on_splitter_moved(self, pos: int, index: int) -> None:
+        """Snap-close the header pane when dragged below threshold."""
+        sq = self._sequencer
+        if index != 1:  # only respond to the first handle
+            return
+        if pos < self.snap_threshold:
+            sq.setSizes([0, sq.width()])
+        elif pos > 0 and sq.sizes()[0] == 0:
+            # Re-opening from collapsed: restore default width
+            sq.setSizes([self.snap_width, sq.width() - self.snap_width])
+        else:
+            # Remember the user-chosen width.  No sync() here — splitter
+            # drags emit per-mouse-move and each sync() is a disk flush;
+            # QSettings flushes automatically on destruction.
+            self.snap_width = pos
+            self.settings.setValue("header_width", pos)
+
+
 class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     """A split-view NLE sequencer widget.
 
@@ -383,80 +539,31 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def __init__(self, parent=None, **kwargs):
         super().__init__(QtCore.Qt.Horizontal, parent)
 
+        # -- parts: built first, so no event reaches a half-built widget -----
+        self._rows = _TrackRows(self)
+        self._undo = _UndoStack(self)
+        self._snapping = _Snapping(self)
+        self._marker_set = _MarkerSet(self)
+        self._ranges = _Ranges(self)
+        self._audio = _AudioScrub(self)
+        self._header_pane = _HeaderPane(self)
+        self._layer_registry = _LayerRegistry(self, _RULER_HEIGHT)
+        self._shortcut_legend = _ShortcutLegend(self)
+        self._key_routing = _KeyRouting(self)
+        self._editor_registry = _EditorRegistry(self)
+        self._selection = _Selection(self)
+        self._scale_box = _KeyScaleBox(self)
+        self._navigation = _Navigation(self)
+
         # -- state ----------------------------------------------------------
-        self._tracks: List[TrackData] = []
-        self._clips: Dict[int, ClipData] = {}
-        self._clip_items: Dict[int, ClipItem] = {}
-        self._next_track_id = 0
-        self._next_clip_id = 0
-        self._snap_interval: float = 1.0  # 1 = per-frame snap (default)
-        self._undo_stack: List[Dict[int, tuple]] = []  # (start, duration) per clip_id
-        self._redo_stack: List[Dict[int, tuple]] = []
-        self._max_undo = 50
-        self._markers: Dict[int, MarkerData] = {}
-        self._marker_items: Dict[int, MarkerItem] = {}
-        self._next_marker_id = 0
         self._attribute_colors: Dict[str, str] = dict(DISPLAY_COLORS)
-        self._expanded_tracks: Dict[int, List[str]] = {}  # track_id → sub-row names
         self._bulk_depth: int = 0  # >0 inside bulk_updates() — defer scene-rect
-        # Row sizes + key style (density); read by _iter_rows and the header.
-        self._row_metrics: RowMetrics = RowMetrics.preset("standard")
-        self._sub_row_provider = None  # callable(track_id, track_name) → [(sub_name, [(start,dur,label,color), ...]), ...]
-        self._range_highlight: Optional[RangeHighlightItem] = None
-        self._range_overlays: List[QtWidgets.QGraphicsItem] = []
-        #: name -> layer (:meth:`add_layer`), in the order they were added.
-        self._layers: Dict[str, SequencerLayer] = {}
-        #: ``[(layer, lane height), ...]`` top to bottom under the ruler, and
-        #: the y the content starts at below them: read on every paint and
-        #: press, so kept rather than derived.
-        self._lane_stack: List[Tuple[SequencerLayer, int]] = []
-        self._header_height: float = float(_RULER_HEIGHT)
         self._shift_at_press: bool = False  # Shift held when last drag started
-        # >0 while the widget is being rebuilt programmatically: the scene's
-        # selectionChanged fires as items are torn down, and forwarding that
-        # empty selection makes consumers clear the host app's own selection
-        # on every refresh (see _on_scene_selection).
-        self._selection_suppressed: int = 0
-        self._snap_guide = None  # _SnapGuideItem, created lazily
-        self._snap_guides_enabled: bool = True  # draw alignment guides on drag
-        self._snap_to_keys: bool = False  # also SNAP the drag to those frames
-        self._align_capture_px: float = 6.0  # guide/snap capture radius, px
-        self._show_range_overlays: bool = True  # toggle for the range overlays
-        self._show_range_highlight: bool = True  # toggle for the range highlight
         self._mark_flat_spans: bool = True  # see mark_flat_spans
-        self._bg_curve_previews: Dict[tuple, dict] = {}  # (track_id, sub_row) → preview
-        # Shift + a key selection raises a scale box around it; see
-        # ``refresh_key_scale_box``.
-        self._key_scale_box = None
         # The chord held over the timeline, as a plain int: the Shift scale
         # box and the legend's "On Modifier" mode are both answers to it
         # (:meth:`set_modifiers_held`).
         self._modifiers_held: int = 0
-        #: off / on / modifier -- see :attr:`shortcut_overlay_mode`.
-        self._shortcut_overlay_mode: str = "off"
-        # The gesture group under the pointer, remembered so a legend that
-        # rises later opens on the right page.
-        self._gesture_context: Optional[str] = None
-        # A tangent handle is being dragged: the Shift scale box answers the
-        # same Shift that drag reads, and must stay out of its way.
-        self._tangent_drag_active: bool = False
-        self._window_shortcuts: bool = False  # shortcuts active at window level
-        # Top-level window the ShortcutOverride filter is installed on.
-        # Tracked by identity (not a bool) so a reparent — e.g. Maya
-        # dock/undock — moves the filter instead of leaving it dangling
-        # on the old window.
-        self._filtered_window = None
-        # (key, modifiers) dispatched by eventFilter, awaiting its
-        # follow-up KeyPress; 0 when nothing is pending.
-        self._filter_pending_key = 0
-        # (key, modifiers) dispatched by event() on a ShortcutOverride,
-        # awaiting the KeyPress Qt delivers next so keyPressEvent consumes
-        # it once instead of re-dispatching; 0 when nothing is pending.
-        self._override_pending_key = 0
-        self._active_range: Optional[tuple] = None  # (start, end) in frames
-        self._active_range_color = QtGui.QColor(
-            90, 140, 220, 25
-        )  # semi-transparent blue
         # Route right-clicks through ``zone_context_menu_requested`` instead
         # of the built-in default menu.  ``None`` = unset → fall back to the
         # legacy ``_zone_menu_connected`` attribute (see ``zone_menu_enabled``).
@@ -477,14 +584,8 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         TooltipPresenter.manage(self._timeline)
 
         # -- editors: what the content area shows (``_editor.py``) ------------
-        #: name -> editor instance, or the factory that builds it on first use
-        #: (the graph editor's module loads only when it is first shown).
-        self._editors: Dict[str, object] = {}
-        #: Keys the active editor answers before the shortcut table.
-        self._editor_keys: Dict[str, dict] = {}
-        self._active_editor_name = TrackEditor.name
         self.register_editor(TrackEditor.name, TrackEditor)
-        self.register_editor("graph", SequencerWidget._graph_editor_factory)
+        self.register_editor("graph", _EditorRegistry.graph_editor_factory)
         self.editor(TrackEditor.name).activate()
 
         # The left pane is a stack: the track header, or the active editor's
@@ -502,21 +603,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self.setCollapsible(0, True)
         self.setCollapsible(1, False)
 
-        # Snap-close: collapse the header pane when dragged below threshold
-        self._header_snap_width = 140  # default / open width
-        self._header_snap_threshold = 60  # collapse if narrower
-
-        # Persistent layout settings
-        self._layout_settings = SettingsManager(namespace="sequencer/layout")
-        saved_width = self._layout_settings.value("header_width")
-        if saved_width is not None:
-            try:
-                self._header_snap_width = int(saved_width)
-            except (ValueError, TypeError):
-                pass
-        self.setSizes([self._header_snap_width, 600])
-
-        self.splitterMoved.connect(self._on_splitter_moved)
+        # The header pane's width: snap-closed, remembered (_HeaderPane).
+        self._header_pane.restore()
+        self.splitterMoved.connect(self._header_pane.on_splitter_moved)
 
         # -- sync vertical scroll -------------------------------------------
         self._timeline.verticalScrollBar().valueChanged.connect(
@@ -530,50 +619,27 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._header.track_selected.connect(self.track_selected.emit)
         self._header.sub_track_selected.connect(self.sub_track_selected.emit)
         self._header.track_menu_requested.connect(self.track_menu_requested.emit)
-        self._header.track_expand_requested.connect(self._on_header_expand)
+        self._header.track_expand_requested.connect(self._rows.on_header_expand)
 
         # -- right-click on header background: show hidden tracks -----------
-        self._hidden_tracks: List[str] = []
         self._header.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self._header.customContextMenuRequested.connect(self._show_hidden_menu)
+        self._header.customContextMenuRequested.connect(
+            self._header_pane.show_hidden_menu
+        )
 
         # -- selection forwarding -------------------------------------------
         self._timeline._scene.selectionChanged.connect(self._on_scene_selection)
 
         # -- keyboard shortcuts via ShortcutManager -------------------------
-        _shortcut_defs = [
-            ("Ctrl+Z", self.undo, "Undo last clip edit"),
-            ("Ctrl+Shift+Z", self.redo, "Redo last undone edit"),
-            ("Left", self.go_to_prev_key, "Jump to previous key"),
-            ("Right", self.go_to_next_key, "Jump to next key"),
-            ("Shift+Left", self.step_backward, "Step playhead backward"),
-            ("Shift+Right", self.step_forward, "Step playhead forward"),
-            ("Home", self.go_to_start, "Jump playhead to start"),
-            ("End", self.go_to_end, "Jump playhead to last clip end"),
-            ("M", self.add_marker_at_playhead, "Add marker at playhead"),
-            ("F", self.frame_shot, "Frame the active shot range"),
-            ("Delete", self._delete_selected_keys, "Delete selected keyframes"),
-            ("Escape", self._cancel_active_drag, "Cancel the active drag"),
-        ]
-        self._shortcut_mgr = ShortcutManager(self)
-        _ctx = QtCore.Qt.WidgetWithChildrenShortcut
-        self._shortcut_mgr.add_shortcuts_batch(
-            [(k, fn, desc, _ctx) for k, fn, desc in _shortcut_defs]
-        )
-        #: The legend rows registered with the manager now
-        #: (:meth:`_apply_legend`): the active editor's, as the layers edit them.
-        self._legend: tuple = ()
+        self._key_routing.install_shortcuts()
         self._apply_legend()
-        self._shortcut_overlay = None  # built on first show (shortcut_overlay_visible)
         self._ctrl_at_press = False
         # Keep the ShortcutOverride sequences in sync with the manager
         self._shortcut_mgr.on_change(self._sync_shortcut_sequences)
         self._sync_shortcut_sequences()
 
         # -- audio scrub player (lazy) --------------------------------------
-        self._scrub_player = None  # type: Optional[ScrubPlayer]
-        self._audio_fps: float = 24.0
-        self.playhead_moved.connect(self._on_playhead_moved_for_audio)
+        self.playhead_moved.connect(self._audio.on_playhead_moved)
 
         # -- first-show framing ---------------------------------------------
         #: Frame the active shot the first time the panel is shown.  Opening
@@ -583,7 +649,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # Armed only now: an event arriving mid-construction would reach a
         # half-built widget, and nothing can be framed before there is a
         # timeline to frame it in.
-        self._pending_first_frame = True
+        self._navigation.pending_first_frame = True
 
         # -- apply kwargs via AttributesMixin --------------------------------
         if kwargs:
@@ -594,13 +660,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def _sync_shortcut_sequences(self) -> None:
         """Rebuild the ShortcutOverride key list: the active editor's keys
         (:meth:`SequencerEditor.key_bindings`), then the manager's."""
-        keys = list(self._editor_keys)
-        keys += [
-            k
-            for k, v in self._shortcut_mgr.shortcuts.items()
-            if not v.get("read_only") and k not in self._editor_keys
-        ]
-        self._timeline._shortcut_sequences = [QtGui.QKeySequence(k) for k in keys]
+        return self._key_routing.sync_sequences()
 
     # -- consume assigned shortcuts so they don't leak to the host app --------
 
@@ -609,80 +669,23 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """When ``True``, sequencer shortcuts are active whenever the
         top-level window has focus, not just when the sequencer widget
         itself is focused."""
-        return self._window_shortcuts
+        return self._key_routing.window_shortcuts
 
     @window_shortcuts.setter
     def window_shortcuts(self, enabled: bool) -> None:
-        if enabled == self._window_shortcuts:
-            return
-        self._window_shortcuts = enabled
-        ctx = (
-            QtCore.Qt.WindowShortcut
-            if enabled
-            else QtCore.Qt.WidgetWithChildrenShortcut
-        )
-        for entry in self._shortcut_mgr.shortcuts.values():
-            if entry["shortcut"] is not None:
-                entry["shortcut"].setContext(ctx)
-        if not enabled:
-            self._uninstall_window_filter()
-        elif self.isVisible():
-            # Enabled at runtime on an already-visible widget — there
-            # may be no further showEvent, so install immediately or
-            # keys leak to the host until the panel is hidden/reshown.
-            self._install_window_filter()
-        # Otherwise defer to showEvent: self.window() may not return
-        # the actual top-level until the widget is shown (parented).
+        self._key_routing.set_window_shortcuts(enabled)
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
         super().showEvent(event)
-        if self._window_shortcuts:
-            # Self-guards on same-window; after a reparent (Maya
-            # dock/undock) this moves the filter to the new top-level.
-            self._install_window_filter()
-        self._frame_first_show()
+        self._key_routing.on_show()
+        self._navigation.frame_first_show()
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
         super().resizeEvent(event)
         # A show can arrive before the final geometry does, and framing
         # against a viewport a few pixels wide sets a zoom the user then has
         # to undo -- the resize that settles the geometry is the retry.
-        self._frame_first_show()
-
-    def _frame_first_show(self) -> None:
-        """Frame the active shot once, as soon as there is something to frame."""
-        if not (self._pending_first_frame and self.frame_on_first_show):
-            return
-        if self._timeline.viewport().width() < _MIN_FRAME_VIEWPORT_WIDTH:
-            return
-        if (
-            self.range_highlight() is None
-            and self._active_range is None
-            and not self._clips
-        ):
-            return  # nothing to frame yet; a later show/resize retries
-        self._pending_first_frame = False
-        self.frame_shot()
-
-    def _install_window_filter(self) -> None:
-        win = self.window()
-        if win is None or win is self._filtered_window:
-            return
-        if self._filtered_window is not None:
-            try:
-                self._filtered_window.removeEventFilter(self)
-            except RuntimeError:
-                pass  # old top-level already destroyed
-        win.installEventFilter(self)
-        self._filtered_window = win
-
-    def _uninstall_window_filter(self) -> None:
-        if self._filtered_window is not None:
-            try:
-                self._filtered_window.removeEventFilter(self)
-            except RuntimeError:
-                pass  # top-level already destroyed
-            self._filtered_window = None
+        self._navigation.frame_first_show()
 
     def _match_shortcut(self, event):
         """Return ``(sequence, entry_or_None)`` when a key event matches a
@@ -694,17 +697,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         and the timeline view's handlers) so matching semantics can't
         drift between copies.
         """
-        mods = event.modifiers()
-        mod_int = mods.value if hasattr(mods, "value") else int(mods)
-        key = QtGui.QKeySequence(event.key() | mod_int)
-        for seq in self._timeline._shortcut_sequences:
-            if key.matches(seq) == QtGui.QKeySequence.ExactMatch:
-                name = seq.toString()
-                # The active editor answers its own keys first: a graph
-                # editor's Delete is not the track rows' Delete.
-                entry = self._editor_keys.get(name)
-                return seq, entry or self._shortcut_mgr.shortcuts.get(name)
-        return None
+        return self._key_routing.match(event)
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
         """Intercept ShortcutOverride on the window when window_shortcuts is on.
@@ -714,92 +707,22 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         The subsequent ``KeyPress`` is consumed to stop the host app
         (e.g. Maya) from also processing the key.
         """
-        if self._window_shortcuts:
-            if event.type() == QtCore.QEvent.ShortcutOverride:
-                # Don't intercept keystrokes while a text-editing widget has focus
-                focused = QtWidgets.QApplication.focusWidget()
-                if isinstance(
-                    focused,
-                    (
-                        QtWidgets.QLineEdit,
-                        QtWidgets.QTextEdit,
-                        QtWidgets.QPlainTextEdit,
-                    ),
-                ):
-                    return super().eventFilter(obj, event)
-                match = self._match_shortcut(event)
-                if match is not None:
-                    event.accept()
-                    # Dispatch the action directly — the QShortcut won't
-                    # fire because we accepted the override.
-                    _seq, entry = match
-                    if entry and entry.get("action"):
-                        entry["action"]()
-                    mods = event.modifiers()
-                    self._filter_pending_key = (
-                        event.key(),
-                        mods.value if hasattr(mods, "value") else int(mods),
-                    )
-                    return True
-            elif event.type() == QtCore.QEvent.KeyPress and self._filter_pending_key:
-                # Consume the KeyPress that Qt delivers after the accepted
-                # ShortcutOverride so the host app doesn't also act on it.
-                # A pending key that never arrived (the press was accepted
-                # elsewhere) must not linger and eat a later press — clear
-                # on ANY KeyPress, consume only an exact key+mods match.
-                pending_key, pending_mods = self._filter_pending_key
-                self._filter_pending_key = 0
-                mods = event.modifiers()
-                mod_int = mods.value if hasattr(mods, "value") else int(mods)
-                if event.key() == pending_key and mod_int == pending_mods:
-                    return True
+        if self._key_routing.filter_window_event(event):
+            return True
         return super().eventFilter(obj, event)
 
     def event(self, event: QtCore.QEvent) -> bool:
+        # The type comes first: an event that arrives before the parts
+        # exist (QSplitter's own construction) never reaches them.
         if event.type() == QtCore.QEvent.ShortcutOverride:
-            match = self._match_shortcut(event)
-            if match is not None:
-                event.accept()
-                # Dispatch here instead of relying on the follow-up KeyPress
-                # bubbling back to keyPressEvent: accepting the override
-                # suppresses the QShortcut, and any intermediate focused
-                # child (e.g. a clicked track label) can swallow the KeyPress
-                # so it never reaches keyPressEvent — leaving the shortcut
-                # dead.  _override_pending_key gates the follow-up press so
-                # the action can't fire twice.
-                _seq, entry = match
-                if entry and entry.get("action"):
-                    entry["action"]()
-                mods = event.modifiers()
-                self._override_pending_key = (
-                    event.key(),
-                    mods.value if hasattr(mods, "value") else int(mods),
-                )
+            if self._key_routing.shortcut_override(event):
                 return True
         return super().event(event)
 
     def keyPressEvent(self, event):
         """Dispatch registered shortcuts when focus is on a non-timeline child."""
-        # Consume (once) the KeyPress that follows an override we already
-        # dispatched in event().  Clear on ANY press so a stale pending key
-        # — whose press never arrived because a child ate it — can't eat a
-        # later, unrelated press.
-        pending = self._override_pending_key
-        if pending:
-            self._override_pending_key = 0
-            mods = event.modifiers()
-            mod_int = mods.value if hasattr(mods, "value") else int(mods)
-            if event.key() == pending[0] and mod_int == pending[1]:
-                event.accept()
-                return
-        match = self._match_shortcut(event)
-        if match is not None:
-            _seq, entry = match
-            if entry and entry.get("action"):
-                entry["action"]()
-            event.accept()
-            return
-        super().keyPressEvent(event)
+        if not self._key_routing.key_press(event):
+            super().keyPressEvent(event)
 
     # -- public API ---------------------------------------------------------
     def add_track(
@@ -826,29 +749,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         text_color : str, optional
             Hex foreground colour for the track header text.
         """
-        tid = self._next_track_id
-        self._next_track_id += 1
-        td = TrackData(
-            track_id=tid,
-            name=name,
-            color=color,
-            text_color=text_color,
-            icon=icon,
-            dimmed=dimmed,
-            italic=italic,
-        )
-        self._tracks.append(td)
-        self._header.add_track_label(
-            name,
-            icon=icon,
-            dimmed=dimmed,
-            italic=italic,
-            color=color,
-            text_color=text_color,
-        )
-        self.refresh_extent()
-        self._sync_row_bound_items()
-        return tid
+        return self._rows.add_track(name, icon, dimmed, italic, color, text_color)
 
     def _sync_row_bound_items(self) -> None:
         """Re-derive the overlays whose height follows the track rows.
@@ -858,16 +759,13 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         items, so cheap inside a bulk rebuild too.
         """
         for item in (
-            self._range_highlight,
-            self._snap_guide,
-            *self._range_overlays,
+            self._ranges.highlight,
+            self._snapping.guide,
+            *self._ranges.overlays,
         ):
             if item is not None:
                 item.sync()
-        for layer in self._layers.values():
-            relayout = getattr(layer, "relayout", None)
-            if relayout is not None:
-                relayout()
+        self._layer_registry.relayout()
 
     def refresh_extent(self) -> None:
         """Recompute the scrollable extent unless a bulk rebuild is running.
@@ -924,135 +822,43 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         locked : bool
             If True the clip cannot be dragged or resized.
         """
-        cid = self._next_clip_id
-        self._next_clip_id += 1
-        if color is None:
-            color = "#CCCCCC"
-        cd = ClipData(
-            clip_id=cid,
-            track_id=track_id,
-            start=start,
-            duration=duration,
-            label=label,
-            color=color,
-            locked=locked,
-            sub_row=sub_row,
-            data=data,
+        return self._rows.add_clip(
+            track_id, start, duration, label, color, sub_row, locked, data
         )
-        self._clips[cid] = cd
-
-        # register on track
-        for td in self._tracks:
-            if td.track_id == track_id:
-                td.clips.append(cid)
-                break
-
-        # create visual item
-        item = ClipItem(cd, self._timeline)
-        self._clip_items[cid] = item
-        self.add_track_item(item)
-        self.refresh_extent()
-        return cid
 
     def remove_clip(self, clip_id: int):
         """Remove a clip by id."""
-        if clip_id not in self._clips:
-            return
-        cd = self._clips.pop(clip_id)
-        ItemRetirement.retire(self._clip_items.pop(clip_id, None))
-        for td in self._tracks:
-            if cd.clip_id in td.clips:
-                td.clips.remove(cd.clip_id)
+        return self._rows.remove_clip(clip_id)
 
     def set_clip_label(self, clip_id: int, label: str):
         """Set the display label for a clip."""
-        cd = self._clips.get(clip_id)
-        if cd is None:
-            return
-        cd.label = label
-        item = self._clip_items.get(clip_id)
-        if item:
-            item.update()
+        return self._rows.set_clip_label(clip_id, label)
 
     def set_clip_locked(self, clip_id: int, locked: bool):
         """Lock or unlock a clip, preventing drag/resize/rename/selection."""
-        cd = self._clips.get(clip_id)
-        if cd is None:
-            return
-        cd.locked = locked
-        item = self._clip_items.get(clip_id)
-        if item:
-            item.sync_selectable()
-            item.update()
+        return self._rows.set_clip_locked(clip_id, locked)
 
     def remove_track(self, track_id: int):
         """Remove a track and all its clips."""
-        td = None
-        for i, t in enumerate(self._tracks):
-            if t.track_id == track_id:
-                td = t
-                self._tracks.pop(i)
-                break
-        if td is None:
-            return
-        self._expanded_tracks.pop(track_id, None)
-        for cid in list(td.clips):
-            self.remove_clip(cid)
-        # Also remove sub-row clips
-        sub_cids = [
-            cid
-            for cid, cd in self._clips.items()
-            if cd.track_id == track_id and cd.sub_row
-        ]
-        for cid in sub_cids:
-            self.remove_clip(cid)
-        # Drop this track's background curve previews (mirrors
-        # collapse_track) — stale entries keyed to a recycled track_id
-        # would paint another object's curve across the wrong row.
-        stale_bg = [k for k in self._bg_curve_previews if k[0] == track_id]
-        for k in stale_bg:
-            del self._bg_curve_previews[k]
-        # Rebuild header labels with their FULL stored presentation and
-        # re-apply expansion for still-expanded tracks — a plain-name
-        # rebuild dropped icons/colors and desynced every row below an
-        # expanded track from its header.
-        self._header.clear_tracks()
-        for i, t in enumerate(self._tracks):
-            self._header.add_track_label(
-                t.name,
-                icon=t.icon,
-                dimmed=t.dimmed,
-                italic=t.italic,
-                color=t.color,
-                text_color=t.text_color,
-            )
-            sub_names = self._expanded_tracks.get(t.track_id)
-            if sub_names:
-                self._header.set_track_expanded(
-                    i, sub_names, self._row_metrics.sub_row_height
-                )
-        self._timeline._refresh_all()
+        return self._rows.remove_track(track_id)
 
     def get_clip(self, clip_id: int) -> Optional[ClipData]:
         """Return the data for a clip, or None."""
-        return self._clips.get(clip_id)
+        return self._rows.clips.get(clip_id)
 
     def get_track(self, track_id: int) -> Optional[TrackData]:
         """Return the data for a track, or None."""
-        for td in self._tracks:
-            if td.track_id == track_id:
-                return td
-        return None
+        return self._rows.get_track(track_id)
 
     def tracks(self) -> List[TrackData]:
         """Return a list of all track data."""
-        return list(self._tracks)
+        return list(self._rows.tracks)
 
     @property
     def shortcut_manager(self) -> ShortcutManager:
         """The sequencer's shortcut table: a host adds or re-points a key
         (``add_shortcut``) or opens the editor (``show_editor``) through it."""
-        return self._shortcut_mgr
+        return self._key_routing.manager
 
     def context_entries(self, t: float) -> list:
         """The timeline's own right-click entries at time *t*, as data
@@ -1072,39 +878,21 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         fresh track ids (:meth:`restore_viewport_state` re-applies the first
         two; the host re-expands by name once its rows exist).
         """
-        names = []
-        for tid in self._expanded_tracks:
-            td = self.get_track(tid)
-            if td is not None:
-                names.append(td.name)
-        return {
-            "zoom": self._timeline.pixels_per_unit,
-            "h_scroll": self._timeline.horizontalScrollBar().value(),
-            "expanded": names,
-        }
+        return self._navigation.viewport_state()
 
     def restore_viewport_state(self, state: dict) -> None:
         """Re-apply a :meth:`viewport_state`'s zoom and horizontal scroll."""
-        self._timeline.pixels_per_unit = float(state["zoom"])  # clamps, re-lays out
-        self._timeline.horizontalScrollBar().setValue(int(state["h_scroll"]))
+        return self._navigation.restore_viewport_state(state)
 
     def clips(self, track_id: Optional[int] = None) -> List[ClipData]:
         """Return clip data, optionally filtered by track."""
-        if track_id is None:
-            return list(self._clips.values())
-        return [cd for cd in self._clips.values() if cd.track_id == track_id]
+        return self._rows.clips_on(track_id)
 
     def clip_attributes(self) -> List[str]:
         """The attribute names the clips key (their ``attributes`` data), sorted
         -- the *active_attrs* an :class:`AttributeColorDialog` offers beyond the
         host's common set."""
-        return sorted(
-            {
-                attr
-                for cd in self._clips.values()
-                for attr in cd.data.get("attributes", [])
-            }
-        )
+        return self._rows.clip_attributes()
 
     def swap_clips(self, clip_id_a: int, clip_id_b: int) -> None:
         """Swap the timeline positions of two clips and emit ``clips_reordered``.
@@ -1117,36 +905,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         to ``clips_reordered`` to perform the actual keyframe swap in
         the backend.
         """
-        a = self._clips.get(clip_id_a)
-        b = self._clips.get(clip_id_b)
-        if a is None or b is None or clip_id_a == clip_id_b:
-            return
-
-        # Identify earlier / later by start
-        if a.start > b.start:
-            a, b = b, a
-
-        gap = b.start - (a.start + a.duration)
-        new_b_start = a.start
-        new_a_start = a.start + b.duration + gap
-
-        self._capture_undo()
-
-        a.start = new_a_start
-        b.start = new_b_start
-
-        # Refresh visual items
-        for cid in (a.clip_id, b.clip_id):
-            item = self._clip_items.get(cid)
-            if item:
-                item._sync_geometry()
-                item.update()
-
-        self.clips_reordered.emit(clip_id_a, clip_id_b)
+        return self._rows.swap_clips(clip_id_a, clip_id_b)
 
     def set_playhead(self, time: float):
         """Move the playhead to a specific time."""
-        self._timeline._scene.playhead.time = time
+        return self._navigation.set_playhead(time)
 
     # -- audio scrub --------------------------------------------------------
 
@@ -1157,22 +920,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         audio grains.  External ``set_playhead`` calls do not trigger
         audio (no signal emission), so Maya time-sync won't stutter.
         """
-        from uitk.widgets.sequencer._scrub_player import ScrubPlayer
-
-        if self._scrub_player is None:
-            self._scrub_player = ScrubPlayer(self)
-        self._audio_fps = float(fps) if fps and fps > 0 else 24.0
-        return self._scrub_player.set_source(path)
+        return self._audio.set_source(path, fps)
 
     def clear_audio_source(self) -> None:
         """Drop the bound audio source and stop any in-flight scrub."""
-        if self._scrub_player is not None:
-            self._scrub_player.clear_source()
-
-    def _on_playhead_moved_for_audio(self, time: float) -> None:
-        if self._scrub_player is None:
-            return
-        self._scrub_player.play_at_frame(time, self._audio_fps)
+        return self._audio.clear_source()
 
     def clear(self, *, keep_range_highlight: bool = False):
         """Remove all tracks, clips, and markers.
@@ -1190,25 +942,13 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # so the guard covers the whole teardown, not just the clip loop.
         self._selection_suppressed += 1
         try:
-            for cid in list(self._clips):
-                ItemRetirement.retire(self._clip_items.pop(cid, None))
-            self._clips.clear()
-            self._tracks.clear()
-            self._expanded_tracks.clear()
-            # Background curve previews are keyed by (track_id, sub_row);
-            # with _next_track_id reset below, a stale entry would attach to
-            # whatever track recycles that id and paint the wrong curve.
-            self._bg_curve_previews.clear()
-            self._header.clear_tracks()
-            self._next_track_id = 0
-            self._next_clip_id = 0
-            self._undo_stack.clear()
-            self._redo_stack.clear()
+            self._rows.clear()
+            self._undo.clear()
             self.clear_markers()
             if not keep_range_highlight:
                 self.clear_range_highlight()
             self.clear_range_overlays()
-            self._clear_layers()
+            self._layer_registry.clear()
             self.clear_snap_guides()
             self.clear_key_scale_box()
         finally:
@@ -1233,7 +973,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             if not keep_range_highlight:
                 self.clear_range_highlight()
             self.clear_range_overlays()
-            self._clear_layers()
+            self._layer_registry.clear()
         finally:
             self._selection_suppressed -= 1
 
@@ -1255,27 +995,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         *data* is the consumer's payload (``MarkerData.data``): the widget
         never reads it, and keeps it through every edit.
         """
-        mid = self._next_marker_id
-        self._next_marker_id += 1
-        md = MarkerData(
-            marker_id=mid,
-            time=time,
-            note=note,
-            color=color or "#E8A84A",
-            draggable=draggable,
-            style=style,
-            line_style=line_style,
-            opacity=opacity,
-            data=dict(data or {}),
+        return self._marker_set.add(
+            time, note, color, draggable, style, line_style, opacity, data
         )
-        self._markers[mid] = md
-        item = MarkerItem(md, self._timeline)
-        self._marker_items[mid] = item
-        self._timeline._scene.addItem(item)
-        # Pin the new marker to the current viewport top (matches the
-        # ruler/playhead pinning applied on every vertical scroll).
-        self._timeline._sync_ruler_pos()
-        return mid
 
     def remove_marker(self, marker_id: int):
         """Remove a marker by id.
@@ -1290,26 +1012,19 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         at their call sites; consumers that repopulate markers via
         ``add_marker`` in a rebuild loop rely on the silence.
         """
-        existed = marker_id in self._markers
-        self._markers.pop(marker_id, None)
-        ItemRetirement.retire(self._marker_items.pop(marker_id, None))
-        if existed:
-            self.marker_removed.emit(marker_id)
+        return self._marker_set.remove(marker_id)
 
     def get_marker(self, marker_id: int) -> Optional[MarkerData]:
         """Return marker data, or None."""
-        return self._markers.get(marker_id)
+        return self._marker_set.markers.get(marker_id)
 
     def markers(self) -> List[MarkerData]:
         """Return all markers."""
-        return list(self._markers.values())
+        return list(self._marker_set.markers.values())
 
     def clear_markers(self):
         """Remove all markers."""
-        for mid in list(self._markers):
-            ItemRetirement.retire(self._marker_items.pop(mid, None))
-        self._markers.clear()
-        self._next_marker_id = 0
+        return self._marker_set.clear()
 
     # -- range highlight API ------------------------------------------------
 
@@ -1331,24 +1046,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         alpha : int
             Opacity 0-255 for the fill (default 30).
         """
-        if self._range_highlight is None:
-            self._range_highlight = RangeHighlightItem(self._timeline)
-            self.add_track_item(self._range_highlight)
-        self._range_highlight.set_range(start, end)
-        self._range_highlight.setVisible(self._show_range_highlight)
-        if color is not None:
-            c = QtGui.QColor(color)
-            c.setAlpha(alpha)
-            self._range_highlight.color = c
-        elif alpha != self._range_highlight.opacity_value:
-            self._range_highlight.opacity_value = alpha
-        self.refresh_extent()
+        return self._ranges.set_highlight(start, end, color, alpha)
 
     def clear_range_highlight(self):
         """Remove the range highlight from the timeline."""
-        if self._range_highlight is not None:
-            ItemRetirement.retire(self._range_highlight)
-            self._range_highlight = None
+        return self._ranges.clear_highlight()
 
     def add_range_overlay(
         self,
@@ -1358,33 +1060,24 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         alpha: int = 15,
     ):
         """Add a non-interactive range overlay (e.g. a host's inactive ranges)."""
-        item = _StaticRangeOverlay(self._timeline, start, end, color, alpha)
-        item.setVisible(self._show_range_overlays)
-        self.add_track_item(item)
-        self._range_overlays.append(item)
-        self.refresh_extent()
+        return self._ranges.add_overlay(start, end, color, alpha)
 
     def clear_range_overlays(self):
         """Remove all non-interactive range overlays."""
-        for item in self._range_overlays:
-            ItemRetirement.retire(item)
-        self._range_overlays.clear()
+        return self._ranges.clear_overlays()
 
     # -- the header and the content area ------------------------------------
 
     @property
     def _content_top(self) -> float:
         """Y coordinate where track rows begin -- below the ruler AND its lanes."""
-        return self._header_height
+        return self._layer_registry.header_height
 
     def content_span(self) -> Tuple[float, float]:
         """``(top, height)`` of the content area an overlay spans in scene
         units: from below the header (the ruler and every lane), every row
         and at least the visible area under the header."""
-        top = self._header_height
-        return top, max(
-            self._total_row_height(), self._timeline.viewport().height() - top
-        )
+        return self._rows.content_span()
 
     @property
     def timeline(self) -> TimelineView:
@@ -1398,7 +1091,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         """The range highlight's scene item (:meth:`set_range_highlight`), or
         ``None``: what a lane drives the highlight's grabs through
         (``RangeHighlightItem.zone_at`` / ``begin_edge_drag``)."""
-        return self._range_highlight
+        return self._ranges.highlight
 
     # -- layers: a host's vocabulary on the timeline (``_layer.py``) ---------
 
@@ -1412,13 +1105,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         a host's re-init re-registers without leaving the old one's items
         behind.
         """
-        previous = self._layers.get(layer.name)
-        if previous is not None and previous is not layer:
-            clear = getattr(previous, "clear", None)
-            if clear is not None:
-                clear()
-        self._layers[layer.name] = layer  # a taken name keeps its place
-        self._on_layers_changed()
+        return self._layer_registry.add(layer)
 
     def layer(self, name: str) -> SequencerLayer:
         """The layer added under *name*.
@@ -1426,7 +1113,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         Raises:
             KeyError: No layer is added under *name*.
         """
-        return self._layers[name]
+        return self._layer_registry.layers[name]
 
     def add_track_item(self, item: QtWidgets.QGraphicsItem) -> None:
         """Put a scene item under the track editor's content root: it hides
@@ -1438,123 +1125,44 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         handler (destroyed one event-loop pass later: ``ItemRetirement``)."""
         ItemRetirement.retire(item)
 
-    def _on_layers_changed(self) -> None:
-        """Re-stack the lanes and re-lay the header, the content and the
-        legend out after a layer came or went."""
-        heights = (
-            (layer, int(getattr(layer, "lane_height", 0) or 0))
-            for layer in self._layers.values()
-        )
-        self._lane_stack = [(layer, h) for layer, h in heights if h > 0]
-        self._header_height = float(_RULER_HEIGHT) + sum(
-            h for _lyr, h in self._lane_stack
-        )
-        top = int(self._header_height)
-        self._header.set_top_margin(top)
-        self._timeline._scene.ruler.set_height(self._header_height)
-        self._options_band.sync_geometry()
-        self._apply_legend()
-        self._timeline._refresh_all()
-
-    def _clear_layers(self) -> None:
-        """Each layer drops what it shows (:meth:`clear`, :meth:`clear_decorations`)."""
-        for layer in self._layers.values():
-            clear = getattr(layer, "clear", None)
-            if clear is not None:
-                clear()
-
     def _layer_claims_press(self, scene_pos) -> bool:
         """Whether a layer keeps a press at *scene_pos* from the range
         highlight's edge for an item of its own drawn there."""
-        for layer in self._layers.values():
-            claims = getattr(layer, "claims_press", None)
-            if claims is not None and claims(scene_pos):
-                return True
-        return False
-
-    def _legend_rows(self, editor: SequencerEditor) -> tuple:
-        """*editor*'s legend rows, as each layer edits them in turn."""
-        rows = tuple(editor.gestures)
-        for layer in self._layers.values():
-            legend = getattr(layer, "legend", None)
-            if legend is not None:
-                rows = tuple(legend(editor.name, rows))
-        return rows
+        return self._layer_registry.claims_press(scene_pos)
 
     def _apply_legend(self, editor: Optional[SequencerEditor] = None) -> None:
         """Register *editor*'s legend (the active one's) in place of the
         rows registered now."""
-        rows = self._legend_rows(editor or self.active_editor)
-        for group in dict.fromkeys(g for g, _k, _d in self._legend):
-            self._shortcut_mgr.remove_gesture_group(group)
-        for group, keys, description in rows:
-            self._shortcut_mgr.add_gesture(group, keys, description)
-        self._legend = rows
+        return self._shortcut_legend.apply(editor)
 
     def range_highlight(self) -> Optional[tuple]:
         """Return ``(start, end)`` of the active highlight, or ``None``."""
-        if self._range_highlight is None:
-            return None
-        return (self._range_highlight.start, self._range_highlight.end)
+        return self._ranges.highlight_span()
 
     def set_hidden_tracks(self, names: List[str]):
         """Store a list of hidden track names for the 'show hidden' menu."""
-        self._hidden_tracks = list(names)
-        self._header._hidden_track_names = list(names)
+        return self._header_pane.set_hidden_tracks(names)
 
     def set_active_range(self, start: float, end: float):
         """Set the active time range, painted as a column tint."""
-        self._active_range = (start, end)
-        self.refresh_extent()
-        self._timeline.viewport().update()
+        return self._ranges.set_active(start, end)
 
     def clear_active_range(self):
         """Remove the active range's column tint."""
-        self._active_range = None
-        self._timeline.viewport().update()
-
-    def _show_hidden_menu(self, pos):
-        """Right-click on header background → menu with consumer actions
-        and hidden-track entries."""
-        # Parented to the header for positioning, so it must be
-        # explicitly released — otherwise every right-click leaks one
-        # QMenu child for the life of the panel.
-        menu = QtWidgets.QMenu(self._header)
-        StyleSheet.cast_shadow(menu)
-        try:
-            # Let consumers add their own actions first
-            self.header_menu_requested.emit(menu)
-            if self._hidden_tracks:
-                if not menu.isEmpty():
-                    menu.addSeparator()
-                for name in sorted(self._hidden_tracks):
-                    menu.addAction(
-                        f"Show: {name}", lambda n=name: self.track_shown.emit(n)
-                    )
-            if menu.isEmpty():
-                return
-            menu.exec_(self._header.mapToGlobal(pos))
-        finally:
-            menu.deleteLater()
+        return self._ranges.clear_active()
 
     # -- playhead navigation -----------------------------------------------
     def _move_playhead(self, time: float):
         """Set the playhead to *time* and emit ``playhead_moved``."""
-        self._timeline._scene.playhead.time = time
-        self.playhead_moved.emit(self._timeline._scene.playhead.time)
+        return self._navigation.move_playhead(time)
 
     def step_forward(self):
         """Advance the playhead by one step (snap_interval or 1 frame)."""
-        step = self._snap_interval if self._snap_interval > 0 else 1.0
-        self._move_playhead(self._timeline._scene.playhead.time + step)
+        return self._navigation.step_forward()
 
     def step_backward(self):
         """Move the playhead back by one step (snap_interval or 1 frame)."""
-        step = self._snap_interval if self._snap_interval > 0 else 1.0
-        # Floored at the timeline's own reach rather than 0 -- stepping back
-        # into a shot that lives before the origin is legitimate.
-        floor = min(0.0, self._timeline.content_time_bounds()[0])
-        self._move_playhead(max(floor, self._timeline._scene.playhead.time - step))
+        return self._navigation.step_backward()
 
     def _key_times(self) -> list:
         """Return sorted unique visible key times.
@@ -1563,54 +1171,27 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         times from expanded sub-row clips -- or the active editor's own
         keys (:meth:`SequencerEditor.key_times`: the graph's curves).
         """
-        own = self.active_editor.key_times()
-        if own is not None:
-            return own
-        times: set = set()
-        for cd in self._clips.values():
-            times.add(cd.start)
-            if cd.duration > 0:
-                times.add(cd.end)
-            # Include keyframe times from expanded sub-row clips.  Keys
-            # arrive either as legacy "keyframe_times" or inside a
-            # "curve_preview" dict (the form real consumers supply) —
-            # without the latter, next/prev-key navigation skips every
-            # visible key dot and only lands on clip boundaries.
-            if cd.sub_row and cd.track_id in self._expanded_tracks:
-                kf = cd.data.get("keyframe_times") or cd.shown_key_times()
-                for entry in kf:
-                    times.add(entry[0] if isinstance(entry, (list, tuple)) else entry)
-        return sorted(times)
+        return self._navigation.key_times()
 
     def go_to_next_key(self):
         """Jump the playhead to the next clip boundary."""
-        current = self._timeline._scene.playhead.time
-        for t in self._key_times():
-            if t > current + 0.01:
-                self._move_playhead(t)
-                return
+        return self._navigation.go_to_next_key()
 
     def go_to_prev_key(self):
         """Jump the playhead to the previous clip boundary."""
-        current = self._timeline._scene.playhead.time
-        for t in reversed(self._key_times()):
-            if t < current - 0.01:
-                self._move_playhead(t)
-                return
+        return self._navigation.go_to_prev_key()
 
     def go_to_start(self):
         """Jump the playhead to frame 0."""
-        self._move_playhead(0.0)
+        return self._move_playhead(0.0)
 
     def go_to_end(self):
         """Jump the playhead to the end of the last clip."""
-        self._move_playhead(max((cd.end for cd in self._clips.values()), default=0.0))
+        return self._navigation.go_to_end()
 
     def add_marker_at_playhead(self):
         """Add a marker at the current playhead position."""
-        t = self._timeline._scene.playhead.time
-        mid = self.add_marker(t)
-        self.marker_added.emit(mid, t)
+        return self._marker_set.add_at_playhead()
 
     def frame_shot(self) -> bool:
         """Zoom and scroll the timeline to frame the active shot range.
@@ -1621,18 +1202,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         Returns:
             Whether anything was framed: ``False`` with no shot and no clip.
         """
-        rh = self.range_highlight()
-        if rh is not None:
-            t_min, t_max = rh
-        elif self._active_range is not None:
-            t_min, t_max = self._active_range
-        elif self._clips:
-            t_min = min(cd.start for cd in self._clips.values())
-            t_max = max(cd.end for cd in self._clips.values())
-        else:
-            return False
-        self.frame_time_range(t_min, t_max)
-        return True
+        return self._navigation.frame_shot()
 
     def frame_time_range(self, t_min: float, t_max: float, fit_values: bool = True):
         """Zoom and scroll so ``[t_min, t_max]`` fills the timeline's width.
@@ -1643,17 +1213,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                 range shows (:meth:`SequencerEditor.frame_values`) -- a graph
                 editor's value axis; the track rows have none.
         """
-        span = max(t_max - t_min, 1.0)
-        vp_w = self._timeline.viewport().width()
-        padding = _FRAME_PADDING
-        usable = max(vp_w - padding * 2, 1)
-        self._timeline._pixels_per_unit = usable / span
-        self._timeline._refresh_all()
-        self._timeline.horizontalScrollBar().setValue(
-            int(self._timeline.time_to_x(t_min) - padding)
-        )
-        if fit_values:
-            self.active_editor.frame_values()
+        return self._navigation.frame_time_range(t_min, t_max, fit_values)
 
     # -- drag cancel -------------------------------------------------------
     def _cancel_active_drag(self) -> bool:
@@ -1675,30 +1235,18 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                 if getattr(item, "_undo_captured", False):
                     captured_undo = True
                     item._undo_captured = False
-        if captured_undo and self._undo_stack:
-            self._undo_stack.pop()
+        if captured_undo:
+            self._undo.drop_last()
         return cancelled
 
     # -- undo / redo -------------------------------------------------------
     def _snapshot(self) -> Dict[int, tuple]:
         """Return a snapshot of all clip positions: ``{clip_id: (start, duration)}``."""
-        return {cid: (cd.start, cd.duration) for cid, cd in self._clips.items()}
+        return self._undo.snapshot()
 
     def _capture_undo(self):
         """Push current clip positions onto the undo stack."""
-        self._undo_stack.append(self._snapshot())
-        if len(self._undo_stack) > self._max_undo:
-            self._undo_stack.pop(0)
-        self._redo_stack.clear()
-
-    def _restore_snapshot(self, snapshot: Dict[int, tuple]):
-        """Apply a saved snapshot to all clips."""
-        for cid, (start, dur) in snapshot.items():
-            cd = self._clips.get(cid)
-            if cd is not None:
-                cd.start = start
-                cd.duration = dur
-        self._timeline._refresh_all()
+        return self._undo.capture()
 
     def undo(self):
         """Revert to the previous clip state.
@@ -1707,45 +1255,35 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         that signal and rebuilds the widget (calling :meth:`clear`), the
         internal stack is wiped and the fallback below becomes a no-op.
         """
-        self.undo_requested.emit()
-        if not self._undo_stack:
-            return
-        self._redo_stack.append(self._snapshot())
-        self._restore_snapshot(self._undo_stack.pop())
+        return self._undo.undo()
 
     def redo(self):
         """Re-apply a previously undone change.
 
         See :meth:`undo` for signal/fallback semantics.
         """
-        self.redo_requested.emit()
-        if not self._redo_stack:
-            return
-        self._undo_stack.append(self._snapshot())
-        self._restore_snapshot(self._redo_stack.pop())
+        return self._undo.redo()
 
     # -- snapping -----------------------------------------------------------
     @property
     def snap_interval(self) -> float:
         """Time-snap interval.  0 disables snapping."""
-        return self._snap_interval
+        return self._snapping.interval
 
     @snap_interval.setter
     def snap_interval(self, value: float):
-        self._snap_interval = max(0.0, value)
+        self._snapping.interval = max(0.0, value)
 
     # -- key alignment (guides + optional snap) ------------------------------
     @property
     def snap_guides_enabled(self) -> bool:
         """Draw a guide (and tint the drag readout) when a drag lands on a
         frame that already carries a key -- visual only."""
-        return self._snap_guides_enabled
+        return self._snapping.guides_enabled
 
     @snap_guides_enabled.setter
     def snap_guides_enabled(self, value: bool):
-        self._snap_guides_enabled = bool(value)
-        if not value:
-            self.clear_snap_guides()
+        self._snapping.set_guides_enabled(value)
 
     @property
     def snap_to_keys(self) -> bool:
@@ -1754,11 +1292,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         Off by default: the guides answer "am I aligned?" without taking
         control of the drag away from the user.
         """
-        return self._snap_to_keys
+        return self._snapping.to_keys
 
     @snap_to_keys.setter
     def snap_to_keys(self, value: bool):
-        self._snap_to_keys = bool(value)
+        self._snapping.to_keys = bool(value)
 
     #: Guide colour — deliberately distinct from every clip/attribute colour.
     SNAP_GUIDE_COLOR = "#FFD24A"
@@ -1785,32 +1323,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
                 and keys on the same track OUTSIDE the span stay valid
                 (end-to-start butting against neighbours still works).
         """
-        exclude = set(exclude_clip_ids)
-        ex_times = {round(float(t), 3) for t in exclude_times}
-        spans = [(tid, lo - 1e-3, hi + 1e-3) for tid, lo, hi in exclude_spans]
-
-        def _dropped(track_id, t):
-            if t in ex_times:
-                return True
-            return any(tid == track_id and lo <= t <= hi for tid, lo, hi in spans)
-
-        times: set = set()
-        for cd in self._clips.values():
-            if cd.clip_id in exclude:
-                continue
-            for t in self._clip_candidate_times(cd):
-                if not _dropped(cd.track_id, t):
-                    times.add(t)
-        return sorted(times)
-
-    @staticmethod
-    def _clip_candidate_times(cd):
-        """Yield one clip's alignment candidates, rounded to the grain."""
-        yield round(cd.start, 3)
-        if cd.duration > 0:
-            yield round(cd.end, 3)
-        for t in cd.shown_key_times():
-            yield round(t, 3)
+        return self._snapping.alignment_times(
+            exclude_clip_ids, exclude_times, exclude_spans
+        )
 
     def nearest_alignment(
         self, time: float, candidates, tolerance: Optional[float] = None
@@ -1821,18 +1336,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         frames at the current zoom, so the affordance keeps the same
         on-screen feel however far the user has zoomed in or out.
         """
-        if not candidates:
-            return None
-        if tolerance is None:
-            ppu = self._timeline.pixels_per_unit or 1.0
-            tolerance = self._align_capture_px / ppu
-        best = None
-        best_d = tolerance
-        for t in candidates:
-            d = abs(t - time)
-            if d <= best_d:
-                best, best_d = t, d
-        return best
+        return self._snapping.nearest_alignment(time, candidates, tolerance)
 
     def set_snap_guides(self, times) -> None:
         """Show vertical alignment guides at *times* (empty hides them).
@@ -1841,48 +1345,28 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         every mouse-move of a drag, and churning a QGraphicsItem per pixel
         of travel is pure waste.  ``clear_snap_guides`` frees it.
         """
-        if not self._snap_guides_enabled:
-            return
-        times = [float(t) for t in times]
-        if not times:
-            if self._snap_guide is not None:
-                self._snap_guide.set_times([])
-            return
-        if self._snap_guide is None:
-            from uitk.widgets.sequencer._overlays import _SnapGuideItem
-
-            self._snap_guide = _SnapGuideItem(
-                self._timeline, color=self.SNAP_GUIDE_COLOR
-            )
-            self._timeline._scene.addItem(self._snap_guide)
-        self._snap_guide.set_times(times)
+        return self._snapping.set_guides(times)
 
     def clear_snap_guides(self) -> None:
         """Remove the alignment guides."""
-        if self._snap_guide is not None:
-            ItemRetirement.retire(self._snap_guide)
-            self._snap_guide = None
+        return self._snapping.clear_guides()
 
     # -- overlay visibility -------------------------------------------------
     @property
     def show_range_overlays(self) -> bool:
-        return self._show_range_overlays
+        return self._ranges.show_overlays
 
     @show_range_overlays.setter
     def show_range_overlays(self, value: bool):
-        self._show_range_overlays = value
-        for item in self._range_overlays:
-            item.setVisible(value)
+        self._ranges.set_show_overlays(value)
 
     @property
     def show_range_highlight(self) -> bool:
-        return self._show_range_highlight
+        return self._ranges.show_highlight
 
     @show_range_highlight.setter
     def show_range_highlight(self, value: bool):
-        self._show_range_highlight = value
-        if self._range_highlight is not None:
-            self._range_highlight.setVisible(value)
+        self._ranges.set_show_highlight(value)
 
     @property
     def mark_flat_spans(self) -> bool:
@@ -1966,7 +1450,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
     def shortcut_overlay(self):
         """The corner legend (:class:`ShortcutOverlay`), or ``None`` until
         it has been shown once."""
-        return self._shortcut_overlay
+        return self._shortcut_legend.overlay
 
     @property
     def shortcut_overlay_visible(self) -> bool:
@@ -1976,7 +1460,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         group under the pointer is brightened as the mouse moves.  Built on
         first show from the shortcut manager's gestures and bindings.
         """
-        return self._shortcut_overlay is not None and self._shortcut_overlay.isVisible()
+        return self._shortcut_legend.visible()
 
     @shortcut_overlay_visible.setter
     def shortcut_overlay_visible(self, value: bool) -> None:
@@ -1996,22 +1480,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         moment it is asked instead of sitting in the corner all session.
         Assigning a bool is the two-state face of the same setting.
         """
-        return self._shortcut_overlay_mode
+        return self._shortcut_legend.mode
 
     @shortcut_overlay_mode.setter
     def shortcut_overlay_mode(self, value) -> None:
-        if isinstance(value, bool):
-            value = "on" if value else "off"
-        value = str(value).lower()
-        if value not in self.SHORTCUT_OVERLAY_MODES:
-            raise ValueError(
-                f"shortcut_overlay_mode: {value!r} is not one of "
-                f"{self.SHORTCUT_OVERLAY_MODES}"
-            )
-        if value == self._shortcut_overlay_mode:
-            return
-        self._shortcut_overlay_mode = value
-        self._refresh_shortcut_overlay()
+        self._shortcut_legend.set_mode(value)
 
     @property
     def shortcut_overlay_tracking(self) -> bool:
@@ -2023,32 +1496,12 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         otherwise it would open on whatever page the pointer was over when
         it was last visible.
         """
-        return (
-            self.shortcut_overlay_visible or self._shortcut_overlay_mode == "modifier"
-        )
-
-    def _refresh_shortcut_overlay(self) -> None:
-        """Put the legend on screen, or take it off, per the current mode."""
-        wanted = self._shortcut_overlay_mode == "on" or (
-            self._shortcut_overlay_mode == "modifier"
-            and bool(self._modifiers_held & _LEGEND_MODIFIERS)
-        )
-        if wanted and self._shortcut_overlay is None:
-            self._shortcut_overlay = self._shortcut_mgr.overlay(self._timeline)
-            self._shortcut_overlay.set_context(self._gesture_context)
-        overlay = self._shortcut_overlay
-        if overlay is None or overlay.isVisible() == wanted:
-            return
-        overlay.setVisible(wanted)
-        if wanted:
-            overlay.refresh()
+        return self._shortcut_legend.tracking()
 
     def _set_gesture_context(self, group: Optional[str]) -> None:
         """Brighten *group* on the legend, and remember it for one that has
         yet to rise."""
-        self._gesture_context = group
-        if self._shortcut_overlay is not None:
-            self._shortcut_overlay.set_context(group)
+        return self._shortcut_legend.set_gesture_context(group)
 
     # -- attribute colors ---------------------------------------------------
     @property
@@ -2090,26 +1543,13 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         narrows every row and draws keys flat.  Setting it re-lays the scene
         rows and the header labels out together, so the two stay level.
         """
-        return self._row_metrics
+        return self._rows.metrics
 
     @row_metrics.setter
     def row_metrics(self, metrics: RowMetrics) -> None:
-        if not isinstance(metrics, RowMetrics):
-            raise TypeError(f"row_metrics takes a RowMetrics, got {metrics!r}")
-        if metrics == self._row_metrics:
-            return
-        self._row_metrics = metrics
-        self._header.apply_metrics(metrics)
-        self._timeline._refresh_all()
+        self._rows.set_metrics(metrics)
 
     # -- editors: the content area's views (``_editor.py``) -----------------
-    @staticmethod
-    def _graph_editor_factory(sequencer) -> SequencerEditor:
-        """Build the graph editor; its module loads on first use only."""
-        from uitk.widgets.sequencer._graph_editor import GraphEditor
-
-        return GraphEditor(sequencer)
-
     def register_editor(self, name: str, factory) -> None:
         """Offer an editor under *name*, built the first time it is asked for.
 
@@ -2121,9 +1561,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         Raises:
             ValueError: An editor of that name is already built.
         """
-        if isinstance(self._editors.get(name), SequencerEditor):
-            raise ValueError(f"The {name!r} editor is already built.")
-        self._editors[name] = factory
+        return self._editor_registry.register(name, factory)
 
     def editor(self, name: str) -> SequencerEditor:
         """The editor registered under *name*, built on first use.
@@ -2131,27 +1569,16 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         Raises:
             KeyError: No editor is registered under *name*.
         """
-        entry = self._editors[name]
-        if not isinstance(entry, SequencerEditor):
-            entry = self._editors[name] = entry(self)
-            # Its page is the pane's from the start: a page first parented
-            # when the editor is shown was a top-level the editor's Python
-            # side alone held, destroyed by whichever garbage collection
-            # reached it after the sequencer was gone -- mid-way through
-            # another widget's events.
-            page = entry.header_widget()
-            if page is not None and self._header_stack.indexOf(page) < 0:
-                self._header_stack.addWidget(page)
-        return entry
+        return self._editor_registry.get(name)
 
     def editor_names(self) -> List[str]:
         """The registered editors' names (``"tracks"``, ``"graph"``...)."""
-        return list(self._editors)
+        return list(self._editor_registry.editors)
 
     @property
     def active_editor(self) -> SequencerEditor:
         """The editor the content area shows."""
-        return self.editor(self._active_editor_name)
+        return self.editor(self._editor_registry.active_name)
 
     def set_editor(self, name: str) -> None:
         """Show the editor registered under *name* in the content area.
@@ -2164,40 +1591,18 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         Raises:
             KeyError: No editor is registered under *name*.
         """
-        if name == self._active_editor_name:
-            return
-        new = self.editor(name)
-        old = self.active_editor
-        self._selection_suppressed += 1
-        try:
-            old.deactivate()
-            self._active_editor_name = name
-            new.activate()
-            self._apply_legend(new)
-        finally:
-            self._selection_suppressed -= 1
-        page = new.header_widget() or self._header_scroll
-        if self._header_stack.indexOf(page) < 0:
-            self._header_stack.addWidget(page)
-        self._header_stack.setCurrentWidget(page)
-        self._editor_keys = {
-            QtGui.QKeySequence(key).toString(): {"action": fn, "description": desc}
-            for key, fn, desc in new.key_bindings()
-        }
-        self._sync_shortcut_sequences()
-        self._timeline._refresh_all()
-        self.editor_changed.emit(name)
+        return self._editor_registry.show(name)
 
     # -- sub-row expansion --------------------------------------------------
     @property
     def sub_row_height(self) -> int:
         """Pixel height of expanded attribute sub-rows (default half track height)."""
-        return self._row_metrics.sub_row_height
+        return self._rows.metrics.sub_row_height
 
     @sub_row_height.setter
     def sub_row_height(self, value: int):
         self.row_metrics = dataclasses.replace(
-            self._row_metrics, sub_row_height=max(8, value)
+            self.row_metrics, sub_row_height=max(8, value)
         )
 
     @property
@@ -2210,11 +1615,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         function, creates the sub-rows and their clips automatically, and
         emits ``track_expanded``.  Set to ``None`` to disable expansion.
         """
-        return self._sub_row_provider
+        return self._rows.sub_row_provider
 
     @sub_row_provider.setter
     def sub_row_provider(self, fn):
-        self._sub_row_provider = fn
+        self._rows.sub_row_provider = fn
 
     def expand_track(self, track_id: int, sub_row_data=None):
         """Expand *track_id* to show sub-rows beneath it.
@@ -2226,51 +1631,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             If omitted, the ``sub_row_provider`` callback is used.
             If neither is available, does nothing.
         """
-        if sub_row_data is None and self._sub_row_provider:
-            td = self.get_track(track_id)
-            if td is None:
-                return
-            sub_row_data = self._sub_row_provider(track_id, td.name)
-        if not sub_row_data:
-            return
-
-        sub_names = [name for name, _ in sub_row_data]
-        self._expanded_tracks[track_id] = sub_names
-
-        # Remove stale sub-row clips for this track
-        stale = [
-            cid
-            for cid, cd in self._clips.items()
-            if cd.track_id == track_id and cd.sub_row
-        ]
-        for cid in stale:
-            self.remove_clip(cid)
-
-        # Create clips for each sub-row
-        for sub_name, segments in sub_row_data:
-            for seg in segments:
-                start, dur = seg[0], seg[1]
-                label = seg[2] if len(seg) > 2 else sub_name
-                color = seg[3] if len(seg) > 3 else None
-                extra = seg[4] if len(seg) > 4 else {}
-                self.add_clip(
-                    track_id,
-                    start,
-                    dur,
-                    label=label,
-                    color=color,
-                    sub_row=sub_name,
-                    **extra,
-                )
-
-        self._sync_track_selectability(track_id)
-        idx = self._track_index(track_id)
-        if idx is not None:
-            self._header.set_track_expanded(
-                idx, sub_names, self._row_metrics.sub_row_height
-            )
-        self._timeline._refresh_all()
-        self.track_expanded.emit(track_id)
+        return self._rows.expand(track_id, sub_row_data)
 
     def set_bg_curve_preview(
         self, track_id: int, sub_row: str, preview: dict, color: str = "#CCCCCC"
@@ -2285,74 +1646,19 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         color : str
             Hex color for the curve line.
         """
-        key = (track_id, sub_row)
-        if preview is None:
-            self._bg_curve_previews.pop(key, None)
-        else:
-            self._bg_curve_previews[key] = {"preview": preview, "color": color}
-        self._timeline.viewport().update()
+        return self._rows.set_bg_curve_preview(track_id, sub_row, preview, color)
 
     def collapse_track(self, track_id: int):
         """Collapse a previously expanded track, removing its sub-row clips."""
-        if track_id not in self._expanded_tracks:
-            return
-        self._expanded_tracks.pop(track_id)
-        # Remove background curve previews for this track
-        stale_bg = [k for k in self._bg_curve_previews if k[0] == track_id]
-        for k in stale_bg:
-            del self._bg_curve_previews[k]
-        # Remove sub-row clips
-        to_remove = [
-            cid
-            for cid, cd in self._clips.items()
-            if cd.track_id == track_id and cd.sub_row
-        ]
-        for cid in to_remove:
-            self.remove_clip(cid)
-        self._sync_track_selectability(track_id)
-        idx = self._track_index(track_id)
-        if idx is not None:
-            self._header.set_track_collapsed(idx)
-        self._timeline._refresh_all()
-        self.track_collapsed.emit(track_id)
-
-    def _sync_track_selectability(self, track_id: int) -> None:
-        """Re-apply every main-row clip's selectable flag for *track_id*.
-
-        A main-row clip on an expanded track is only a summary of the key
-        dots below it (:meth:`ClipItem.is_selectable`), so expansion revokes
-        its selection and collapse gives it back.  A selection actually
-        dropped is reported once, as a real selection change: the consumer
-        mirrors the widget's selection into its host app and would otherwise
-        keep showing a bar the user can no longer pick.
-        """
-        dropped = False
-        for cd in self._clips.values():
-            if cd.track_id != track_id or cd.sub_row:
-                continue
-            item = self._clip_items.get(cd.clip_id)
-            if item is None:
-                continue
-            was_selected = item.isSelected()
-            self._selection_suppressed += 1
-            try:
-                item.sync_selectable()
-            finally:
-                self._selection_suppressed -= 1
-            dropped = dropped or (was_selected and not item.isSelected())
-        if dropped and not self._selection_suppressed:
-            self._on_scene_selection()
+        return self._rows.collapse(track_id)
 
     def is_track_expanded(self, track_id: int) -> bool:
         """Return True if the track is currently expanded."""
-        return track_id in self._expanded_tracks
+        return track_id in self._rows.expanded
 
     def toggle_track_expanded(self, track_id: int):
         """Toggle expansion state.  Uses ``sub_row_provider`` when expanding."""
-        if self.is_track_expanded(track_id):
-            self.collapse_track(track_id)
-        else:
-            self.expand_track(track_id)
+        return self._rows.toggle(track_id)
 
     def _iter_rows(self):
         """Yield ``(track, sub_name_or_None, y, height)`` for every visual row.
@@ -2362,73 +1668,24 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         ``_total_row_height``, and ``_visual_rows`` are all expressed
         through it so the metrics can't silently diverge.
         """
-        m = self._row_metrics
-        y = self._content_top
-        for td in self._tracks:
-            yield td, None, y, m.track_height
-            y += m.track_height + m.padding
-            for sr in self._expanded_tracks.get(td.track_id, []):
-                yield td, sr, y, m.sub_row_height
-                y += m.sub_row_height + m.padding
+        return self._rows.iter_rows()
 
     def _row_position(self, track_id: int, sub_row: str = "") -> tuple:
         """Return ``(y, height)`` for a given track and optional sub-row."""
-        m = self._row_metrics
-        fallback = None
-        for td, sr, y, h in self._iter_rows():
-            if td.track_id != track_id:
-                continue
-            if not sub_row:
-                if sr is None:
-                    return y, h
-            elif sr == sub_row:
-                return y, h
-            # Remember the last row of the matching track: a requested
-            # sub-row that isn't expanded falls through to just after
-            # the track's final row (legacy behavior).
-            fallback = (y + h + m.padding, m.sub_row_height)
-        if sub_row and fallback is not None:
-            return fallback
-        # Past the end — first free y after all rows.
-        end_y = self._content_top
-        for _td, _sr, y, h in self._iter_rows():
-            end_y = y + h + m.padding
-        return end_y, m.track_height
+        return self._rows.row_position(track_id, sub_row)
 
     def _total_row_height(self) -> float:
         """Total pixel height of all tracks including expanded sub-rows."""
-        pad = self._row_metrics.padding
-        h = 0.0
-        for _td, _sr, _y, row_h in self._iter_rows():
-            h += row_h + pad
-        return h
+        return self._rows.total_height()
 
     def _visual_rows(self) -> List[tuple]:
         """Return ``[(y, height, is_sub_row, track_id), ...]`` for background painting."""
-        return [
-            (y, h, sr is not None, td.track_id) for td, sr, y, h in self._iter_rows()
-        ]
-
-    def _track_index(self, track_id: int) -> Optional[int]:
-        """Return the list index for *track_id*, or None."""
-        for i, td in enumerate(self._tracks):
-            if td.track_id == track_id:
-                return i
-        return None
-
-    def _on_header_expand(self, label_idx: int):
-        """Handle double-click on a header label to toggle expansion."""
-        if label_idx < len(self._tracks):
-            self.toggle_track_expanded(self._tracks[label_idx].track_id)
+        return self._rows.visual_rows()
 
     # -- selection ----------------------------------------------------------
     def selected_clips(self) -> List[int]:
         """Return clip IDs for all currently selected clips."""
-        try:
-            items = self._timeline._scene.selectedItems()
-        except RuntimeError:
-            return []
-        return [item.clip_data.clip_id for item in items if isinstance(item, ClipItem)]
+        return self._selection.clips()
 
     def selected_keys(self) -> List[dict]:
         """Selected keyframe dots grouped by clip: ``[{clip_id, times}, ...]``.
@@ -2437,19 +1694,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         and the Delete shortcut alike, so every consumer resolves a key
         selection through one routine.
         """
-        from uitk.widgets.sequencer._keyframe import KeyframeItem
-
-        try:
-            items = self._timeline._scene.selectedItems()
-        except RuntimeError:
-            return []
-        by_clip: dict = {}
-        for item in items:
-            if isinstance(item, KeyframeItem):
-                cid = item._parent_clip._data.clip_id
-                by_clip.setdefault(cid, {"clip_id": cid, "times": []})
-                by_clip[cid]["times"].append(item._time)
-        return list(by_clip.values())
+        return self._selection.keys()
 
     def select_keys(self, wanted: List[dict], replace: bool = True) -> int:
         """Select keyframe dots by clip data and time; returns how many matched.
@@ -2463,49 +1708,11 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         own vocabulary (``obj``/``attr_name``, say), so no id survives here.
         One ``key_selection_changed`` for the whole batch, not one per dot.
         """
-        scene = self._timeline._scene
-        selectable = QtWidgets.QGraphicsItem.ItemIsSelectable
-        n = 0
-        self._selection_suppressed += 1
-        try:
-            if replace:
-                scene.clearSelection()
-            for item in self._clip_items.values():
-                bag = item._data.data
-                for want in wanted:
-                    match = want.get("data") or {}
-                    if any(bag.get(k) != v for k, v in match.items()):
-                        continue
-                    times = want.get("times") or []
-                    for ki in item._keyframe_items:
-                        if not (ki.flags() & selectable):
-                            continue
-                        if any(abs(ki._time - t) <= 1e-6 for t in times):
-                            ki.setSelected(True)
-                            n += 1
-        finally:
-            self._selection_suppressed -= 1
-        self._on_scene_selection()
-        return n
+        return self._selection.select_keys(wanted, replace)
 
     # -- internal -----------------------------------------------------------
     def _on_scene_selection(self):
-        if self._selection_suppressed:
-            # Programmatic rebuild, not a user gesture.  Forwarding it would
-            # make consumers mirror an empty selection into the host app --
-            # the "I can't keep anything selected" symptom when something
-            # refreshes the panel repeatedly.
-            return
-        sel = self.selected_clips()
-        self.selection_changed.emit(sel)
-        # Backwards-compat: also emit clip_selected for the first item
-        if sel:
-            self.clip_selected.emit(sel[0])
-
-        # Emit key-level selection info for graph-editor sync.
-        self.key_selection_changed.emit(self.selected_keys())
-        # The Shift scale box brackets the SELECTION, so it follows it.
-        self.refresh_key_scale_box()
+        return self._selection.on_scene_selection()
 
     def show_key_menu(self, global_pos) -> bool:
         """Open the key menu for the current key selection; ``False`` if empty.
@@ -2531,15 +1738,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         Returns:
             bool: True when a menu was shown.
         """
-        groups = self._editable_key_groups()
-        if not groups:
-            return False
-        menu = MenuUtils.styled_menu()
-        self.key_menu_requested.emit(menu, groups)
-        if not menu.actions():
-            return False
-        menu.exec_(global_pos)
-        return True
+        return self._selection.show_key_menu(global_pos)
 
     # -- key scale handles --------------------------------------------------
     def _scalable_keys(self) -> list:
@@ -2551,33 +1750,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         read-only row, and an edit from here would be written straight into
         the host.
         """
-        from uitk.widgets.sequencer._keyframe import KeyframeItem
-
-        try:
-            items = self._timeline._scene.selectedItems()
-        except RuntimeError:
-            return []
-        return [
-            item
-            for item in items
-            if isinstance(item, KeyframeItem) and item._parent_clip.keys_editable
-        ]
-
-    def _key_scale_span(self, keys) -> Optional[tuple]:
-        """``(lo, hi, top, bottom)`` the scale box should bracket, or None.
-
-        None whenever a scale is meaningless -- fewer than two keys, or every
-        key on one frame, where no ratio exists to scale by.
-        """
-        times = [k._time for k in keys]
-        if len(keys) < 2 or (max(times) - min(times)) < 1e-6:
-            return None
-        tops, bottoms = [], []
-        for k in keys:
-            rect = k._parent_clip.rect()
-            tops.append(rect.top())
-            bottoms.append(rect.bottom())
-        return min(times), max(times), min(tops), max(bottoms)
+        return self._scale_box.scalable_keys()
 
     def refresh_key_scale_box(self) -> None:
         """Show or hide the Shift scale box around the current key selection.
@@ -2589,21 +1762,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         handling and from every key-selection change, so the box tracks both
         halves of the condition.
         """
-        from uitk.widgets.sequencer._keyframe import KeyScaleBoxItem
-
-        box = self._key_scale_box
-        if box is not None and box._is_drag_active():
-            return
-        span = None
-        if self._modifiers_held & _SHIFT_MOD and not self._tangent_drag_active:
-            span = self._key_scale_span(self._scalable_keys())
-        if span is None:
-            self.clear_key_scale_box()
-            return
-        if box is None:
-            box = self._key_scale_box = KeyScaleBoxItem(self)
-            self.add_track_item(box)
-        box.set_span(*span)
+        return self._scale_box.refresh()
 
     def clear_key_scale_box(self) -> None:
         """Remove the scale box, cancelling a drag it still owns.
@@ -2611,12 +1770,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         Cheap when there is nothing up: this runs from ``_refresh_all``, on
         every zoom, scroll and rebuild.
         """
-        box = self._key_scale_box
-        if box is None:
-            return
-        box.cancel_drag()
-        ItemRetirement.retire(box)
-        self._key_scale_box = None
+        return self._scale_box.clear()
 
     def set_shift_held(self, held: bool) -> None:
         """Record whether Shift is down -- the one-key face of
@@ -2644,22 +1798,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
             return
         self._modifiers_held = value
         self.refresh_key_scale_box()
-        self._refresh_shortcut_overlay()
-
-    def _editable_key_groups(self) -> List[dict]:
-        """:meth:`selected_keys` minus the clips that refuse key edits.
-
-        What the key menu offers and what Delete acts on: both are built
-        from the SELECTION, which a marquee can sweep across a locked or
-        read-only row (:attr:`ClipItem.keys_editable`) that must not be
-        written to.
-        """
-        groups = []
-        for group in self.selected_keys():
-            item = self._clip_items.get(group["clip_id"])
-            if item is None or item.keys_editable:
-                groups.append(group)
-        return groups
+        self._shortcut_legend.refresh()
 
     def _delete_selected_keys(self):
         """Delete all selected :class:`KeyframeItem` instances.
@@ -2668,28 +1807,47 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         :attr:`keys_deleted` signal per clip -- for the clips that accept
         key edits; a locked or read-only row keeps its keys.
         """
-        groups = self._editable_key_groups()
-        if not groups:
-            return
+        return self._selection.delete_selected_keys()
 
-        self._capture_undo()
-        for group in groups:
-            self.keys_deleted.emit(group["clip_id"], group["times"])
-
-    def _on_splitter_moved(self, pos: int, index: int):
-        """Snap-close the header pane when dragged below threshold."""
-        if index != 1:  # only respond to the first handle
-            return
-        if pos < self._header_snap_threshold:
-            self.setSizes([0, self.width()])
-        elif pos > 0 and self.sizes()[0] == 0:
-            # Re-opening from collapsed: restore default width
-            self.setSizes(
-                [self._header_snap_width, self.width() - self._header_snap_width]
-            )
-        else:
-            # Remember the user-chosen width.  No sync() here — splitter
-            # drags emit per-mouse-move and each sync() is a disk flush;
-            # QSettings flushes automatically on destruction.
-            self._header_snap_width = pos
-            self._layout_settings.setValue("header_width", pos)
+    # -- private names other code reads, forwarded to the part that owns them --
+    # (the timeline and its items, tentacle's layer, the hosts' tests)
+    _tracks = property(lambda self: self._rows.tracks)
+    _clips = property(lambda self: self._rows.clips)
+    _clip_items = property(lambda self: self._rows.items)
+    _expanded_tracks = property(lambda self: self._rows.expanded)
+    _bg_curve_previews = property(lambda self: self._rows.bg_curve_previews)
+    _undo_stack = property(lambda self: self._undo.undo_stack)
+    _redo_stack = property(lambda self: self._undo.redo_stack)
+    _snap_interval = property(lambda self: self._snapping.interval)
+    _snap_guide = property(lambda self: self._snapping.guide)
+    _markers = property(lambda self: self._marker_set.markers)
+    _marker_items = property(lambda self: self._marker_set.items)
+    _range_highlight = property(lambda self: self._ranges.highlight)
+    _range_overlays = property(lambda self: self._ranges.overlays)
+    _active_range = property(lambda self: self._ranges.active)
+    _active_range_color = property(lambda self: self._ranges.active_color)
+    _scrub_player = property(lambda self: self._audio.player)
+    _audio_fps = property(lambda self: self._audio.fps)
+    _hidden_tracks = property(lambda self: self._header_pane.hidden_tracks)
+    _layers = property(lambda self: self._layer_registry.layers)
+    _lane_stack = property(lambda self: self._layer_registry.lane_stack)
+    _legend = property(lambda self: self._shortcut_legend.rows)
+    _gesture_context = property(lambda self: self._shortcut_legend.gesture_context)
+    _shortcut_mgr = property(lambda self: self._key_routing.manager)
+    _editors = property(lambda self: self._editor_registry.editors)
+    # Raised and lowered around a rebuild, by the widget's items too.
+    _selection_suppressed = property(
+        lambda self: self._selection.suppressed,
+        lambda self, depth: setattr(self._selection, "suppressed", depth),
+    )
+    _key_scale_box = property(lambda self: self._scale_box.box)
+    # Raised for a tangent handle's drag (``TangentHandleItem``).
+    _tangent_drag_active = property(
+        lambda self: self._scale_box.tangent_drag_active,
+        lambda self, on: setattr(self._scale_box, "tangent_drag_active", on),
+    )
+    # Written by the editor switch, read by the key matching.
+    _editor_keys = property(
+        lambda self: self._key_routing.editor_keys,
+        lambda self, keys: setattr(self._key_routing, "editor_keys", keys),
+    )
