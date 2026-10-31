@@ -997,7 +997,7 @@ class _Shortcuts:
         """
         for ui in self._sb.loaded_ui.values():
             try:
-                if ui.has_tags(["startmenu", "submenu"]):
+                if ui.has_tags(self._sb.STACKED_TAGS):
                     continue
                 if ui.isVisible():
                     return ui
@@ -1008,7 +1008,7 @@ class _Shortcuts:
         if host is None:
             return None
         try:
-            if hasattr(host, "has_tags") and host.has_tags(["startmenu", "submenu"]):
+            if hasattr(host, "has_tags") and host.has_tags(self._sb.STACKED_TAGS):
                 return None  # never own a command by a transient surface
         except RuntimeError:
             return None

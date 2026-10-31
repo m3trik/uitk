@@ -725,7 +725,7 @@ class UiHandler(BaseHandler):
 
         # Tag-based overrides
         try:
-            if ui.has_tags(["startmenu", "submenu"]):
+            if ui.has_tags(self.sb.STACKED_TAGS):
                 style["style_class"] = "translucentBgNoBorder"
         except AttributeError:
             pass

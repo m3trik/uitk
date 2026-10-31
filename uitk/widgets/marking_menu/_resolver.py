@@ -29,9 +29,9 @@ META_MOD = 0x10000000
 # these so the active surface stays bright / open. Module-scoped (not a class
 # attr) so the methods that read it stay callable when borrowed onto a
 # lightweight test double, and because the same convention is shared with the
-# switchboard (see ``_core`` / ``ui_handler``) rather than being
-# MarkingMenu-specific. Lives here, the package's Qt-free vocabulary module,
-# because every part of the MarkingMenu class reads it.
+# switchboard rather than being MarkingMenu-specific: ``Switchboard.STACKED_TAGS``
+# owns it, and this Qt-free copy (every part of the MarkingMenu class reads it,
+# and this module never imports Qt at load) is held equal by a test.
 _MARKING_MENU_TAGS = ("startmenu", "submenu")
 
 

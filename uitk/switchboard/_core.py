@@ -77,6 +77,10 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
     # The name vocabulary. The collaborators read it off the Switchboard at
     # call time, so a subclass that overrides one is honored everywhere.
     TAG_DELIMITER = "#"
+    #: The tags of a stacked page -- a marking menu's transient start page and
+    #: its submenus: no footer, never a panel, outside window bookkeeping.
+    #: The marking menu's Qt-free resolver keeps an equal copy (a test holds it).
+    STACKED_TAGS = ("startmenu", "submenu")
     _UI_NAME_DELIMITER = "."
     #: Never read: nothing splits a UI name on it. Reading it warns.
     UI_NAME_DELIMITER = ptk.Deprecation.class_attribute(
@@ -996,7 +1000,7 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
             tags.update(self._get_ui_tags(name, ui_file_path))
 
         # Don't add footer to stacked UIs (startmenu/submenu)
-        if tags and any(tag in tags for tag in ["startmenu", "submenu"]):
+        if tags and any(tag in tags for tag in self.STACKED_TAGS):
             kwargs.setdefault("add_footer", False)
 
         main_window = self.registered_widgets.MainWindow(
@@ -1334,7 +1338,7 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
         """
         for ui in reversed(self.ui_history(allow_duplicates=False)):
             try:
-                if ui.has_tags(["startmenu", "submenu"]) or ui.isVisible():
+                if ui.has_tags(self.STACKED_TAGS) or ui.isVisible():
                     continue
                 ui.show()
             except RuntimeError:

@@ -72,6 +72,19 @@ class MarkingMenuStub(QtWidgets.QStackedWidget):
         self.hide()
 
 
+class TestStackedTagsHaveOneOwner(unittest.TestCase):
+    """``Switchboard.STACKED_TAGS`` owns the stacked-page tags the switchboard,
+    its shortcut binding and the UI handler read; the marking menu's Qt-free
+    resolver keeps a copy so it never imports Qt at load. This holds them equal
+    (2026-10-31: five literals became the one constant)."""
+
+    def test_the_resolver_copy_matches_the_switchboard(self):
+        from uitk.switchboard import Switchboard
+        from uitk.widgets.marking_menu._resolver import _MARKING_MENU_TAGS
+
+        self.assertEqual(tuple(_MARKING_MENU_TAGS), tuple(Switchboard.STACKED_TAGS))
+
+
 class TestStandaloneWindowSuppression(QtBaseTestCase):
     """Verify the marking menu doesn't reshow after opening a standalone window."""
 
