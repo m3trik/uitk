@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "uitk"
 dynamic = ["version", "readme"]
-description = "Qt Designer UI toolkit for Python (PySide6 via qtpy): dynamic .ui loading, automatic signal-slot wiring, custom widgets and presets."
+description = "Convention-driven Qt UI toolkit for Python (PySide6 via qtpy): Designer .ui files or code-built UIs, signal-slot wiring by widget name, state persistence, custom widgets and presets."
 keywords = ["m3trik", "qt", "pyside6", "qtpy", "qt-designer", "gui", "python-library"]
 authors = [{name = "Ryan Simpson", email = "m3trik@outlook.com"}]
 license = {text = "LGPL-3.0-or-later"}

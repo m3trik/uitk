@@ -1,6 +1,6 @@
 # Slots
 
-The contract between a Qt Designer `.ui` file and a Python class. Most of UITK reduces to this single idea: **widget name in Designer ↔ method name in Python**.
+The contract between a UI — a Qt Designer `.ui` file, or a widget tree built in code and registered with `sb.register_ui` — and a Python class. Most of UITK reduces to this single idea: **widget `objectName` ↔ method name in Python**.
 
 **Nav**: [← README](README.md) · [User Guide](USER_GUIDE.md) · [Widgets](WIDGETS.md) · [Marking Menu](MARKING_MENU.md) · [Architecture](ARCHITECTURE.md) · [Cookbook](COOKBOOK.md) · [API](API_REFERENCE.md)
 

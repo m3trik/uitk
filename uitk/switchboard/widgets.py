@@ -202,12 +202,36 @@ class _Widgets:
 
     def __init__(self, sb):
         self._sb = sb
+        # UIs built in code (:meth:`Switchboard.register_ui`): name -> builder.
+        self.builders = {}
 
     def is_registered_ui(self, name: str) -> bool:
         if not name:
             return False
+        if name in self.builders:
+            return True
         filenames = self._sb.registry.ui_registry.get("filename") or []
         return name in filenames
+
+    def register_builder(self, name: str, build) -> None:
+        if not name or not isinstance(name, str):
+            raise ValueError(f"register_ui needs a UI name, got {name!r}")
+        if not callable(build):
+            raise TypeError(
+                f"register_ui({name!r}): build must be a callable returning a "
+                f"QWidget, got {type(build).__name__}"
+            )
+        self.builders[name] = build
+
+    def builder_name(self, name: str) -> Optional[str]:
+        """The name a UI built in code was registered under for *name* --
+        matched as a ``.ui`` stem is, so a legal name (``editor_submenu``)
+        finds ``editor#submenu`` -- or ``None`` (no match, or more than one)."""
+        if name in self.builders:
+            return name
+        pattern = ptk.StrUtils.legal_name_matcher(name)
+        matches = [key for key in self.builders if pattern.fullmatch(key)]
+        return matches[0] if len(matches) == 1 else None
 
     def ui_name_resolves(self, name: str) -> bool:
         if not name:

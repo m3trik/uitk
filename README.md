@@ -8,9 +8,9 @@
 # uitk
 
 > **Name it, and it connects.**
-> A convention-driven Qt framework that turns Qt Designer files + Python slot classes into working applications with zero glue code.
+> A convention-driven Qt framework that turns UIs — Qt Designer files or widget trees built in code — plus Python slot classes into working applications with zero glue code.
 
-Design the UI in Qt Designer, name your widgets, write matching Python methods. UITK discovers the files, wires signals to slots, persists state, applies themes, and manages the window lifecycle. When you need control, every convention is overridable.
+Design the UI in Qt Designer or build it in code, name your widgets, write matching Python methods. UITK discovers the files, wires signals to slots, persists state, applies themes, and manages the window lifecycle. When you need control, every convention is overridable.
 
 ## Why uitk exists
 
@@ -23,7 +23,7 @@ UITK drives the marginal cost of a **well-behaved** tool toward zero:
 - **DCC-agnostic core, host-aware edges.** Built on `qtpy` over PySide6; runs standalone or hosted in Maya / Blender / 3ds Max via pluggable handlers. Extending UITK — handlers, widgets, mixins — never requires editing it.
 - **Escape hatches everywhere.** `@Signals(...)` overrides wiring, handlers override host behavior, every enhancement is opt-out per widget or per UI.
 
-**Fits:** fleets of small-to-medium Designer-based tools — especially DCC-hosted — where consistency and iteration speed beat bespoke UI architecture. **Doesn't:** a single large app with its own hand-rolled UI layer, non-Qt targets, or a workflow without Qt Designer.
+**Fits:** fleets of small-to-medium tools — Designer-built or code-built (`sb.register_ui`), standalone or hosted in an app such as a DCC — where consistency and iteration speed beat bespoke UI architecture. **Doesn't:** a single large app with its own hand-rolled UI layer, or non-Qt targets.
 
 ### What each subsystem is for
 
@@ -35,7 +35,7 @@ UITK drives the marginal cost of a **well-behaved** tool toward zero:
 | Marking menu | Muscle-memory access inside a DCC viewport: an entire toolkit reachable from one held key. |
 | Sequencer & editors | An NLE-style timeline widget (clips, keyframes, markers, audio scrub), plus bundled Style / Shortcut / Browser panels on `sb.editors`. |
 | Handlers | Host-specific behavior (Maya vs. Blender vs. standalone) without forking the library or the tools. |
-| Bridge | Parameterised script panels that drive external DCC processes from one shared form/preset/logging engine. |
+| Bridge | Parameter panels — a template/mode picker, option rows built from specs, presets, a log and a Run button — on one shared form/preset/logging engine; any tool that runs a parameterised job (a DCC bridge is one). |
 
 ## Install
 

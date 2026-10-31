@@ -616,8 +616,10 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
     def _resolve_ui(self, attr_name):
         """Resolver for dynamically loading UIs when accessed via NamespaceHandler.
 
-        A name resolves to its ``.ui`` file, else to its Slots class (a UI built
-        in code), else to the UI the active UI handler builds on demand (a name
+        A name resolves to its ``.ui`` file, else to the UI :meth:`register_ui`
+        registered (a widget tree built in code), else to its Slots class (an
+        empty window its Slots class fills), else to the UI the active UI handler
+        builds on demand (a name
         :meth:`ui_name_resolves` reports through the handler's ``can_resolve``,
         e.g. mayatk's native Maya menus). A UI with no Slots class is the normal
         case: such a name needs none to resolve. A claimed name the handler fails
@@ -628,6 +630,9 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
 
         actual_ui_name = self.find_ui_filename(attr_name, unique_match=True)
         if not actual_ui_name:
+            built = self._widgets.builder_name(attr_name)
+            if built is not None:
+                return self._resolve_built_ui(built)
             try:
                 return self._resolve_ui_using_slots(attr_name)
             except AttributeError:
@@ -644,9 +649,23 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
 
         loaded_ui = self.load_ui(ui_filepath)
         name = ptk.format_path(ui_filepath, "name")
-        ui = self.add_ui(name, widget=loaded_ui, path=ui_filepath)
+        return self._loaded(name, loaded_ui, path=ui_filepath)
 
-        self.logger.debug(f"[{name}] UI loaded successfully from {ui_filepath}")
+    def _resolve_built_ui(self, name: str) -> QtWidgets.QWidget:
+        """Build the UI :meth:`register_ui` registered as *name* and add it as a
+        loaded ``.ui`` is added."""
+        widget = self._widgets.builders[name]()
+        if not isinstance(widget, QtWidgets.QWidget):
+            raise TypeError(
+                f"register_ui({name!r}): the builder returned "
+                f"{type(widget).__name__}, not a QWidget"
+            )
+        return self._loaded(name, widget)
+
+    def _loaded(self, name: str, widget, path: str = None) -> QtWidgets.QWidget:
+        """Add a freshly built *widget* as the UI *name* and announce it."""
+        ui = self.add_ui(name, widget=widget, path=path)
+        self.logger.debug(f"[{name}] UI loaded{f' from {path}' if path else ''}")
         try:
             self.on_ui_loaded.emit(name)
         except Exception:
@@ -899,6 +918,34 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
 
         self.logger.debug(f"[{window.objectName()}] Existing wrapped window added")
         return window
+
+    def register_ui(self, name: str, build) -> None:
+        """Register a UI built in code, as a ``.ui`` file registers one built in
+        Qt Designer.
+
+        *build* is any callable returning the UI's widget tree -- a ``QWidget``
+        subclass, a function, a ``functools.partial``. It runs once, the first
+        time *name* is asked for (``sb.loaded_ui.<name>``, :meth:`get_ui`), and
+        what it returns is added exactly as a loaded ``.ui`` is: wrapped in a
+        ``MainWindow``, its widgets bound by ``objectName`` to the ``<Name>Slots``
+        class, their state saved and restored, ``name#tag`` names stacking as
+        tagged files do. A ``.ui`` file of the same name wins.
+
+        Parameters:
+            name: The UI's name (``"editor"``, ``"editor#submenu"``).
+            build: A callable returning a ``QWidget``.
+
+        Example::
+
+            sb = Switchboard(slot_source=EditorSlots)
+            sb.register_ui("editor", EditorWidget)  # its widgets carry objectNames
+            sb.loaded_ui.editor.show()
+        """
+        self._widgets.register_builder(name, build)
+        try:
+            self.on_ui_registered.emit(name)
+        except Exception:
+            self.logger.debug(f"[on_ui_registered] emit failed for {name!r}", exc_info=True)
 
     def add_ui(
         self,
@@ -2858,7 +2905,8 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
         return self._gates.recheck_gates()
 
     def is_registered_ui(self, name: str) -> bool:
-        """True if *name* matches a known UI file stem in the registry (no load is triggered)."""
+        """True if *name* is a registered UI -- a ``.ui`` file stem, or a name
+        :meth:`register_ui` registered (no load is triggered)."""
         return self._widgets.is_registered_ui(name)
 
     def ui_name_resolves(self, name: str) -> bool:
