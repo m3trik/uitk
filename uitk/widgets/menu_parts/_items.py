@@ -116,14 +116,13 @@ class _MenuItems:
         # Handle lazy initialization - gridLayout may not exist yet
         if grid is None:
             return False
-        for index in range(grid.count()):
-            widget = grid.itemAt(index).widget()
-            if widget is None:
-                return True  # a layout or spacer row
-            if widget is self.empty_placeholder or self._absent(widget):
-                continue
-            return True
-        return False
+        widgets = _LayoutItems.widgets(grid)
+        if len(widgets) < grid.count():
+            return True  # a layout or spacer row
+        return any(
+            widget is not self.empty_placeholder and not self._absent(widget)
+            for widget in widgets
+        )
 
     def _absent(self, widget) -> bool:
         """Whether *widget* offers nothing now: hidden as a field (a host's
