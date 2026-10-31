@@ -12,7 +12,7 @@ the one the user keeps: which sections are folded.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from qtpy import QtCore, QtWidgets
 
@@ -90,12 +90,7 @@ class _ParamRows(object):
             self.section[key] = section
             new_section = bool(section) and section not in self.section_separators
             if new_section:
-                sep = Separator(grp, title=section, checkable=panel.FOLDABLE_SECTIONS)
-                if panel.FOLDABLE_SECTIONS:
-                    sep.setChecked(True)
-                    sep.setToolTip("Click to fold or unfold this section.")
-                vbox.addWidget(sep)
-                self.section_separators[section] = sep
+                vbox.addWidget(self.make_separator(grp, section))
 
             tooltip_html = panel.format_param_tooltip(spec)
             # An inline spec joins the previous row; a section's opening spec
@@ -106,25 +101,8 @@ class _ParamRows(object):
                 self.build_inline_cell(spec, key, host_row, tooltip_html)
                 continue
 
-            row = QtWidgets.QWidget(grp)
-            hbox = QtWidgets.QHBoxLayout(row)
-            hbox.setContentsMargins(0, 0, 0, 0)
-            hbox.setSpacing(2)
-
-            label = QtWidgets.QLabel(spec.display_label + ":", row)
-            label.setMinimumWidth(panel.LABEL_MIN_WIDTH)
-            label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            label.setToolTip(tooltip_html)
-            self.labels[key] = label
-
-            widget = self.make_param_widget(spec, key, row, tooltip_html)
-
-            hbox.addWidget(label)
-            hbox.addWidget(widget, 1)
-            vbox.addWidget(row)
-
-            self.rows[key] = row
-            host_row = row
+            host_row = self.make_row(grp, spec, key, tooltip_html)
+            vbox.addWidget(host_row)
 
         parent_layout = panel.ui.grp_process.layout()
         insert_at = parent_layout.indexOf(panel.ui.b000)
@@ -144,24 +122,159 @@ class _ParamRows(object):
         self.fields = fields.group(grp)
         self.build_section_folds()
 
+    def make_separator(self, grp: QtWidgets.QWidget, section: str) -> QtWidgets.QWidget:
+        """*section*'s titled divider, foldable where the panel's sections are."""
+        panel = self._panel
+        sep = Separator(grp, title=section, checkable=panel.FOLDABLE_SECTIONS)
+        if panel.FOLDABLE_SECTIONS:
+            sep.setChecked(True)
+            sep.setToolTip("Click to fold or unfold this section.")
+        self.section_separators[section] = sep
+        return sep
+
+    def make_row(
+        self, grp: QtWidgets.QWidget, spec: AttributeSpec, key: str, tooltip_html: str
+    ) -> QtWidgets.QWidget:
+        """*spec*'s row: its label in the label column, its widget beside it."""
+        panel = self._panel
+        row = QtWidgets.QWidget(grp)
+        hbox = QtWidgets.QHBoxLayout(row)
+        hbox.setContentsMargins(0, 0, 0, 0)
+        hbox.setSpacing(2)
+
+        label = QtWidgets.QLabel(spec.display_label + ":", row)
+        label.setMinimumWidth(panel.LABEL_MIN_WIDTH)
+        label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        label.setToolTip(tooltip_html)
+        self.labels[key] = label
+
+        widget = self.make_param_widget(spec, key, row, tooltip_html)
+
+        hbox.addWidget(label)
+        hbox.addWidget(widget, 1)
+        self.rows[key] = row
+        return row
+
+    def add_rows(self) -> List[str]:
+        """Build a row for each registry key that has none yet, where the
+        registry puts it; the keys added, in registry order.
+
+        For a registry that grew after the panel was built (a host handing the
+        panel an engine whose rows it declares). Each row goes before the next
+        key that has one -- before that key's section divider when it opens a
+        section the new row is not in -- and a section the panel had no row
+        for gets its divider. The rows join the visibility and the folds; the
+        caller re-applies both (``ParamPanelSlots.add_param_rows``). An inline
+        spec joins the row before it, as in the build.
+        """
+        panel = self._panel
+        grp = self.group
+        if grp is None:
+            return []
+        params = panel.params_module.PARAMS
+        order = list(params)
+        added = [key for key in order if key not in self.widgets]
+        vbox = grp.layout()
+        opened = []
+        for key in added:
+            spec = params[key]
+            section = getattr(spec, "section", "") or ""
+            self.section[key] = section
+            before = self._insertion_anchor(key, order, section)
+            if section and section not in self.section_separators:
+                self._insert(vbox, self.make_separator(grp, section), before)
+                opened.append(section)
+            tooltip_html = panel.format_param_tooltip(spec)
+            host_row = self._row_before(key, order, section)
+            if getattr(spec, "inline", False) and host_row is not None:
+                self.build_inline_cell(spec, key, host_row, tooltip_html)
+                continue
+            self._insert(vbox, self.make_row(grp, spec, key, tooltip_html), before)
+        if not added:
+            return []
+        self.fit_label_column()
+        if self.fields is not None:
+            for key in added:
+                self.fields.register(key, self.rows[key], section=self.section[key])
+            for section in opened:
+                self.fields.divider(section, self.section_separators[section])
+        for section in opened:
+            self.wire_fold(section)
+        self.wire_action_params(added)
+        self.bind_live_tooltips(added)
+        self.wire_supersession_triggers(added)
+        self.rows_shown = None  # the next refresh applies, the new rows with it
+        return added
+
+    def _insertion_anchor(
+        self, key: str, order: List[str], section: str
+    ) -> Optional[QtWidgets.QWidget]:
+        """The widget a new *key*'s row goes before (``None``: the group's end)."""
+        layout = self.group.layout()
+        for later in order[order.index(key) + 1 :]:
+            row = self.rows.get(later)
+            if row is None or row.parent() is not self.group:
+                continue  # not built yet, or an inline cell
+            later_section = self.section.get(later, "")
+            sep = self.section_separators.get(later_section)
+            opens = sep is not None and layout.indexOf(sep) == layout.indexOf(row) - 1
+            return sep if opens and later_section != section else row
+        return None
+
+    def _row_before(
+        self, key: str, order: List[str], section: str
+    ) -> Optional[QtWidgets.QWidget]:
+        """The full row an inline *key* would join: the previous key's, in its
+        section (``None`` when it opens one or follows nothing)."""
+        index = order.index(key)
+        for earlier in reversed(order[:index]):
+            row = self.rows.get(earlier)
+            if row is None:
+                continue
+            if self.section.get(earlier, "") != section:
+                return None
+            if row.parent() is self.group:
+                return row
+        return None
+
+    @staticmethod
+    def _insert(layout, widget, before) -> None:
+        index = layout.indexOf(before) if before is not None else -1
+        if index < 0:
+            layout.addWidget(widget)
+        else:
+            layout.insertWidget(index, widget)
+
     def build_section_folds(self) -> None:
         """Wire each foldable divider to its rows, and fold what was folded."""
-        panel = self._panel
         self.folded_sections = set()
-        if not panel.FOLDABLE_SECTIONS:
+        if not self._panel.FOLDABLE_SECTIONS:
             return
-        store = getattr(panel.ui, "state", None)
+        # Read once: each fold below saves the set again.
+        folded = self.stored_folds()
+        for section in list(self.section_separators):
+            self.wire_fold(section, folded)
+
+    def stored_folds(self) -> set:
+        """The sections the window's custom store remembers folded."""
+        store = getattr(self._panel.ui, "state", None)
         folded = store.load_custom(self.FOLDED_SECTIONS_KEY, []) if store else []
         # A list as saved; anything else is no fold (a string would match by
         # substring under ``in``).
-        folded = set(folded) if isinstance(folded, (list, tuple)) else set()
-        for section, sep in self.section_separators.items():
-            # Through the panel, so a subclass's _fold_section is the one run.
-            sep.toggled.connect(
-                lambda opened, s=section: panel._fold_section(s, not opened)
-            )
-            if section in folded:
-                sep.setChecked(False)
+        return set(folded) if isinstance(folded, (list, tuple)) else set()
+
+    def wire_fold(self, section: str, folded: Optional[set] = None) -> None:
+        """Wire *section*'s divider to fold its rows, folded if it was left so
+        (*folded*: the remembered set, read from the store when ``None``)."""
+        panel = self._panel
+        if not panel.FOLDABLE_SECTIONS:
+            return
+        folded = self.stored_folds() if folded is None else folded
+        sep = self.section_separators[section]
+        # Through the panel, so a subclass's _fold_section is the one run.
+        sep.toggled.connect(lambda opened, s=section: panel._fold_section(s, not opened))
+        if section in folded:
+            sep.setChecked(False)
 
     def fold_section(self, section: str, folded: bool) -> None:
         """Fold or unfold *section*'s rows, remember it, and re-fit the window.
@@ -180,7 +293,12 @@ class _ParamRows(object):
                 )
         store = getattr(self._panel.ui, "state", None)
         if store is not None:
-            store.save_custom(self.FOLDED_SECTIONS_KEY, sorted(self.folded_sections))
+            # A remembered fold of a section this panel has no row for yet (one
+            # a grown registry adds, ``add_rows``) is kept, not overwritten.
+            elsewhere = self.stored_folds() - set(self.section_separators)
+            store.save_custom(
+                self.FOLDED_SECTIONS_KEY, sorted(self.folded_sections | elsewhere)
+            )
         WindowHeight.fit_host_later(self.group)
 
     def fit_label_column(self) -> None:
@@ -267,14 +385,18 @@ class _ParamRows(object):
 
     # ------------------ Tooltips --------------------------------------
 
-    def bind_live_tooltips(self) -> None:
-        """Install every live tooltip provider on its row."""
+    def bind_live_tooltips(self, keys: Optional[List[str]] = None) -> None:
+        """Install every live tooltip provider on its row (*keys*' rows only,
+        when given: the rows ``add_rows`` just built)."""
         panel = self._panel
         for key, provider in (panel.live_param_tooltips() or {}).items():
+            if keys is not None and key not in keys:
+                continue
             targets = [self.widgets.get(key), self.labels.get(key)]
             panel.sb.tooltip.bind([t for t in targets if t is not None], provider)
         for key, provider in (panel.live_param_tooltip_blocks() or {}).items():
-            self.bind_live_block(key, provider)
+            if keys is None or key in keys:
+                self.bind_live_block(key, provider)
 
     def bind_live_block(self, key: str, provider) -> None:
         """Append *provider*'s live block to every hover target of row *key*.
@@ -336,7 +458,7 @@ class _ParamRows(object):
 
     # ------------------ Actions and enablement ------------------------
 
-    def wire_action_params(self) -> None:
+    def wire_action_params(self, keys: Optional[List[str]] = None) -> None:
         """Connect ``action``-kind param buttons to same-named slot methods.
 
         An ``action`` row's container exposes ``_action_buttons``
@@ -348,7 +470,7 @@ class _ParamRows(object):
         panel = self._panel
         for key, widget in self.widgets.items():
             buttons = getattr(widget, "_action_buttons", None)
-            if not buttons:
+            if not buttons or (keys is not None and key not in keys):
                 continue
             for action_id, btn in buttons.items():
                 handler = getattr(panel, action_id, None)
@@ -393,9 +515,15 @@ class _ParamRows(object):
         on_show = getattr(panel.ui, "on_show", None)
         if on_show is not None:
             on_show.connect(panel._refresh_param_enablement)
+        self.wire_supersession_triggers()
+
+    def wire_supersession_triggers(self, keys: Optional[List[str]] = None) -> None:
+        """Re-evaluate the enablement on each edit of a supersession trigger
+        (*keys*' only, when given)."""
+        panel = self._panel
         for trigger, _governed, _reason in panel.param_supersessions():
             widget = self.widgets.get(trigger)
-            if widget is not None:
+            if widget is not None and (keys is None or trigger in keys):
                 KindFactory.connect_changed(
                     widget, lambda *_: panel._refresh_param_enablement()
                 )

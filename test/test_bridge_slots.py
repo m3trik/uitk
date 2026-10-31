@@ -17,8 +17,10 @@ faithful, and unknown keys (knobs the panel doesn't surface) are ignored.
 import json
 import shutil
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from conftest import BaseTestCase, setup_qt_application
 
@@ -1694,6 +1696,140 @@ class TestVisibilityRefreshOnlyWhenTheSetChanges(BaseTestCase):
         slot._refresh_param_visibility()
         self.assertEqual(applied, [{"A", "B"}, {"A"}])
         self.assertTrue(slot._param_rows["B"].isHidden())
+
+
+class TestLogRedirectForASecondBridge(BaseTestCase):
+    """``_redirect_log_to_panel(bridge)``: a panel that sends through a second
+    bridge -- a host's engine, built after the panel -- routes that bridge's
+    logger into the same pane its own engine logs to. Added: 2026-10-31 (the
+    WebXR Preview and the Unity Workflow each hand-wrote it)."""
+
+    def _panel(self, own):
+        slot = _bare_slot()
+        slot.sb = mock.MagicMock(name="switchboard")
+        slot.ui = types.SimpleNamespace(txt000=object())
+        slot.peek_bridge = lambda: own
+        return slot
+
+    def test_a_second_bridge_logs_to_the_pane(self):
+        own, host = mock.MagicMock(name="own"), mock.MagicMock(name="host")
+        slot = self._panel(own)
+        slot._redirect_log_to_panel(host)
+        host.logger.setup_logging_redirect.assert_called_once_with(slot.ui.txt000)
+        own.logger.setup_logging_redirect.assert_not_called()
+
+    def test_by_default_the_panels_own_engine(self):
+        own = mock.MagicMock(name="own")
+        slot = self._panel(own)
+        slot._redirect_log_to_panel()
+        own.logger.setup_logging_redirect.assert_called_once_with(slot.ui.txt000)
+
+    def test_a_pane_gone_is_not_an_error(self):
+        host = mock.MagicMock(name="host")
+        host.logger.setup_logging_redirect.side_effect = RuntimeError("deleted")
+        self._panel(None)._redirect_log_to_panel(host)  # no raise
+
+
+class TestRowsAddedAfterTheBuild(BaseTestCase):
+    """``add_param_rows``: a registry that grows after the panel is built.
+
+    A host can hand a built panel an engine whose rows it declares (the Unity
+    Workflow app's Current Scene source: the host's export rows), and the panel
+    is built before the host gets the chance (``launch(show=False)``). The rows
+    a grown registry gains are built where the registry puts them, and join the
+    visibility, the folds, the values and the presets like the built ones.
+    """
+
+    def _spec(self, key, section="", **kwargs):
+        return AttributeSpec(key=key, kind="int", default=0, section=section, **kwargs)
+
+    def _grow(self, slot, params):
+        type(slot).params_module = type("_Grown", (), {"PARAMS": params})
+        # The stub ui has no template combo: every row is relevant.
+        slot._relevant_param_keys = lambda: set(params)
+        return slot.add_param_rows()
+
+    def _order(self, slot):
+        """The group's widgets, top to bottom, as row keys and ``[section]``s."""
+        names = {id(row): key for key, row in slot._param_rows.items()}
+        names.update(
+            {id(sep): f"[{sec}]" for sec, sep in slot._section_separators.items()}
+        )
+        layout = slot._param_group.layout()
+        return [names.get(id(layout.itemAt(i).widget())) for i in range(layout.count())]
+
+    def test_new_rows_land_where_the_registry_puts_them(self):
+        slot = _built_rows({"A": self._spec("A", "One"), "C": self._spec("C", "Two")})
+        grown = {
+            "A": self._spec("A", "One"),
+            "A2": self._spec("A2", "One"),
+            "B": self._spec("B", "New"),
+            "C": self._spec("C", "Two"),
+            "D": self._spec("D", "Last"),
+        }
+        self.assertEqual(self._grow(slot, grown), ["A2", "B", "D"])
+        self.assertEqual(
+            self._order(slot),
+            ["[One]", "A", "A2", "[New]", "B", "[Two]", "C", "[Last]", "D"],
+        )
+
+    def test_a_second_call_adds_nothing(self):
+        slot = _built_rows({"A": self._spec("A")})
+        grown = {"A": self._spec("A"), "B": self._spec("B")}
+        self.assertEqual(self._grow(slot, grown), ["B"])
+        self.assertEqual(slot.add_param_rows(), [])
+
+    def test_the_new_rows_are_values_like_the_others(self):
+        slot = _built_rows({"A": self._spec("A")})
+        self._grow(slot, {"A": self._spec("A"), "B": self._spec("B")})
+        slot._write_param("B", 7)
+        self.assertEqual(slot.collect_param_values(), {"A": 0, "B": 7})
+        self.assertEqual(slot._param_widgets["B"].objectName(), "param_b")
+
+    def test_the_panel_shows_and_hides_them_with_their_section(self):
+        slot = _built_rows({"A": self._spec("A", "One")})
+        self._grow(slot, {"A": self._spec("A", "One"), "B": self._spec("B", "New")})
+        slot._relevant_param_keys = lambda: {"A"}
+        slot._refresh_param_visibility()
+        self.assertTrue(slot._param_rows["B"].isHidden())
+        self.assertTrue(slot._section_separators["New"].isHidden())
+        slot._relevant_param_keys = lambda: {"A", "B"}
+        slot._refresh_param_visibility()
+        self.assertFalse(slot._param_rows["B"].isHidden())
+
+    def test_a_new_section_folds_and_keeps_its_fold(self):
+        store = _CustomStore()
+        slot = _built_rows({"A": self._spec("A", "One")}, state=store)
+        grown = {"A": self._spec("A", "One"), "B": self._spec("B", "New")}
+        self._grow(slot, grown)
+        slot._section_separators["New"].setChecked(False)
+        self.assertTrue(slot._param_rows["B"].isHidden())
+        slot._section_separators["One"].setChecked(False)
+        # Reopened: folding One while the panel knows no New keeps New's fold.
+        again = _built_rows({"A": self._spec("A", "One")}, state=store)
+        self.assertFalse(again._section_separators["One"].isChecked())
+        self._grow(again, grown)
+        self.assertFalse(again._section_separators["New"].isChecked())
+        self.assertTrue(again._param_rows["B"].isHidden())
+
+    def test_widget_state_presets_capture_the_new_rows(self):
+        slot = _built_rows({"A": self._spec("A")})
+        slot._presets_part.mgr = PresetManager.from_widgets(
+            preset_dir=tempfile.mkdtemp(prefix="bridge_added_rows_"),
+            widgets=list(slot._param_widgets.values()),
+        )
+        self.addCleanup(shutil.rmtree, slot._presets_part.mgr.preset_dir, True)
+        self._grow(
+            slot,
+            {
+                "A": self._spec("A"),
+                "B": self._spec("B"),
+                "LIVE": self._spec("LIVE", preset=False),
+            },
+        )
+        managed = set(slot._preset_mgr._explicit_widgets)
+        self.assertIn(slot._param_widgets["B"], managed)
+        self.assertNotIn(slot._param_widgets["LIVE"], managed, "a live switch")
 
 
 class TestInlineParamRows(BaseTestCase):

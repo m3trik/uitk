@@ -60,13 +60,14 @@ class _LogPane(object):
     # ------------------ Log panel -------------------------------------
 
     @staticmethod
-    def redirect_log_to_panel(panel: "ParamPanelSlots") -> None:
-        """Pipe the bridge logger into ``txt000``, no-op if redirect unavailable."""
+    def redirect_log_to_panel(panel: "ParamPanelSlots", bridge=None) -> None:
+        """Pipe *bridge*'s logger (the panel's own engine's by default) into
+        ``txt000``; a no-op if the redirect is unavailable or the pane is gone."""
         try:
             handler_cls = panel.sb.registered_widgets.TextEditLogHandler
         except AttributeError:
             return
-        bridge = panel.peek_bridge()
+        bridge = bridge if bridge is not None else panel.peek_bridge()
         if bridge is None:  # optional engine missing — the panel still opens
             return
         try:
@@ -74,7 +75,7 @@ class _LogPane(object):
             logger.hide_logger_name(True)
             logger.set_text_handler(handler_cls)
             logger.setup_logging_redirect(panel.ui.txt000)
-        except AttributeError:
+        except (AttributeError, RuntimeError):  # no redirect; the pane deleted
             pass
 
     @staticmethod

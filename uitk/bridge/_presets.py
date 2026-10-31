@@ -210,6 +210,26 @@ class _Presets(object):
         self.combo = combo
         self.reset_btn = reset_btn
 
+    def add_widgets(self, keys) -> None:
+        """Let the presets reach the rows *keys* name, built after these
+        controls (``ParamPanelSlots.add_param_rows``): a widget-state preset
+        captures them (a live switch excepted), and editing one re-marks the
+        active preset modified. A semantic preset already reads every row."""
+        panel = self._panel
+        if self.mgr is None:
+            return
+        if not self.semantic:
+            live = panel._live_param_keys()
+            self.mgr.setup(
+                widgets=[w for k, w in panel._param_widgets.items() if k not in live]
+            )
+        for key in keys:
+            widget = panel._param_widgets.get(key)
+            if widget is not None:
+                KindFactory.connect_changed(
+                    widget, lambda *_: self.mgr.refresh_modified_state()
+                )
+
     def apply_param_dict(self, data: Dict[str, Any]) -> int:
         """Overlay a semantic preset on the param widgets (see ``_apply_param_dict``)."""
         panel = self._panel

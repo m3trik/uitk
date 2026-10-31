@@ -281,9 +281,11 @@ class _ParamPanelSlotsInternal(object):
 
     # ------------------ Log pane ----------------------------------------
 
-    def _redirect_log_to_panel(self) -> None:
-        """Pipe the bridge logger into ``txt000``, no-op if redirect unavailable."""
-        _LogPane.redirect_log_to_panel(self)
+    def _redirect_log_to_panel(self, bridge=None) -> None:
+        """Pipe *bridge*'s logger into ``txt000`` -- the panel's own engine's by
+        default, or a second bridge it sends through (a host's engine, built
+        after the panel); a no-op if the redirect is unavailable."""
+        _LogPane.redirect_log_to_panel(self, bridge)
 
     def _on_log_link_clicked(self, url) -> None:
         """Route ``action://`` URIs from the log panel to their handler."""
@@ -871,6 +873,30 @@ class ParamPanelSlots(_ParamPanelSlotsInternal):
         """
         declared = getattr(self.params_module, "SUPERSESSIONS", None)
         return tuple(declared if declared is not None else self.PARAM_SUPERSESSIONS)
+
+    def add_param_rows(self) -> List[str]:
+        """Build a row for each registry key that has none yet; the keys added.
+
+        For a registry that grows after the panel is built: a host hands the
+        built panel an engine whose rows the panel's ``params_module`` then
+        declares (``launch(show=False)`` builds the panel before the host gets
+        to say anything). Each row lands where the registry puts it -- a new
+        section with its divider -- and joins the visibility, the folds, the
+        presets, Reset and the live tooltips like the rows built with the
+        panel; on a window already shown it is registered (its saved value
+        restored) at once, and before the first show it restores with the rest.
+        A key whose row exists is left alone, so a second call adds nothing.
+        """
+        added = self._params_part.add_rows()
+        if not added:
+            return added
+        self._presets_part.add_widgets(added)
+        ui = self.ui
+        if getattr(ui, "is_initialized", False) and hasattr(ui, "register_children"):
+            ui.register_children(self._param_group)
+        self._refresh_param_visibility()
+        self._refresh_param_enablement()
+        return added
 
     def collect_param_values(self) -> Dict[str, Any]:
         """Snapshot every widget's current value, regardless of visibility.
