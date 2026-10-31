@@ -186,12 +186,19 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
             # Walk the raw frame chain (cheap — no source-context loading
             # like inspect.stack) collecting each distinct source file,
             # innermost first.  files[0] is always this module.
+            # pythontk's frames are never a caller: a decorator's wrapper there
+            # (``ptk.Deprecation.parameter`` on ``Switchboard.__init__``) counted
+            # as one shifted every index, and a relative source resolved under
+            # pythontk instead of beside the file that named it.
+            wrappers = os.path.normcase(os.path.dirname(os.path.abspath(ptk.__file__)))
             files: List[str] = []
             seen = set()
             frame = sys._getframe()
             while frame is not None:
                 filename = frame.f_code.co_filename
-                if filename not in seen:
+                if filename not in seen and not os.path.normcase(
+                    os.path.abspath(filename)
+                ).startswith(wrappers + os.sep):
                     seen.add(filename)
                     files.append(filename)
                 frame = frame.f_back

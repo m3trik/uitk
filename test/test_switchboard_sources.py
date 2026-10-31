@@ -78,6 +78,32 @@ class TestSwitchboardSources(QtBaseTestCase):
         )
         self.assertTrue(len(sb.registry.ui_registry) >= 1)
 
+    def test_a_relative_source_resolves_beside_the_calling_file(self):
+        """Regression: the deprecation wrapper on ``Switchboard.__init__``
+        (``ptk.Deprecation.parameter``) added pythontk's ``deprecation.py`` to
+        the frame chain the default ``base_dir`` counts, so a relative
+        ``ui_source`` -- every quickstart's ``"editor.ui"`` -- resolved under
+        ``pythontk/core_utils`` and the app found no UI. Fixed: 2026-10-31."""
+        import importlib.util
+
+        caller = os.path.join(self.test_dir, "caller_app.py")
+        with open(caller, "w") as f:
+            f.write(
+                "from uitk.switchboard import Switchboard\n\n"
+                "def build():\n"
+                "    return Switchboard(ui_source='test.ui')\n"
+            )
+        spec = importlib.util.spec_from_file_location("caller_app", caller)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        sb = module.build()
+
+        paths = [os.path.normcase(e.filepath) for e in sb.registry.ui_registry]
+        self.assertIn(
+            os.path.normcase(os.path.join(self.test_dir, "test.ui")), paths
+        )
+
     def test_tuple_of_paths(self):
         """Test sources as tuple of paths."""
         sb = Switchboard(ui_source=(self.test_dir,), base_dir=None)
