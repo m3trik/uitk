@@ -238,7 +238,7 @@ sb.handlers.ui.show(ui, pos="cursor")
 sb.configurable.ui.default_position.set("cursor")  # handler DEFAULTS merged here
 ```
 
-The built-in `UiHandler` applies default styling and positions windows. `MarkingMenu` registers itself as `sb.handlers.marking_menu`. Consumers like tentacle ship subclassed handlers (`MayaUiHandler`) for DCC-specific behavior.
+The built-in `UiHandler` applies default styling and positions windows. `MarkingMenu` registers itself as `sb.handlers.marking_menu`. The host libraries ship subclassed handlers for DCC-specific behavior (mayatk's `MayaUiHandler`, blendertk's `BlenderUiHandler`), handed to the marking menu by their `*MarkingMenuHost` adapters (`ui_handler`).
 
 ---
 

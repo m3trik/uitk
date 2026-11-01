@@ -271,8 +271,13 @@ class _InputMixin:
         drag-gated ``track()`` — which reveals the marking menu's
         ``visible_on_mouse_over`` Regions during a grabbed chord gesture — still
         fires when ``QApplication.mouseButtons()`` is blind to the host's events.
+        A raising host gets Qt's answer instead: this runs on every tracked move.
         """
-        return self.host.mouse_buttons()
+        try:
+            return self.host.mouse_buttons()
+        except Exception as error:
+            self.logger.debug(f"host mouse_buttons failed: {error}")
+            return QtWidgets.QApplication.mouseButtons()
 
     def _transfer_mouse_control(self, button, buttons_mask) -> None:
         """Transfer mouse control to this widget by grabbing and synthesizing a press."""

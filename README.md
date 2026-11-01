@@ -92,6 +92,7 @@ No `.connect()` calls. No `findChild()`. No manual state restore.
 
 - **[tentacle](https://github.com/m3trik/tentacle)** — Maya / Blender artist toolkit. Uses UITK's `MarkingMenu` as a radial gesture shell around per-domain slot classes (`cameras.py`, `selection.py`, `scene.py`, …).
 - **[mayatk](https://github.com/m3trik/mayatk)** / **[blendertk](https://github.com/m3trik/blendertk)** — the Maya and Blender host libraries. Each subclasses `UiHandler` to wrap its host's native menus, and declares its bridges' parameters through `uitk.bridge`; the tool panels over them (Channels, Shot Sequencer, Texture Path Editor, …) are tentacle's.
+- **[extapps](https://github.com/m3trik/extapps)** — standalone content-pipeline apps (texture compositing, photogrammetry, Substance / Marmoset automation, …), each a Switchboard panel and Slots class on pythontk and uitk alone; a uitk host opens one by name (`ExternalAppHandler`).
 
 ## Contributing
 

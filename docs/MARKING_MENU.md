@@ -14,7 +14,7 @@ The same system also launches standalone windows — any UI without the `#startm
 
 Implementation: [uitk/widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py) — one of the largest single classes in the package, so it is assembled from one part per concept, each a mixin module beside it: [\_bindings.py](../uitk/widgets/marking_menu/_bindings.py) (chord table, activation key, routes), [\_hosting.py](../uitk/widgets/marking_menu/_hosting.py) (stacked pages, hosted themes, preload), [\_navigation.py](../uitk/widgets/marking_menu/_navigation.py) (submenu transitions, child hooks), [\_input.py](../uitk/widgets/marking_menu/_input.py) (hit-testing, press/release dispatch, the grab, input diagnostics) and [\_presentation.py](../uitk/widgets/marking_menu/_presentation.py) (show/hide, the fade). The facade keeps construction, the process-wide instance registry and the activation press/release, and subclasses `<parts> + QWidget + SingletonMixin + LoggingMixin + HelpMixin` — the parts come before `QWidget` because they override its virtuals. What an application answers differently reaches it through its host (`MarkingMenu(host=...)`, [below](#hosting-it-in-an-application-markingmenuhost)), never a subclass. Pure chord→menu resolution lives in [\_resolver.py](../uitk/widgets/marking_menu/_resolver.py) (Qt-free, unit-testable). The mixin assembly predates the facade rule ([CODE_STANDARD §14](https://github.com/m3trik/m3trik/blob/main/docs/CODE_STANDARD.md)): it is the next facade to split into collaborators that own their state (the shape `Switchboard` and `TableWidget` now have), not a model for a new class.
 
-A process hosts at most **one** input-owning marking menu: constructing a new instance calls `retire()` on every prior live instance (disposes its activation `GlobalShortcut`, cancels timers, ends any live gesture — irreversible; the dev-reload path).
+A process hosts at most **one** input-owning marking menu: constructing a new instance calls `retire()` on every prior live instance (disposes its activation `GlobalShortcut` and, through `sb.dispose_shortcuts()`, every shortcut its Switchboard registered; cancels timers; ends any live gesture — irreversible; the dev-reload path). A host calls the classmethod `MarkingMenu.retire_all()` before reloading the packages behind the menu; it returns the retired instances, for the caller to dispose of once their replacement is up (tentacle's `Tcl.prepare_reload` / `Tcl.dispose_retired`).
 
 ---
 
@@ -60,7 +60,7 @@ So `F12+L+R` prefers an explicit `Key_F12|LeftButton|RightButton` binding, falls
 
 Bindings persist to a **host-namespaced** `sb.configurable` key: `"marking_menu_bindings" + host_namespace_suffix(context_tags)` (`_binding_store_key`) — e.g. `marking_menu_bindings_maya` vs `marking_menu_bindings_blender`, so two DCCs sharing the QSettings backend can't clobber each other's chords. An empty/absent context (standalone) keeps the un-suffixed key.
 
-At construction, `_reconcile_bindings` merges: first run seeds the store with the constructor defaults; later runs forward-merge `{**defaults, **stored}` so newly-shipped default chords appear while the user's customizations of existing keys win.
+At construction, `_reconcile_bindings` merges: first run (or a stored value that is not a dict) seeds the store with the constructor defaults; later runs first **evict** every stored chord whose activation key differs from the defaults' — the caller's bindings decide which key activates, since a store holding several keys would elect whichever came first — then forward-merge `{**defaults, **kept}` so newly-shipped default chords appear while the user's customizations of chords on that key win. A launcher that honors a user's rebind therefore builds its defaults on the stored key (`stored_activation_key`, [below](#shortcut-editor-integration--route-targets)).
 
 Runtime changes are picked up via the store's `changed` signal → `_build_bindings` (re-parse + refresh the shortcut-editor entries). External editors subscribe through the public hook `on_bindings_changed(callback)` rather than touching the storage key.
 
@@ -98,10 +98,11 @@ Tag detection: `ui.has_tags(_MARKING_MENU_TAGS)` where `_MARKING_MENU_TAGS = ("s
 ## Construction
 
 ```python
+import mayatk as mtk
 from uitk import MarkingMenu
 
 mm = MarkingMenu(
-    parent=maya_main_window,      # host window (Maya, Max, Blender)
+    host=mtk.MayaMarkingMenuHost(),  # what the application answers differently (below)
     ui_source="ui",               # directory or module with .ui files
     slot_source="slots",          # directory or module with slot classes
     widget_source=None,           # optional extra custom widget dir
@@ -109,12 +110,13 @@ mm = MarkingMenu(
         "Key_F12":              "main#startmenu",
         "Key_F12|LeftButton":   "cameras#startmenu",
     },
-    handlers={"ui": MayaUiHandler},  # DCC-specific window handler
     log_level="WARNING",
 )
 ```
 
-If a `switchboard=` Switchboard is passed, the marking menu joins that one (registering any given sources onto it); otherwise it creates a private Switchboard with the given sources. Further opt-in kwargs: `suppress_default_on_reentry` (don't bounce back to the default menu after a non-default one was shown in the same hold), `precompile` (background pre-compile of stale `_ui.py` files, only under the `CompiledLoader`), `preload` (scoped preloading, below), and `context_tags` (host identity — drives `requires`-tag widget filtering and the binding store's namespace).
+The host supplies the parent (`main_window()`) and the `"ui"` handler (`ui_handler`: Maya's is `MayaUiHandler`). `parent=` and `handlers=` are overrides: an explicit parent wins over the host's main window, and a `handlers` entry over the host's handler (both merged over the `HANDLERS` class default). A parent is what installs the activation shortcut at construction; with neither a parent nor a host main window, none is installed.
+
+If a `switchboard=` Switchboard is passed, the marking menu joins that one (registering any given sources onto it, and keeping every handler it already has); otherwise it creates a private Switchboard with the given sources. Further opt-in kwargs: `suppress_default_on_reentry` (don't bounce back to the default menu after a non-default one was shown in the same hold), `precompile` (background pre-compile of stale `_ui.py` files, only under the `CompiledLoader`), `preload` (scoped preloading, below), and `context_tags` (host identity — drives `requires`-tag widget filtering and the binding store's namespace).
 
 ### Scoped preloading (`preload=True` / `preload_menus`)
 
@@ -126,7 +128,7 @@ As a backstop for pages that still reach the activation path cold (preloading of
 
 ### Hosting it in an application: `MarkingMenu(host=...)`
 
-In a plain Qt app the menu needs nothing from its host: it parents to the window it is given, binds its activation key with an application shortcut, reads the mouse from Qt and shows its windows the Qt way. An application that is not purely Qt -- a DCC whose event loop is native code, that owns the keyboard before Qt sees a key, whose windows are foreign to Qt -- answers some of those differently. It says so by passing a **host**: an object implementing `uitk.MarkingMenuHost` ([marking_menu_host.py](../uitk/widgets/marking_menu/marking_menu_host.py)), never by subclassing `MarkingMenu`. Whoever *launches* the menu asks the same host a second, separate set of questions, `uitk.MarkingMenuLaunchHost`: none of them is the menu's, since they come before it exists, instead of a second one, or around a rebuild. One adapter class answers both. `uitk.PureMarkingMenuHost` is the default (no `host` argument): exactly the plain-Qt answers to both. An adapter subclasses it and overrides only what its application answers differently.
+In a plain Qt app the menu needs nothing from its host: it parents to the window it is given, binds its activation key with an application shortcut, reads the mouse from Qt and shows its windows the Qt way. An application that is not purely Qt -- a DCC whose event loop is native code, that owns the keyboard before Qt sees a key, whose windows are foreign to Qt -- answers some of those differently. It says so by passing a **host**: an object implementing `uitk.MarkingMenuHost` ([marking_menu_host.py](../uitk/widgets/marking_menu/marking_menu_host.py)), never by subclassing `MarkingMenu`. Whoever *launches* the menu asks the same host a second, separate set of questions, `uitk.MarkingMenuLaunchHost`: none of them is the menu's, since they come before the menu exists, stand in for a second build, or surround a rebuild. One adapter class answers both. `uitk.PureMarkingMenuHost` is the default (no `host` argument): exactly the plain-Qt answers to both. An adapter subclasses it and overrides only what its application answers differently.
 
 | Member | The menu asks it | Plain-Qt answer |
 |:---|:---|:---|
@@ -209,7 +211,7 @@ mm.show("texture_editor", pos="screen", force=True)
 - If the target UI has `#startmenu` / `#submenu` tags → `_show_marking_menu` (stacked).
 - Otherwise → `_show_window` (standalone, reparented, styled via `UiHandler`).
 
-On activation-key release, every visible standalone window gets a `request_hide()`. Per `MainWindow.request_hide`, a window auto-hides only when it **has a pin button** (`ui.header`) and is currently **unpinned** — pinned windows and windows without a pin button refuse the request and stay open until dismissed explicitly.
+On activation-key release, every visible standalone window gets a `request_hide()`. Per `MainWindow.request_hide`, a window auto-hides only when it **has a pin button** (`ui.header`) and is currently **unpinned** — pinned windows and windows without a pin button refuse the request and stay open until dismissed explicitly. With tap-to-pin on (`UiHandler.pin_on_tap`, off by default; per header `Header.pin_on_tap`), a request that lands within `Header.PIN_ON_TAP_MS` of the show means the key was tapped, not held, so the window pins open instead (`Header.claim_hide_as_tap`).
 
 ### From slot classes
 
@@ -224,7 +226,7 @@ class CamerasSlots(Slots):
 
 ## Integration with UiHandler
 
-The marking menu registers itself as `sb.handlers.marking_menu` (`_setup_registry`). It also installs a `UiHandler` instance as `sb.handlers.ui` (default, from the `HANDLERS` class attr) or whatever subclass you passed via `handlers={}`.
+The marking menu registers itself as `sb.handlers.marking_menu` (`_setup_registry`). It also installs a `UiHandler` instance as `sb.handlers.ui`: the `HANDLERS` class default, replaced by the host's `ui_handler` when it names one, and by an explicit `handlers={"ui": ...}` entry over both.
 
 `UiHandler.setup_lifecycle(ui, hide_signal=mm.key_show_release)` wires standalone windows to auto-hide on activation release, subject to `request_hide()` as above.
 
@@ -237,7 +239,7 @@ See [Architecture — Handler ecosystem](ARCHITECTURE.md#handler-ecosystem) for 
 The marking menu's bindings surface in the unified Shortcut Editor via `_register_shortcut_editor_bindings`, re-run on every binding change. All entries use `Switchboard.register_command(..., bind=False)` — the register creates **no** `QShortcut`; the menu's own activation `GlobalShortcut` owns the real key (a second one would collide as an ambiguous overload).
 
 - **Activation key** — registered as the `marking_menu_show` command: visible and editable, `clearable=False` (the menu must always keep a working activation key), its live value read via `value_getter`, and edits routed through `on_rebind` → **`set_activation_key`**.
-- **`set_activation_key(new_key)`** rewrites the `Key_*` part of *every* chord, persists the set (rebuild + editor refresh), and re-installs the activation `GlobalShortcut` on the new key. Accepts `"Key_F11"` or bare `"F11"`; a no-op when empty, unchanged, or not a valid `QtCore.Qt.Key_*`.
+- **`set_activation_key(new_key)`** rewrites the `Key_*` part of *every* chord, persists the set (rebuild + editor refresh), and re-installs the activation `GlobalShortcut` on the new key. Accepts `"Key_F11"` or bare `"F11"`; the rewrite is a no-op when empty, unchanged, or not a valid `QtCore.Qt.Key_*` (the host's `bind_activation_key` still runs: a re-sync). It also records the key as the **user's** choice, which the classmethod `MarkingMenu.stored_activation_key(context_tags)` reads back before any menu exists, so a launcher ranks it above its shipped default (tentacle's `Tcl.resolve_key`: stored > `key_show` > default); construction never writes it.
 - **Chord→menu routes** — the four mouse gestures in `_ROUTE_GESTURES` (`left`, `middle`, `right`, `left_right`) register as `marking_menu_route_<gesture>` entries: hidden and read-only (a routing table isn't a key trigger); the row's Action column names the target menu it opens (e.g. "Marking Menu: Cameras"). They're edited through the host's "Menu Bindings" combos instead, via:
 - **`get_route_target(buttons)` / `set_route_target(buttons, menu)`** — gesture-keyed accessors where `buttons` is a sequence of Qt button-flag names (`("LeftButton",)`, `("LeftButton", "RightButton")`; `()` = the key-only default). Activation-key-agnostic: they resolve against the *current* activation key, so they stay correct after `set_activation_key`.
 - **`start_menu_names(short=True)`** — the sorted `#startmenu` UI names the binding combos pick targets from (`short=True` strips the tag), read from `Switchboard.ui_names()`, so a menu built in code (`register_ui`) is a target as a `.ui` file is.

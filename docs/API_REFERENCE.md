@@ -461,6 +461,13 @@ HANDLERS = {"ui": UiHandler}   # merged with any `handlers` arg at construction
 | `add_child_event_filter(widgets)` | Install the internal child event filter on widgets |
 | `start_menu_names(short=True)` | The `#startmenu` names a binding can target, `.ui` files and `register_ui` builders alike |
 | `activate(buttons=None)` / `release()` / `armed` / `activation_key` | What a host that owns the keyboard calls to drive the menu ([MARKING_MENU.md](MARKING_MENU.md)) |
+| `set_activation_key(new_key)` | Rewrite the activation key across every chord and record it as the user's choice |
+| `stored_activation_key(context_tags=None)` *(classmethod)* | The user's chosen activation key for a host context, readable before a menu exists |
+| `get_route_target(buttons=())` / `set_route_target(buttons, menu)` | The menu a mouse gesture on the activation key opens |
+| `on_bindings_changed(callback)` | Subscribe to the persisted bindings store |
+| `preload_menus(names=None, *, defer=True)` | Warm the binding-target menus and the submenus they open |
+| `retire()` / `retire_all()` *(classmethod)* | Give up input for good; `retire_all` retires every live instance before a reload and returns them |
+| `enable_input_logging(path=None, level="DEBUG")` / `disable_input_logging()` | Tee input-handoff DEBUG logs to a file |
 
 ### Hosting it in an application
 
@@ -468,7 +475,7 @@ An application's behaviour comes in through `host=`, never a subclass: a `Markin
 (main window, shortcut window, parenting, mouse buttons, the activation binding, key events),
 with `PureMarkingMenuHost` as the plain-Qt default. A launcher's half (start, defer, the live
 menu, teardown, report) is `MarkingMenuLaunchHost`. Both are in [MARKING_MENU.md](MARKING_MENU.md).
-`HANDLERS` (a class dict merged with `handlers=`) still registers the UI handler a host brings.
+Handler precedence: the `HANDLERS` class default, then the host's `ui_handler` over its `"ui"` entry, then an explicit `handlers=` entry over both.
 
 ---
 

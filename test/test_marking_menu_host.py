@@ -324,6 +324,18 @@ class TestTheMenuAsksItsHost(_HostCase):
         self.mm.set_activation_key("F9")  # must not raise
         self.assertIn("Key_F9|RightButton", self.mm.bindings)
 
+    def test_a_failing_mouse_query_falls_back_to_qts_answer(self):
+        """The mouse is asked on every tracked move: a raising host must not end the gesture."""
+
+        def broken():
+            raise RuntimeError("host input gone")
+
+        self.host.mouse_buttons = broken
+        with self.assertLogs(self.mm.logger, level="DEBUG"):
+            self.assertEqual(
+                self.mm._host_mouse_buttons(), QtWidgets.QApplication.mouseButtons()
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

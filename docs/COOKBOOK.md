@@ -148,7 +148,7 @@ def list000_init(self, widget):
     widget.setVisible(True)
 ```
 
-From [tentacle main.py](https://github.com/m3trik/tentacle/blob/main/tentacle/slots/main.py).
+Modelled on the Workspace tab in [tentacle main.py](https://github.com/m3trik/tentacle/blob/main/tentacle/slots/main.py) (`MainSlots.list000_init`).
 
 ---
 
@@ -424,14 +424,14 @@ from uitk import MarkingMenu
 import mayatk as mtk
 
 mm = MarkingMenu(
-    parent=mtk.get_main_window(),
+    host=mtk.MayaMarkingMenuHost(),
     ui_source="./ui",
     slot_source="./slots",
     bindings={"Key_F12": "main#startmenu"},
 )
 ```
 
-Passing `parent` installs the activation shortcut at construction — the first `Key_*` in `bindings` becomes the activation key. `mm.show()` would open the default menu immediately; normally you just wait for the key.
+The host brings Maya's main window as the parent (which installs the activation shortcut at construction — the first `Key_*` in `bindings` becomes the activation key), `MayaUiHandler` for the standalone windows, `"MayaWindow"` as the shortcut window and the native-loop preload guard ([Hosting it in an application](MARKING_MENU.md#hosting-it-in-an-application-markingmenuhost)). `mm.show()` would open the default menu immediately; normally you just wait for the key.
 
 ### Adding a standalone launcher button
 

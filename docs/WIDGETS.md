@@ -835,6 +835,8 @@ def txt_path_init(self, widget):
     widget.option_box.set_action(self.browse, icon="folder") # ActionOption shorthand
 ```
 
+`set_action(...)`, `add_action(...)` (one more button, replacing none) and `ActionOption(...)` take `hide_when_empty=True` for an action that does nothing on an empty field (a search, a rename): the button shows only while the field holds a value, as the clear button does.
+
 Plugin-style for custom combinations:
 
 ```python
