@@ -564,10 +564,11 @@ class _PresetRootMigration:
             )
 
 
-# Wrapper folder under the per-user config dir (``<generic>/uitk``). Also the
-# name of uitk's OWN folder inside it (``<generic>/uitk/uitk``) that the pre-wrap
-# layout is moved down into -- see ``_wrap_pre_wrap_uitk_state``.
-_ECOSYSTEM_WRAPPER_NAME = "uitk"
+# Wrapper folder under the per-user config dir (``<generic>/uitk``): pythontk's
+# ``UserConfig.ROOT_NAME``, its one owner. Also the name of uitk's OWN folder
+# inside it (``<generic>/uitk/uitk``) that the pre-wrap layout is moved down
+# into -- see ``_wrap_pre_wrap_uitk_state``.
+_ECOSYSTEM_WRAPPER_NAME = ptk.UserConfig.ROOT_NAME
 
 
 # =============================================================================
