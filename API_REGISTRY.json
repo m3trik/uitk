@@ -12740,7 +12740,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse press: route through the central state-sync.",
-              "line": 327,
+              "line": 332,
               "deprecated": false
             },
             {
@@ -12749,7 +12749,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Show the host the release first (``MarkingMenuHost.key_event``).",
-              "line": 387,
+              "line": 392,
               "deprecated": false
             },
             {
@@ -12758,7 +12758,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle key press for non-activation key bindings.",
-              "line": 398,
+              "line": 403,
               "deprecated": false
             },
             {
@@ -12767,7 +12767,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 424,
+              "line": 429,
               "deprecated": false
             },
             {
@@ -12776,7 +12776,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse release: dispatch click action or sync menu state.",
-              "line": 616,
+              "line": 621,
               "deprecated": false
             },
             {
@@ -12785,7 +12785,7 @@
               "kind": "method",
               "signature": "(self, path: Optional[str] = None, level='DEBUG') -> str",
               "summary": "Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.",
-              "line": 783,
+              "line": 788,
               "deprecated": false
             },
             {
@@ -12794,7 +12794,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Stop the file logging started by :meth:`enable_input_logging`.",
-              "line": 809,
+              "line": 814,
               "deprecated": false
             },
             {
