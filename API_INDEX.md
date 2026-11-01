@@ -23,7 +23,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class ParamRegistry(object)`
   - methods: referenced_keys, defaults, render_context, affix_parts
 
-### `bridge/slots.py` — Generic DCC-bridge slot base class.
+### `bridge/slots.py` — The parameter panel's slot base class, :class:`ParamPanelSlots`.
 - `class ParamPanelSlots(_ParamPanelSlotsInternal)`
   - methods: params_module, template_dir, make_bridge, list_template_modes, b000, optional_packages, optional_package_available, ensure_optional_package, resolve_scope_objects, empty_scope_message, scoped_objects, bridge, peek_bridge, panel_log, default_output_dir, ensure_bridge_temp_dir, resolved_output_dir, require_output_dir, format_param_tooltip, live_param_tooltips, live_param_tooltip_blocks, set_param_enabled, param_supersessions, add_param_rows, collect_param_values, make_preset_store, select_initial_template_index, template_description, cmb000_init, refresh_templates, open_templates_folder, register_log_link_handler, docs_url, clear_log, header_menu_items, help_spec, header_init, reveal_folder
 
@@ -193,7 +193,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `switchboard/_core.py`
 - `class Switchboard(QtCore.QObject, pythontk.HelpMixin, pythontk.LoggingMixin)`
-  - methods: register_handler, iter_handler_entries, active_ui, current_ui, prev_ui, prev_slot, visible_windows, register, load_all_ui, load_ui, register_ui, add_ui, get_ui, get_ui_relatives, find_ui_filename, save_ui_tags, ui_history, show_prev_ui, repeat_last, style, editors, get_cursor_offset_from_center, center_widget, invert_on_modifier, simulate_key_press, defer_with_timer, gc_protect, convert_to_legal_name, get_slot_class_names, get_slot_file_names, get_base_name, get_tags_from_name, has_tags, edit_tags, filter_tags, get_unknown_tags, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, enable_when, show_when, text_from, value_from, refresh_dependencies, busy_cursor, progress, progress_adapter, confirm, message_box, text_view_dialog, preview_dialog, data_view_dialog, save_data_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, modal_menu, unmet_policy, gate, recheck_gates, is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at, register_slots_shortcuts, widget_has_shortcut, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut, dispose_shortcuts, register_command, unregister_command, get_command_registry, set_command_shortcut, set_binding_hidden, set_binding_editable, get_default_signals, get_available_signals, slots_instantiated, get_slots_instance, init_slot, call_slot, get_slot, get_slot_from_widget, mark_missing_slot, notify_missing_slot, connect_slot, slot_history
+  - methods: register_handler, iter_handler_entries, active_ui, current_ui, prev_ui, prev_slot, visible_windows, register, load_all_ui, load_ui, register_ui, add_ui, get_ui, get_ui_relatives, find_ui_filename, save_ui_tags, ui_history, show_prev_ui, repeat_last, style, editors, get_cursor_offset_from_center, center_widget, invert_on_modifier, simulate_key_press, defer_with_timer, gc_protect, convert_to_legal_name, get_slot_class_names, get_slot_file_names, get_base_name, get_tags_from_name, has_tags, edit_tags, filter_tags, get_unknown_tags, unpack_names, get_widgets_by_string_pattern, get_methods_by_string_pattern, create_button_groups, toggle_multi, connect_multi, add_reset_buttons, link_spinboxes, set_axis_for_checkboxes, get_axis_from_checkboxes, hide_unmatched_groupboxes, enable_when, show_when, text_from, value_from, refresh_dependencies, busy_cursor, progress, progress_adapter, confirm, message_box, text_view_dialog, preview_dialog, data_view_dialog, save_data_dialog, file_dialog, dir_dialog, save_file_dialog, input_dialog, list_input_dialog, form_dialog, form_panel, modal_menu, unmet_policy, gate, recheck_gates, ui_names, is_registered_ui, ui_name_resolves, menu_button_target_name, menu_button_target_resolves, apply_visibility_policy, resolve_widget_class, get_icon, register_widget, get_widget, get_widget_from_slot, is_widget, get_parent_widgets, get_all_windows, get_all_widgets, get_widget_at, register_slots_shortcuts, widget_has_shortcut, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut, dispose_shortcuts, register_command, unregister_command, get_command_registry, set_command_shortcut, set_binding_hidden, set_binding_editable, get_default_signals, get_available_signals, slots_instantiated, get_slots_instance, init_slot, call_slot, get_slot, get_slot_from_widget, mark_missing_slot, notify_missing_slot, connect_slot, slot_history
 
 ### `switchboard/history.py` — Ordered, capped history with optional weak storage and key-based filtering.
 - `class History`
@@ -331,7 +331,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/editors/shortcut_editor/registry_facade.py` — Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
 - `class RegistrySwitchboardFacade`
-  - methods: get_ui, convert_to_legal_name, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut
+  - methods: ui_names, get_ui, convert_to_legal_name, get_shortcut_registry, get_static_shortcut_registry, set_user_shortcut
 
 ### `widgets/editors/style_editor.py`
 - constants: BUILTIN_THEMES_DIR, BASIC_TOKENS, LENGTH_TOKENS, EFFECT_SWITCHES, SWITCH_TOKENS, EFFECT_TOKENS, PERCENT_TOKENS, ROW_H, CELL_EDITOR_H
@@ -373,6 +373,8 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 - `class FooterProgressContext`
 - `class FooterStatusController`
   - methods: set_resolver, set_truncation, update
+- `class FooterApply`
+  - methods: pending, arm, disarm, apply
 
 ### `widgets/formPanel.py` — Themed form window: Header → labelled rows → output log → Footer.
 - `class FormPanel(WindowPanel)`
@@ -412,18 +414,20 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/marking_menu/_marking_menu.py`
 - `class MarkingMenu(_BindingsMixin, _HostingMixin, _NavigationMixin, _InputMixin, _PresentationMixin, QtWidgets.QWidget, pythontk.SingletonMixin, pythontk.LoggingMixin, pythontk.HelpMixin)`
-  - methods: retire_all, retire, instance, ui_handler, get, stored_activation_key, default_bindings, bindings, on_bindings_changed, set_activation_key, start_menu_names, get_route_target, set_route_target, menu_theme, window_theme, resolve_hosted_theme, hosts_ui, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent, mousePressEvent, keyReleaseEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, enable_input_logging, disable_input_logging, show, dismiss_for_action, hide, showEvent, paintEvent, hideEvent, dim_other_windows, restore_other_windows
+  - methods: retire_all, retire, activation_key, armed, activate, release, instance, ui_handler, get, stored_activation_key, default_bindings, bindings, on_bindings_changed, set_activation_key, start_menu_names, get_route_target, set_route_target, menu_theme, window_theme, resolve_hosted_theme, hosts_ui, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent, mousePressEvent, keyReleaseEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, enable_input_logging, disable_input_logging, show, dismiss_for_action, hide, showEvent, paintEvent, hideEvent, dim_other_windows, restore_other_windows
 
 ### `widgets/marking_menu/_resolver.py` — Pure menu-resolution logic for the MarkingMenu.
 - constants: LEFT_BUTTON, RIGHT_BUTTON, MIDDLE_BUTTON, SHIFT_MOD, CTRL_MOD, ALT_MOD, META_MOD
 - `class MenuResolver`
   - methods: normalize_key, build_state_key, priority_button, count_buttons, resolve_target_menu, parse_binding_keys
 
-### `widgets/marking_menu/marking_menu_host.py` — What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`.
+### `widgets/marking_menu/marking_menu_host.py` — What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`, and
 - `class MarkingMenuHost(Protocol)`
-  - methods: start, defer, live_menu, main_window, mouse_buttons, bind_activation_key, adopt_window, key_event, attach
+  - methods: main_window, mouse_buttons, bind_activation_key, adopt_window, key_event, attach
+- `class MarkingMenuLaunchHost(Protocol)`
+  - methods: start, defer, live_menu, teardown, report
 - `class PureMarkingMenuHost`
-  - methods: start, defer, live_menu, main_window, mouse_buttons, bind_activation_key, adopt_window, key_event, attach
+  - methods: start, defer, live_menu, main_window, mouse_buttons, bind_activation_key, adopt_window, key_event, attach, teardown, report
 
 ### `widgets/marking_menu/overlay.py`
 - `class OverlayFactoryFilter(QtCore.QObject)`
@@ -561,7 +565,7 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 ### `widgets/optionBox/options/affix.py` — Affix-mode picker option for OptionBox.
 - constants: AFFIX_MODE_VALUES, BUILTIN_AFFIX_MODES
 - `class AffixMode`
-  - methods: resolve, text, convention
+  - methods: placeholder_for, resolve, text, convention
 - `class AffixOption(PersistedOption, ButtonOption)`
   - methods: modes, mode_spec, is_compatible, create_widget, setup_widget, mode, set_mode, restore_default, save_default, clear_saved_default, refresh, resolve
 

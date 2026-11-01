@@ -187,7 +187,7 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `widgets/tableWidget.py::HeaderMixin` → `uitk.TableWidget` (from 1.9.0)
 - `widgets/tableWidget.py::HeaderMixin.default_header_click_behavior` → `uitk.TableWidget` (from 1.9.0)
 
-## Added (231)
+## Added (248)
 
 - `bridge/slots.py::ParamPanelSlots(class)`
 - `bridge/slots.py::ParamPanelSlots.add_param_rows(self) -> List[str]`
@@ -345,25 +345,39 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `switchboard/_core.py::Switchboard.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None, link_handler=None, on_refresh: Optional[Callable[[], Any]] = None)`
 - `switchboard/_core.py::Switchboard.toggle_multi(self, ui, trigger=None, signal=None, apply_now=True, **kwargs)`
 - `switchboard/_core.py::Switchboard.ui_name_resolves(self, name: str) -> bool`
+- `switchboard/_core.py::Switchboard.ui_names(self) -> List[str]`
 - `switchboard/_core.py::Switchboard.unmet_policy(self) -> str`
 - `switchboard/_core.py::Switchboard.unpack_names(cls, name_string)`
 - `switchboard/_core.py::Switchboard.unregister_command(self, name: str) -> None`
 - `switchboard/_core.py::Switchboard.value_from(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], resolver: Callable[..., Any], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]`
 - `switchboard/_core.py::Switchboard.widget_has_shortcut(self, widget: QtWidgets.QWidget) -> bool`
+- `widgets/editors/shortcut_editor/registry_facade.py::RegistrySwitchboardFacade.ui_names(self) -> List[str]`
 - `widgets/footer.py::Footer.edit_status(self, text: str, on_commit: Callable[[str], None], on_cancel: Optional[Callable[[], None]] = None) -> QtWidgets.QLineEdit`
 - `widgets/footer.py::Footer.eventFilter(self, watched, event) -> bool`
 - `widgets/footer.py::Footer.is_editing_status(self) -> bool`
+- `widgets/footer.py::FooterApply(class)`
+- `widgets/footer.py::FooterApply.apply(self) -> None`
+- `widgets/footer.py::FooterApply.arm(self, commit: Callable, note: Optional[str] = None) -> None`
+- `widgets/footer.py::FooterApply.disarm(self, *_signal_args) -> None`
+- `widgets/footer.py::FooterApply.pending(self) -> Optional[Callable]`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.activate(self, buttons=None) -> None`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.activation_key(self) -> Optional[int]`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.armed(self) -> bool`
 - `widgets/marking_menu/_marking_menu.py::MarkingMenu.keyReleaseEvent(self, event) -> None`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.release(self) -> None`
 - `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost(class)`
 - `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.adopt_window(self, widget) -> None`
 - `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.attach(self, menu) -> None`
 - `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.bind_activation_key(self, menu, key: str) -> None`
-- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.defer(self, fn: Callable[[], Any]) -> Any`
 - `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.key_event(self, menu, event) -> None`
-- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.live_menu(self) -> Any`
 - `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.main_window(self) -> Any`
 - `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.mouse_buttons(self) -> Any`
-- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.start(self) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost(class)`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost.defer(self, fn: Callable[[], Any]) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost.live_menu(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost.report(self, message: str, error: bool = False) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost.start(self, app: Optional[str] = None) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost.teardown(self) -> None`
 - `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost(class)`
 - `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.adopt_window(self, widget) -> None`
 - `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.attach(self, menu) -> None`
@@ -373,11 +387,14 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.live_menu(self) -> Any`
 - `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.main_window(self) -> Any`
 - `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.mouse_buttons(self) -> Any`
-- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.start(self) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.report(self, message: str, error: bool = False) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.start(self, app: Optional[str] = None) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.teardown(self) -> None`
 - `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin(class)`
 - `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.eventFilter(self, obj, event)`
 - `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.set_wrapped_widget(self, widget)`
 - `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.setup_widget(self)`
+- `widgets/optionBox/options/affix.py::AffixMode.placeholder_for(self, noun: str) -> str`
 - `widgets/sequencer/_data.py::MenuUtils.menu_exec_pos(event) -> QtCore.QPoint`
 - `widgets/sequencer/_data.py::MenuUtils.styled_menu(parent=None) -> QtWidgets.QMenu`
 - `widgets/sequencer/_layer.py::SequencerLayer(class)`
@@ -429,7 +446,7 @@ _Still resolvable at the same call site -- hoisted to a base class or re-exporte
 - `widgets/optionBox/options/clear.py::ClearOption.set_wrapped_widget`
 - `widgets/optionBox/options/clear.py::ClearOption.setup_widget`
 
-## Signature changed (5)
+## Signature changed (6)
 
 - `switchboard/_core.py::Switchboard.register`
   - was: `(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None)`
@@ -446,3 +463,6 @@ _Still resolvable at the same call site -- hoisted to a base class or re-exporte
 - `widgets/optionBox/option_box_manager.py::OptionBoxManager.set_action`
   - was: `(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None)`
   - now: `(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None, hide_when_empty=False)`
+- `widgets/optionBox/option_box_manager.py::OptionBoxManager.set_affix`
+  - was: `(self, *, default: str = 'auto', modes=None, convention_key=None, on_change=None, tooltip: Optional[str] = None, settings_key=None, order=None, replace: bool = True)`
+  - now: `(self, *, default: str = 'auto', modes=None, convention_key=None, on_change=None, tooltip: Optional[str] = None, settings_key=None, order=None, replace: bool = True, noun: Optional[str] = None)`

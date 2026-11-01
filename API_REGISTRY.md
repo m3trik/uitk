@@ -9,7 +9,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`bridge/attribute_spec.py`](#bridge--attribute_spec) — The Qt-free half of the parameter-panel contract: :class:`AttributeSpec`.
 - [`bridge/formatters.py`](#bridge--formatters) — Per-target-language value formatters for bridge parameter rendering.
 - [`bridge/parameters.py`](#bridge--parameters) — Registry helpers for bridge parameter dicts.
-- [`bridge/slots.py`](#bridge--slots) — Generic DCC-bridge slot base class.
+- [`bridge/slots.py`](#bridge--slots) — The parameter panel's slot base class, :class:`ParamPanelSlots`.
 - [`bridge/spec.py`](#bridge--spec) — Kind-handler registry for parameterised forms (the Qt half of the contract).
 - [`bridge/tooltip.py`](#bridge--tooltip) — Rich-text tooltip + template-description helpers for bridge panels.
 - [`compile.py`](#compile) — Compile Qt Designer .ui files to switchboard-augmented _ui.py modules.
@@ -93,7 +93,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/mainWindow.py`](#widgets--mainWindow)
 - [`widgets/marking_menu/_marking_menu.py`](#widgets--marking_menu--_marking_menu)
 - [`widgets/marking_menu/_resolver.py`](#widgets--marking_menu--_resolver) — Pure menu-resolution logic for the MarkingMenu.
-- [`widgets/marking_menu/marking_menu_host.py`](#widgets--marking_menu--marking_menu_host) — What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`.
+- [`widgets/marking_menu/marking_menu_host.py`](#widgets--marking_menu--marking_menu_host) — What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`, and
 - [`widgets/marking_menu/overlay.py`](#widgets--marking_menu--overlay)
 - [`widgets/menu.py`](#widgets--menu) — ``Menu``: uitk's popup menu widget -- the facade, its configuration and placement.
 - [`widgets/menuButton.py`](#widgets--menuButton)
@@ -177,7 +177,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 UITK - User Interface Toolkit for Qt/PySide applications.
 
 - [`DEFAULT_INCLUDE`](uitk/uitk/__init__.py#L55) — constant
-- [`MOVED_NAMES`](uitk/uitk/__init__.py#L297) — constant
+- [`MOVED_NAMES`](uitk/uitk/__init__.py#L298) — constant
 
 <a id="_bootstrap"></a>
 ### `_bootstrap.py`
@@ -244,9 +244,9 @@ Registry helpers for bridge parameter dicts.
 <a id="bridge--slots"></a>
 ### `bridge/slots.py`
 
-Generic DCC-bridge slot base class.
+The parameter panel's slot base class, :class:`ParamPanelSlots`.
 
-- **[`class ParamPanelSlots(_ParamPanelSlotsInternal)`](uitk/uitk/bridge/slots.py#L303)** — A parameter panel: a template picker, parameter rows built from specs,
+- **[`class ParamPanelSlots(_ParamPanelSlotsInternal)`](uitk/uitk/bridge/slots.py#L304)** — A parameter panel: a template picker, parameter rows built from specs,
   - `ParamPanelSlots.params_module(self)` *(property)*
   - `ParamPanelSlots.template_dir(self) -> Path` *(property)*
   - `ParamPanelSlots.make_bridge(self)` — Return a fresh bridge instance.
@@ -426,7 +426,7 @@ Launchable-contract front end for the Switchboard's bundled editors.
 
 Register, install-on-demand, and launch external Python apps as subprocesses.
 
-- **[`class ExternalAppHandler(BaseHandler)`](uitk/uitk/handlers/external_app_handler.py#L102)** — Switchboard handler for launching external Python apps.
+- **[`class ExternalAppHandler(BaseHandler)`](uitk/uitk/handlers/external_app_handler.py#L104)** — Switchboard handler for launching external Python apps.
   - `ExternalAppHandler.discover(self, groups: Optional[Iterable[str]] = None) -> int` — Auto-register every app advertised under a uitk entry-point group.
   - `ExternalAppHandler.add_provider(self, install_spec: str, *, probe_module: Optional[str] = None, group: Optional[str] = None, python: Optional[str] = None) -> None` — Register a provider package that ships discoverable apps.
   - `ExternalAppHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None, description: Optional[str] = None) -> None` — Pre-register an app so it can be launched by name.
@@ -470,7 +470,7 @@ Unified launchable-entry data class shared by all Switchboard handlers.
   - `UiHandler.is_persistence_explicit(self, ui, name: Optional[str] = None) -> bool` — Whether a *user* choice (per-window override or a non-context global)
   - `UiHandler.reapply_persistence(self, name: Optional[str] = None) -> None` — Re-chrome loaded windows after a persistence preference change.
   - `UiHandler.apply_styles(self, ui, style: Dict = None, theme: str = None)` — Apply default styles to the UI instance.
-  - `UiHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per .ui registered with the Switchboard.
+  - `UiHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per UI registered with the Switchboard
   - `UiHandler.hosting_handler(self, name: str)` — Return the registered handler that claims windowing ownership of *name*.
   - `UiHandler.launch(self, name: str, **options)` — Launch the named UI applying the browser's per-launch style options.
   - `UiHandler.close(self, name: str) -> None` — Hide the named UI as its own hide button would (:meth:`_dismiss`).
@@ -666,7 +666,7 @@ Carry a renamed panel's saved values to the panel that took its name.
 <a id="managers--preset_manager"></a>
 ### `managers/preset_manager.py`
 
-- [`PRESETS_ROOT_ENV_VAR`](uitk/uitk/managers/preset_manager.py#L1240) — constant
+- [`PRESETS_ROOT_ENV_VAR`](uitk/uitk/managers/preset_manager.py#L1239) — constant
 - **[`class PresetManager(_PresetWidgetScope, _PresetRootMigration, pythontk.LoggingMixin)`](uitk/uitk/managers/preset_manager.py#L28)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
@@ -706,7 +706,7 @@ Carry a renamed panel's saved values to the panel that took its name.
 
 A live preview bound to its panel's widgets, over the host's scene session.
 
-- **[`class PreviewSession(Protocol)`](uitk/uitk/managers/preview_controller.py#L52)** — What a :class:`PreviewController` asks of the scene it previews in.
+- **[`class PreviewSession(Protocol)`](uitk/uitk/managers/preview_controller.py#L51)** — What a :class:`PreviewController` asks of the scene it previews in.
   - `PreviewSession.selection(self) -> List[Any]` — The objects a preview or a commit would act on now ([] for none).
   - `PreviewSession.begin(self, objects: Sequence[Any]) -> None` — Capture *objects* and the scene state a rollback returns to.
   - `PreviewSession.run(self) -> None` — Run the operation over the captured objects as a pass
@@ -717,7 +717,7 @@ A live preview bound to its panel's widgets, over the host's scene session.
   - `PreviewSession.undo_step(self, name: str) -> ContextManager` — Everything done inside is ONE undo step, named *name*.
   - `PreviewSession.unrecorded(self) -> ContextManager` — Scene edits made inside reach no undo queue.
   - `PreviewSession.select_result(self, checkbox: Any, results: Any, committed: bool) -> None` — Select the operation's *results* while *checkbox* reads checked
-- **[`class PreviewController(_PreviewControllerInternal)`](uitk/uitk/managers/preview_controller.py#L167)** — A panel's live preview: its widgets bound to a host scene session.
+- **[`class PreviewController(_PreviewControllerInternal)`](uitk/uitk/managers/preview_controller.py#L166)** — A panel's live preview: its widgets bound to a host scene session.
   - `PreviewController.cleanup_all_instances(cls) -> None` *(class)* — Discard every live preview and forget them all.
   - `PreviewController.init_show_hide_behavior(self, enable_on_show: bool, disable_on_hide: bool) -> None` — Hook the window's show / hide to the preview.
   - `PreviewController.conditionally_enable(self) -> None` — Start the preview if :attr:`enable_on_show` (the window showed).
@@ -924,7 +924,7 @@ How a window follows the height of what it is holding.
   - `Switchboard.add_ui(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow`
   - `Switchboard.get_ui(self, ui=None) -> QtWidgets.QWidget` — Get a dynamic UI using its string name, or if no argument is given, return the current UI.
   - `Switchboard.get_ui_relatives(self, ui, upstream=False, exact=False, downstream=False, reverse=False)` — Get UIs related to the given UI via shared base name.
-  - `Switchboard.find_ui_filename(self, legal_name: str, unique_match: bool = False) -> Union[str, List[str], None]` — Convert the given legal name to its original name(s) by searching the UI files.
+  - `Switchboard.find_ui_filename(self, legal_name: str, unique_match: bool = False) -> Union[str, List[str], None]` — Convert the given legal name to its original name(s) among :meth:`ui_names`
   - `Switchboard.save_ui_tags(self, path: str, tags: Iterable[str]) -> None` — Persist tags into a .ui file as a Designer-safe dynamic property.
   - `Switchboard.ui_history(self, index=None, allow_duplicates=False, inc=None, exc=None)` — Get the UI history.
   - `Switchboard.show_prev_ui(self) -> Optional[QtWidgets.QWidget]` — Re-show the most-recent non-transient UI that isn't already on screen.
@@ -982,6 +982,7 @@ How a window follows the height of what it is holding.
   - `Switchboard.unmet_policy(self) -> str` *(property)* — How tools whose requirement is unmet are presented (persisted).
   - `Switchboard.gate(self, widget, available, reason: str = '') -> bool` — Present *widget* according to whether its requirement is met.
   - `Switchboard.recheck_gates(self) -> int` — Re-apply every live gate;
+  - `Switchboard.ui_names(self) -> List[str]` — Every registered UI name: each ``.ui`` file stem, then each name
   - `Switchboard.is_registered_ui(self, name: str) -> bool` — True if *name* is a registered UI -- a ``.ui`` file stem, or a name
   - `Switchboard.ui_name_resolves(self, name: str) -> bool` — True if *name* resolves to a UI, without triggering a load.
   - `Switchboard.menu_button_target_name(self, widget) -> Optional[str]` — The registered UI name a ``MenuButton`` navigates to, or ``None``.
@@ -1528,7 +1529,8 @@ The unified shortcut editor: every binding in a Switchboard's registry.
 
 Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
 
-- **[`class RegistrySwitchboardFacade`](uitk/uitk/widgets/editors/shortcut_editor/registry_facade.py#L96)** — Switchboard-shaped view over grouped binding entries for the editor.
+- **[`class RegistrySwitchboardFacade`](uitk/uitk/widgets/editors/shortcut_editor/registry_facade.py#L82)** — Switchboard-shaped view over grouped binding entries for the editor.
+  - `RegistrySwitchboardFacade.ui_names(self) -> List[str]` — The group names as the editor's UI names (``Switchboard.ui_names``).
   - `RegistrySwitchboardFacade.get_ui(self, name=None)` — Resolve a group name (or ``_GroupUI``) to its synthetic UI object.
   - `RegistrySwitchboardFacade.convert_to_legal_name(self, name: str) -> str`
   - `RegistrySwitchboardFacade.get_shortcut_registry(self, ui=None) -> List[dict]`
@@ -1723,13 +1725,18 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `FooterStatusController.set_resolver(self, resolver: Callable[[], str]) -> None`
   - `FooterStatusController.set_truncation(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None` — Configure truncation behavior for footer updates via StrUtils.truncate kwargs.
   - `FooterStatusController.update(self) -> None`
+- **[`class FooterApply`](uitk/uitk/widgets/footer.py#L1191)** — The Apply button a dry run arms on a footer.
+  - `FooterApply.pending(self) -> Optional[Callable]` *(property)* — The call a click would hand to *on_apply*, or ``None``.
+  - `FooterApply.arm(self, commit: Callable, note: Optional[str] = None) -> None` — Hold *commit* behind the button and show it, with *note* (default:
+  - `FooterApply.disarm(self, *_signal_args) -> None` — Drop the armed call and hide the button.
+  - `FooterApply.apply(self) -> None` — Hand the armed call to *on_apply* (nothing armed: nothing happens).
 
 <a id="widgets--formPanel"></a>
 ### `widgets/formPanel.py`
 
 Themed form window: Header → labelled rows → output log → Footer.
 
-- **[`class FormPanel(WindowPanel)`](uitk/uitk/widgets/formPanel.py#L49)** — Themed form window over a list of field specs.
+- **[`class FormPanel(WindowPanel)`](uitk/uitk/widgets/formPanel.py#L50)** — Themed form window over a list of field specs.
   - `FormPanel.add(self, x, label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), label_align=None, enabled_by: Optional[str] = None, **kwargs)` — :meth:`WindowPanel.add`, and the widget becomes a FIELD when it can.
   - `FormPanel.clear_rows(self) -> None` — The base's, plus the field registries — they point at those rows.
   - `FormPanel.set_fields(self, fields) -> None` — (Re)build the rows from *fields* — each spec is one :meth:`add`.
@@ -1944,6 +1951,10 @@ An image to look at closely: zoom about the cursor, pan, and shapes drawn over i
 - **[`class MarkingMenu(_BindingsMixin, _HostingMixin, _NavigationMixin, _InputMixin, _PresentationMixin, QtWidgets.QWidget, pythontk.SingletonMixin, pythontk.LoggingMixin, pythontk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L27)** — MarkingMenu is a marking menu based on a QWidget.
   - `MarkingMenu.retire_all(cls) -> list` *(class)* — Retire every live instance in the process;
   - `MarkingMenu.retire(self) -> None` — Deactivate this instance because a newer MarkingMenu now owns
+  - `MarkingMenu.activation_key(self) -> Optional[int]` *(property)* — The activation key as a Qt key code, or ``None`` when the bound key is
+  - `MarkingMenu.armed(self) -> bool` *(property)* — Whether the activation key is held: a gesture is live.
+  - `MarkingMenu.activate(self, buttons=None) -> None` — Begin a gesture, as the activation key going down does.
+  - `MarkingMenu.release(self) -> None` — End the gesture, as the activation key coming up does (see
   - `MarkingMenu.instance(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'` *(class)*
   - `MarkingMenu.ui_handler(self)` *(property)* — Accessor for the UI handler.
   - `MarkingMenu.get(self, name: str, **kwargs) -> QtWidgets.QWidget` — Get a UI widget by name.
@@ -2007,20 +2018,23 @@ Pure menu-resolution logic for the MarkingMenu.
 <a id="widgets--marking_menu--marking_menu_host"></a>
 ### `widgets/marking_menu/marking_menu_host.py`
 
-What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`.
+What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`, and
 
-- **[`class MarkingMenuHost(Protocol)`](uitk/uitk/widgets/marking_menu/marking_menu_host.py#L29)** — The answers a marking menu asks of the application that hosts it.
-  - `MarkingMenuHost.start(self) -> None` — Make Qt usable in this process (a binding, a ``QApplication``, an event pump).
-  - `MarkingMenuHost.defer(self, fn: Callable[[], Any]) -> Any` — Run *fn* once the host is ready to build a UI;
-  - `MarkingMenuHost.live_menu(self) -> Any` — The menu this host already drives, or ``None``.
+- **[`class MarkingMenuHost(Protocol)`](uitk/uitk/widgets/marking_menu/marking_menu_host.py#L30)** — The answers a marking menu asks of the application that hosts it.
   - `MarkingMenuHost.main_window(self) -> Any` — The window the menu parents to when none is given, or ``None``.
   - `MarkingMenuHost.mouse_buttons(self) -> Any` — The mouse buttons held now, as a ``Qt.MouseButtons`` mask.
   - `MarkingMenuHost.bind_activation_key(self, menu, key: str) -> None` — The host's own half of the activation binding, on *key* (``"Key_Z"``).
   - `MarkingMenuHost.adopt_window(self, widget) -> None` — Tie a top-level window to the host's own window (stacking, minimize).
   - `MarkingMenuHost.key_event(self, menu, event) -> None` — See each key press and release the menu receives, before the menu does.
   - `MarkingMenuHost.attach(self, menu) -> None` — Take a newly built menu: anything the host does once per menu.
-- **[`class PureMarkingMenuHost`](uitk/uitk/widgets/marking_menu/marking_menu_host.py#L91)** — The plain-Qt answers: the menu behaves exactly as it does with no host.
-  - `PureMarkingMenuHost.start(self) -> None` — Nothing to stand up: a Qt application already runs its own loop.
+- **[`class MarkingMenuLaunchHost(Protocol)`](uitk/uitk/widgets/marking_menu/marking_menu_host.py#L76)** — What a launcher asks of the host it starts a marking menu in -- none of it is the
+  - `MarkingMenuLaunchHost.start(self, app: Optional[str] = None) -> None` — Make Qt usable in this process (a binding, a ``QApplication``, an event pump),
+  - `MarkingMenuLaunchHost.defer(self, fn: Callable[[], Any]) -> Any` — Run *fn* once the host is ready to build a UI;
+  - `MarkingMenuLaunchHost.live_menu(self) -> Any` — The menu this host already drives, or ``None``: a host that wires one menu per
+  - `MarkingMenuLaunchHost.teardown(self) -> None` — Release what the host holds for the menu -- its input wiring, docked UI --
+  - `MarkingMenuLaunchHost.report(self, message: str, error: bool = False) -> None` — Tell the user *message* where they are looking, not through the menu (a
+- **[`class PureMarkingMenuHost`](uitk/uitk/widgets/marking_menu/marking_menu_host.py#L105)** — The plain-Qt answers to both protocols: the menu behaves exactly as it does with no
+  - `PureMarkingMenuHost.start(self, app: Optional[str] = None) -> None` — Nothing to stand up: a Qt application already runs its own loop.
   - `PureMarkingMenuHost.defer(self, fn: Callable[[], Any]) -> Any` — Run *fn* now and return its result.
   - `PureMarkingMenuHost.live_menu(self) -> Any` — None: every launch builds its menu (a new one retires the last).
   - `PureMarkingMenuHost.main_window(self) -> Any` — No main window of its own: the menu parents to what it is given.
@@ -2029,6 +2043,8 @@ What a marking menu needs from the application hosting it: :class:`MarkingMenuHo
   - `PureMarkingMenuHost.adopt_window(self, widget) -> None` — Nothing to tie: Qt windows stack among themselves.
   - `PureMarkingMenuHost.key_event(self, menu, event) -> None` — No key the host handles itself.
   - `PureMarkingMenuHost.attach(self, menu) -> None` — Nothing to set up per menu.
+  - `PureMarkingMenuHost.teardown(self) -> None` — Nothing held outside the menu itself.
+  - `PureMarkingMenuHost.report(self, message: str, error: bool = False) -> None` — The process log: a plain Qt app has no surface of its own to show it on.
 
 <a id="widgets--marking_menu--overlay"></a>
 ### `widgets/marking_menu/overlay.py`
@@ -2398,7 +2414,7 @@ The :class:`OptionBoxManager` facade -- ``widget.option_box``.
   - `OptionBoxManager.set_disable(self, *, icon: str = 'ban', tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, gate_wrapped: bool = True, gated_widgets=(), suppress_value: bool = True, disabled_color: Optional[str] = None, active_color: Optional[str] = None, settings_key=None, replace: bool = True, on_toggled=None)` — Add a universal *disable* button (fluent interface).
   - `OptionBoxManager.add_disable(self, **kwargs)` — Add a disable button without replacing existing ones.
   - `OptionBoxManager.add_value(self, *, width: int = 46, decimals=None, suffix: str = '', order=None, replace: bool = True)` — Add an inline editable value field that mirrors the wrapped widget.
-  - `OptionBoxManager.set_affix(self, *, default: str = 'auto', modes=None, convention_key=None, on_change=None, tooltip: Optional[str] = None, settings_key=None, order=None, replace: bool = True)` — Add an inline affix-mode picker — fluent.
+  - `OptionBoxManager.set_affix(self, *, default: str = 'auto', modes=None, convention_key=None, on_change=None, tooltip: Optional[str] = None, settings_key=None, order=None, replace: bool = True, noun: Optional[str] = None)` — Add an inline affix-mode picker — fluent.
   - `OptionBoxManager.affix_mode(self) -> str` *(property)* — Current affix mode (``"auto"`` when no AffixOption is present).
   - `OptionBoxManager.resolve_affix(self, text: Optional[str] = None, *, default: str = 'prefix')` — Return ``(prefix, suffix)`` for the wrapped field under its mode.
   - `OptionBoxManager.set_reset(self, *, reset=None, icon: str = 'undo', tooltip: Optional[str] = None, tooltip_bypassed: Optional[str] = None, disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)` — Add a per-widget *reset-to-default* button (fluent).
@@ -2486,12 +2502,13 @@ Action option for OptionBox - provides customizable action buttons.
 Affix-mode picker option for OptionBox.
 
 - [`AFFIX_MODE_VALUES`](uitk/uitk/widgets/optionBox/options/affix.py#L68) — constant
-- [`BUILTIN_AFFIX_MODES`](uitk/uitk/widgets/optionBox/options/affix.py#L207) — constant
+- [`BUILTIN_AFFIX_MODES`](uitk/uitk/widgets/optionBox/options/affix.py#L219) — constant
 - **[`class AffixMode`](uitk/uitk/widgets/optionBox/options/affix.py#L72)** — One selectable state of the picker.
+  - `AffixMode.placeholder_for(self, noun: str) -> str` — The field's placeholder in this mode for a field naming *noun*.
   - `AffixMode.resolve(self, text: str, default: str = 'prefix') -> Tuple[str, str]` — ``(prefix, suffix)`` for *text* under this mode.
   - `AffixMode.text(self) -> Optional[str]` — The text this mode supplies, or ``None`` when the user's own stands.
   - `AffixMode.convention(cls, convention_key: Union[str, Callable[[], str]], *, key: str = 'convention', label: str = 'Scene', icon: str = 'link', description: str = '') -> 'AffixMode'` *(class)* — A mode bound to ``pythontk.NamingConvention`` for *convention_key*.
-- **[`class AffixOption(PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/affix.py#L232)** — Cycling affix-mode picker for a text widget.
+- **[`class AffixOption(PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/affix.py#L245)** — Cycling affix-mode picker for a text widget.
   - `AffixOption.modes(self) -> List[str]` *(property)* — The mode keys in cycle order.
   - `AffixOption.mode_spec(self, key: Optional[str] = None) -> AffixMode` — The :class:`AffixMode` for *key* (the current mode by default).
   - `AffixOption.is_compatible(cls, widget) -> bool` *(class)* — Attach only to text-bearing hosts (``resolve`` reads ``text()``).
@@ -2979,7 +2996,7 @@ The graph editor: animation curves in value space, edited like Maya's.
   - `GraphEditor.show_infinity(self) -> bool` *(property)* — The curves drawn dashed past their first and last keys.
   - `GraphEditor.auto_load(self) -> bool` *(property)* — Follow the host's object selection (Maya's Auto Load Selected
   - `GraphEditor.live(self) -> bool` *(property)* — Raise :attr:`curves_previewed` while a drag shapes the curves, so
-  - `GraphEditor.dim_outside(self) -> bool` *(property)* — Veil the time outside :attr:`focus_range` (the shots on screen).
+  - `GraphEditor.dim_outside(self) -> bool` *(property)* — Veil the time outside :attr:`focus_range` (the host's working span).
   - `GraphEditor.focus_range(self) -> Optional[Tuple[float, float]]` *(property)* — ``(t0, t1)`` the host is working in -- the range its scope shows --
   - `GraphEditor.displayed_curve_ids(self) -> List[str]`
   - `GraphEditor.curve(self, curve_id: str)` — The curve as drawn: the drag's preview, else the host's.
