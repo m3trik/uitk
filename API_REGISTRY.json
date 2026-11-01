@@ -23,7 +23,7 @@
           "kind": "constant",
           "signature": "",
           "summary": "",
-          "line": 291,
+          "line": 297,
           "deprecated": false
         }
       ]
@@ -12389,7 +12389,7 @@
         {
           "name": "MarkingMenu",
           "summary": "MarkingMenu is a marking menu based on a QWidget.",
-          "line": 25,
+          "line": 27,
           "bases": [
             "_BindingsMixin",
             "_HostingMixin",
@@ -12408,7 +12408,7 @@
               "kind": "classmethod",
               "signature": "(cls) -> list",
               "summary": "Retire every live instance in the process;",
-              "line": 318,
+              "line": 376,
               "deprecated": false
             },
             {
@@ -12417,7 +12417,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Deactivate this instance because a newer MarkingMenu now owns",
-              "line": 338,
+              "line": 396,
               "deprecated": false
             },
             {
@@ -12426,7 +12426,7 @@
               "kind": "classmethod",
               "signature": "(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'",
               "summary": "",
-              "line": 582,
+              "line": 640,
               "deprecated": false
             },
             {
@@ -12435,7 +12435,7 @@
               "kind": "property",
               "signature": "(self)",
               "summary": "Accessor for the UI handler.",
-              "line": 590,
+              "line": 648,
               "deprecated": false
             },
             {
@@ -12444,7 +12444,7 @@
               "kind": "method",
               "signature": "(self, name: str, **kwargs) -> QtWidgets.QWidget",
               "summary": "Get a UI widget by name.",
-              "line": 594,
+              "line": 652,
               "deprecated": false
             },
             {
@@ -12488,7 +12488,7 @@
               "qualname": "MarkingMenu.set_activation_key",
               "kind": "method",
               "signature": "(self, new_key: str) -> None",
-              "summary": "Rebind the marking menu's activation key across every chord.",
+              "summary": "Rebind the marking menu's activation key across every chord, then let the",
               "line": 319,
               "deprecated": false
             },
@@ -12498,7 +12498,7 @@
               "kind": "method",
               "signature": "(self, short: bool = True) -> list",
               "summary": "Available ``#startmenu`` UI names, sorted.",
-              "line": 364,
+              "line": 372,
               "deprecated": false
             },
             {
@@ -12507,7 +12507,7 @@
               "kind": "method",
               "signature": "(self, buttons=()) -> str",
               "summary": "Full target menu (…#startmenu) bound to the activation key + *buttons*",
-              "line": 404,
+              "line": 412,
               "deprecated": false
             },
             {
@@ -12516,7 +12516,7 @@
               "kind": "method",
               "signature": "(self, buttons, menu: str) -> None",
               "summary": "Bind the activation key + *buttons* gesture to *menu* (a …#startmenu UI",
-              "line": 416,
+              "line": 424,
               "deprecated": false
             },
             {
@@ -12525,7 +12525,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Theme applied to the radial startmenu / submenu pages.",
-              "line": 71,
+              "line": 64,
               "deprecated": false
             },
             {
@@ -12534,7 +12534,7 @@
               "kind": "property",
               "signature": "(self) -> str",
               "summary": "Theme applied to standalone tool windows.",
-              "line": 80,
+              "line": 73,
               "deprecated": false
             },
             {
@@ -12543,7 +12543,7 @@
               "kind": "method",
               "signature": "(self, ui) -> str",
               "summary": "Theme for *ui* by hosted style — menu page vs standalone window.",
-              "line": 88,
+              "line": 81,
               "deprecated": false
             },
             {
@@ -12552,7 +12552,7 @@
               "kind": "method",
               "signature": "(self, name: str) -> bool",
               "summary": "True when *name* is a stacked page (startmenu/submenu) this menu hosts.",
-              "line": 122,
+              "line": 115,
               "deprecated": false
             },
             {
@@ -12561,7 +12561,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget) -> None",
               "summary": "Add a widget to the MarkingMenu window.",
-              "line": 156,
+              "line": 149,
               "deprecated": false
             },
             {
@@ -12570,7 +12570,7 @@
               "kind": "method",
               "signature": "(self) -> Optional[QtWidgets.QWidget]",
               "summary": "Get the currently active widget.",
-              "line": 164,
+              "line": 157,
               "deprecated": false
             },
             {
@@ -12579,7 +12579,7 @@
               "kind": "method",
               "signature": "(self, widget: QtWidgets.QWidget, *, anchor: Optional[QtCore.QPoint] = None) -> None",
               "summary": "Set the current widget and position its center at the given anchor.",
-              "line": 172,
+              "line": 165,
               "deprecated": false
             },
             {
@@ -12588,7 +12588,7 @@
               "kind": "method",
               "signature": "(self, index: int) -> None",
               "summary": "Set the current widget index (compatibility method).",
-              "line": 247,
+              "line": 240,
               "deprecated": false
             },
             {
@@ -12597,7 +12597,7 @@
               "kind": "method",
               "signature": "(self, names=None, *, defer: bool = True) -> None",
               "summary": "Warm the menus the bindings can reach so the FIRST activation —",
-              "line": 329,
+              "line": 322,
               "deprecated": false
             },
             {
@@ -12642,7 +12642,16 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse press: route through the central state-sync.",
-              "line": 326,
+              "line": 327,
+              "deprecated": false
+            },
+            {
+              "name": "keyReleaseEvent",
+              "qualname": "MarkingMenu.keyReleaseEvent",
+              "kind": "method",
+              "signature": "(self, event) -> None",
+              "summary": "Show the host the release first (``MarkingMenuHost.key_event``).",
+              "line": 387,
               "deprecated": false
             },
             {
@@ -12651,7 +12660,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle key press for non-activation key bindings.",
-              "line": 386,
+              "line": 398,
               "deprecated": false
             },
             {
@@ -12660,7 +12669,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "",
-              "line": 411,
+              "line": 424,
               "deprecated": false
             },
             {
@@ -12669,7 +12678,7 @@
               "kind": "method",
               "signature": "(self, event) -> None",
               "summary": "Handle mouse release: dispatch click action or sync menu state.",
-              "line": 603,
+              "line": 616,
               "deprecated": false
             },
             {
@@ -12678,7 +12687,7 @@
               "kind": "method",
               "signature": "(self, path: Optional[str] = None, level='DEBUG') -> str",
               "summary": "Tee DEBUG input-handoff logs (this menu + its ``MouseTracking``) to a file.",
-              "line": 770,
+              "line": 783,
               "deprecated": false
             },
             {
@@ -12687,7 +12696,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Stop the file logging started by :meth:`enable_input_logging`.",
-              "line": 796,
+              "line": 809,
               "deprecated": false
             },
             {
@@ -12705,7 +12714,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "End the gesture NOW, because a user action is about to run.",
-              "line": 369,
+              "line": 370,
               "deprecated": false
             },
             {
@@ -12714,7 +12723,7 @@
               "kind": "method",
               "signature": "(self)",
               "summary": "Override hide to properly reset stacked widget state.",
-              "line": 404,
+              "line": 405,
               "deprecated": false
             },
             {
@@ -12723,7 +12732,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 469,
+              "line": 470,
               "deprecated": false
             },
             {
@@ -12732,7 +12741,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "",
-              "line": 473,
+              "line": 477,
               "deprecated": false
             },
             {
@@ -12741,7 +12750,7 @@
               "kind": "method",
               "signature": "(self, event)",
               "summary": "Clean up on hide - relinquishes input control even if hide() was bypassed.",
-              "line": 480,
+              "line": 484,
               "deprecated": false
             },
             {
@@ -12750,7 +12759,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Fade every background window and menu, once per hold.",
-              "line": 566,
+              "line": 570,
               "deprecated": false
             },
             {
@@ -12759,7 +12768,7 @@
               "kind": "method",
               "signature": "(self) -> None",
               "summary": "Restore everything dimmed by the last :meth:`dim_other_windows`.",
-              "line": 585,
+              "line": 589,
               "deprecated": false
             }
           ]
@@ -12900,6 +12909,194 @@
           "deprecated": false
         }
       ]
+    },
+    {
+      "relpath": "widgets/marking_menu/marking_menu_host.py",
+      "summary": "What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`.",
+      "functions": [],
+      "classes": [
+        {
+          "name": "MarkingMenuHost",
+          "summary": "The answers a marking menu asks of the application that hosts it.",
+          "line": 29,
+          "bases": [
+            "Protocol"
+          ],
+          "members": [
+            {
+              "name": "start",
+              "qualname": "MarkingMenuHost.start",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Make Qt usable in this process (a binding, a ``QApplication``, an event pump).",
+              "line": 48,
+              "deprecated": false
+            },
+            {
+              "name": "defer",
+              "qualname": "MarkingMenuHost.defer",
+              "kind": "method",
+              "signature": "(self, fn: Callable[[], Any]) -> Any",
+              "summary": "Run *fn* once the host is ready to build a UI;",
+              "line": 53,
+              "deprecated": false
+            },
+            {
+              "name": "live_menu",
+              "qualname": "MarkingMenuHost.live_menu",
+              "kind": "method",
+              "signature": "(self) -> Any",
+              "summary": "The menu this host already drives, or ``None``.",
+              "line": 59,
+              "deprecated": false
+            },
+            {
+              "name": "main_window",
+              "qualname": "MarkingMenuHost.main_window",
+              "kind": "method",
+              "signature": "(self) -> Any",
+              "summary": "The window the menu parents to when none is given, or ``None``.",
+              "line": 65,
+              "deprecated": false
+            },
+            {
+              "name": "mouse_buttons",
+              "qualname": "MarkingMenuHost.mouse_buttons",
+              "kind": "method",
+              "signature": "(self) -> Any",
+              "summary": "The mouse buttons held now, as a ``Qt.MouseButtons`` mask.",
+              "line": 68,
+              "deprecated": false
+            },
+            {
+              "name": "bind_activation_key",
+              "qualname": "MarkingMenuHost.bind_activation_key",
+              "kind": "method",
+              "signature": "(self, menu, key: str) -> None",
+              "summary": "The host's own half of the activation binding, on *key* (``\"Key_Z\"``).",
+              "line": 71,
+              "deprecated": false
+            },
+            {
+              "name": "adopt_window",
+              "qualname": "MarkingMenuHost.adopt_window",
+              "kind": "method",
+              "signature": "(self, widget) -> None",
+              "summary": "Tie a top-level window to the host's own window (stacking, minimize).",
+              "line": 78,
+              "deprecated": false
+            },
+            {
+              "name": "key_event",
+              "qualname": "MarkingMenuHost.key_event",
+              "kind": "method",
+              "signature": "(self, menu, event) -> None",
+              "summary": "See each key press and release the menu receives, before the menu does.",
+              "line": 84,
+              "deprecated": false
+            },
+            {
+              "name": "attach",
+              "qualname": "MarkingMenuHost.attach",
+              "kind": "method",
+              "signature": "(self, menu) -> None",
+              "summary": "Take a newly built menu: anything the host does once per menu.",
+              "line": 87,
+              "deprecated": false
+            }
+          ]
+        },
+        {
+          "name": "PureMarkingMenuHost",
+          "summary": "The plain-Qt answers: the menu behaves exactly as it does with no host.",
+          "line": 91,
+          "bases": [],
+          "members": [
+            {
+              "name": "start",
+              "qualname": "PureMarkingMenuHost.start",
+              "kind": "method",
+              "signature": "(self) -> None",
+              "summary": "Nothing to stand up: a Qt application already runs its own loop.",
+              "line": 102,
+              "deprecated": false
+            },
+            {
+              "name": "defer",
+              "qualname": "PureMarkingMenuHost.defer",
+              "kind": "method",
+              "signature": "(self, fn: Callable[[], Any]) -> Any",
+              "summary": "Run *fn* now and return its result.",
+              "line": 105,
+              "deprecated": false
+            },
+            {
+              "name": "live_menu",
+              "qualname": "PureMarkingMenuHost.live_menu",
+              "kind": "method",
+              "signature": "(self) -> Any",
+              "summary": "None: every launch builds its menu (a new one retires the last).",
+              "line": 109,
+              "deprecated": false
+            },
+            {
+              "name": "main_window",
+              "qualname": "PureMarkingMenuHost.main_window",
+              "kind": "method",
+              "signature": "(self) -> Any",
+              "summary": "No main window of its own: the menu parents to what it is given.",
+              "line": 113,
+              "deprecated": false
+            },
+            {
+              "name": "mouse_buttons",
+              "qualname": "PureMarkingMenuHost.mouse_buttons",
+              "kind": "method",
+              "signature": "(self) -> Any",
+              "summary": "Qt's own view of the mouse.",
+              "line": 117,
+              "deprecated": false
+            },
+            {
+              "name": "bind_activation_key",
+              "qualname": "PureMarkingMenuHost.bind_activation_key",
+              "kind": "method",
+              "signature": "(self, menu, key: str) -> None",
+              "summary": "Nothing more: the menu's application shortcut is the whole binding.",
+              "line": 123,
+              "deprecated": false
+            },
+            {
+              "name": "adopt_window",
+              "qualname": "PureMarkingMenuHost.adopt_window",
+              "kind": "method",
+              "signature": "(self, widget) -> None",
+              "summary": "Nothing to tie: Qt windows stack among themselves.",
+              "line": 126,
+              "deprecated": false
+            },
+            {
+              "name": "key_event",
+              "qualname": "PureMarkingMenuHost.key_event",
+              "kind": "method",
+              "signature": "(self, menu, event) -> None",
+              "summary": "No key the host handles itself.",
+              "line": 129,
+              "deprecated": false
+            },
+            {
+              "name": "attach",
+              "qualname": "PureMarkingMenuHost.attach",
+              "kind": "method",
+              "signature": "(self, menu) -> None",
+              "summary": "Nothing to set up per menu.",
+              "line": 132,
+              "deprecated": false
+            }
+          ]
+        }
+      ],
+      "constants": []
     },
     {
       "relpath": "widgets/marking_menu/overlay.py",

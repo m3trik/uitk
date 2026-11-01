@@ -93,6 +93,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/mainWindow.py`](#widgets--mainWindow)
 - [`widgets/marking_menu/_marking_menu.py`](#widgets--marking_menu--_marking_menu)
 - [`widgets/marking_menu/_resolver.py`](#widgets--marking_menu--_resolver) — Pure menu-resolution logic for the MarkingMenu.
+- [`widgets/marking_menu/marking_menu_host.py`](#widgets--marking_menu--marking_menu_host) — What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`.
 - [`widgets/marking_menu/overlay.py`](#widgets--marking_menu--overlay)
 - [`widgets/menu.py`](#widgets--menu) — ``Menu``: uitk's popup menu widget -- the facade, its configuration and placement.
 - [`widgets/menuButton.py`](#widgets--menuButton)
@@ -176,7 +177,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 UITK - User Interface Toolkit for Qt/PySide applications.
 
 - [`DEFAULT_INCLUDE`](uitk/uitk/__init__.py#L55) — constant
-- [`MOVED_NAMES`](uitk/uitk/__init__.py#L291) — constant
+- [`MOVED_NAMES`](uitk/uitk/__init__.py#L297) — constant
 
 <a id="_bootstrap"></a>
 ### `_bootstrap.py`
@@ -1940,7 +1941,7 @@ An image to look at closely: zoom about the cursor, pan, and shapes drawn over i
 <a id="widgets--marking_menu--_marking_menu"></a>
 ### `widgets/marking_menu/_marking_menu.py`
 
-- **[`class MarkingMenu(_BindingsMixin, _HostingMixin, _NavigationMixin, _InputMixin, _PresentationMixin, QtWidgets.QWidget, pythontk.SingletonMixin, pythontk.LoggingMixin, pythontk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L25)** — MarkingMenu is a marking menu based on a QWidget.
+- **[`class MarkingMenu(_BindingsMixin, _HostingMixin, _NavigationMixin, _InputMixin, _PresentationMixin, QtWidgets.QWidget, pythontk.SingletonMixin, pythontk.LoggingMixin, pythontk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L27)** — MarkingMenu is a marking menu based on a QWidget.
   - `MarkingMenu.retire_all(cls) -> list` *(class)* — Retire every live instance in the process;
   - `MarkingMenu.retire(self) -> None` — Deactivate this instance because a newer MarkingMenu now owns
   - `MarkingMenu.instance(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'` *(class)*
@@ -1950,7 +1951,7 @@ An image to look at closely: zoom about the cursor, pan, and shapes drawn over i
   - `MarkingMenu.default_bindings(self) -> dict` *(property)* — The original bindings passed at construction time.
   - `MarkingMenu.bindings(self) -> dict` *(property)* — Get bindings from persistent storage.
   - `MarkingMenu.on_bindings_changed(self, callback) -> None` — Subscribe to binding changes on this menu's persistent store.
-  - `MarkingMenu.set_activation_key(self, new_key: str) -> None` — Rebind the marking menu's activation key across every chord.
+  - `MarkingMenu.set_activation_key(self, new_key: str) -> None` — Rebind the marking menu's activation key across every chord, then let the
   - `MarkingMenu.start_menu_names(self, short: bool = True) -> list` — Available ``#startmenu`` UI names, sorted.
   - `MarkingMenu.get_route_target(self, buttons=()) -> str` — Full target menu (…#startmenu) bound to the activation key + *buttons*
   - `MarkingMenu.set_route_target(self, buttons, menu: str) -> None` — Bind the activation key + *buttons* gesture to *menu* (a …#startmenu UI
@@ -1968,6 +1969,7 @@ An image to look at closely: zoom about the cursor, pan, and shapes drawn over i
   - `MarkingMenu.child_leaveEvent(self, w, event) -> None` — Handle the leave event for child widgets.
   - `MarkingMenu.child_mouseButtonReleaseEvent(self, w, event) -> bool` — Dispatch (or forward) a release delivered to a *grabbed* child.
   - `MarkingMenu.mousePressEvent(self, event) -> None` — Handle mouse press: route through the central state-sync.
+  - `MarkingMenu.keyReleaseEvent(self, event) -> None` — Show the host the release first (``MarkingMenuHost.key_event``).
   - `MarkingMenu.keyPressEvent(self, event) -> None` — Handle key press for non-activation key bindings.
   - `MarkingMenu.mouseDoubleClickEvent(self, event) -> None`
   - `MarkingMenu.mouseReleaseEvent(self, event) -> None` — Handle mouse release: dispatch click action or sync menu state.
@@ -2001,6 +2003,32 @@ Pure menu-resolution logic for the MarkingMenu.
   - `MenuResolver.count_buttons(buttons: int) -> int` *(static)* — Count distinct buttons set in the mask.
   - `MenuResolver.resolve_target_menu(*, activation_held: bool, activation_key_str: Optional[str], buttons: int, modifiers: int, bindings: Mapping[str, str], extra_key: Optional[str] = None) -> Optional[str]` *(static)* — Return the UI name that should be visible for the given input state.
   - `MenuResolver.parse_binding_keys(raw_bindings: Mapping[str, str]) -> tuple` *(static)* — Parse user-supplied bindings into (normalized_dict, activation_key_str).
+
+<a id="widgets--marking_menu--marking_menu_host"></a>
+### `widgets/marking_menu/marking_menu_host.py`
+
+What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`.
+
+- **[`class MarkingMenuHost(Protocol)`](uitk/uitk/widgets/marking_menu/marking_menu_host.py#L29)** — The answers a marking menu asks of the application that hosts it.
+  - `MarkingMenuHost.start(self) -> None` — Make Qt usable in this process (a binding, a ``QApplication``, an event pump).
+  - `MarkingMenuHost.defer(self, fn: Callable[[], Any]) -> Any` — Run *fn* once the host is ready to build a UI;
+  - `MarkingMenuHost.live_menu(self) -> Any` — The menu this host already drives, or ``None``.
+  - `MarkingMenuHost.main_window(self) -> Any` — The window the menu parents to when none is given, or ``None``.
+  - `MarkingMenuHost.mouse_buttons(self) -> Any` — The mouse buttons held now, as a ``Qt.MouseButtons`` mask.
+  - `MarkingMenuHost.bind_activation_key(self, menu, key: str) -> None` — The host's own half of the activation binding, on *key* (``"Key_Z"``).
+  - `MarkingMenuHost.adopt_window(self, widget) -> None` — Tie a top-level window to the host's own window (stacking, minimize).
+  - `MarkingMenuHost.key_event(self, menu, event) -> None` — See each key press and release the menu receives, before the menu does.
+  - `MarkingMenuHost.attach(self, menu) -> None` — Take a newly built menu: anything the host does once per menu.
+- **[`class PureMarkingMenuHost`](uitk/uitk/widgets/marking_menu/marking_menu_host.py#L91)** — The plain-Qt answers: the menu behaves exactly as it does with no host.
+  - `PureMarkingMenuHost.start(self) -> None` — Nothing to stand up: a Qt application already runs its own loop.
+  - `PureMarkingMenuHost.defer(self, fn: Callable[[], Any]) -> Any` — Run *fn* now and return its result.
+  - `PureMarkingMenuHost.live_menu(self) -> Any` — None: every launch builds its menu (a new one retires the last).
+  - `PureMarkingMenuHost.main_window(self) -> Any` — No main window of its own: the menu parents to what it is given.
+  - `PureMarkingMenuHost.mouse_buttons(self) -> Any` — Qt's own view of the mouse.
+  - `PureMarkingMenuHost.bind_activation_key(self, menu, key: str) -> None` — Nothing more: the menu's application shortcut is the whole binding.
+  - `PureMarkingMenuHost.adopt_window(self, widget) -> None` — Nothing to tie: Qt windows stack among themselves.
+  - `PureMarkingMenuHost.key_event(self, menu, event) -> None` — No key the host handles itself.
+  - `PureMarkingMenuHost.attach(self, menu) -> None` — Nothing to set up per menu.
 
 <a id="widgets--marking_menu--overlay"></a>
 ### `widgets/marking_menu/overlay.py`

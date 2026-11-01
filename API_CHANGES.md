@@ -187,7 +187,7 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `widgets/tableWidget.py::HeaderMixin` → `uitk.TableWidget` (from 1.9.0)
 - `widgets/tableWidget.py::HeaderMixin.default_header_click_behavior` → `uitk.TableWidget` (from 1.9.0)
 
-## Added (210)
+## Added (231)
 
 - `bridge/slots.py::ParamPanelSlots(class)`
 - `bridge/slots.py::ParamPanelSlots.add_param_rows(self) -> List[str]`
@@ -353,6 +353,27 @@ _Diff vs the last release (origin/main @ 8004002)._
 - `widgets/footer.py::Footer.edit_status(self, text: str, on_commit: Callable[[str], None], on_cancel: Optional[Callable[[], None]] = None) -> QtWidgets.QLineEdit`
 - `widgets/footer.py::Footer.eventFilter(self, watched, event) -> bool`
 - `widgets/footer.py::Footer.is_editing_status(self) -> bool`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.keyReleaseEvent(self, event) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost(class)`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.adopt_window(self, widget) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.attach(self, menu) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.bind_activation_key(self, menu, key: str) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.defer(self, fn: Callable[[], Any]) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.key_event(self, menu, event) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.live_menu(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.main_window(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.mouse_buttons(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.start(self) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost(class)`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.adopt_window(self, widget) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.attach(self, menu) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.bind_activation_key(self, menu, key: str) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.defer(self, fn: Callable[[], Any]) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.key_event(self, menu, event) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.live_menu(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.main_window(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.mouse_buttons(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.start(self) -> None`
 - `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin(class)`
 - `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.eventFilter(self, obj, event)`
 - `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.set_wrapped_widget(self, widget)`

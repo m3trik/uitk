@@ -412,12 +412,18 @@ _Auto-generated. Do not edit by hand. Compact symbol index — grep this for a n
 
 ### `widgets/marking_menu/_marking_menu.py`
 - `class MarkingMenu(_BindingsMixin, _HostingMixin, _NavigationMixin, _InputMixin, _PresentationMixin, QtWidgets.QWidget, pythontk.SingletonMixin, pythontk.LoggingMixin, pythontk.HelpMixin)`
-  - methods: retire_all, retire, instance, ui_handler, get, stored_activation_key, default_bindings, bindings, on_bindings_changed, set_activation_key, start_menu_names, get_route_target, set_route_target, menu_theme, window_theme, resolve_hosted_theme, hosts_ui, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent, mousePressEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, enable_input_logging, disable_input_logging, show, dismiss_for_action, hide, showEvent, paintEvent, hideEvent, dim_other_windows, restore_other_windows
+  - methods: retire_all, retire, instance, ui_handler, get, stored_activation_key, default_bindings, bindings, on_bindings_changed, set_activation_key, start_menu_names, get_route_target, set_route_target, menu_theme, window_theme, resolve_hosted_theme, hosts_ui, addWidget, currentWidget, setCurrentWidget, setCurrentIndex, preload_menus, add_child_event_filter, child_enterEvent, child_leaveEvent, child_mouseButtonReleaseEvent, mousePressEvent, keyReleaseEvent, keyPressEvent, mouseDoubleClickEvent, mouseReleaseEvent, enable_input_logging, disable_input_logging, show, dismiss_for_action, hide, showEvent, paintEvent, hideEvent, dim_other_windows, restore_other_windows
 
 ### `widgets/marking_menu/_resolver.py` — Pure menu-resolution logic for the MarkingMenu.
 - constants: LEFT_BUTTON, RIGHT_BUTTON, MIDDLE_BUTTON, SHIFT_MOD, CTRL_MOD, ALT_MOD, META_MOD
 - `class MenuResolver`
   - methods: normalize_key, build_state_key, priority_button, count_buttons, resolve_target_menu, parse_binding_keys
+
+### `widgets/marking_menu/marking_menu_host.py` — What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`.
+- `class MarkingMenuHost(Protocol)`
+  - methods: start, defer, live_menu, main_window, mouse_buttons, bind_activation_key, adopt_window, key_event, attach
+- `class PureMarkingMenuHost`
+  - methods: start, defer, live_menu, main_window, mouse_buttons, bind_activation_key, adopt_window, key_event, attach
 
 ### `widgets/marking_menu/overlay.py`
 - `class OverlayFactoryFilter(QtCore.QObject)`
