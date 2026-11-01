@@ -375,10 +375,11 @@ class _BindingsMixin:
         The set the host's "Menu Bindings" combos pick a target menu from.
         ``short=True`` strips the ``#startmenu`` tag ("cameras"); ``False`` keeps
         the registered filename ("cameras#startmenu"). Centralizes what the host's
-        settings slot used to compute inline (``_get_startmenus``).
+        settings slot used to compute inline (``_get_startmenus``). Read from
+        :meth:`Switchboard.ui_names`, so a menu built in code
+        (``register_ui``) is a target as a ``.ui`` file is.
         """
-        filenames = self.sb.registry.ui_registry.get("filename") or []
-        names = sorted(f for f in filenames if "#startmenu" in f)
+        names = sorted(f for f in self.sb.ui_names() if "#startmenu" in f)
         return [n.replace("#startmenu", "") for n in names] if short else names
 
     # -- unified shortcut-editor register ("hotkey register" integration) ---

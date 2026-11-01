@@ -165,6 +165,16 @@ class TestNoHost(_HostCase):
         self.assertNotIsInstance(mm.sb.handlers.ui, _RecordingUiHandler)
 
 
+class TestStartMenuNames(_HostCase):
+    def test_a_start_menu_built_in_code_is_a_binding_target(self):
+        """``register_ui`` registers like a ``.ui`` file, so the Menu Bindings
+        pick list (``start_menu_names``) lists it as it lists a file."""
+        mm = self._make_mm("t_host_startmenus")
+        mm.sb.register_ui("codebuilt#startmenu", QtWidgets.QWidget)
+        self.assertIn("codebuilt", mm.start_menu_names())
+        self.assertIn("codebuilt#startmenu", mm.start_menu_names(short=False))
+
+
 class TestAKeyboardOwningHostDrivesTheMenu(_HostCase):
     """A host whose own loop owns the keyboard (Blender's GHOST) never lets the menu's Qt
     shortcut see the activation key, so it drives the gesture through the menu's public

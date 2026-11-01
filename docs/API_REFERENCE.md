@@ -430,6 +430,7 @@ MarkingMenu(
     precompile: bool = False,
     preload: bool = False,
     context_tags=None,
+    host=None,                      # a MarkingMenuHost; None = PureMarkingMenuHost (plain Qt)
     **kwargs,
 )
 ```
@@ -458,12 +459,16 @@ HANDLERS = {"ui": UiHandler}   # merged with any `handlers` arg at construction
 | `restore_other_windows()` | Restore opacity — called by `hideEvent`, so any hide un-dims; callers rarely need it |
 | `setCurrentWidget(widget)` | Stacked-widget-style current-widget swap |
 | `add_child_event_filter(widgets)` | Install the internal child event filter on widgets |
+| `start_menu_names(short=True)` | The `#startmenu` names a binding can target, `.ui` files and `register_ui` builders alike |
+| `activate(buttons=None)` / `release()` / `armed` / `activation_key` | What a host that owns the keyboard calls to drive the menu ([MARKING_MENU.md](MARKING_MENU.md)) |
 
-### Subclass override points
+### Hosting it in an application
 
-- `HANDLERS` class dict — register DCC-specific handlers.
-- `_setup_registry` — custom handler initialization logic.
-- `_init_ui`, `_show_window` — customize per-UI-type lifecycle.
+An application's behaviour comes in through `host=`, never a subclass: a `MarkingMenuHost`
+(main window, shortcut window, parenting, mouse buttons, the activation binding, key events),
+with `PureMarkingMenuHost` as the plain-Qt default. A launcher's half (start, defer, the live
+menu, teardown, report) is `MarkingMenuLaunchHost`. Both are in [MARKING_MENU.md](MARKING_MENU.md).
+`HANDLERS` (a class dict merged with `handlers=`) still registers the UI handler a host brings.
 
 ---
 
