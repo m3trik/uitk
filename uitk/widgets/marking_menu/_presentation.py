@@ -309,6 +309,7 @@ class _PresentationMixin:
                 ),
             )
 
+        self._adopt_window(widget)
         return widget
 
     def _reset_stacked_pin(self, ui) -> None:
@@ -467,6 +468,9 @@ class _PresentationMixin:
     _backdrop = None
 
     def showEvent(self, event):
+        # Re-assert the host's tie to its own window on every show: Qt re-creating
+        # the native window on a flag change silently drops what a host set on it.
+        self._adopt_window(self)
         self._backdrop = Bootstrap.screen_backdrop(self)
         super().showEvent(event)
 

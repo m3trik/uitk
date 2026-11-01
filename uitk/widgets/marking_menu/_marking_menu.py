@@ -12,6 +12,7 @@ from uitk.compile import UiCompiler
 from uitk.events import EventFactoryFilter, MouseTracking
 from uitk.handlers.ui_handler import UiHandler
 from uitk.loaders import CompiledLoader
+from uitk.managers.shortcut_manager import ShortcutManager
 from uitk.switchboard import Switchboard
 from ._resolver import MenuResolver, _MARKING_MENU_TAGS
 from .overlay import Overlay
@@ -20,6 +21,7 @@ from ._hosting import _HostingMixin
 from ._input import _InputMixin
 from ._navigation import _NavigationMixin
 from ._presentation import _PresentationMixin
+from .marking_menu_host import PureMarkingMenuHost
 
 
 class MarkingMenu(
@@ -57,6 +59,10 @@ class MarkingMenu(
                 If the given dir is a string and not a full path, it will be treated as relative to the default path.
                 If a module is given, the path to that module will be used.
         switchboard (Switchboard): An optional existing Switchboard instance to use.
+        host (MarkingMenuHost): What the hosting application answers differently from a
+                plain Qt app: its main window, its activation-key half, its mouse, how
+                its windows stack, its UI handler (see ``marking_menu_host.py``). Omitted,
+                :class:`PureMarkingMenuHost` -- the plain-Qt answers.
         log_level (int): Determines the level of logging messages. Defaults to logging.WARNING. Accepts standard Python logging module levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
 
     The class is assembled from one part per concept, each a mixin module in
@@ -85,6 +91,10 @@ class MarkingMenu(
     # A plain constant, so both class generations across a reload agree on it.
     _LIVE_REGISTRY_ATTR = "_uitk_marking_menu_live_instances"
     _retired: bool = False
+    #: What the hosting application answers differently from a plain Qt app
+    #: (``marking_menu_host.py``); ``__init__`` sets the instance's. The class
+    #: default serves an instance a test fixture built without ``__init__``.
+    host = PureMarkingMenuHost()
 
     # Shell-style name patterns matching the gesture pages this menu hosts
     # (the same tag set hosts_ui claims). Applied as the SwitchboardBrowser's
@@ -108,10 +118,20 @@ class MarkingMenu(
         precompile: bool = False,
         preload: bool = False,
         context_tags=None,
+        host=None,
         **kwargs,
     ):
         """ """
+        # The host first: it can name the parent, and every later step asks it.
+        self.host = host if host is not None else PureMarkingMenuHost()
+        if parent is None:
+            parent = self._host_main_window()
         super().__init__(parent=parent)
+        # The host's main window owns application-scoped shortcuts (it is always
+        # up); uitk names no host, so the host declares it.
+        ShortcutManager.register_host_window(
+            getattr(self.host, "shortcut_window_name", None)
+        )
         self.logger.setLevel(log_level)
         self._bindings = {}
         self._submenu_cache = {}  # per-instance; see the class-attr note
@@ -126,14 +146,17 @@ class MarkingMenu(
         self._non_default_shown = False
         self._pending_hide_widget = None
 
-        # Merge class-level HANDLERS with instance-level handlers param
+        # Merge class-level HANDLERS, the host's UI handler and the handlers param
         self._handlers_config = getattr(self, "HANDLERS", {}).copy()
+        host_ui_handler = getattr(self.host, "ui_handler", None)
+        if host_ui_handler is not None:
+            self._handlers_config["ui"] = host_ui_handler
         if handlers:
             self._handlers_config.update(handlers)
 
         # ... (path resolution logic) ...
 
-        # Resolve paths relative to the subclass module (e.g. TclMaya in tentacle)
+        # Resolve paths relative to the subclass module (a host's subclass)
         # instead of relative to this base class file in uitk.
         base_dir = 1
         module = sys.modules.get(self.__module__)
@@ -172,7 +195,7 @@ class MarkingMenu(
         # fallback if the user beats it to a particular UI.
         # Off by default to keep test environments clean (no daemon threads
         # leaking across MarkingMenu construction in test suites). Production
-        # consumers (e.g. tentacle.tcl_maya) opt in with ``precompile=True``.
+        # consumers (e.g. tentacle's launcher) opt in with ``precompile=True``.
         # Gated on the active loader: only the CompiledLoader actually
         # consumes _ui.py artifacts, so under the (default) RuntimeLoader
         # there's nothing to precompile and the call would be wasted uic
@@ -265,9 +288,10 @@ class MarkingMenu(
         self._activation_parent = parent
         if parent:
             self._install_activation_shortcut()
+        self._bind_host_activation()
 
         # A process hosts at most ONE input-owning marking menu. A second
-        # instance (a dev reload constructs a new TclMaya/TclBlender in the
+        # instance (a dev reload constructs a new marking menu in the
         # same DCC session) must RETIRE the previous one: its still-live
         # activation GlobalShortcut otherwise keeps servicing the gesture with
         # stale caches — wrappers whose native-menu content this instance's
@@ -285,6 +309,40 @@ class MarkingMenu(
         # warm-ups. Off by default for the same reason as ``precompile``.
         if preload:
             self.preload_menus()
+
+        # The host's once-per-menu setup, last: the menu is whole by now.
+        self._adopt_window(self)
+        try:
+            self.host.attach(self)
+        except Exception as error:  # a host's extras must never block construction
+            self.logger.warning(f"host attach failed: {error}")
+
+    def _host_main_window(self):
+        """The host's main window, or None -- never raises: a menu with no parent
+        still shows as a top-level window. Runs before ``QWidget.__init__``."""
+        try:
+            return self.host.main_window()
+        except Exception as error:
+            self.logger.warning(f"no host main window: {error}")
+            return None
+
+    def _bind_host_activation(self) -> None:
+        """Let the host bind its own half of the activation key (never raises: the
+        menu's Qt shortcut is a working binding on its own)."""
+        key = getattr(self, "_activation_key_str", None)
+        if self._retired or not key:
+            return
+        try:
+            self.host.bind_activation_key(self, key)
+        except Exception as error:
+            self.logger.warning(f"host activation binding failed: {error}")
+
+    def _adopt_window(self, widget) -> None:
+        """Let the host tie *widget* to its own window (best-effort)."""
+        try:
+            self.host.adopt_window(widget)
+        except Exception as error:
+            self.logger.debug(f"host adopt_window failed: {error}")
 
     @classmethod
     def _live_registry(cls) -> "weakref.WeakSet":

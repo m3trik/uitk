@@ -78,6 +78,12 @@ DEFAULT_INCLUDE = {
     # Qt Designer widget-box registrar (`python -m uitk.designer`).
     "designer._designer": ["DesignerPlugin", "DesignerWidget"],
     "widgets.marking_menu._marking_menu": "MarkingMenu",
+    # What a marking menu asks of the application hosting it, and the plain-Qt
+    # answers a host adapter subclasses (mtk/btk ``*MarkingMenuHost``).
+    "widgets.marking_menu.marking_menu_host": [
+        "MarkingMenuHost",
+        "PureMarkingMenuHost",
+    ],
     "widgets.marking_menu._resolver": "MenuResolver",
     # Widgets
     "widgets.attribute_window": "AttributeWindow",

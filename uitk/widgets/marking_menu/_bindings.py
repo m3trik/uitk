@@ -317,6 +317,14 @@ class _BindingsMixin:
         self._shortcut_instance.released.connect(self._on_activation_release)
 
     def set_activation_key(self, new_key: str) -> None:
+        """Rebind the marking menu's activation key across every chord, then let the
+        host move its own half of the binding (``MarkingMenuHost.bind_activation_key``)
+        -- also when the key is unchanged or invalid: a redundant call re-syncs a host
+        half that drifted. See :meth:`_rebind_activation_key`."""
+        self._rebind_activation_key(new_key)
+        self._bind_host_activation()
+
+    def _rebind_activation_key(self, new_key: str) -> None:
         """Rebind the marking menu's activation key across every chord.
 
         The activation key (``key_show``) is the shared prefix of *every* binding
