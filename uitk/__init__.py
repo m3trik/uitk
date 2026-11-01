@@ -295,6 +295,11 @@ def _uitk_getattr(name: str):
 #: accounts for a member's move at release (``generate_api_registry.py``); only
 #: a root name answers at runtime.
 MOVED_NAMES = {
+    # A host says its event loop is native through its MarkingMenuHost (2026-10-31).
+    "MarkingMenu.PRELOAD_ONLY_FROM_HOST_LOOP": (
+        "uitk.MarkingMenuHost.preload_only_from_host_loop",
+        "1.9.0",
+    ),
     # A parameter panel, not only a DCC bridge's (2026-10-31).
     "BridgeSlotsBase": ("uitk.ParamPanelSlots", "1.9.0"),
     # A generic timeline frames a range, not a shot (2026-10-31).
