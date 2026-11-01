@@ -24,7 +24,7 @@ priority_button = MenuResolver.priority_button
 resolve_target_menu = MenuResolver.resolve_target_menu
 
 
-# Bindings shared across most tests, mirroring the TclMaya defaults.
+# Bindings shared across most tests, mirroring tentacle's launcher defaults.
 DEFAULTS = {
     "Key_F12": "hud",
     "Key_F12|LeftButton": "cameras",

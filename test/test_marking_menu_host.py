@@ -125,6 +125,34 @@ class TestTheProtocol(unittest.TestCase):
         self.assertIs(uitk.MarkingMenuHost, MarkingMenuHost)
         self.assertIs(uitk.PureMarkingMenuHost, PureMarkingMenuHost)
 
+    def test_the_menu_protocol_names_only_what_the_menu_calls(self):
+        """``start`` / ``defer`` / ``live_menu`` / ``teardown`` / ``report`` are a
+        launcher's: the menu never calls them, so they are a protocol of their own."""
+        from uitk.widgets.marking_menu.marking_menu_host import MarkingMenuLaunchHost
+
+        launcher = {"start", "defer", "live_menu", "teardown", "report"}
+        self.assertFalse(launcher & set(vars(MarkingMenuHost)))
+        self.assertTrue(launcher <= set(vars(MarkingMenuLaunchHost)))
+
+    def test_the_pure_host_answers_both_protocols(self):
+        """One adapter class answers both, so the pure default does too."""
+        import uitk
+        from uitk.widgets.marking_menu.marking_menu_host import MarkingMenuLaunchHost
+
+        self.assertIs(uitk.MarkingMenuLaunchHost, MarkingMenuLaunchHost)
+        host = PureMarkingMenuHost()
+        self.assertIsInstance(host, MarkingMenuLaunchHost)
+        host.start(app="an app")  # a Qt app already runs: nothing to stand up
+        host.teardown()  # nothing held outside the menu
+
+    def test_the_pure_host_reports_to_the_process_log(self):
+        with self.assertLogs("uitk.marking_menu", level="INFO") as logs:
+            PureMarkingMenuHost().report("rebuilt")
+            PureMarkingMenuHost().report("failed", error=True)
+        self.assertEqual(
+            [r.levelname for r in logs.records], ["INFO", "ERROR"], logs.output
+        )
+
 
 class TestNoHost(_HostCase):
     def test_a_menu_without_a_host_answers_as_plain_qt(self):
@@ -135,6 +163,39 @@ class TestNoHost(_HostCase):
         )
         self.assertIsInstance(mm.sb.handlers.ui, UiHandler)
         self.assertNotIsInstance(mm.sb.handlers.ui, _RecordingUiHandler)
+
+
+class TestAKeyboardOwningHostDrivesTheMenu(_HostCase):
+    """A host whose own loop owns the keyboard (Blender's GHOST) never lets the menu's Qt
+    shortcut see the activation key, so it drives the gesture through the menu's public
+    surface: ``activate`` on key-down, ``release`` on key-up, ``armed`` while held,
+    ``activation_key`` to match its own key events against."""
+
+    def setUp(self):
+        super().setUp()
+        self.mm = self._make_mm("t_host_keyboard")
+
+    def test_the_activation_key_is_public(self):
+        self.assertEqual(self.mm.activation_key, int(QtCore.Qt.Key_F12))
+
+    def test_activate_arms_and_release_ends_the_gesture(self):
+        self.assertFalse(self.mm.armed)
+        self.mm.activate()
+        self.assertTrue(self.mm.armed)
+        self.mm.release()
+        self.assertFalse(self.mm.armed)
+
+    def test_a_held_button_picks_its_chord(self):
+        """The host reads the buttons itself (Qt cannot see them) and passes them."""
+        shown = []
+        self.mm.show = lambda name=None, *a, **kw: shown.append(name)
+        self.mm.activate(buttons=QtCore.Qt.RightButton)
+        self.assertEqual(shown[-1], "main#startmenu")
+
+    def test_a_retired_menu_ignores_the_host(self):
+        self.mm.retire()
+        self.mm.activate()
+        self.assertFalse(self.mm.armed)
 
 
 class TestTheMenuAsksItsHost(_HostCase):

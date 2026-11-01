@@ -21,7 +21,7 @@ from uitk.widgets.marking_menu._resolver import MenuResolver
 parse_binding_keys = MenuResolver.parse_binding_keys
 
 
-# Default binding fixture mirrors TclMaya's defaults so behavior is realistic.
+# Default binding fixture mirrors tentacle's launcher defaults so behavior is realistic.
 DEFAULT_BINDINGS = {
     "Key_F12": "hud",
     "Key_F12|LeftButton": "cameras",

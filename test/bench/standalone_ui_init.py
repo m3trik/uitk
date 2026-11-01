@@ -27,7 +27,7 @@ Phases timed (sub-millisecond resolution, ``time.perf_counter``):
 
   ``02_construct``
       Construct whatever the project needs before a UI can be loaded:
-      a bare ``Switchboard``, a ``TclMaya`` that builds its own
+      a bare ``Switchboard``, a launcher (tentacle's ``Tcl.build``) that builds its own
       switchboard internally, etc.  Subclasses decide.
 
   ``03_lazy_load_ui``
@@ -94,7 +94,7 @@ class StandaloneUiInitBench:
     Subclass and override :meth:`setup_switchboard`.  The default
     :meth:`setup_marking_menu` is a no-op; override only if your
     project's real path constructs a marking menu before opening these
-    UIs (e.g. tentacle's ``TclMaya``, which registers mayatk UIs onto
+    UIs (e.g. tentacle's ``Tcl.build`` in Maya, which registers mayatk UIs onto
     its switchboard via ``MayaUiHandler``).
     """
 
@@ -116,7 +116,7 @@ class StandaloneUiInitBench:
     def setup_switchboard(self):
         """Return the :class:`Switchboard` the bench will load through.
 
-        Subclasses that bundle construction (e.g. tentacle's ``TclMaya``
+        Subclasses that bundle construction (e.g. tentacle's ``Tcl.build``
         builds its own switchboard internally) should construct the
         bundle here and return ``mm.sb`` — phase 02 will absorb the
         full bundled cost.

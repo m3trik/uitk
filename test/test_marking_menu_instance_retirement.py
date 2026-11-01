@@ -2,8 +2,8 @@
 # coding=utf-8
 """Regression: a SECOND MarkingMenu in one process must not fight the first.
 
-Live-Maya symptom (tentacle dev-reload workflow): after re-instantiating
-TclMaya in a long-lived Maya session, holding L+R opened the chord menu but
+Live-Maya symptom (tentacle dev-reload workflow): after re-building
+tentacle's marking menu in a long-lived Maya session, holding L+R opened the chord menu but
 releasing over a MenuButton launched nothing. Two-instance probe showed the
 gesture being serviced with STALE state:
 
@@ -68,7 +68,7 @@ class MarkingMenuInstanceIsolation(QtBaseTestCase):
 
     def test_a_previous_instance_qt_already_deleted_is_retired_quietly(self):
         """The previous menu's C++ side can be gone while its wrapper lives on
-        (a host window closed under it; tentacle's suite builds a TclMaya per
+        (a host window closed under it; tentacle's suite builds a menu per
         panel class): retiring it must not touch its dead chord timer.
         Measured: ``RuntimeError: Internal C++ object (PySide6.QtCore.QTimer)
         already deleted`` out of the next instance's constructor. Added:

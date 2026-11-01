@@ -428,6 +428,39 @@ class MarkingMenu(
         except Exception:
             self.logger.debug("retire: hide failed", exc_info=True)
 
+    # -- The activation, for a host that owns the keyboard ---------------------
+
+    @property
+    def activation_key(self) -> Optional[int]:
+        """The activation key as a Qt key code, or ``None`` when the bound key is
+        invalid. A host whose own loop owns the keyboard matches its key events
+        against it."""
+        return self._activation_key
+
+    @property
+    def armed(self) -> bool:
+        """Whether the activation key is held: a gesture is live."""
+        return bool(self._activation_key_held)
+
+    def activate(self, buttons=None) -> None:
+        """Begin a gesture, as the activation key going down does.
+
+        For a host whose own event loop owns the keyboard, so the menu's Qt
+        shortcut never sees the key (Blender's GHOST): it calls this on key-down
+        and :meth:`release` on key-up. A retired menu ignores it.
+
+        Parameters:
+            buttons: The Qt mouse-button mask held at key-down, for a host that
+                owns the mouse too (``QApplication.mouseButtons()`` reflects only
+                the events Qt saw). ``None`` reads it from Qt.
+        """
+        self._on_activation_press(buttons)
+
+    def release(self) -> None:
+        """End the gesture, as the activation key coming up does (see
+        :meth:`activate`)."""
+        self._on_activation_release()
+
     def _on_activation_press(self, buttons=None):
         """Handle the global shortcut press event.
 

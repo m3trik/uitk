@@ -126,7 +126,7 @@ As a backstop for pages that still reach the activation path cold (preloading of
 
 ### Hosting it in an application: `MarkingMenu(host=...)`
 
-In a plain Qt app the menu needs nothing from its host: it parents to the window it is given, binds its activation key with an application shortcut, reads the mouse from Qt and shows its windows the Qt way. An application that is not purely Qt -- a DCC whose event loop is native code, that owns the keyboard before Qt sees a key, whose windows are foreign to Qt -- answers some of those differently. It says so by passing a **host**: an object implementing `uitk.MarkingMenuHost` ([marking_menu_host.py](../uitk/widgets/marking_menu/marking_menu_host.py)), never by subclassing `MarkingMenu`. `uitk.PureMarkingMenuHost` is the default (no `host` argument): exactly the plain-Qt answers. An adapter subclasses it and overrides only what its application answers differently.
+In a plain Qt app the menu needs nothing from its host: it parents to the window it is given, binds its activation key with an application shortcut, reads the mouse from Qt and shows its windows the Qt way. An application that is not purely Qt -- a DCC whose event loop is native code, that owns the keyboard before Qt sees a key, whose windows are foreign to Qt -- answers some of those differently. It says so by passing a **host**: an object implementing `uitk.MarkingMenuHost` ([marking_menu_host.py](../uitk/widgets/marking_menu/marking_menu_host.py)), never by subclassing `MarkingMenu`. Whoever *launches* the menu asks the same host a second, separate set of questions, `uitk.MarkingMenuLaunchHost`: none of them is the menu's, since they come before it exists, instead of a second one, or around a rebuild. One adapter class answers both. `uitk.PureMarkingMenuHost` is the default (no `host` argument): exactly the plain-Qt answers to both. An adapter subclasses it and overrides only what its application answers differently.
 
 | Member | The menu asks it | Plain-Qt answer |
 |:---|:---|:---|
@@ -139,11 +139,20 @@ In a plain Qt app the menu needs nothing from its host: it parents to the window
 | `key_event(menu, event)` | to see each key press and release first | nothing |
 | `attach(menu)` | for its once-per-menu setup, last in construction | nothing |
 | `preload_only_from_host_loop` | whether the warm-up waits out any Python caller pumping events (a host whose loop is native code) | `False` |
-| `start()` | -- (the launcher, before any widget) make Qt usable in the process | nothing |
-| `defer(fn)` | -- (the launcher) run the build once the host is ready | `fn()` now |
-| `live_menu()` | -- (the launcher) a menu the host already drives, handed back instead of a second build | `None` |
 
-A host never needs the menu's internals: every member takes plain values, the menu or a widget. A failing member is logged, never raised into the gesture. The launcher members exist because a host may have to provision Qt itself, its startup scripts may run before its UI is up, and it may wire one menu per process into its own input.
+A host never needs the menu's internals: every member takes plain values, the menu or a widget. A failing member is logged, never raised into the gesture.
+
+| `MarkingMenuLaunchHost` member | The launcher asks it | Plain-Qt answer |
+|:---|:---|:---|
+| `start(app=None)` | before any widget: make Qt usable in the process; `app` names the application it is stood up for (the name the host gives its env vars, folders and messages) | nothing |
+| `defer(fn)` | to run the build once the host is ready for a UI | `fn()` now |
+| `live_menu()` | for a menu the host already drives, handed back instead of a second build | `None` |
+| `teardown()` | before a reload: release what the host holds for the menu (its input wiring, docked UI) while the handles are still reachable | nothing |
+| `report(message, error=False)` | to tell the user something where they are looking, not through the menu (a rebuild has retired it) | the `uitk.marking_menu` log |
+
+They exist because a host may have to provision Qt itself, its startup scripts may run before its UI is up, it may wire one menu per process into its own input, and a reload must unhook that wiring before the code behind it is replaced.
+
+**A host that owns the keyboard.** When the host's own event loop sees the activation key before Qt does (Blender's GHOST), the menu's application shortcut never fires, so the host drives the gesture through the menu's public surface instead: `menu.activate(buttons=None)` on key-down (pass the held Qt mouse-button mask when the host owns the mouse too: `QApplication.mouseButtons()` reflects only the events Qt saw), `menu.release()` on key-up, `menu.armed` (the key is held; a gesture is live) to leave a live gesture alone, and `menu.activation_key` (the Qt key code) to match its own key events against. A retired menu ignores them.
 
 ```python
 from uitk import MarkingMenu, PureMarkingMenuHost
@@ -159,13 +168,13 @@ class MyAppHost(PureMarkingMenuHost):
         my_app.call_when_idle(fn)  # startup scripts run before the UI exists
 
 host = MyAppHost()
-host.start()
+host.start(app="myapp")
 host.defer(lambda: MarkingMenu(host=host, bindings={"Key_F12": "main#startmenu",
                                                      "Key_F12|RightButton": "scene#startmenu"},
                                ui_source="ui", context_tags={"myapp"}))
 ```
 
-The adapters that ship: `mayatk.MayaMarkingMenuHost` (Maya's main window, `MayaUiHandler`, the idle queue, its hotkey-collision checker on the shortcut editors) and `blendertk.BlenderMarkingMenuHost` (provisions Qt and pumps it from Blender's timers, bridges the activation key from the 3D View keymap, reads the physical mouse, makes each window an OS-owned window of Blender's). tentacle's launcher (`Tcl.build`) builds the same `MarkingMenu` for both, choosing the adapter by host name.
+The adapters that ship: `mayatk.MayaMarkingMenuHost` (Maya's main window, `MayaUiHandler`, the idle queue, its hotkey-collision checker on the shortcut editors) and `blendertk.BlenderMarkingMenuHost` (provisions Qt and pumps it from Blender's timers, bridges the activation key from the 3D View keymap, reads the physical mouse, makes each window an OS-owned window of Blender's). tentacle's launcher (`Tcl.build`) builds the same `MarkingMenu` for both, with the adapter its host-to-class table (`Tcl.ADAPTERS`) names, and reloads both the same way (`Tcl.reload`: `teardown`, reload, `defer` the rebuild, `report`).
 
 ---
 

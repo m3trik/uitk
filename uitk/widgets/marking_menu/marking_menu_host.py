@@ -1,6 +1,7 @@
 # !/usr/bin/python
 # coding=utf-8
-"""What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`.
+"""What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`, and
+what a launcher needs to start, rebuild and report one there: :class:`MarkingMenuLaunchHost`.
 
 In a plain Qt application a marking menu needs nothing from its host: it parents to the
 window it is given, binds its activation key with an application shortcut, reads the mouse
@@ -12,11 +13,11 @@ it as ``MarkingMenu(host=...)``.
 :class:`PureMarkingMenuHost` is the default: exactly the plain-Qt behavior. A host adapter
 subclasses it and overrides only what differs.
 
-Three members serve whoever *launches* a menu rather than the menu itself, because they come
-before the menu exists: :meth:`MarkingMenuHost.start` makes Qt usable in the process,
-:meth:`MarkingMenuHost.defer` schedules the build for when the host is ready for it, and
-:meth:`MarkingMenuHost.live_menu` names a menu the host already drives. Every other member is
-called by :class:`~uitk.widgets.marking_menu._marking_menu.MarkingMenu`.
+:class:`MarkingMenuHost` is what :class:`~uitk.widgets.marking_menu._marking_menu.MarkingMenu`
+calls. :class:`MarkingMenuLaunchHost` is what a *launcher* calls around the menu's life -- before
+it exists (make Qt usable, schedule the build), instead of a second one (the menu the host
+already drives), and around a rebuild (release what the host holds, tell the user). One
+adapter class answers both; :class:`PureMarkingMenuHost` holds the plain-Qt answers to both.
 
 Importable without a Qt binding (a launcher resolves its host before Qt is provisioned): the
 binding is imported in the methods that use it.
@@ -45,23 +46,6 @@ class MarkingMenuHost(Protocol):
     shortcut_window_name: Optional[str]
     ui_handler: Optional[type]
 
-    def start(self) -> None:
-        """Make Qt usable in this process (a binding, a ``QApplication``, an event pump).
-
-        For the launcher, before any widget exists."""
-
-    def defer(self, fn: Callable[[], Any]) -> Any:
-        """Run *fn* once the host is ready to build a UI; returns its result when run now.
-
-        For the launcher: a host whose startup scripts run before its UI is up schedules
-        *fn* on its own loop (and returns None)."""
-
-    def live_menu(self) -> Any:
-        """The menu this host already drives, or ``None``.
-
-        For the launcher: a host that wires one menu per process into its own input
-        (a keymap) hands that one back instead of a second build stacking over it."""
-
     def main_window(self) -> Any:
         """The window the menu parents to when none is given, or ``None``."""
 
@@ -88,8 +72,39 @@ class MarkingMenuHost(Protocol):
         """Take a newly built menu: anything the host does once per menu."""
 
 
+@runtime_checkable
+class MarkingMenuLaunchHost(Protocol):
+    """What a launcher asks of the host it starts a marking menu in -- none of it is the
+    menu's: it comes before the menu exists, instead of a second one, or around a rebuild."""
+
+    def start(self, app: Optional[str] = None) -> None:
+        """Make Qt usable in this process (a binding, a ``QApplication``, an event pump),
+        before any widget exists. *app* names the application the host stands Qt up for:
+        the name it gives what it makes for it (env vars, folders, messages)."""
+
+    def defer(self, fn: Callable[[], Any]) -> Any:
+        """Run *fn* once the host is ready to build a UI; returns its result when run now.
+
+        A host whose startup scripts run before its UI is up schedules *fn* on its own
+        loop (and returns None)."""
+
+    def live_menu(self) -> Any:
+        """The menu this host already drives, or ``None``: a host that wires one menu per
+        process into its own input (a keymap) hands that one back instead of a second
+        build stacking over it."""
+
+    def teardown(self) -> None:
+        """Release what the host holds for the menu -- its input wiring, docked UI --
+        before the code behind them is reloaded, while the handles are still reachable."""
+
+    def report(self, message: str, error: bool = False) -> None:
+        """Tell the user *message* where they are looking, not through the menu (a
+        rebuild has retired it)."""
+
+
 class PureMarkingMenuHost:
-    """The plain-Qt answers: the menu behaves exactly as it does with no host.
+    """The plain-Qt answers to both protocols: the menu behaves exactly as it does with no
+    host, and a launch builds it now.
 
     A host adapter subclasses this and overrides only what its application answers
     differently (``mtk.MayaMarkingMenuHost``, ``btk.BlenderMarkingMenuHost``).
@@ -99,7 +114,7 @@ class PureMarkingMenuHost:
     shortcut_window_name: Optional[str] = None
     ui_handler: Optional[type] = None
 
-    def start(self) -> None:
+    def start(self, app: Optional[str] = None) -> None:
         """Nothing to stand up: a Qt application already runs its own loop."""
 
     def defer(self, fn: Callable[[], Any]) -> Any:
@@ -131,6 +146,16 @@ class PureMarkingMenuHost:
 
     def attach(self, menu) -> None:
         """Nothing to set up per menu."""
+
+    def teardown(self) -> None:
+        """Nothing held outside the menu itself."""
+
+    def report(self, message: str, error: bool = False) -> None:
+        """The process log: a plain Qt app has no surface of its own to show it on."""
+        import logging
+
+        log = logging.getLogger("uitk.marking_menu")
+        (log.error if error else log.info)(message)
 
 
 # --------------------------------------------------------------------------------------------

@@ -82,6 +82,7 @@ DEFAULT_INCLUDE = {
     # answers a host adapter subclasses (mtk/btk ``*MarkingMenuHost``).
     "widgets.marking_menu.marking_menu_host": [
         "MarkingMenuHost",
+        "MarkingMenuLaunchHost",
         "PureMarkingMenuHost",
     ],
     "widgets.marking_menu._resolver": "MenuResolver",
