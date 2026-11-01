@@ -22,7 +22,7 @@ app = setup_qt_application()
 
 from qtpy import QtWidgets, QtCore, QtTest
 
-from uitk.widgets.footer import Footer, FooterStatusController
+from uitk.widgets.footer import Footer, FooterApply, FooterStatusController
 
 
 class TestFooterCreation(QtBaseTestCase):
@@ -242,7 +242,78 @@ class TestFooterStatusEdit(QtBaseTestCase):
         heard = []
         footer.status_double_clicked.connect(lambda: heard.append(1))
         QtTest.QTest.mouseDClick(footer.status_label, QtCore.Qt.LeftButton)
+        # QTest's double click ends on a press: release it as a real mouse
+        # does, or Qt believes the button is still held and the next test's
+        # hover dispatch is skipped (test_header's stale-hover heal failed
+        # after this one, 2026-11-01).
+        QtTest.QTest.mouseRelease(footer.status_label, QtCore.Qt.LeftButton)
         self.assertEqual(heard, [1])
+        self.assertEqual(QtWidgets.QApplication.mouseButtons(), QtCore.Qt.NoButton)
+
+
+class TestFooterApply(QtBaseTestCase):
+    """``FooterApply``: the Apply button a dry run arms on a footer, holding the
+    call that would commit what the preview showed (2026-11-01: the naming and
+    material-updater panels and ``FormPanel`` each wrote it)."""
+
+    def _footer(self):
+        footer = self.track_widget(Footer())
+        footer.resize(300, 19)
+        footer.show()
+        QtWidgets.QApplication.processEvents()
+        return footer
+
+    def test_no_button_until_a_dry_run_arms_one(self):
+        footer = self._footer()
+        applied = []
+        apply = FooterApply(footer, applied.append)
+        self.assertIsNone(apply.button)
+        self.assertIsNone(apply.pending)
+        apply.apply()  # nothing armed: nothing happens
+        self.assertEqual(applied, [])
+
+    def test_arming_shows_the_button_and_the_note(self):
+        footer = self._footer()
+        apply = FooterApply(footer, lambda commit: commit())
+        commit = lambda: None  # noqa: E731
+        apply.arm(commit)
+        self.assertIs(apply.pending, commit)
+        self.assertTrue(apply.button.isVisible())
+        self.assertEqual(apply.button.text(), "Apply")
+        self.assertEqual(footer.statusText(), "Dry run — Apply to commit")
+        apply.arm(commit, note="Preview only — Apply to commit")
+        self.assertEqual(footer.statusText(), "Preview only — Apply to commit")
+
+    def test_a_click_hands_the_armed_call_over(self):
+        footer = self._footer()
+        applied = []
+        apply = FooterApply(footer, applied.append, text="Commit")
+        commit = lambda: None  # noqa: E731
+        apply.arm(commit)
+        apply.button.click()
+        self.assertEqual(applied, [commit])
+        self.assertEqual(footer.statusText(), "Dry run — Commit to commit")
+
+    def test_disarming_hides_it_and_clears_only_its_own_note(self):
+        footer = self._footer()
+        apply = FooterApply(footer, lambda commit: None)
+        footer.setText("someone else's line")
+        apply.disarm("a signal's payload")  # never armed: leaves the footer be
+        self.assertEqual(footer.statusText(), "someone else's line")
+        apply.arm(lambda: None)
+        apply.disarm()
+        self.assertIsNone(apply.pending)
+        self.assertFalse(apply.button.isVisible())
+        self.assertEqual(footer.statusText(), "")
+
+    def test_a_panel_with_no_footer_still_holds_the_call(self):
+        apply = FooterApply(None, lambda commit: None)
+        commit = lambda: None  # noqa: E731
+        apply.arm(commit)
+        self.assertIs(apply.pending, commit)
+        self.assertIsNone(apply.button)
+        apply.disarm()
+        self.assertIsNone(apply.pending)
 
 
 class TestFooterDefaultStatusText(QtBaseTestCase):

@@ -20,7 +20,7 @@ _MIN_FRAME_VIEWPORT_WIDTH = _FRAME_PADDING * 3
 
 class _Navigation:
     """Where the playhead and the view go: the playhead's steps and jumps (to
-    keys, to the ends), framing a time range or the active shot -- once on
+    keys, to the ends), framing a time range or the active range -- once on
     the first show, as soon as there is a viewport to frame it in -- and the
     view a rebuild puts back."""
 
@@ -49,7 +49,7 @@ class _Navigation:
         interval = sq.snap_interval
         step = interval if interval > 0 else 1.0
         # Floored at the timeline's own reach rather than 0 -- stepping back
-        # into a shot that lives before the origin is legitimate.
+        # into a range that lives before the origin is legitimate.
         floor = min(0.0, sq._timeline.content_time_bounds()[0])
         sq._move_playhead(max(floor, sq._timeline._scene.playhead.time - step))
 
@@ -127,7 +127,7 @@ class _Navigation:
             sq.active_editor.frame_values()
 
     def frame_first_show(self) -> None:
-        """Frame the active shot once, as soon as there is something to frame."""
+        """Frame the active range once, as soon as there is something to frame."""
         sq = self._sequencer
         if not (self.pending_first_frame and sq.frame_on_first_show):
             return

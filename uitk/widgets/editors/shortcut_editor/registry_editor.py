@@ -509,7 +509,7 @@ class ShortcutEditor(_ActionCellsMixin, _CollisionChecksMixin, EditorPanel):
     def refresh_ui_list(self):
         """Populate the UI combobox: special views first, then the listed UIs.
 
-        Lists names directly from the ui_registry (populated at startup) without
+        Lists the registered UI names (``sb.ui_names()``) without
         instantiating any widgets — the actual UI is built only when the user
         selects it (see ``populate``). The cross-cutting special views (Assigned,
         Commands) sort to the top and are accent-coloured; the initial *selection*
@@ -581,12 +581,12 @@ class ShortcutEditor(_ActionCellsMixin, _CollisionChecksMixin, EditorPanel):
     def _registered_ui_names(self) -> list:
         """Sorted, de-duplicated legal names of every registered UI.
 
-        Read straight from the ui_registry (populated at startup) — no widget is
-        instantiated. Single source for the show-all/assigned gather, the preset
-        export, the internal collision scan, and (through the emptiness filter in
-        :meth:`_combo_ui_names`) the combobox list.
+        Read from ``sb.ui_names()`` (``.ui`` files and UIs built in code) — no
+        widget is instantiated. Single source for the show-all/assigned gather,
+        the preset export, the internal collision scan, and (through the
+        emptiness filter in :meth:`_combo_ui_names`) the combobox list.
         """
-        filenames = self.sb.registry.ui_registry.get("filename") or []
+        filenames = self.sb.ui_names()
         if self._manager_mode:
             # Facade groups are plain names (e.g. macro categories), not .ui
             # filenames — a group may legitimately contain a dot (Maya's

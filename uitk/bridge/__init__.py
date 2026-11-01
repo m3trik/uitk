@@ -1,13 +1,14 @@
-"""Generic DCC-bridge / parameterised-form infrastructure.
+"""Parameter forms and the parameter panel built on them.
 
 This subpackage owns everything reusable for "kind-driven" parameter
 panels -- panels whose widgets are built from a registry of
 :class:`AttributeSpec` dataclasses keyed by a ``kind`` string
 (``int / float / bool / str / choice / path / file_list / ...``).
 
-``uitk.widgets.attribute_window``, the DCC handoff bridges' parameter
-declarations (mayatk / blendertk ``parameters.py``) and tentacle's bridge
-panels (``ParamPanelSlots``) consume this single contract. New consumers register new kinds via
+``uitk.widgets.attribute_window``, the parameter declarations of the jobs a
+panel runs (a hand-off bridge's ``parameters.py``, an app's) and the panels
+themselves (``ParamPanelSlots``: tentacle's bridge panels, extapps' apps)
+consume this single contract. New consumers register new kinds via
 :meth:`KindFactory.register_kind`; new target languages for bridge
 value-rendering register as small formatter staticmethods on
 :class:`uitk.bridge.formatters.Formatters`.

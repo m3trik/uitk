@@ -642,9 +642,9 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self.playhead_moved.connect(self._audio.on_playhead_moved)
 
         # -- first-show framing ---------------------------------------------
-        #: Frame the active shot the first time the panel is shown.  Opening
+        #: Frame the active range the first time the panel is shown.  Opening
         #: onto frame 0 of a several-thousand-frame scene means every session
-        #: starts by hunting for the shot being worked on.
+        #: starts by hunting for the range being worked on.
         self.frame_on_first_show = True
         # Armed only now: an event arriving mid-construction would reach a
         # half-built widget, and nothing can be framed before there is a
@@ -1721,7 +1721,7 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         a right-click anywhere over the tracks opens it while any key is
         selected (:meth:`TimelineView.contextMenuEvent`), so reaching a
         tangent type never means hitting a 7-pixel dot.  Everything in it --
-        tangent types, move to shot -- is the consumer's, added through
+        tangent types, a host's own moves -- is the consumer's, added through
         :attr:`key_menu_requested` before the menu opens; the widget adds
         nothing of its own, so a consumer that offers nothing gets no menu
         rather than an empty one.

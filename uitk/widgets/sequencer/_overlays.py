@@ -498,7 +498,7 @@ class RangeHighlightItem(
 
 class _Ranges:
     """The time ranges drawn over the rows: the interactive highlight (the
-    active shot's), the static overlays, and the active range's column tint,
+    host's active range), the static overlays, and the active range's column tint,
     with the highlight's and the overlays' visibility toggles."""
 
     def __init__(self, sequencer: "SequencerWidget"):

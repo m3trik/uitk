@@ -94,6 +94,10 @@ class AffixMode:
         locks_text: Make the field read-only while this mode is active. The
             widget stays *enabled* — the value is still visible, selectable and
             readable by the slot; only typing into it is refused.
+        placeholder: The field's placeholder in this mode when the option is
+            given a noun (:class:`AffixOption` ``noun=``); ``{noun}`` is
+            replaced by it (``"{noun} Prefix"`` -> ``"Material Prefix"``).
+            Empty: ``"{noun} <label>"``.
     """
 
     key: str
@@ -103,6 +107,11 @@ class AffixMode:
     resolver: Optional[Callable[[str, str], Tuple[str, str]]] = None
     provider: Optional[Callable[[], str]] = None
     locks_text: bool = False
+    placeholder: str = ""
+
+    def placeholder_for(self, noun: str) -> str:
+        """The field's placeholder in this mode for a field naming *noun*."""
+        return (self.placeholder or "{noun} " + self.label).format(noun=noun)
 
     def resolve(self, text: str, default: str = "prefix") -> Tuple[str, str]:
         """``(prefix, suffix)`` for *text* under this mode."""
@@ -199,6 +208,9 @@ class AffixMode:
             ),
             provider=lambda: NamingConvention.affix(resolve_key()),
             locks_text=True,
+            # The field shows (and is locked to) the convention's text: the
+            # placeholder names the source, never the noun's side.
+            placeholder=f"{label} Convention",
         )
 
 
@@ -213,6 +225,7 @@ BUILTIN_AFFIX_MODES: Dict[str, AffixMode] = {
             "leading '_' (e.g. '_MAT') is a suffix; trailing '_' (e.g. 'MAT_') "
             "is a prefix"
         ),
+        placeholder="{noun} Affix",
     ),
     "suffix": AffixMode(
         key="suffix",
@@ -264,6 +277,7 @@ class AffixOption(PersistedOption, ButtonOption):
         tooltip: Optional[str] = None,
         settings_key: Optional[Union[str, bool]] = None,
         order: Optional[int] = None,
+        noun: Optional[str] = None,
     ):
         """Initialize the affix option.
 
@@ -292,7 +306,13 @@ class AffixOption(PersistedOption, ButtonOption):
                 persistence — pass it when an outer store already owns the mode
                 (uitk's bridge presets do) or in unit tests.
             order: Explicit sort position. See :class:`BaseOption`.
+            noun: What the field's text marks (``"Material"``). With one, the
+                option keeps the FIELD's placeholder and tooltip on the current
+                mode -- ``"Material Prefix"`` and the mode's description
+                (:attr:`AffixMode.placeholder`) -- from construction on and at
+                every change. ``None`` leaves both to the panel.
         """
+        self._noun = noun
         self._modes = self._build_modes(modes, convention_key)
         self._order: List[str] = list(self._modes)
         self._mode = default if default in self._modes else self._order[0]
@@ -314,6 +334,7 @@ class AffixOption(PersistedOption, ButtonOption):
         # ``setup_widget`` applies the restored mode's field effects.
         self._init_persistence(settings_key)
         self._load_state()
+        self._apply_field_hint()
 
     # ------------------------------------------------------------------
     # Mode set
@@ -427,6 +448,7 @@ class AffixOption(PersistedOption, ButtonOption):
             return
         self._mode = mode
         self._apply_field_effects(capture=True)
+        self._apply_field_hint()
         self._save_state()
         if self._widget is not None:
             self._apply_mode_visual()
@@ -519,6 +541,19 @@ class AffixOption(PersistedOption, ButtonOption):
         """The wrapped widget when it can carry text, else ``None``."""
         w = self.wrapped_widget
         return w if (w is not None and hasattr(w, "setText")) else None
+
+    def _apply_field_hint(self) -> None:
+        """With a noun: the field's placeholder and tooltip name the mode."""
+        host = self.wrapped_widget
+        if not self._noun or host is None:
+            return
+        spec = self._modes[self._mode]
+        placeholder = spec.placeholder_for(self._noun)
+        if hasattr(host, "setPlaceholderText"):
+            host.setPlaceholderText(placeholder)
+        if hasattr(host, "setToolTip"):
+            tip = f"{placeholder}: {spec.description}." if spec.description else placeholder
+            host.setToolTip(tip + "\nThe button beside the field cycles the placement.")
 
     def _apply_field_effects(self, *, capture: bool) -> None:
         """Put the field into (or out of) the current mode's text state.

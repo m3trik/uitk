@@ -1188,6 +1188,98 @@ class FooterStatusController:
         return candidate
 
 
+class FooterApply:
+    """The Apply button a dry run arms on a footer.
+
+    A panel that previews an operation hands :meth:`arm` the call that would
+    commit exactly what the preview showed (the live call over the inputs as
+    previewed, frozen). The button appears on the footer's right with a note
+    on its status line, and a click hands that call to *on_apply*, which runs
+    it the panel's way (straight, or through its own run button so the commit
+    is reported, cancellable and undoable like any run). Whatever stales the
+    preview -- a new run, a changed scope -- calls :meth:`disarm`.
+
+    The button is built at the first :meth:`arm`, so a panel that never
+    previews never carries one. The footer is duck-typed (``add_action_button``,
+    ``setText``); with none, the call is still held, and no button shows.
+
+    Parameters:
+        footer: The panel's footer, or ``None``.
+        on_apply: ``(commit) -> None``: what a click does with the armed call.
+            Called only while one is armed.
+        text: The button's label.
+        tooltip: The button's tooltip.
+        note: The status line while armed. Default: ``"Dry run — <text> to commit"``.
+        icon_name: The button's icon.
+
+    Example::
+
+        self.apply = self.sb.FooterApply(self.ui.footer, lambda commit: commit())
+        ...
+        self.apply.arm(functools.partial(self.rename, names, dry_run=False))
+    """
+
+    def __init__(
+        self,
+        footer,
+        on_apply: Callable[[Callable], Any],
+        text: str = "Apply",
+        tooltip: str = "Apply the changes the last dry run previewed.",
+        note: Optional[str] = None,
+        icon_name: str = "check",
+    ):
+        self._footer = footer
+        self._on_apply = on_apply
+        self._text = text
+        self._tooltip = tooltip
+        self._note = note or f"Dry run — {text} to commit"
+        self._icon_name = icon_name
+        self._pending: Optional[Callable] = None
+        #: The footer's Apply button, once a dry run has armed it.
+        self.button: Optional[QtWidgets.QPushButton] = None
+
+    @property
+    def pending(self) -> Optional[Callable]:
+        """The call a click would hand to *on_apply*, or ``None``."""
+        return self._pending
+
+    def arm(self, commit: Callable, note: Optional[str] = None) -> None:
+        """Hold *commit* behind the button and show it, with *note* (default:
+        the one given at construction) on the footer's status line."""
+        self._pending = commit
+        if self.button is None and hasattr(self._footer, "add_action_button"):
+            self.button = self._footer.add_action_button(
+                text=self._text,
+                icon_name=self._icon_name,
+                tooltip=self._tooltip,
+                callback=self.apply,
+            )
+        if self.button is not None:
+            self.button.setVisible(True)
+            self._footer.setText(note or self._note, level="warning")
+
+    def disarm(self, *_signal_args) -> None:
+        """Drop the armed call and hide the button.
+
+        Takes and ignores a signal's arguments, so a "this stales the preview"
+        signal connects straight to it. Gated on having been armed, not on the
+        button's ``isVisible()`` (a child of an unshown window reads invisible
+        however it was set), so a footer line it never wrote is left alone.
+        """
+        was_armed = self._pending is not None
+        self._pending = None
+        if was_armed and self.button is not None:
+            self.button.setVisible(False)
+            self._footer.setText("")
+
+    def apply(self) -> None:
+        """Hand the armed call to *on_apply* (nothing armed: nothing happens).
+        The button's click; a panel's own Apply path may call it too."""
+        commit = self._pending
+        if commit is not None:
+            self._on_apply(commit)
+
+
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":

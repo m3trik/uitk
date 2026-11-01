@@ -1,17 +1,18 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Generic DCC-bridge slot base class.
+"""The parameter panel's slot base class, :class:`ParamPanelSlots`.
 
-Centralizes the panel machinery shared by the marmoset / substance /
-rizom (and any future) DCC bridges:
+Centralizes the panel machinery every parameter panel shares -- one that
+renders a template's parameters and hands them to a process: a hand-off
+bridge to another application, a photogrammetry or a Unity export app:
 
 * Parameter widget construction via :class:`uitk.bridge.spec.KindHandler`
-  -- a single shared registry powers AttributeWindow, the bridges, and
+  -- a single shared registry powers AttributeWindow, the panels, and
   any other consumer.
 * User-preset combo + reset button (via :class:`PresetManager`).
 * Log-panel redirect with clickable ``action://`` URIs.
 * Optional required "Output Dir" row with browse button + fallback hook.
-* Bridge-level ``STARTUP_INFO`` displayed once on load (opt-in).
+* The engine's ``STARTUP_INFO`` displayed once on load (opt-in).
 * Panel-level docs link (:attr:`DOCS_URL`) logged once on load as a clickable
   anchor (opt-in).
 * Per-template description displayed whenever the template combo changes.
@@ -19,17 +20,17 @@ rizom (and any future) DCC bridges:
   + the rich-text help button, driven by the :attr:`HEADER_MENU_ITEMS` /
   :attr:`HELP_SPEC` class-attr hooks so subclasses set *data, not code*.
 
-Per-bridge slot subclasses contribute only DCC-specific bits:
+A subclass contributes only its job's own bits:
 
-* Their ``params_module``: a :class:`uitk.bridge.ParamRegistry` subclass
+* Its ``params_module``: a :class:`uitk.bridge.ParamRegistry` subclass
   declaring ``PARAMS`` (it supplies ``referenced_keys`` / ``defaults``).
-* Their bridge class (must expose ``.logger``, ``.send(...)``, optionally
-  ``.STARTUP_INFO``).
-* Their template directory + ``list_template_modes``.
-* The :meth:`b000` action that wires DCC selection + bridge handoff.
+* Its engine, the panel's ``bridge`` (it exposes ``.logger``, optionally
+  ``.STARTUP_INFO``; the panel's Run hands it the values).
+* Its template directory + ``list_template_modes``.
+* The :meth:`b000` Run action: gather the inputs, hand them to the engine.
 
 Custom widget kinds (e.g. an HSV picker) plug in via the shared
-:meth:`uitk.bridge.spec.KindFactory.register_kind`; new bridges inherit
+:meth:`uitk.bridge.spec.KindFactory.register_kind`; every panel inherits
 every kind the registry knows about.
 
 Layout: this module is the facade. The machinery lives in one private
@@ -308,27 +309,30 @@ class ParamPanelSlots(_ParamPanelSlotsInternal):
     Subclasses **must** set:
 
     * :attr:`UI_NAME` -- ``self.sb.loaded_ui.<UI_NAME>`` resolves to the panel.
-    * :attr:`PRESETS_ROOT` -- per-bridge preset storage root.
-    * :attr:`params_module` (class attr or property) -- the bridge's registry:
+    * :attr:`PRESETS_ROOT` -- the panel's preset storage root.
+    * :attr:`params_module` (class attr or property) -- the job's registry:
       a :class:`uitk.bridge.ParamRegistry` subclass declaring ``PARAMS`` (or
       any namespace exposing ``PARAMS`` / ``referenced_keys``).
-    * :attr:`template_dir` (class attr or property) -- per-bridge
+    * :attr:`template_dir` (class attr or property) -- the panel's
       template directory.
-    * :meth:`make_bridge` -- factory returning the per-bridge bridge instance.
+    * :meth:`make_bridge` -- factory returning the panel's engine.
     * :meth:`list_template_modes` -- ``[(stem, mode), ...]`` for the combo.
-    * :meth:`b000` -- the DCC-specific send action.
+    * :meth:`b000` -- the Run action that hands the values to the engine.
 
     Optional overrides:
 
     * :meth:`select_initial_template_index` -- bias toward a default
       starting template entry.
-    * :meth:`default_output_dir` -- DCC-side fallback used when the
-      user leaves the Output Dir field blank.
-    * :attr:`REQUIRE_OUTPUT_DIR` -- set False for bridges with no
-      user-visible output (e.g. rizom's in-place UV roundtrip).
+    * :meth:`default_output_dir` -- the job's fallback when the user leaves
+      the Output Dir field blank (a host's scene project, an app's profile).
+    * :attr:`REQUIRE_OUTPUT_DIR` -- set False for a job with no
+      user-visible output (e.g. an in-place UV roundtrip).
     * :attr:`OUTPUT_DIR_PERSISTS` -- set False so the Output Dir starts blank
       each session instead of restoring the previous one.
     * :attr:`TEMPLATE_EXTENSION` -- ``.py`` (default), ``.lua``, etc.
+    * :attr:`OUTPUT_DIR_LABEL` / :attr:`OUTPUT_DIR_PLACEHOLDER` /
+      :attr:`OUTPUT_DIR_TOOLTIP` -- the Output Dir row's words, in the job's
+      terms (the defaults name no artifact).
 
     Every hook and knob is declared on this class (the protected ones on
     :class:`_ParamPanelSlotsInternal`); the concept parts read them through the
@@ -393,12 +397,10 @@ class ParamPanelSlots(_ParamPanelSlotsInternal):
     # one click away.
     OUTPUT_DIR_PERSISTS: bool = True
     OUTPUT_DIR_LABEL = "Output Dir:"
-    OUTPUT_DIR_PLACEHOLDER = "(blank: the bridge's default)"
+    OUTPUT_DIR_PLACEHOLDER = "(blank: the panel's default)"
     OUTPUT_DIR_TOOLTIP = (
-        "Directory where the export artifacts (FBX, manifest, rendered\n"
-        "scripts, baked maps) all land. Leave blank to let the bridge\n"
-        "choose: hand-off intermediates go to a temp folder, and what\n"
-        "is kept goes to the scene's project."
+        "Folder the run writes its output to.\n"
+        "Leave blank for the panel's default location."
     )
 
     # ------------------ Parameter-row knobs ---------------------------

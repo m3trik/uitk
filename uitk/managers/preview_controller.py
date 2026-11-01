@@ -43,7 +43,6 @@ from typing import (
     Optional,
     Protocol,
     Sequence,
-    Set,
 )
 
 import pythontk as ptk
@@ -172,6 +171,10 @@ class PreviewController(_PreviewControllerInternal):
     selection, gated the same way and as the same one undo step.
     ``require_preview=True`` keeps it dead until a preview runs.
 
+    The panel holds its controller (``self.preview = tk.Preview(...)``): the
+    registry of live previews (:meth:`cleanup_all_instances`) is weak, so one
+    nothing holds is collected, and its running preview discarded.
+
     Parameters:
         operation_instance: The operation: ``perform_operation`` (its session
             calls it), optionally ``prepare_operation(objects)``.
@@ -206,12 +209,17 @@ class PreviewController(_PreviewControllerInternal):
     #: The host's session factory, ``SESSION_CLASS(operation) ->
     #: PreviewSession``, built once per preview when no *session* is passed
     #: (a session holds what it captured). Each host library's ``Preview``
-    #: sets it; ``None``: a session must be passed.
+    #: sets it; ``None``: a session must be passed. There is deliberately no
+    #: ``Pure`` default: a session IS a scene's rollback and undo, which a
+    #: process with no scene does not have, so a stand-in would preview by
+    #: running the operation for real; a plain-Python caller passes its own
+    #: (``session=``; the protocol is ten small methods).
     SESSION_CLASS: Optional[Callable[[Any], PreviewSession]] = None
 
     #: Every live preview, so a host can discard them all at once
-    #: (:meth:`cleanup_all_instances`).
-    _instances: Set["PreviewController"] = set()
+    #: (:meth:`cleanup_all_instances`). Weak: a preview its panel dropped is
+    #: collected (its ``__del__`` discards it), never kept for the session.
+    _instances: "weakref.WeakSet[PreviewController]" = weakref.WeakSet()
 
     @classmethod
     def cleanup_all_instances(cls) -> None:

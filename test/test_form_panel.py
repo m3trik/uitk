@@ -849,7 +849,7 @@ class TestFormPanelDryRun(FormPanelTestCase):
         return self._panel(on_run=lambda values: commit, **kwargs)
 
     def _apply_btn(self, panel):
-        return panel._apply_btn
+        return panel._armed_apply.button
 
     @staticmethod
     def _shown(button):

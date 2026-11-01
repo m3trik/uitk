@@ -89,6 +89,14 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
         remove_in="1.10.0",
         since="2026-10-28",
     )
+    #: The retired ``ui_name_delimiters`` keyword's value, which nothing read:
+    #: a read warns until the keyword goes.
+    ui_name_delimiters = ptk.Deprecation.class_attribute(
+        _UI_NAME_DELIMITER,
+        "nothing -- no UI name is split on it",
+        remove_in="1.10.0",
+        since="2026-10-28",
+    )
     SLOT_SUFFIX = "Slots"
     INIT_SUFFIX = "_init"
     STATE_PREFIX = "on_"
@@ -240,7 +248,6 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
         self._loader = self._build_loader(loader)
 
         self.tag_delimiter = tag_delimiter or self.TAG_DELIMITER
-        self.ui_name_delimiters = ui_name_delimiters or self._UI_NAME_DELIMITER
         self.registry = RegistryManager()
         if base_dir is None:
             base_dir = 1 if not __name__ == "__main__" else 0
@@ -634,9 +641,6 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
 
         actual_ui_name = self.find_ui_filename(attr_name, unique_match=True)
         if not actual_ui_name:
-            built = self._widgets.builder_name(attr_name)
-            if built is not None:
-                return self._resolve_built_ui(built)
             try:
                 return self._resolve_ui_using_slots(attr_name)
             except AttributeError:
@@ -649,6 +653,8 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
             filename=actual_ui_name, return_field="filepath"
         )
         if not ui_filepath:
+            if actual_ui_name in self._widgets.builders:
+                return self._resolve_built_ui(actual_ui_name)
             raise AttributeError(f"Unable to resolve filepath for '{attr_name}'.")
 
         loaded_ui = self.load_ui(ui_filepath)
@@ -1093,12 +1099,10 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
 
         # --- Step 2: Find all UIs sharing the same base name ---
         target_base = self.get_base_name(target_name)
-        ui_filenames = self.registry.ui_registry.get("filename") or []
-
         target_depth = target_name.count(self.tag_delimiter)
         matched_names = []
 
-        for fn in ui_filenames:
+        for fn in self.ui_names():
             if fn == target_name:
                 continue  # Skip self
             if self.get_base_name(fn) != target_base:
@@ -1123,12 +1127,12 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
     def find_ui_filename(
         self, legal_name: str, unique_match: bool = False
     ) -> Union[str, List[str], None]:
-        """Convert the given legal name to its original name(s) by searching the UI files."""
+        """Convert the given legal name to its original name(s) among :meth:`ui_names`
+        (``.ui`` files and UIs built in code alike)."""
         # The inverse of convert_to_legal_name, from the rule's owner: each
         # ``_`` may have been any non-alphanumeric character.
         pattern = ptk.StrUtils.legal_name_matcher(legal_name)
-        filenames = self.registry.ui_registry.get("filename")
-        matches = [name for name in filenames if pattern.fullmatch(name)]
+        matches = [name for name in self.ui_names() if pattern.fullmatch(name)]
 
         if unique_match:
             if len(matches) != 1:
@@ -2907,6 +2911,17 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
         across panel rebuilds.
         """
         return self._gates.recheck_gates()
+
+    def ui_names(self) -> List[str]:
+        """Every registered UI name: each ``.ui`` file stem, then each name
+        :meth:`register_ui` registered (a name both register is listed once).
+
+        The one list every name enumeration reads -- relatives, legal-name
+        lookup, the launcher's rows, the shortcut editor's targets, a host's
+        start-menu pick list -- so a UI built in code is listed wherever a file is.
+        Nothing is loaded or built.
+        """
+        return self._widgets.ui_names()
 
     def is_registered_ui(self, name: str) -> bool:
         """True if *name* is a registered UI -- a ``.ui`` file stem, or a name

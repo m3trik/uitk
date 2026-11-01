@@ -45,6 +45,8 @@ import pythontk as ptk
 from uitk.switchboard import Switchboard
 from uitk.handlers.base_handler import BaseHandler
 from uitk.handlers.handler_entry import HandlerEntry
+from uitk.handlers._version_gate import _VersionGate
+from uitk._facade import _Part
 
 
 class _InstallOffer:
@@ -567,7 +569,7 @@ class ExternalAppHandler(BaseHandler):
         in case its apps weren't registered when the handler was built.
 
         A provider with a version range installs inside it, and one present
-        outside it goes through :meth:`_version_gate` first: an app only the
+        outside it goes through the version gate first: an app only the
         newer release ships is not registered at all, so the miss is where
         that update has to be offered. *label* names the app asked for. A
         declined or unfinished update raises, and the provider stays untried
@@ -596,12 +598,10 @@ class ExternalAppHandler(BaseHandler):
             )
             # A range another registration states for this distribution covers
             # a bare spec too, so a bare provider never installs past the cap.
-            requirement = self._ranged(spec) or self._range_for(
-                self._base_pkg_name(spec), prov["probe_module"]
-            )
+            requirement = self._versions.requirement(spec, prov["probe_module"])
             if requirement is not None:
                 try:
-                    self._version_gate(
+                    self._versions.gate(
                         requirement,
                         prov["probe_module"],
                         py,
@@ -633,6 +633,8 @@ class ExternalAppHandler(BaseHandler):
                 self.logger.warning(
                     f"[provider] install of {install!r} failed", exc_info=True
                 )
+            finally:
+                self._versions.forget()
         try:
             self.discover()
         except Exception:
@@ -643,242 +645,16 @@ class ExternalAppHandler(BaseHandler):
 
     # ── Version ranges (optional) ────────────────────────────────────────
 
-    @staticmethod
-    def _ranged(spec: Optional[str]) -> Optional["ptk.PackageRequirement"]:
-        """*spec* as a requirement when it states a version range, else None.
-
-        None for a bare name and for anything the reader does not parse (a VCS
-        or file URL): those keep the unversioned behaviour.
-        """
-        if not spec:
-            return None
-        try:
-            requirement = ptk.PackageRequirement(spec)
-        except ValueError:
-            return None
-        return requirement if requirement.specifiers else None
-
-    def _range_for(
-        self, dist: Optional[str], top: Optional[str]
-    ) -> Optional["ptk.PackageRequirement"]:
-        """The range a registered provider states for distribution *dist*, or
-        for the provider whose probe module is the package *top*; else None."""
-        wanted = self._normalize_dist_name(dist) if dist else None
-        for spec, prov in self._providers.items():
-            requirement = self._ranged(spec)
-            if requirement is None:
-                continue
-            if (wanted and self._normalize_dist_name(requirement.name) == wanted) or (
-                top and prov.get("probe_module") == top
-            ):
-                return requirement
-        return None
+    #: The version ranges an app or provider states: which applies, the
+    #: version an interpreter would import, and the gate a launch passes
+    #: (:mod:`uitk.handlers._version_gate`).
+    _versions = _Part(_VersionGate)
 
     def _requirement_for(self, cfg: dict) -> Optional["ptk.PackageRequirement"]:
-        """The version range app *cfg* must satisfy; None means no check at all.
-
-        The app's own ``install_spec`` when it carries one, else its
-        provider's: discovery registers an app under its bare distribution
-        name, so the range a host gave :meth:`add_provider` is found by that
-        name (or by the app module's top-level package, the provider's probe).
-        """
-        spec = cfg.get("install_spec")
+        """The version range app *cfg* must satisfy; None means no check at all
+        (its ``install_spec``'s own, else its provider's)."""
         module = cfg.get("module") or ""
-        return self._ranged(spec) or self._range_for(
-            self._base_pkg_name(spec) if spec else None, module.split(".")[0]
-        )
-
-    def _installed_version(
-        self, dist: str, module: str, python: str, in_process: bool = False
-    ) -> Optional[str]:
-        """The version of *dist* that *module* would import under *python*.
-
-        In this interpreter, nothing is imported to answer: for an *in_process*
-        launch, a loaded package's ``__version__`` (what is running -- a
-        subprocess launch starts a fresh interpreter, where it is not); a
-        source checkout's own ``__version__`` (an editable install's metadata is
-        as old as the install); the installed metadata; failing that, the
-        package's ``__version__`` read from its source. Another interpreter is
-        asked with a short ``-c`` query (the package's ``__version__``, else its
-        metadata).
-
-        Returns:
-            The version; ``""`` when the package is present but declares none
-            readable; None when it is not there at all.
-        """
-        top = module.split(".")[0]
-        if python != sys.executable:
-            return self._query_version(dist, top, python)
-        loaded = sys.modules.get(top) if in_process else None
-        version = getattr(loaded, "__version__", None) if loaded is not None else None
-        if version:
-            return str(version)
-        if self._checkout_of(dist, module) is None:
-            version = ptk.PackageManager.metadata_version(dist)
-            if version:
-                return version
-        return self._source_version(top)
-
-    @staticmethod
-    def _query_version(dist: str, top: str, python: str) -> Optional[str]:
-        """Ask *python* for *dist*'s version: the ``-c`` probe style of
-        :meth:`_is_importable`, through a DCC host's companion python (a host
-        binary's ``-c`` is not Python). None when it is absent or the query
-        fails."""
-        python = ExternalAppHandler._pip_capable_python(python)
-        if not python or not top.isidentifier():
-            return None
-        script = (
-            "import sys\n"
-            "version = mod = None\n"
-            "try:\n"
-            f"    import {top} as mod\n"
-            "    version = getattr(mod, '__version__', None)\n"
-            "except Exception:\n"
-            "    pass\n"
-            "if not version:\n"
-            "    try:\n"
-            "        from importlib.metadata import version as read\n"
-            f"        version = read({dist!r})\n"
-            "    except Exception:\n"
-            "        if mod is None:\n"
-            "            sys.exit(3)\n"
-            "print(version or '')\n"
-        )
-        try:
-            result = subprocess.run(
-                [python, "-c", script], capture_output=True, text=True, timeout=15
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return None
-        if result.returncode != 0:
-            return None
-        lines = (result.stdout or "").strip().splitlines()
-        return lines[-1].strip() if lines else ""
-
-    def _source_version(self, top: str) -> Optional[str]:
-        """Package *top*'s literal ``__version__``, read from its source unimported.
-
-        None when the package cannot be found -- or is only a namespace (a
-        bare repo folder on the path, which imports and holds nothing);
-        ``""`` when it is found but its ``__version__`` is not a plain string
-        literal.
-        """
-        import ast
-
-        try:
-            spec = self._find_spec_unimported(top)
-        except Exception:  # noqa: BLE001 -- unfindable reads as absent
-            return None
-        if spec is None or getattr(spec, "origin", None) in (None, "namespace"):
-            return None
-        try:
-            source = spec.loader.get_source(top)
-            tree = ast.parse(source or "")
-        except Exception:  # noqa: BLE001 -- unreadable source declares nothing
-            return ""
-        for node in tree.body:
-            if isinstance(node, ast.Assign) and any(
-                isinstance(t, ast.Name) and t.id == "__version__" for t in node.targets
-            ):
-                value = node.value
-                if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                    return value.value
-                return ""
-        return ""
-
-    def _checkout_of(self, dist: str, module: str) -> Optional[str]:
-        """The ``pyproject.toml`` of the source checkout *module* resolves to, or None.
-
-        The same file :meth:`_source_project` reads apps from: a checkout's
-        version is pip's to replace only by replacing the checkout.
-        """
-        loads = self._toml_loader()
-        if loads is None:
-            return None
-        path, _data = self._source_project(module.split(".")[0], dist, loads)
-        return path
-
-    def _version_gate(
-        self,
-        requirement: "ptk.PackageRequirement",
-        module: str,
-        python: str,
-        *,
-        label: str,
-        in_process: bool,
-    ) -> None:
-        """Return only when what *module* imports satisfies *requirement*.
-
-        Absent (None from :meth:`_installed_version`) passes: the install
-        path then installs inside the range. Present outside it, the user is
-        asked (:attr:`prompt`); "Yes" updates through pip with the range, and
-        the launch goes on once the new version reads inside it.
-
-        Raises:
-            RuntimeError: Declined (naming the installed version and the
-                range), no prompt to ask with, a source checkout outside the
-                range (pip cannot replace it), a DCC host with no pip-capable
-                python, a failed update, an update an imported package of an
-                in-process app picks up only after a restart (said in a
-                notice first), or a version still outside after the update.
-        """
-        installed = self._installed_version(
-            requirement.name, module, python, in_process
-        )
-        if installed is None or requirement.contains(installed):
-            return
-        shown = installed or "a version that declares none"
-        found = f"{requirement.name} {shown}"
-        checkout = (
-            self._checkout_of(requirement.name, module)
-            if (python == sys.executable)
-            else None
-        )
-        if checkout:
-            raise RuntimeError(
-                f"'{label}' was not launched: {found} is a source checkout "
-                f"({checkout}) outside the {requirement} this host requires. "
-                f"Update that checkout; pip cannot replace it."
-            )
-        pip_py = self._pip_capable_python(python)
-        if not pip_py:
-            raise RuntimeError(
-                f"'{label}' was not launched: {found} is installed, outside the "
-                f"{requirement} this host requires, and {python!r} is a DCC host "
-                f"with no sibling python to update it through."
-            )
-        prompt = self.prompt or getattr(self.sb, "message_box", None)
-        if prompt is None or not _InstallOffer.ask(
-            prompt, str(requirement), label=label, installed=installed
-        ):
-            raise RuntimeError(
-                f"'{label}' was not launched: {found} is installed, and this "
-                f"host requires {requirement}. Update it to launch."
-            )
-        self.logger.info(f"Updating {requirement} into {pip_py} (was {shown})")
-        try:
-            ptk.PackageManager(python_path=pip_py).update(str(requirement))
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to update {requirement} into {pip_py}: {e}"
-            ) from e
-        top = module.split(".")[0]
-        if in_process and top in sys.modules:
-            _InstallOffer.restart(prompt, requirement.name)
-            raise RuntimeError(
-                f"Updated {requirement} on disk; restart this session to launch "
-                f"'{label}' -- the {top} it imports is already loaded."
-            )
-        import importlib
-
-        importlib.invalidate_caches()
-        after = self._installed_version(requirement.name, module, python, in_process)
-        if not requirement.contains(after):
-            raise RuntimeError(
-                f"Updated {requirement} into {pip_py}, but {python} still reads "
-                f"{requirement.name} {after or 'without a version'}."
-            )
+        return self._versions.requirement(cfg.get("install_spec"), module.split(".")[0])
 
     def register(
         self,
@@ -1448,7 +1224,7 @@ class ExternalAppHandler(BaseHandler):
         # sys.modules is one this session loaded, the case that needs a restart.
         requirement = self._requirement_for(cfg)
         if requirement is not None:
-            self._version_gate(
+            self._versions.gate(
                 requirement,
                 cfg["module"],
                 py,
@@ -1531,6 +1307,8 @@ class ExternalAppHandler(BaseHandler):
                     raise RuntimeError(
                         f"Failed to install {spec!r} into {pip_py}: {e}"
                     ) from e
+                finally:
+                    self._versions.forget()
                 if not self._is_importable(cfg["module"], py):
                     raise RuntimeError(
                         f"Install of {spec!r} completed but {cfg['module']!r} "

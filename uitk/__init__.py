@@ -143,7 +143,7 @@ DEFAULT_INCLUDE = {
     # Per-row colour tags, a strip down a view's left edge (TableWidget / TreeWidget option).
     "widgets.row_tags": "RowTags",
     "widgets.header": "Header",
-    "widgets.footer": ["Footer", "FooterStatusController"],
+    "widgets.footer": ["Footer", "FooterStatusController", "FooterApply"],
     "widgets.formPanel": "FormPanel",
     "widgets.label": "Label",
     "widgets.lineEdit": "LineEdit",

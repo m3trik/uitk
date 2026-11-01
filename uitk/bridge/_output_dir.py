@@ -218,7 +218,7 @@ class _OutputDirRow(object):
             temp_dir = panel.ensure_bridge_temp_dir(panel.LOG_TAG)
             self.apply_fallback(
                 temp_dir,
-                "Output Dir not set and no scene/workspace default; using a "
+                "Output Dir not set and the panel has no default; using a "
                 f"temporary folder (swept {_OutputDirRow.TEMP_MAX_AGE_DAYS:g} days "
                 "after its last write): "
                 f'<a href="action://open?path={temp_dir}">{temp_dir}</a>',
@@ -226,9 +226,9 @@ class _OutputDirRow(object):
             return temp_dir
 
         panel.bridge.logger.error(
-            "Output Dir is required and no scene/workspace default could "
-            "be resolved. Click '...' next to the Output Dir field to "
-            "choose where the export artifacts land."
+            "Output Dir is required and the panel has no default for it. "
+            "Click '...' next to the Output Dir field to choose where the "
+            "output lands."
         )
         if self.edit is not None:
             self.edit.setFocus()

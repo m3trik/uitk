@@ -222,7 +222,7 @@ class SwitchboardBrowserModel(QtCore.QAbstractTableModel):
         if role == self.LoadedRole:
             return (
                 entry.handler.is_visible(entry.name)
-                if entry.kind == "ui_file"
+                if entry.kind in ("ui_file", "ui_built")
                 else False
             )
         if role == self.VisibleRole:

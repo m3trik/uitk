@@ -123,6 +123,7 @@ class PreviewControllerCase(QtBaseTestCase):
         self._widgets_to_cleanup.append(self.window)
         self.session = FakeSession()
         self.messages = []
+        self.held = []  # the previews this case built, as a panel holds its own
 
     def tearDown(self):
         # Before the widgets go: a running preview discards over live ones.
@@ -130,11 +131,15 @@ class PreviewControllerCase(QtBaseTestCase):
         super().tearDown()
 
     def make(self, operation=None, **kwargs):
+        """A preview over the case's widgets, held as its panel holds it (the
+        controller's registry is weak: a preview nobody holds is collected)."""
         kwargs.setdefault("message_func", self.messages.append)
         kwargs.setdefault("session", self.session)
-        return PreviewController(
+        preview = PreviewController(
             operation or Operation(self.session.log), self.chk, self.btn, **kwargs
         )
+        self.held.append(preview)
+        return preview
 
     def calls(self):
         """The session's log without the selection reads."""
@@ -503,6 +508,23 @@ class TestInstances(PreviewControllerCase):
         self.assertFalse(preview.is_enabled)
         self.assertNotIn(preview, PreviewController._instances)
         self.assertEqual(self.calls()[-1], ("discard", True))
+
+    def test_the_registry_never_keeps_a_preview_alive(self):
+        """``_instances`` is a weak set (2026-11-01): a strong one kept every
+        preview a panel dropped (and its widgets and session) for the session,
+        and its ``__del__`` cleanup could never run."""
+        import gc
+        import weakref
+
+        preview = PreviewController(
+            Operation(self.session.log), self.chk, self.btn, session=self.session
+        )
+        ref = weakref.ref(preview)
+        self.assertIn(preview, PreviewController._instances)
+        del preview
+        gc.collect()
+        self.assertIsNone(ref(), "the registry held the preview alive")
+        self.assertEqual(len(PreviewController._instances), 0)
 
 
 if __name__ == "__main__":

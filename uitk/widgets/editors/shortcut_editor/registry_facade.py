@@ -68,20 +68,6 @@ class _LoadedUiStub:
         return [self._facade.get_ui(name) for name in self._facade._group_names()]
 
 
-class _UiRegistryStub:
-    """Stands in for ``sb.registry`` — exposes the group names as UI names."""
-
-    def __init__(self, facade: "RegistrySwitchboardFacade"):
-        self._facade = facade
-        self.ui_registry = self
-
-    def get(self, field=None, **_kwargs):
-        # The editor calls ``ui_registry.get("filename")`` to list UIs; in
-        # facade mode it uses these names verbatim (no filename-extension
-        # strip), so group names may contain any character, "." included.
-        return self._facade._group_names()
-
-
 class _WidgetFactory:
     """Stands in for ``sb.registered_widgets`` — the editor only constructs a
     ``LineEdit`` (its filter field) through it."""
@@ -123,7 +109,6 @@ class RegistrySwitchboardFacade:
         # geometry) don't bleed into the real Switchboard editor's.
         self.settings = SettingsManager(namespace=settings_namespace)
         self.registered_widgets = _WidgetFactory()
-        self.registry = _UiRegistryStub(self)
         self.logger = logging.getLogger(logger_name)
         self.loaded_ui = _LoadedUiStub(self)
         self._uis: Dict[str, _GroupUI] = {}
@@ -140,6 +125,14 @@ class RegistrySwitchboardFacade:
     def _group_names(self) -> List[str]:
         """The provider's current group names (re-read on every refresh)."""
         return list(self._groups())
+
+    def ui_names(self) -> List[str]:
+        """The group names as the editor's UI names (``Switchboard.ui_names``).
+
+        In facade mode the editor uses them verbatim (no filename-extension
+        strip), so a group name may contain any character, "." included.
+        """
+        return self._group_names()
 
     def get_ui(self, name=None):
         """Resolve a group name (or ``_GroupUI``) to its synthetic UI object.

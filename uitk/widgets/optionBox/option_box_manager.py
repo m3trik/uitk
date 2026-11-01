@@ -580,6 +580,7 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
         settings_key=None,
         order=None,
         replace: bool = True,
+        noun: Optional[str] = None,
     ):
         """Add an inline affix-mode picker — fluent.
 
@@ -622,6 +623,9 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
             order: Explicit sort position. See :class:`BaseOption`.
             replace: When ``True`` (default), removes any existing AffixOption
                 first.
+            noun: What the field's text marks (``"Material"``): the option keeps
+                the field's placeholder and tooltip on the current mode
+                (``"Material Prefix"``). ``None`` leaves both to the caller.
 
         Returns:
             self: For fluent chaining. Retrieve the option via
@@ -645,6 +649,7 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
                 on_change=on_change,
                 settings_key=settings_key,
                 order=order,
+                noun=noun,
                 **extra,
             )
         )

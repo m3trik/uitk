@@ -634,11 +634,10 @@ class TimelineView(QtWidgets.QGraphicsView):
 
     def enterEvent(self, event):
         # Hover takes focus so the timeline's keys work without a click -- but
-        # never from a field being typed in.  The shot dropdown's cell editor
-        # lies one header row above the tracks, and it closed the moment the
-        # pointer crossed into them on the way to its next field (2026-10-10:
-        # "I still can't edit the shot data by double clicking the shots
-        # combobox"; 2026-10-06: "unable to edit anything but the first field").
+        # never from a field being typed in.  A host lane's cell editor lies
+        # one header row above the tracks, and it closed the moment the
+        # pointer crossed into them on the way to its next field (2026-10-10,
+        # 2026-10-06: "unable to edit anything but the first field").
         if not self._typing_in_window():
             self.setFocus(QtCore.Qt.MouseFocusReason)
         # Qt delivers no KeyPress for a modifier already down when the
@@ -1082,7 +1081,7 @@ class TimelineView(QtWidgets.QGraphicsView):
         if not ok:
             return
         # ``_move_playhead`` is the widget's set-and-emit for a USER-initiated
-        # move (the transport buttons and shot navigation all go through it),
+        # move (the transport buttons and a host's navigation all go through it),
         # and it emits the playhead's stored time rather than the raw input --
         # so a hand-rolled pair here would be a fourth copy and could report a
         # value the setter had normalised away.

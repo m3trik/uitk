@@ -87,7 +87,7 @@ class HeldGeometryMixin:
     dereferences it (a pure-virtual call in
     ``QGraphicsItemPrivate::effectiveBoundingRect``).  Reproduced 2026-10-07:
     a rebuild clears the track rows before retiring the range highlight, and
-    the shot sequencer's first new shot, undone, crashed on the repaint.
+    a host layer's first new range, undone, crashed on the repaint.
 
     So the geometry is computed once and held: :meth:`sync` announces the
     change while the held geometry -- the indexed one -- is still what the

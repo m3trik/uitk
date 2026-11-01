@@ -32,6 +32,8 @@ What a change reaches: `python m3trik/scripts/affected_tests.py <files> --run` (
 
 **Never patch a QObject subclass's attribute with a bare `MagicMock`** (`mock.patch.object(BrowseOption, "browse")`): the next bound-method `connect` on an instance makes PySide build that class's dynamic meta-object from its class dict, and it faults natively on the mock -- no Python frame, no traceback (PySide 6.10.1, backtraced). Use `autospec=True` or `new=<function>`.
 
+**`QTest.mouseDClick` ends on a press** (PySide 6.10.1): Qt then believes the button is held and skips every later Enter / hover dispatch in the process, so a LATER test fails (`test_header`'s stale-hover heal after `test_footer`). Follow it with `QTest.mouseRelease`.
+
 ## Architecture
 
 - `uitk/widgets/` — reusable widgets. **Placeable widgets' module filenames are frozen public API**: `.ui` files across the ecosystem reference them as custom-widget headers (`uitk.widgets.pushButton`) — never rename or move one (the grandfathered exception to root's `my_class.py` naming rule; windows/popups Designer never places (`designer_spec`) and new modules elsewhere follow it).

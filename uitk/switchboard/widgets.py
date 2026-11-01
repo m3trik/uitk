@@ -205,13 +205,16 @@ class _Widgets:
         # UIs built in code (:meth:`Switchboard.register_ui`): name -> builder.
         self.builders = {}
 
+    def ui_names(self) -> list:
+        """Every registered UI name: the ``.ui`` files', then the builders' (a
+        name both register is listed once; its file wins when it loads)."""
+        ui_registry = getattr(self._sb.registry, "ui_registry", None)
+        names = list((ui_registry.get("filename") if ui_registry is not None else None) or [])
+        listed = set(names)
+        return names + [name for name in self.builders if name not in listed]
+
     def is_registered_ui(self, name: str) -> bool:
-        if not name:
-            return False
-        if name in self.builders:
-            return True
-        filenames = self._sb.registry.ui_registry.get("filename") or []
-        return name in filenames
+        return bool(name) and name in self.ui_names()
 
     def register_builder(self, name: str, build) -> None:
         if not name or not isinstance(name, str):
@@ -222,16 +225,6 @@ class _Widgets:
                 f"QWidget, got {type(build).__name__}"
             )
         self.builders[name] = build
-
-    def builder_name(self, name: str) -> Optional[str]:
-        """The name a UI built in code was registered under for *name* --
-        matched as a ``.ui`` stem is, so a legal name (``editor_submenu``)
-        finds ``editor#submenu`` -- or ``None`` (no match, or more than one)."""
-        if name in self.builders:
-            return name
-        pattern = ptk.StrUtils.legal_name_matcher(name)
-        matches = [key for key in self.builders if pattern.fullmatch(key)]
-        return matches[0] if len(matches) == 1 else None
 
     def ui_name_resolves(self, name: str) -> bool:
         if not name:

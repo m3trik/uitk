@@ -38,7 +38,7 @@ class PlayheadItem(HeldGeometryMixin, QtWidgets.QGraphicsItem):
     @time.setter
     def time(self, value: float):
         # Not floored at 0: the timeline reaches before the origin whenever a
-        # shot does, and a playhead pinned at 0 would misreport the frame the
+        # range does, and a playhead pinned at 0 would misreport the frame the
         # consumer actually sits on.
         self._time = float(value)
         t = self._time

@@ -789,19 +789,30 @@ class UiHandler(BaseHandler):
     # ── Launchable contract ──────────────────────────────────────────────
 
     def entries(self) -> Iterable[HandlerEntry]:
-        """Yield one :class:`HandlerEntry` per .ui registered with the Switchboard.
+        """Yield one :class:`HandlerEntry` per UI registered with the Switchboard
+        (:meth:`Switchboard.ui_names`): a ``.ui`` file, or a UI built in code.
 
         Tags are split into inherited (filename + source-directory) and
         file-backed (``<uitk_tags>`` XML) so the browser can render them
         with the existing inherited-vs-file UX. Only file tags are
         editable; that's signalled by passing ``file_tags`` (vs ``None``).
-        The description is the file's root ``accessibleDescription``.
+        The description is the file's root ``accessibleDescription``. A UI
+        built in code (kind ``"ui_built"``) has no file: no file tags, no
+        description, and it is never built to find them.
         """
         ui_registry = getattr(self.sb.registry, "ui_registry", None)
         if ui_registry is None:
             return
-        for name in ui_registry.get("filename") or []:
+        for name in self.sb.ui_names():
             filepath = ui_registry.get(filename=name, return_field="filepath")
+            if not filepath:
+                yield HandlerEntry(
+                    name=name,
+                    kind="ui_built",
+                    handler=self,
+                    inherited_tags=frozenset(self._inherited_tags_for(name, None)),
+                )
+                continue
             yield HandlerEntry(
                 name=name,
                 kind="ui_file",

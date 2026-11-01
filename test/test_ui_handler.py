@@ -414,6 +414,23 @@ class TestUiEntryDescription(unittest.TestCase):
         self.assertEqual(entries["bare"].description, "")
         self.assertIsNone(self.sb.loaded_ui.peek("tool"), "listing never loads")
 
+    def test_a_ui_built_in_code_is_an_entry(self):
+        """``register_ui`` UIs reach the browser as rows of their own kind: no
+        file, so no file tags to edit; their ``#tag`` names still inherit."""
+        from qtpy import QtWidgets
+
+        built = []
+        self.sb.register_ui("panel#submenu", lambda: built.append(1) or QtWidgets.QWidget())
+        entries = {e.name: e for e in self.sb.handlers.ui.entries()}
+        entry = entries["panel#submenu"]
+        self.assertEqual(entry.kind, "ui_built")
+        self.assertIs(entry.handler, self.sb.handlers.ui)
+        self.assertIsNone(entry.filepath)
+        self.assertIsNone(entry.file_tags, "no backing file: tags are not editable")
+        self.assertIn("submenu", entry.inherited_tags)
+        self.assertEqual(entries["tool"].kind, "ui_file")
+        self.assertEqual(built, [], "listing never builds")
+
 
 class _CanonicalInitStub:
     """Marking-menu double exposing the canonical window-init path (``get``).

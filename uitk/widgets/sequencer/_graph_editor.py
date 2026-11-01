@@ -3,7 +3,7 @@
 """The graph editor: animation curves in value space, edited like Maya's.
 
 A :class:`~uitk.widgets.sequencer._editor.SequencerEditor` that takes the
-sequencer's content area over: the ruler, shot lane, playhead, markers and
+sequencer's content area over: the ruler and its lanes, playhead, markers and
 transport stay the kernel's; below them the curves are drawn against a value
 axis and edited in both directions.  The data is the host's, as plain
 values -- :meth:`GraphEditor.set_outline` names the objects and their curves,
@@ -21,7 +21,7 @@ or value about the opposite edge, a corner both (Alt: about the frame's
 centre), the body to move; a tangent handle drags its tangent (Alt breaks
 it, Shift gives every selected key the same vector); Alt+middle pans,
 Alt+right zooms per axis, the wheel zooms (Ctrl: time only, Shift: value
-only); A frames all, F the selected keys (none: the active shot), I keys
+only); A frames all, F the selected keys (none: the active range), I keys
 the displayed curves at the playhead, Delete removes the selected keys.
 
 The collaborators live here until they earn files of their own (CODE_STANDARD
@@ -236,7 +236,7 @@ class GraphEditor(SequencerEditor):
                 "dim",
                 "Dim Outside Range",
                 "dim_outside",
-                "Veil the time outside the shots on screen (the scope)",
+                "Veil the time outside the range the host is working in",
             ),
             (
                 "Behavior",
@@ -281,7 +281,7 @@ class GraphEditor(SequencerEditor):
         super().deactivate()
 
     def _first_frame(self) -> None:
-        # The active shot, as F frames it: never every key of the scene.  Once
+        # The active range, as F frames it: never every key of the scene.  Once
         # only: a later switch back keeps whatever the user framed since.
         if self.is_active and not self._framed_once:
             self._framed_once = True
@@ -444,7 +444,7 @@ class GraphEditor(SequencerEditor):
 
     @property
     def dim_outside(self) -> bool:
-        """Veil the time outside :attr:`focus_range` (the shots on screen)."""
+        """Veil the time outside :attr:`focus_range` (the host's working span)."""
         return self._dim_outside
 
     @dim_outside.setter
@@ -543,9 +543,9 @@ class GraphEditor(SequencerEditor):
         self._fit_values(self._value_range(self._shown, lo, hi))
 
     def frame_selection(self) -> None:
-        """Frame the selected keys; with none, the active shot -- its time,
+        """Frame the selected keys; with none, the active range -- its time,
         and the values the curves take there (``SequencerWidget.frame_range``,
-        what F does in the track view) -- or, with no shot, every curve
+        what F does in the track view) -- or, with no range, every curve
         (:meth:`frame_all`)."""
         if not self._sel:
             self._framed_once = True
@@ -1525,7 +1525,7 @@ class _GraphCanvas(HeldGeometryMixin, QtWidgets.QGraphicsObject):
     GRID_ZERO = QtGui.QColor("#4E4E4E")
     LABEL = QtGui.QColor("#8A8A8A")
     KEY = QtGui.QColor("#D6D6D6")
-    #: Over the time outside the shots on screen (``GraphEditor.dim_outside``).
+    #: Over the time outside the host's working span (``GraphEditor.dim_outside``).
     VEIL = QtGui.QColor(43, 43, 43, 150)
     KEY_SELECTED = QtGui.QColor("#FFD84A")
     KEY_BREAKDOWN = QtGui.QColor("#5FD35F")

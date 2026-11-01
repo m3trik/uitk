@@ -3069,6 +3069,11 @@ class TestGraphEditor(BaseTestCase):
         QtTest.QTest.mouseDClick(
             self.w._timeline.viewport(), QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pos
         )
+        # QTest's double click ends on a press; release it as a real mouse does
+        # (a held button skips the next test's hover dispatch; see test_footer).
+        QtTest.QTest.mouseRelease(
+            self.w._timeline.viewport(), QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pos
+        )
         ((cid, at),) = self.seen["keys_inserted"][-1][0]
         self.assertEqual(cid, "ty")
         self.assertAlmostEqual(at, t, delta=0.3)

@@ -43,12 +43,12 @@ A subclass **must** set / implement (from the `ParamPanelSlots` docstring and bo
 - `template_dir` (class attr or property) — the per-bridge template directory.
 - `make_bridge()` — factory returning the transport instance; called once, lazily, via the `bridge` property. The instance must expose `.logger` and `.send(...)`, optionally `.STARTUP_INFO`. In practice this is a `pythontk.ScriptLaunchBridge` subclass (from `pythontk.core_utils.handoff.app_handoff`), whose `send()` runs the shared resolve → preflight → produce → deliver skeleton and inherits `.logger` from `LoggingMixin`. It may return `None` when the engine lives in an optional package the user hasn't installed — the panel still opens (so its own controls can offer the install); the `bridge` property then raises `RuntimeError`, and `peek_bridge()` / `panel_log()` are the never-raising accessors.
 - `list_template_modes()` — `[(stem, mode), ...]` pairs for the combo.
-- `b000()` — the DCC-specific send action.
+- `b000()` — the Run action: gather the inputs and hand them to the engine.
 
 Optional overrides:
 
 - `select_initial_template_index(pairs)` — bias the starting combo entry (default: index 0).
-- `default_output_dir()` — DCC-side fallback for a blank Output Dir (default `""`, which tentacle's `HostBridge` keeps; a bridge with a natural output root overrides it).
+- `default_output_dir()` — the job's fallback for a blank Output Dir (default `""`, which tentacle's `HostBridge` keeps; a bridge with a natural output root overrides it).
 - `REQUIRE_OUTPUT_DIR` — set `False` for bridges with no user-visible output; the row is never built and `require_output_dir()` returns `""`.
 - `TEMP_OUTPUT_FALLBACK` — set `True` for file-staging bridges whose output is transient export artifacts; `require_output_dir()` then falls back to a per-tag temp dir (`ensure_bridge_temp_dir`: a detached `ptk.TempArtifacts` store that outlives the host -- a launched app's project may still read it -- and is swept 7 days after its last write) instead of erroring, so an unsaved scene can still hand off.
 - `resolve_scope_objects(scope)` — turn a `SCOPE` value into host objects; implemented once on a host-flavored base (tentacle's `HostBridge` asks the host library's `BridgeHost.resolve_scope`), which hands its scene reads (selection, whole scene, visible) to `pythontk.HandoffScope.resolve` — the words and their fallbacks (unknown → selected; a widening read that cannot answer → the selection) are pythontk's (default: empty list = no scope support). Slot code consumes it via `scoped_objects(params)`, which logs a scope-aware message when the set is empty.
@@ -60,6 +60,7 @@ Optional overrides:
 - `FOLDABLE_SECTIONS` — `True` (default): each section's titled divider is a disclosure that folds its rows, the folded set kept per panel (`StateManager.save_custom`) and the window re-fitted; a row the panel hides stays hidden when its section opens. `False` keeps plain captions.
 - `LABEL_MIN_WIDTH` — the label column's floor (90). The built panel widens it to its widest row label and keeps that as the instance's value, so every row -- the Output Dir row and a subclass's own rows built from it afterwards included -- starts its value at one x.
 - `_configure_output_dir_options(edit)` — the option-box buttons on the Output Dir field (default: persisted recent-values history + directory browse).
+- `OUTPUT_DIR_LABEL` / `OUTPUT_DIR_PLACEHOLDER` / `OUTPUT_DIR_TOOLTIP` — the Output Dir row's words, in the job's terms. The defaults (`"Output Dir:"`, `"(blank: the panel's default)"`, a tooltip naming no artifact) suit any panel; tentacle's `HostBridge` names a hand-off's export artifacts, the photogrammetry apps an output root, the Unity Workflow app its project.
 - `template_description(path)` / `format_param_tooltip(spec)` — per-bridge rendering hooks; defaults delegate to [`tooltip.py`](../uitk/bridge/tooltip.py).
 - `HEADER_MENU_TITLE` / `HEADER_MENU_ITEMS` / `HELP_SPEC` (or the `header_menu_items()` / `help_spec()` hooks) — header-menu data (see [Panel services](#panel-services)).
 - `DOCS_URL` / `DOCS_LABEL` (or the `docs_url()` hook) — the panel's documentation link, logged once at open as a clickable anchor in the log pane (see [Panel services](#panel-services)); empty (the default) logs nothing.

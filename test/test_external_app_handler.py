@@ -13,6 +13,7 @@ setup_qt_application()
 
 from uitk import Switchboard
 from uitk.handlers.external_app_handler import ExternalAppHandler
+from uitk.handlers._version_gate import _VersionGate
 
 
 def _make_sb():
@@ -1924,7 +1925,7 @@ class TestVersionAwareLaunch(unittest.TestCase):
         versions = installed if isinstance(installed, list) else [installed]
         with (
             patch.object(
-                ExternalAppHandler, "_installed_version", side_effect=versions
+                _VersionGate, "installed_version", side_effect=versions
             ),
             patch.object(
                 ExternalAppHandler,
@@ -2002,7 +2003,7 @@ class TestVersionAwareLaunch(unittest.TestCase):
     def test_without_a_range_nothing_is_read_or_asked(self):
         self._register(spec="fakeapp")
         prompt = _Prompt()
-        with patch.object(ExternalAppHandler, "_installed_version") as read:
+        with patch.object(_VersionGate, "installed_version") as read:
             self.h.prompt = prompt
             with (
                 patch.object(ExternalAppHandler, "_is_importable", return_value=True),
@@ -2045,7 +2046,7 @@ class TestVersionAwareLaunch(unittest.TestCase):
         prompt = _Prompt("Yes")
         with (
             patch.object(
-                ExternalAppHandler, "_checkout_of", return_value="/src/fakeapp"
+                _VersionGate, "checkout_of", return_value="/src/fakeapp"
             ),
             self.assertRaises(RuntimeError) as raised,
         ):
@@ -2064,7 +2065,7 @@ class TestVersionAwareLaunch(unittest.TestCase):
             self.h.prompt = _Prompt("No")
             with (
                 patch.object(
-                    ExternalAppHandler, "_installed_version", return_value="0.7.0"
+                    _VersionGate, "installed_version", return_value="0.7.0"
                 ),
                 patch.object(ExternalAppHandler, "_is_importable", return_value=True),
                 patch.object(
@@ -2116,7 +2117,7 @@ class TestInstalledVersion(unittest.TestCase):
         import pythontk as ptk
 
         with patch.object(ptk.PackageManager, "metadata_version", return_value="0.8.1"):
-            found = self.h._installed_version(
+            found = self.h._versions.installed_version(
                 "nodist", "no_such_pkg_xyz.ui", sys.executable
             )
         self.assertEqual(found, "0.8.1")
@@ -2127,7 +2128,7 @@ class TestInstalledVersion(unittest.TestCase):
         self._lay_out('__version__ = "0.8.4"')
         # Stale editable metadata loses to the source that will import.
         with patch.object(ptk.PackageManager, "metadata_version", return_value="0.1.0"):
-            found = self.h._installed_version(
+            found = self.h._versions.installed_version(
                 self.pkg, f"{self.pkg}.ui", sys.executable
             )
         self.assertEqual(found, "0.8.4")
@@ -2139,7 +2140,7 @@ class TestInstalledVersion(unittest.TestCase):
         self._lay_out('__version__ = "0.8.5"', pyproject=False)
         with patch.object(ptk.PackageManager, "metadata_version", return_value=None):
             self.assertEqual(
-                self.h._installed_version(self.pkg, self.pkg, sys.executable), "0.8.5"
+                self.h._versions.installed_version(self.pkg, self.pkg, sys.executable), "0.8.5"
             )
 
     def test_a_present_package_with_no_readable_version_is_not_absent(self):
@@ -2148,10 +2149,10 @@ class TestInstalledVersion(unittest.TestCase):
         self._lay_out("__version__ = compute()", pyproject=False)
         with patch.object(ptk.PackageManager, "metadata_version", return_value=None):
             self.assertEqual(
-                self.h._installed_version(self.pkg, self.pkg, sys.executable), ""
+                self.h._versions.installed_version(self.pkg, self.pkg, sys.executable), ""
             )
             self.assertIsNone(
-                self.h._installed_version("nodist", "no_such_pkg_xyz", sys.executable)
+                self.h._versions.installed_version("nodist", "no_such_pkg_xyz", sys.executable)
             )
 
     def test_a_loaded_module_answers_for_an_in_process_launch_only(self):
@@ -2163,28 +2164,66 @@ class TestInstalledVersion(unittest.TestCase):
         sys.modules[self.pkg] = mod
         module = f"{self.pkg}.ui"
         self.assertEqual(
-            self.h._installed_version("x", module, sys.executable, in_process=True),
+            self.h._versions.installed_version("x", module, sys.executable, in_process=True),
             "0.7.0",
         )
         # A subprocess launch starts a fresh interpreter, which reads the disk.
         with patch.object(ptk.PackageManager, "metadata_version", return_value="0.8.0"):
             self.assertEqual(
-                self.h._installed_version("x", module, sys.executable), "0.8.0"
+                self.h._versions.installed_version("x", module, sys.executable), "0.8.0"
             )
 
     def test_another_interpreter_is_asked_with_a_short_query(self):
-        with patch("uitk.handlers.external_app_handler.subprocess.run") as run:
+        with patch("uitk.handlers._version_gate.subprocess.run") as run:
             run.return_value = MagicMock(returncode=0, stdout="0.8.2\n")
             self.assertEqual(
-                self.h._installed_version("extapps", "extapps.ui", "/other/python"),
+                self.h._versions.installed_version("extapps", "extapps.ui", "/other/python"),
                 "0.8.2",
             )
             args = run.call_args.args[0]
             self.assertEqual(args[:2], ["/other/python", "-c"])
             self.assertNotIn("pip", args[2])
             run.return_value = MagicMock(returncode=3, stdout="")
+            self.h._versions.forget()  # the answer above is kept until forgotten
             self.assertIsNone(
-                self.h._installed_version("extapps", "extapps.ui", "/other/python")
+                self.h._versions.installed_version("extapps", "extapps.ui", "/other/python")
+            )
+
+    def test_another_interpreters_answer_is_kept_until_an_install(self):
+        """One ``-c`` query per (interpreter, distribution) a session: it forks
+        a python with a 15 s timeout, and every launch of the app asked again
+        (2026-11-01). An install or update through the handler forgets it."""
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout="0.8.2\n")
+            for _ in range(3):
+                self.assertEqual(
+                    self.h._versions.installed_version("extapps", "extapps.ui", "/other/python"),
+                    "0.8.2",
+                )
+            self.assertEqual(run.call_count, 1)
+            self.h._versions.installed_version("pythontk", "pythontk", "/other/python")
+            self.h._versions.installed_version("extapps", "extapps.ui", "/third/python")
+            self.assertEqual(run.call_count, 3, "each pair asked once")
+            with patch("pythontk.PackageManager"):
+                self.h.register(
+                    "fresh", module="fresh_pkg_xyz.ui", install_spec="fresh-pkg-xyz",
+                    python="/other/python",
+                )
+                with (
+                    patch.object(
+                        ExternalAppHandler, "_is_importable", side_effect=[False, True]
+                    ),
+                    patch.object(ExternalAppHandler, "_spawn", return_value=MagicMock()),
+                    patch.object(
+                        ExternalAppHandler, "_pip_capable_python", side_effect=lambda py: py
+                    ),
+                ):
+                    self.h.launch("fresh")
+            run.return_value = MagicMock(returncode=0, stdout="0.9.0\n")
+            self.assertEqual(
+                self.h._versions.installed_version("extapps", "extapps.ui", "/other/python"),
+                "0.9.0",
+                "an install forgets what was read before it",
             )
 
 

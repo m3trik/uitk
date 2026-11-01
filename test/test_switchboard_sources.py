@@ -329,6 +329,45 @@ class TestCodeBuiltUi(QtBaseTestCase):
         self.assertEqual(sb.loaded_ui.tool.path and os.path.normcase(sb.loaded_ui.tool.path),
                          os.path.normcase(self.test_dir))
         self.assertEqual(self.built, [])
+        self.assertEqual(sb.ui_names(), ["tool"], "a name in both is listed once")
+
+    # Every name enumeration reads one list, files and builders alike (2026-11-01):
+    # each used to read the file registry alone, so a UI built in code had no
+    # relatives, no legal-name lookup, no browser row and no shortcut-editor entry.
+
+    def _write_ui(self, name):
+        with open(os.path.join(self.test_dir, f"{name}.ui"), "w") as f:
+            f.write(
+                '<?xml version="1.0" encoding="UTF-8"?>\n<ui version="4.0">\n'
+                f' <class>{name}</class>\n <widget class="QWidget" name="{name}"/>\n'
+                " <resources/>\n <connections/>\n</ui>\n"
+            )
+
+    def test_ui_names_lists_the_files_then_the_uis_built_in_code(self):
+        self._write_ui("alpha")
+        sb = Switchboard(ui_source=self.test_dir, base_dir=None)
+        sb.register_ui("beta#submenu", self._build)
+        self.assertEqual(sb.ui_names(), ["alpha", "beta#submenu"])
+        self.assertEqual(self.built, [], "listing never builds")
+
+    def test_find_ui_filename_matches_a_ui_built_in_code(self):
+        sb = Switchboard(base_dir=None)
+        sb.register_ui("editor#submenu", self._build)
+        self.assertEqual(
+            sb.find_ui_filename("editor_submenu", unique_match=True), "editor#submenu"
+        )
+        self.assertEqual(sb.find_ui_filename("editor_submenu"), ["editor#submenu"])
+
+    def test_a_ui_built_in_code_has_relatives(self):
+        self._write_ui("main#startmenu")
+        sb = Switchboard(ui_source=self.test_dir, base_dir=None)
+        sb.register_ui("main#submenu", self._build)
+        sb.register_ui("main#submenu#deep", self._build)
+        self.assertEqual(
+            sb.get_ui_relatives("main#submenu", upstream=True, exact=True, downstream=True),
+            ["main#startmenu", "main#submenu#deep"],
+        )
+        self.assertEqual(self.built, [], "a name answer never builds")
 
 
 if __name__ == "__main__":

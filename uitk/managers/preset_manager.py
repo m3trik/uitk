@@ -1165,7 +1165,6 @@ class PresetManager(_PresetWidgetScope, _PresetRootMigration, ptk.LoggingMixin):
         Returns:
             list: The copied files' paths under *target*.
         """
-        import logging
         import shutil
 
         root = cls.get_presets_root()
@@ -1184,7 +1183,7 @@ class PresetManager(_PresetWidgetScope, _PresetRootMigration, ptk.LoggingMixin):
                 out.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, out)
             except OSError as error:
-                logging.getLogger(__name__).debug(f"preset not carried: {path}: {error}")
+                cls.logger.debug(f"preset not carried: {path}: {error}")
                 continue
             copied.append(out)
         return copied
