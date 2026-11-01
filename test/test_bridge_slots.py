@@ -1755,8 +1755,10 @@ class TestRowsAddedAfterTheBuild(BaseTestCase):
         names.update(
             {id(sep): f"[{sec}]" for sec, sep in slot._section_separators.items()}
         )
+        from uitk.widgets._layout_items import _LayoutItems
+
         layout = slot._param_group.layout()
-        return [names.get(id(layout.itemAt(i).widget())) for i in range(layout.count())]
+        return [names.get(id(w)) for w in _LayoutItems.widgets(layout)]
 
     def test_new_rows_land_where_the_registry_puts_them(self):
         slot = _built_rows({"A": self._spec("A", "One"), "C": self._spec("C", "Two")})
