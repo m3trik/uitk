@@ -141,8 +141,9 @@ In a plain Qt app the menu needs nothing from its host: it parents to the window
 | `preload_only_from_host_loop` | whether the warm-up waits out any Python caller pumping events (a host whose loop is native code) | `False` |
 | `start()` | -- (the launcher, before any widget) make Qt usable in the process | nothing |
 | `defer(fn)` | -- (the launcher) run the build once the host is ready | `fn()` now |
+| `live_menu()` | -- (the launcher) a menu the host already drives, handed back instead of a second build | `None` |
 
-A host never needs the menu's internals: every member takes plain values, the menu or a widget. A failing member is logged, never raised into the gesture. The two launcher members exist because a host may have to provision Qt itself, and its startup scripts may run before its UI is up.
+A host never needs the menu's internals: every member takes plain values, the menu or a widget. A failing member is logged, never raised into the gesture. The launcher members exist because a host may have to provision Qt itself, its startup scripts may run before its UI is up, and it may wire one menu per process into its own input.
 
 ```python
 from uitk import MarkingMenu, PureMarkingMenuHost

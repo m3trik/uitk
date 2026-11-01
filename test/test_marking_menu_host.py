@@ -110,6 +110,10 @@ class TestTheProtocol(unittest.TestCase):
         """A plain Qt app has nothing to wait for: the launcher's build runs at once."""
         self.assertEqual(PureMarkingMenuHost().defer(lambda: "built"), "built")
 
+    def test_the_pure_host_drives_no_menu_of_its_own(self):
+        """Nothing to hand back: every launch builds."""
+        self.assertIsNone(PureMarkingMenuHost().live_menu())
+
     def test_the_pure_host_reports_qts_mouse(self):
         self.assertEqual(
             PureMarkingMenuHost().mouse_buttons(), QtWidgets.QApplication.mouseButtons()

@@ -12,10 +12,11 @@ it as ``MarkingMenu(host=...)``.
 :class:`PureMarkingMenuHost` is the default: exactly the plain-Qt behavior. A host adapter
 subclasses it and overrides only what differs.
 
-Two members serve whoever *launches* a menu rather than the menu itself, because they must
-happen before the menu exists: :meth:`MarkingMenuHost.start` makes Qt usable in the process,
-and :meth:`MarkingMenuHost.defer` schedules the build for when the host is ready for it. Every
-other member is called by :class:`~uitk.widgets.marking_menu._marking_menu.MarkingMenu`.
+Three members serve whoever *launches* a menu rather than the menu itself, because they come
+before the menu exists: :meth:`MarkingMenuHost.start` makes Qt usable in the process,
+:meth:`MarkingMenuHost.defer` schedules the build for when the host is ready for it, and
+:meth:`MarkingMenuHost.live_menu` names a menu the host already drives. Every other member is
+called by :class:`~uitk.widgets.marking_menu._marking_menu.MarkingMenu`.
 
 Importable without a Qt binding (a launcher resolves its host before Qt is provisioned): the
 binding is imported in the methods that use it.
@@ -54,6 +55,12 @@ class MarkingMenuHost(Protocol):
 
         For the launcher: a host whose startup scripts run before its UI is up schedules
         *fn* on its own loop (and returns None)."""
+
+    def live_menu(self) -> Any:
+        """The menu this host already drives, or ``None``.
+
+        For the launcher: a host that wires one menu per process into its own input
+        (a keymap) hands that one back instead of a second build stacking over it."""
 
     def main_window(self) -> Any:
         """The window the menu parents to when none is given, or ``None``."""
@@ -98,6 +105,10 @@ class PureMarkingMenuHost:
     def defer(self, fn: Callable[[], Any]) -> Any:
         """Run *fn* now and return its result."""
         return fn()
+
+    def live_menu(self) -> Any:
+        """None: every launch builds its menu (a new one retires the last)."""
+        return None
 
     def main_window(self) -> Any:
         """No main window of its own: the menu parents to what it is given."""
