@@ -8823,12 +8823,17 @@ class TestShortcutOverlay(BaseTestCase):
         overlay = self.w.shortcut_overlay
         self.assertTrue(overlay.isVisible())
         self.assertTrue(overlay.testAttribute(QtCore.Qt.WA_TransparentForMouseEvents))
+        # A legend wider than the cap wraps at the cap -- a card, never a
+        # narrow column. The legend's width is the platform's fonts' (329 px
+        # on CI's Linux, past 380 on Windows), so the cap is held under it.
+        overlay.MAX_WIDTH = min(
+            overlay.MAX_WIDTH, overlay._label.sizeHint().width() - 20
+        )
+        overlay.refresh()
         host = self.w._timeline.viewport().geometry()
         g = overlay.geometry()
         self.assertEqual(g.right() + 1 + overlay.MARGIN, host.right() + 1)
         self.assertEqual(g.bottom() + 1 + overlay.MARGIN, host.bottom() + 1)
-        # A legend wider than the cap wraps at the cap -- a card, never a
-        # narrow column (the hint here is wider than MAX_WIDTH).
         self.assertGreater(overlay._label.sizeHint().width(), overlay.MAX_WIDTH)
         self.assertEqual(g.width(), overlay.MAX_WIDTH)
         self.w.shortcut_overlay_visible = False
