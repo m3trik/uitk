@@ -1,6 +1,6 @@
 # Marking Menu
 
-`uitk.MarkingMenu` — a radial gesture menu driven by keyboard + mouse chord bindings. The flagship consumer pattern for UITK. Used by [tentacle](https://github.com/m3trik/tentacle) as the DCC shell for Maya, 3ds Max, and Blender.
+`uitk.MarkingMenu` — a radial gesture menu driven by keyboard + mouse chord bindings. The flagship consumer pattern for UITK. Used by [tentacle](https://github.com/m3trik/tentacle) as the DCC shell for Maya and Blender; any application hosts one through `MarkingMenu(host=...)` ([Hosting it in an application](#hosting-it-in-an-application-markingmenuhost)).
 
 **Nav**: [← README](README.md) · [User Guide](USER_GUIDE.md) · [Slots](SLOTS.md) · [Widgets](WIDGETS.md) · [Architecture](ARCHITECTURE.md) · [Cookbook](COOKBOOK.md) · [API](API_REFERENCE.md)
 
@@ -12,7 +12,7 @@ Hold a key (e.g. `F12`). A radial menu appears centered at the cursor. Flick the
 
 The same system also launches standalone windows — any UI without the `#startmenu` / `#submenu` tag is treated as a regular `MainWindow` that the marking menu shows on demand.
 
-Implementation: [uitk/widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py) — one of the largest single classes in the package, so it is assembled from one part per concept, each a mixin module beside it: [\_bindings.py](../uitk/widgets/marking_menu/_bindings.py) (chord table, activation key, routes), [\_hosting.py](../uitk/widgets/marking_menu/_hosting.py) (stacked pages, hosted themes, preload), [\_navigation.py](../uitk/widgets/marking_menu/_navigation.py) (submenu transitions, child hooks), [\_input.py](../uitk/widgets/marking_menu/_input.py) (hit-testing, press/release dispatch, the grab, input diagnostics) and [\_presentation.py](../uitk/widgets/marking_menu/_presentation.py) (show/hide, the fade). The facade keeps construction, the process-wide instance registry and the activation press/release, and subclasses `<parts> + QWidget + SingletonMixin + LoggingMixin + HelpMixin` — the parts come before `QWidget` because they override its virtuals. The public and protected surface is the one class's, so a host subclass (`TclMaya`, `TclBlender`) overrides any member as before. Pure chord→menu resolution lives in [\_resolver.py](../uitk/widgets/marking_menu/_resolver.py) (Qt-free, unit-testable). The mixin assembly predates the facade rule ([CODE_STANDARD §14](https://github.com/m3trik/m3trik/blob/main/docs/CODE_STANDARD.md)): it is the next facade to split into collaborators that own their state (the shape `Switchboard` and `TableWidget` now have), not a model for a new class.
+Implementation: [uitk/widgets/marking_menu/_marking_menu.py](../uitk/widgets/marking_menu/_marking_menu.py) — one of the largest single classes in the package, so it is assembled from one part per concept, each a mixin module beside it: [\_bindings.py](../uitk/widgets/marking_menu/_bindings.py) (chord table, activation key, routes), [\_hosting.py](../uitk/widgets/marking_menu/_hosting.py) (stacked pages, hosted themes, preload), [\_navigation.py](../uitk/widgets/marking_menu/_navigation.py) (submenu transitions, child hooks), [\_input.py](../uitk/widgets/marking_menu/_input.py) (hit-testing, press/release dispatch, the grab, input diagnostics) and [\_presentation.py](../uitk/widgets/marking_menu/_presentation.py) (show/hide, the fade). The facade keeps construction, the process-wide instance registry and the activation press/release, and subclasses `<parts> + QWidget + SingletonMixin + LoggingMixin + HelpMixin` — the parts come before `QWidget` because they override its virtuals. What an application answers differently reaches it through its host (`MarkingMenu(host=...)`, [below](#hosting-it-in-an-application-markingmenuhost)), never a subclass. Pure chord→menu resolution lives in [\_resolver.py](../uitk/widgets/marking_menu/_resolver.py) (Qt-free, unit-testable). The mixin assembly predates the facade rule ([CODE_STANDARD §14](https://github.com/m3trik/m3trik/blob/main/docs/CODE_STANDARD.md)): it is the next facade to split into collaborators that own their state (the shape `Switchboard` and `TableWidget` now have), not a model for a new class.
 
 A process hosts at most **one** input-owning marking menu: constructing a new instance calls `retire()` on every prior live instance (disposes its activation `GlobalShortcut`, cancels timers, ends any live gesture — irreversible; the dev-reload path).
 
@@ -120,59 +120,51 @@ If a `switchboard=` Switchboard is passed, the marking menu joins that one (regi
 
 A cold page pays its entire initialization inside the first gesture — the `.ui` load, slot-class instantiation and signal wiring, QSS polish, content fit — and because the overlay presents **last**, that first-show work lands *after* the page was already centered on the gesture anchor. Symptom: the first activation lags and settles visibly ("the first press feels uninitialized"); every later one is consistent.
 
-`preload=True` warms the **distinct binding-target menus**, then **every stacked submenu their nav buttons open** (never the whole UI registry — standalone tool windows stay lazy), through the real show path while nothing paints, using the same `WA_DontShowOnScreen` suppressed-present trick construction uses to realize the overlay. A submenu is followed the way hover reaches it: `MenuButton.submenu_name()` from a launcher the context shows, to a page that is loaded or a registered `.ui`; each is warmed once, and so is every submenu it opens in turn. Deferred and staggered — one page per event-loop tick once the host is idle, waiting out any live gesture and any pointer movement — so DCC startup isn't blocked, though each tick blocks for as long as that page's init takes (in Maya 2025 tentacle's set is 32 pages, ~17 s of blocking in chunks of up to ~4 s), and a chunk lands only while the pointer rests. A page whose init pumps the event loop can hand the activation a pending key press mid-warm, while the overlay is presented off-screen; the press and its release are replayed once the warm returns (`_defer_past_warm_up`). `PRELOAD_EXCLUDE` (fnmatch patterns, class or instance attribute) keeps submenus out of the walk — for a page whose init has a side effect it must not run unasked; `TclMaya` excludes its native-menu pages (building one runs Maya's MEL menu builder: a menu-set switch, plugin loads for Arnold and MASH), and `("*",)` limits the preload to the binding targets. `PRELOAD_ONLY_FROM_HOST_LOOP` (off by default) is for a host whose own event loop is native code: a tick fired with a Python caller beneath it -- a script pumping `processEvents`, a `QMenu.exec`, a test suite -- waits and retries, so a page is never built mid-script; `TclMaya` sets it (a tick inside a mayatk test faulted Maya). A host that pumps Qt from Python (Blender, offscreen tests) leaves it off. `preload_menus(names=None, defer=True)` can also be called directly (it's idempotent; re-run it after a bindings change to warm only new targets), and `defer=False` warms synchronously for hosts that preload behind a splash screen.
+`preload=True` warms the **distinct binding-target menus**, then **every stacked submenu their nav buttons open** (never the whole UI registry — standalone tool windows stay lazy), through the real show path while nothing paints, using the same `WA_DontShowOnScreen` suppressed-present trick construction uses to realize the overlay. A submenu is followed the way hover reaches it: `MenuButton.submenu_name()` from a launcher the context shows, to a page that is loaded or a registered `.ui`; each is warmed once, and so is every submenu it opens in turn. Deferred and staggered — one page per event-loop tick once the host is idle, waiting out any live gesture and any pointer movement — so DCC startup isn't blocked, though each tick blocks for as long as that page's init takes (in Maya 2025 tentacle's set is 32 pages, ~17 s of blocking in chunks of up to ~4 s), and a chunk lands only while the pointer rests. A page whose init pumps the event loop can hand the activation a pending key press mid-warm, while the overlay is presented off-screen; the press and its release are replayed once the warm returns (`_defer_past_warm_up`). `PRELOAD_EXCLUDE` (fnmatch patterns, class or instance attribute) keeps submenus out of the walk — for a page whose init has a side effect it must not run unasked (building a Maya native-menu page runs Maya's MEL menu builder: a menu-set switch, plugin loads for Arnold and MASH), and `("*",)` limits the preload to the binding targets. A host whose own event loop is native code sets `preload_only_from_host_loop` on its `MarkingMenuHost` (off by default): a tick fired with a Python caller beneath it -- a script pumping `processEvents`, a `QMenu.exec`, a test suite -- waits and retries, so a page is never built mid-script; Maya's adapter sets it (a tick inside a mayatk test faulted Maya). A host that pumps Qt from Python (Blender, offscreen tests) leaves it off. `preload_menus(names=None, defer=True)` can also be called directly (it's idempotent; re-run it after a bindings change to warm only new targets), and `defer=False` warms synchronously for hosts that preload behind a splash screen.
 
 As a backstop for pages that still reach the activation path cold (preloading off, or a freshly retargeted binding), `_show_marking_menu` re-centers such a page on its gesture anchor right after the present delivers its first `showEvent` — so even a cold first activation ends positioned exactly like every later one.
 
-### Subclassing for a DCC shell
+### Hosting it in an application: `MarkingMenu(host=...)`
 
-The canonical pattern — a DCC-specific subclass ([tcl_maya.py](../../tentacle/tentacle/tcl_maya.py), condensed):
+In a plain Qt app the menu needs nothing from its host: it parents to the window it is given, binds its activation key with an application shortcut, reads the mouse from Qt and shows its windows the Qt way. An application that is not purely Qt -- a DCC whose event loop is native code, that owns the keyboard before Qt sees a key, whose windows are foreign to Qt -- answers some of those differently. It says so by passing a **host**: an object implementing `uitk.MarkingMenuHost` ([marking_menu_host.py](../uitk/widgets/marking_menu/marking_menu_host.py)), never by subclassing `MarkingMenu`. `uitk.PureMarkingMenuHost` is the default (no `host` argument): exactly the plain-Qt answers. An adapter subclasses it and overrides only what its application answers differently.
+
+| Member | The menu asks it | Plain-Qt answer |
+|:---|:---|:---|
+| `main_window()` | for a parent when none is given | `None` |
+| `shortcut_window_name` | which always-up window owns application shortcuts (`ShortcutManager.register_host_window`) | `None` |
+| `ui_handler` | which `UiHandler` class shows and styles its standalone windows (the `"ui"` handler; an explicit `handlers` entry wins) | `None` (uitk's `UiHandler`) |
+| `mouse_buttons()` | which buttons are held, for hover/drag tracking | `QApplication.mouseButtons()` |
+| `bind_activation_key(menu, key)` | to bind its own half of the activation key, once built and after every `set_activation_key` (even an unchanged one: a re-sync) | nothing: the menu's application shortcut is the binding |
+| `adopt_window(widget)` | to tie the overlay (once built, on every show) and each standalone window it shows to the host's own window | nothing |
+| `key_event(menu, event)` | to see each key press and release first | nothing |
+| `attach(menu)` | for its once-per-menu setup, last in construction | nothing |
+| `preload_only_from_host_loop` | whether the warm-up waits out any Python caller pumping events (a host whose loop is native code) | `False` |
+| `start()` | -- (the launcher, before any widget) make Qt usable in the process | nothing |
+| `defer(fn)` | -- (the launcher) run the build once the host is ready | `fn()` now |
+
+A host never needs the menu's internals: every member takes plain values, the menu or a widget. A failing member is logged, never raised into the gesture. The two launcher members exist because a host may have to provision Qt itself, and its startup scripts may run before its UI is up.
 
 ```python
-import mayatk as mtk
-from uitk import MarkingMenu, ExternalAppHandler
+from uitk import MarkingMenu, PureMarkingMenuHost
 
-class TclMaya(MarkingMenu):
-    def __init__(self, parent=None, slot_source=None, log_level="WARNING", **kwargs):
-        parent = parent or mtk.get_main_window()
+class MyAppHost(PureMarkingMenuHost):
+    shortcut_window_name = "MyAppMainWindow"
+    preload_only_from_host_loop = True  # the app's event loop is native code
 
-        key_show = kwargs.pop("key_show", "F12")
-        key_show = f"Key_{key_show}" if not key_show.startswith("Key_") else key_show
-        bindings = kwargs.pop("bindings", None) or {
-            key_show:                            "hud#startmenu",
-            f"{key_show}|LeftButton":            "cameras#startmenu",
-            f"{key_show}|MiddleButton":          "editors#startmenu",
-            f"{key_show}|RightButton":           "main#startmenu",
-            f"{key_show}|LeftButton|RightButton": "maya#startmenu",
-        }
+    def main_window(self):
+        return my_app.main_window()
 
-        super().__init__(
-            parent,
-            ui_source=("ui", "ui/maya_menus"),
-            slot_source=slot_source,
-            bindings=bindings,
-            handlers={"ui": mtk.MayaUiHandler, "external_app": ExternalAppHandler},
-            log_level=log_level,
-            suppress_default_on_reentry=True,
-            precompile=True,
-            preload=True,
-            context_tags={"maya"},
-            **kwargs,
-        )
-        # The toolkit the Slots classes both hosts share call (``self.tk``).
-        self.sb.tk = mtk
+    def defer(self, fn):
+        my_app.call_when_idle(fn)  # startup scripts run before the UI exists
 
-        # DCC-specific editor wiring: run when the shortcut editors are built.
-        for name in ("shortcut_editor", "global_shortcuts"):
-            self.sb.editors.add_post_build_hook(
-                name,
-                lambda editor: editor.add_collision_checker(
-                    mtk.HotkeyCollisions.maya_collision_checker
-                ),
-            )
+host = MyAppHost()
+host.start()
+host.defer(lambda: MarkingMenu(host=host, bindings={"Key_F12": "main#startmenu",
+                                                     "Key_F12|RightButton": "scene#startmenu"},
+                               ui_source="ui", context_tags={"myapp"}))
 ```
 
-Instantiate once: `main = TclMaya(); main.show()`. The activation `GlobalShortcut` is auto-installed when a `parent` is supplied. (Condensed: tentacle builds this same chord table with its `Tcl.chord_bindings` and picks the key with `Tcl.resolve_key`; any table of chord strings works.)
+The adapters that ship: `mayatk.MayaMarkingMenuHost` (Maya's main window, `MayaUiHandler`, the idle queue, its hotkey-collision checker on the shortcut editors) and `blendertk.BlenderMarkingMenuHost` (provisions Qt and pumps it from Blender's timers, bridges the activation key from the 3D View keymap, reads the physical mouse, makes each window an OS-owned window of Blender's). tentacle's launcher (`Tcl.build`) builds the same `MarkingMenu` for both, choosing the adapter by host name.
 
 ---
 
@@ -310,5 +302,5 @@ Input-handoff logging (who holds the mouse grab, activation flags, launch/releas
 
 - [Cookbook — Marking menu recipes](COOKBOOK.md#marking-menu-recipes)
 - [Architecture — Handler ecosystem](ARCHITECTURE.md#handler-ecosystem)
-- [tentacle `tcl_maya.py`](https://github.com/m3trik/tentacle/blob/main/tentacle/tcl_maya.py) — working reference
+- [tentacle `tcl.py`](https://github.com/m3trik/tentacle/blob/main/tentacle/tcl.py) — working reference: one `MarkingMenu(host=...)` for every host (`Tcl.build`)
 - [tentacle `slots/`](https://github.com/m3trik/tentacle/tree/main/tentacle/slots) — per-domain slot modules used by the marking menu, one class per category for every host

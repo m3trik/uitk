@@ -10,7 +10,7 @@
 **Name it, and it connects.** UITK is a convention-driven Qt framework that eliminates boilerplate. Build the UI in Qt Designer or in code (`sb.register_ui`), name your widgets, write matching Python methods — UITK discovers the files, auto-wires signals, persists state, and applies themes. Every convention is overridable when you need control.
 <!-- short_description_end -->
 
-Built on `qtpy` over PySide6. Runs standalone or hosted inside DCCs (Maya, Blender, 3ds Max) through a pluggable handler ecosystem, and ships a marking-menu subsystem for radial-menu tool shells.
+Built on `qtpy` over PySide6. Runs standalone or hosted inside DCCs (Maya, Blender) through a pluggable handler ecosystem, and ships a marking-menu subsystem for radial-menu tool shells that any application hosts through a small adapter (`MarkingMenu(host=...)`).
 
 ## Why
 
@@ -262,20 +262,26 @@ def launch(sb=None):
     return ui
 ```
 
-### Marking-menu DCC shell (tentacle pattern)
+### Marking-menu shell hosted by an application (tentacle pattern)
 ```python
-from uitk import MarkingMenu
+from uitk import MarkingMenu, PureMarkingMenuHost
 
-class TclMaya(MarkingMenu):
-    def __init__(self, parent=None, **kwargs):
-        bindings = {
-            "Key_F12": "main#startmenu",
-            "Key_F12|LeftButton": "cameras#startmenu",
-            "Key_F12|RightButton": "scene#startmenu",
-        }
-        super().__init__(parent, ui_source="ui", slot_source="slots",
-                         bindings=bindings, **kwargs)
+class MyAppHost(PureMarkingMenuHost):     # override only what the app answers differently
+    def main_window(self):
+        return my_app.main_window()
+
+menu = MarkingMenu(
+    host=MyAppHost(),
+    ui_source="ui",
+    slot_source="slots",
+    bindings={
+        "Key_F12": "main#startmenu",
+        "Key_F12|LeftButton": "cameras#startmenu",
+        "Key_F12|RightButton": "scene#startmenu",
+    },
+)
 ```
+The host protocol: [Marking Menu — Hosting it in an application](https://github.com/m3trik/uitk/blob/main/docs/MARKING_MENU.md#hosting-it-in-an-application-markingmenuhost).
 
 ---
 
