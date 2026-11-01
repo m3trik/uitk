@@ -517,7 +517,7 @@ class KeyframeItem(DraggableItemMixin, QtWidgets.QGraphicsEllipseItem):
             if scene is not None:
                 scene.clearSelection()
             self.setSelected(True)
-        if sq.show_key_menu(MenuUtils._menu_exec_pos(event)):
+        if sq.show_key_menu(MenuUtils.menu_exec_pos(event)):
             event.accept()
         else:
             event.ignore()
@@ -1199,7 +1199,7 @@ class KeyScaleBoxItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             # No per-key floor: the RATIO is already clamped so the earliest
             # key cannot cross frame 0 (see the press).  Clamping here as well
             # would flatten a selection that legitimately reaches back before
-            # 0 -- a shot padded at the head -- onto frame 0 instead.
+            # 0 -- a range padded at the head -- onto frame 0 instead.
             key._time = self._pivot + (origin - self._pivot) * scale
             key._reposition()
         self._lo = self._pivot + (self._origin_lo - self._pivot) * scale

@@ -3349,6 +3349,141 @@ class TestMenuActingPins(QtBaseTestCase):
         self.assertTrue(menu.isVisible(), "saving must not close the menu")
 
 
+class TestMenuFacade(QtBaseTestCase):
+    """What a subclass, a sibling widget or a test reaches on a Menu, whatever
+    object behind it does the work: overrides of the hooks are the ones the
+    menu runs, the private state code outside reads stays on the menu's names,
+    and a connection the menu makes dies with the menu."""
+
+    def test_an_add_override_sees_every_member_of_a_collection_and_a_row(self):
+        seen = []
+
+        class _Spy(Menu):
+            def add(self, x, *args, **kwargs):
+                seen.append(x if isinstance(x, str) else type(x).__name__)
+                return super().add(x, *args, **kwargs)
+
+        menu = self.track_widget(_Spy())
+        menu.add(["QLabel", "QCheckBox"])
+        menu.add_row(["QCheckBox"], title="Row")
+        self.assertEqual(seen, ["list", "QLabel", "QCheckBox", "Separator", "QWidget"])
+
+    def test_the_shortcut_filter_hooks_are_the_subclasss(self):
+        calls = []
+
+        class _Body(Menu):
+            def _shortcut_filter_candidates(self):
+                calls.append("candidates")
+                return []
+
+        menu = self.track_widget(_Body())
+        menu.add("QLabel", setText="A")
+        ShortcutManager.set_hide_bound_menu_items(True)
+        self.addCleanup(ShortcutManager.set_hide_bound_menu_items, False)
+        menu._apply_shortcut_item_filter()
+        self.assertEqual(calls, ["candidates"])
+
+    def test_private_state_reads_and_writes_on_the_menus_names(self):
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu._mouse_has_entered = True
+        self.assertTrue(menu._mouse_has_entered)
+        self.assertIsNotNone(menu._leave_timer)
+        self.assertIsInstance(menu._button_manager, ActionButtonManager)
+        self.assertIs(menu._layout, menu.layout())
+        self.assertEqual(menu._pending_registrations, [])
+        self.assertFalse(menu._popup_configured)
+        self.assertIsNone(menu._empty_placeholder)
+
+    def test_an_instance_patch_reaches_the_menus_own_callers(self):
+        """``menu._x = f`` is what tests (and tools) do; the menu's machinery
+        must call the patched one, as it did when the method was the menu's."""
+        menu = self.track_widget(Menu())
+        menu.setObjectName("probe_menu")
+        registered = []
+        menu._register_with_main_window = registered.append
+        label = menu.add("QLabel", setObjectName="lbl_probe")
+        menu._drain_pending_registrations()
+        self.assertEqual(registered, [label])
+
+    def test_the_anchor_hook_dies_with_the_menu(self):
+        """The anchor's ``clicked`` reaches the menu's own slot -- a QObject
+        receiver, so destroying the menu drops the connection."""
+        triggered = []
+
+        class _Spy(Menu):
+            def _on_parent_triggered(self, checked=False):
+                triggered.append(checked)
+
+        anchor = self.track_widget(QtWidgets.QPushButton())
+        menu = _Spy(anchor, trigger_button="left")
+        menu.add("QLabel", setText="A")
+        self.assertIsNotNone(menu._parent_signal_source)
+        anchor.click()
+        self.assertEqual(len(triggered), 1)
+
+        menu.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        anchor.click()  # must neither raise nor reach the deleted menu
+        self.assertEqual(len(triggered), 1)
+
+    def test_kwargs_reach_the_parts_during_construction(self):
+        """``Menu(**kwargs)`` sets attributes before the scaffold is built;
+        every part the setters reach already exists."""
+        menu = self.track_widget(
+            Menu(setTitle="Early", add_presets=False, add_defaults_button=True)
+        )
+        self.assertEqual(menu.title(), "Early")
+        self.assertTrue(menu.add_defaults_button)
+        menu.ensure_chrome()
+        self.assertEqual(menu.header.text(), "Early")
+
+    def test_a_class_level_shim_calls_the_original_it_saved(self):
+        """A diagnostic shim saves ``Menu._setup_as_popup`` and calls it with
+        the menu (tentacle's ``scene_exporter_optionbox_check``): the saved
+        original must still be callable that way."""
+        original = Menu._setup_as_popup
+        seen = []
+
+        def shimmed(self_menu):
+            seen.append(self_menu._resolve_popup_window_type())
+            original(self_menu)
+
+        Menu._setup_as_popup = shimmed
+        self.addCleanup(setattr, Menu, "_setup_as_popup", original)
+        menu = self.track_widget(Menu(name="shim_probe"))
+        menu.add("QLabel", setText="A")
+        menu.show()
+        self.assertTrue(seen)
+        self.assertTrue(menu._popup_configured)
+
+    def test_the_override_points_are_real_methods(self):
+        """A subclass overrides these and the menu's machinery calls the
+        override; a forwarded private name is not one (see the class comment)."""
+        import inspect
+
+        for name in (
+            "add",
+            "add_row",
+            "eventFilter",
+            "showEvent",
+            "hideEvent",
+            "setVisible",
+            "sizeHint",
+            "_shortcut_filter_candidates",
+            "_shortcut_filter_emptied",
+            "_setup_apply_button",
+            "_setup_defaults_button",
+            "_prepare_for_show",
+            "_apply_position",
+            "_on_parent_triggered",
+            "_check_cursor_position",
+            "_drain_pending_registrations",
+            "_restore_menu_defaults",
+        ):
+            with self.subTest(name=name):
+                self.assertTrue(inspect.isfunction(inspect.getattr_static(Menu, name)))
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------

@@ -1,10 +1,10 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Unit tests for the data-driven ``BridgeSlotsBase.header_init``.
+"""Unit tests for the data-driven ``ParamPanelSlots.header_init``.
 
 The bridge / workflow slots used to each hand-roll a ``header_init`` that built
 the same "Utilities" separator + menu buttons + ``set_help_text``. That is now a
-single default on :class:`uitk.bridge.BridgeSlotsBase` driven by two class-attr
+single default on :class:`uitk.bridge.ParamPanelSlots` driven by two class-attr
 hooks -- :attr:`HEADER_MENU_ITEMS` (or :meth:`header_menu_items`) and
 :attr:`HELP_SPEC` (or :meth:`help_spec`). These tests pin that mechanism with a
 fake header so a regression can't silently drop a menu item or the help button.
@@ -12,7 +12,7 @@ fake header so a regression can't silently drop a menu item or the help button.
 
 import unittest
 
-from uitk.bridge import BridgeSlotsBase
+from uitk.bridge import ParamPanelSlots
 
 
 class _FakeSignal:
@@ -77,7 +77,7 @@ class DefaultHeaderMenuTest(unittest.TestCase):
     def _slot(self):
         # Bypass __init__ (needs a live switchboard/panel); header_init only
         # touches the passed widget + the slot's handler methods.
-        return BridgeSlotsBase.__new__(BridgeSlotsBase)
+        return ParamPanelSlots.__new__(ParamPanelSlots)
 
     def test_default_items_added_and_wired(self):
         slot = self._slot()
@@ -120,7 +120,7 @@ class CustomHeaderMenuTest(unittest.TestCase):
     """Subclasses override the data, not the code."""
 
     def test_custom_items_and_help(self):
-        class _Custom(BridgeSlotsBase):
+        class _Custom(ParamPanelSlots):
             HEADER_MENU_ITEMS = (
                 ("Do X", "btn_x", "tip x", "_do_x"),
                 ("Clear Log", "btn_clear_log", "Clear the log.", "clear_log"),
@@ -153,7 +153,7 @@ class CustomHeaderMenuTest(unittest.TestCase):
         url = "https://example.com/docs/bridge.md"
         for spec in ({"title": "Title"}, None):
 
-            class _Docs(BridgeSlotsBase):
+            class _Docs(ParamPanelSlots):
                 DOCS_URL = url
                 HELP_SPEC = spec
 
@@ -163,7 +163,7 @@ class CustomHeaderMenuTest(unittest.TestCase):
             self.assertEqual(bool(header.help_text), bool(spec), spec)
 
     def test_dynamic_items_via_method_override(self):
-        class _Dynamic(BridgeSlotsBase):
+        class _Dynamic(ParamPanelSlots):
             ENGINE_LABEL = "Metashape"
 
             def header_menu_items(self):
@@ -195,7 +195,7 @@ class CustomHeaderMenuTest(unittest.TestCase):
         self.assertEqual(cancel_tip, "Kill Metashape.")
 
     def test_missing_handler_raises(self):
-        class _Bad(BridgeSlotsBase):
+        class _Bad(ParamPanelSlots):
             HEADER_MENU_ITEMS = (("Y", "btn_y", "t", "does_not_exist"),)
 
         slot = _Bad.__new__(_Bad)

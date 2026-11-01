@@ -224,7 +224,7 @@ class TestScopedPreload(_PreloadCase):
         self.assertTrue(mm.isHidden())
 
     def test_a_host_loop_only_preload_waits_out_a_script_pumping_events(self):
-        """``PRELOAD_ONLY_FROM_HOST_LOOP``: a tick fired from a Python caller's
+        """``preload_only_from_host_loop`` (the host's): a tick fired from a Python caller's
         ``processEvents`` -- a script pumping events -- waits rather than build a
         page mid-script, and the warm-up resumes once allowed.
 
@@ -232,8 +232,12 @@ class TestScopedPreload(_PreloadCase):
         (``_menu`` -> ``processEvents``) built ``hud#startmenu`` there and
         faulted Maya iterating ``topLevelWidgets()``.
         """
-        mm = self._make_mm("t_preload_host_loop")
-        mm.PRELOAD_ONLY_FROM_HOST_LOOP = True
+        from uitk.widgets.marking_menu.marking_menu_host import PureMarkingMenuHost
+
+        class _NativeLoopHost(PureMarkingMenuHost):
+            preload_only_from_host_loop = True
+
+        mm = self._make_mm("t_preload_host_loop", host=_NativeLoopHost())
         hud = self._add_page(mm, "hud#startmenu")
 
         mm.preload_menus()
@@ -242,7 +246,7 @@ class TestScopedPreload(_PreloadCase):
 
         self.assertFalse(hud.is_initialized, "a page was built inside a script")
         self.assertIsNotNone(mm._preload_queue, "the warm-up must wait, not end")
-        mm.PRELOAD_ONLY_FROM_HOST_LOOP = False
+        mm.host = PureMarkingMenuHost()
         QtWait.until(lambda: hud.is_initialized, "the warm-up never resumed")
 
     def test_the_warm_up_waits_while_the_pointer_moves(self):

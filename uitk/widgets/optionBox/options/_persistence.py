@@ -137,7 +137,7 @@ class PersistedOption:
         ``""`` (no suffix, shared storage) for anything the resolution doesn't
         reach: a widget not registered with a MainWindow, or a Switchboard with no
         ``context_tags``. That is the intended answer, not a fallback — a standalone
-        host has nothing to collide with, and the host-agnostic ``extapps`` panels
+        host has nothing to collide with, and the host-agnostic standalone panels
         (their own tag-less Switchboard) *should* keep one shared recent-files list
         across every session that opens them.
         """
@@ -176,7 +176,7 @@ class PersistedOption:
         Before host namespacing every host wrote ``<key>``; now each writes
         ``<key>_<host>``. Without this, the move would read as "my pinned
         directories vanished". Mirrors
-        ``SwitchboardShortcutMixin._migrate_shortcuts_to_host_namespace``: each host
+        ``_Shortcuts.migrate_shortcuts_to_host_namespace``: each host
         *copies* on first run and then diverges, and the shared values are
         deliberately left in place so the *other* host can still seed from them.
 

@@ -195,7 +195,7 @@ class TestCommandBinding(_SwitchboardFixture):
     def setUp(self):
         super().setUp()
         self._shown = []
-        # The host declares its main window (tentacle's TclMaya does this);
+        # The host declares its main window (mayatk's MayaMarkingMenuHost does this);
         # uitk itself names no host.
         from uitk.managers.shortcut_manager import ShortcutManager
 
@@ -446,7 +446,7 @@ class TestCommandNamespaceSelfHeal(_SwitchboardFixture):
     def setUp(self):
         super().setUp()
         self._shown = []
-        # The host declares its main window (tentacle's TclMaya does this);
+        # The host declares its main window (mayatk's MayaMarkingMenuHost does this);
         # uitk itself names no host.
         from uitk.managers.shortcut_manager import ShortcutManager
 

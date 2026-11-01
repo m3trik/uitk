@@ -3,7 +3,7 @@
 """Rich-text tooltip + template-description helpers for bridge panels.
 
 Both :class:`Tooltip` staticmethods are pluggable hooks on
-:class:`BridgeSlotsBase`, so subclasses can override them per-bridge if
+:class:`ParamPanelSlots`, so subclasses can override them per-bridge if
 they need bespoke rendering -- but the defaults here cover marmoset /
 substance / rizom and any shape that follows the same registry
 conventions.

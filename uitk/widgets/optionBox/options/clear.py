@@ -2,12 +2,11 @@
 # coding=utf-8
 """Clear option for OptionBox - provides a clear button for text widgets."""
 
-from qtpy import QtWidgets, QtCore
-from uitk.managers.value_manager import ValueManager
-from ._options import ButtonOption
+from qtpy import QtWidgets
+from ._options import ButtonOption, HiddenWhileEmptyMixin
 
 
-class ClearOption(ButtonOption):
+class ClearOption(HiddenWhileEmptyMixin, ButtonOption):
     """A clear button option that can clear text from input widgets.
 
     This option automatically works with text input widgets like QLineEdit,
@@ -37,7 +36,6 @@ class ClearOption(ButtonOption):
             callback=self._clear_text,
         )
         self._auto_hide = auto_hide
-        self._connected = False
 
     def create_widget(self):
         """Create the clear button widget."""
@@ -48,90 +46,6 @@ class ClearOption(ButtonOption):
 
         button.setProperty("class", "ClearButton")
         return button
-
-    def setup_widget(self):
-        """Setup button connections and show event handling."""
-        super().setup_widget()
-
-        # Install event filter to catch show events for deferred visibility update
-        if self._auto_hide and self._widget:
-            self._widget.installEventFilter(self)
-            # Initial state SYNCHRONOUSLY: an empty field's clear button must
-            # never paint visible-then-hide (the deferred-only update let the
-            # wrong state be the first painted state — an init flash). Later
-            # text changes update via the connected signals.
-            self._update_visibility()
-
-    def eventFilter(self, obj, event):
-        """Filter show events to update visibility after state restoration."""
-        if event.type() == QtCore.QEvent.Show and obj is self._widget:
-            # Synchronous first so the shown state is correct on this very
-            # paint; the deferred pass stays as the safety net for a state
-            # restore that lands later in the same show cascade (its stated
-            # purpose) — a no-op when the state didn't change.
-            self._update_visibility()
-            QtCore.QTimer.singleShot(0, self._update_visibility)
-        return super().eventFilter(obj, event)
-
-    def set_wrapped_widget(self, widget):
-        """Set the wrapped widget and connect text change signals."""
-        super().set_wrapped_widget(widget)
-        if self._auto_hide:
-            self._connect_text_signals(widget)
-
-    def _connect_text_signals(self, widget):
-        """Connect to text change signals to update visibility."""
-        if self._connected or not widget:
-            return
-
-        # QLineEdit
-        if hasattr(widget, "textChanged") and isinstance(widget, QtWidgets.QLineEdit):
-            widget.textChanged.connect(self._update_visibility)
-            self._connected = True
-        # QTextEdit, QPlainTextEdit
-        elif hasattr(widget, "textChanged"):
-            widget.textChanged.connect(self._update_visibility)
-            self._connected = True
-        # QComboBox (editable)
-        elif hasattr(widget, "currentTextChanged"):
-            widget.currentTextChanged.connect(self._update_visibility)
-            self._connected = True
-        # QSpinBox, QDoubleSpinBox
-        elif hasattr(widget, "valueChanged"):
-            widget.valueChanged.connect(self._update_visibility)
-            self._connected = True
-
-    def _get_text(self):
-        """Get the current text from the wrapped widget."""
-        if not self.wrapped_widget:
-            return ""
-
-        widget = self.wrapped_widget
-
-        # QLineEdit
-        if hasattr(widget, "text") and callable(widget.text):
-            return widget.text()
-        # QTextEdit, QPlainTextEdit
-        elif hasattr(widget, "toPlainText"):
-            return widget.toPlainText()
-        # QComboBox
-        elif hasattr(widget, "currentText"):
-            return ValueManager.combo_value(widget, "text")
-        # QSpinBox, QDoubleSpinBox - always have a value, check if it's the minimum
-        elif hasattr(widget, "value") and hasattr(widget, "minimum"):
-            # Consider "empty" if at minimum value
-            return "" if widget.value() == widget.minimum() else str(widget.value())
-
-        return ""
-
-    def _update_visibility(self, *args):
-        """Update button visibility based on whether there's text to clear."""
-        if not self._auto_hide:
-            return
-
-        has_text = bool(self._get_text())
-        if self._widget:
-            self._widget.setVisible(has_text)
 
     def _clear_text(self):
         """Clear text from the wrapped widget."""

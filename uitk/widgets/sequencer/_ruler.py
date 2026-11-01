@@ -5,19 +5,14 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from qtpy import QtWidgets, QtGui, QtCore
 
 if TYPE_CHECKING:
     from uitk.widgets.sequencer._timeline import TimelineView
 
-from uitk.widgets.sequencer._data import (
-    SELECTED_ACCENT as _SELECTED_ACCENT,
-    _RULER_HEIGHT,
-    _SHOT_LANE_HEIGHT,
-    _HEADER_HEIGHT,
-)
+from uitk.widgets.sequencer._data import _RULER_HEIGHT
 
 #: Key-tick red, deliberately desaturated: the ruler is read at a glance and
 #: a saturated red there competes with the playhead for attention.
@@ -34,14 +29,13 @@ _KEY_TICK_BOTTOM = 11.0
 
 
 class RulerItem(QtWidgets.QGraphicsItem):
-    """Draws the timeline header: the frame ruler, and the shot lane below it.
+    """Draws the timeline header: the frame ruler, and the layers' lanes below it.
 
-    The two are separate strips.  The ruler proper is frame numbers, frame
-    ticks and key ticks, and every row of it belongs to the scrub.  The shot
-    lane sits UNDER it and carries one band per shot -- the layout, the
-    active shot's accent, and (driven by the view) the grabs that move and
-    resize it.  They used to share the ruler's 24px, which put the active
-    shot's blue rule inside the ruler and made its bottom half un-scrubbable.
+    Separate strips.  The ruler proper is frame numbers, frame ticks and key
+    ticks, and every row of it belongs to the scrub.  A layer's lane sits
+    UNDER it (``SequencerWidget.add_layer``), stacked in registration order,
+    and the layer paints it (``SequencerLayer.paint_lane``); the item only
+    gives each lane its strip and the baselines between them.
     """
 
     _MIN_WIDTH = 100000.0  # floor; preserves prior behaviour for small scenes
@@ -49,10 +43,9 @@ class RulerItem(QtWidgets.QGraphicsItem):
     def __init__(self, timeline: "TimelineView"):
         super().__init__()
         self._timeline = timeline
-        # [{name, start, end, active, id?}, ...] -- ``active`` marks the
-        # selected shot; an optional ``id`` is carried through untouched so a
-        # consumer can get its own identifier back.
-        self._shot_blocks: list = []
+        #: The header's height: the ruler, and every lane under it
+        #: (:meth:`set_height`, from the widget's lane stack).
+        self._height = float(_RULER_HEIGHT)
         # Horizontal extent the ruler paints across; kept in sync with the
         # scene rect by the view's ``_update_scene_rect``.  ``_content_left``
         # is normally 0 but goes negative whenever content sits before frame
@@ -64,34 +57,18 @@ class RulerItem(QtWidgets.QGraphicsItem):
         self._key_ticks: list = []
         self.setZValue(10)
 
-    # -- shot block data ---------------------------------------------------
+    def set_height(self, height: float) -> None:
+        """Set the header's height: the ruler and the lanes under it.
 
-    def set_shot_blocks(self, blocks: list) -> None:
-        self._shot_blocks = list(blocks)
-        self.update()
-
-    def clear_shot_blocks(self) -> None:
-        self._shot_blocks.clear()
-        self.update()
-
-    def selected_block(self) -> Optional[dict]:
-        """The block marked ``active``, or ``None`` when nothing is selected."""
-        for blk in self._shot_blocks:
-            if blk.get("active"):
-                return blk
-        return None
-
-    def shot_block_at(self, time: float) -> Optional[dict]:
-        """Return the shot block containing *time*, or ``None``.
-
-        Used by the timeline's context-menu dispatch to refine the
-        "ruler" zone into "shot_lane" when the click lands on a shot
-        block, so consumers can present a shot-specific menu.
+        Announced to the scene index first, as every bounds change of a
+        held rect must be (``set_content_width``).
         """
-        for blk in self._shot_blocks:
-            if blk["start"] <= time <= blk["end"]:
-                return blk
-        return None
+        height = float(height)
+        if height == self._height:
+            return
+        self.prepareGeometryChange()
+        self._height = height
+        self.update()
 
     def set_content_width(self, width: float) -> None:
         """Set the horizontal extent the ruler covers (scene pixels).
@@ -125,8 +102,8 @@ class RulerItem(QtWidgets.QGraphicsItem):
         """Set the left edge of the extent the ruler covers (scene pixels).
 
         Zero for the ordinary all-positive timeline; negative once the scene
-        rect opens up room before frame 0 (a shot padded or rippled backwards
-        lives there), so the ticks and shot labels reach that far too.
+        rect opens up room before frame 0 (content padded or rippled backwards
+        lives there), so the ticks and the lanes reach that far too.
         """
         left = min(0.0, float(left))
         if left == self._content_left:
@@ -140,7 +117,7 @@ class RulerItem(QtWidgets.QGraphicsItem):
         # before frame 0; a fixed cap stopped it past frame
         # ``width / pixels_per_unit``.  The item sits at scene x=0, so local
         # coordinates == scene coordinates.
-        return QtCore.QRectF(self._content_left, 0, self._content_width, _HEADER_HEIGHT)
+        return QtCore.QRectF(self._content_left, 0, self._content_width, self._height)
 
     def paint(self, painter: QtGui.QPainter, option, widget=None):
         tl = self._timeline
@@ -154,7 +131,7 @@ class RulerItem(QtWidgets.QGraphicsItem):
         painter.setBrush(QtGui.QColor("#2B2B2B"))
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawRect(
-            QtCore.QRectF(vis_left, 0, vis_right - vis_left, _HEADER_HEIGHT)
+            QtCore.QRectF(vis_left, 0, vis_right - vis_left, self._height)
         )
 
         if ppu <= 0:
@@ -187,16 +164,17 @@ class RulerItem(QtWidgets.QGraphicsItem):
             t += interval
 
         self._paint_key_ticks(painter, t_start, t_end)
+        self._paint_lanes(painter, vis_left, vis_right)
 
-        # -- shot lane at the bottom of the ruler ---------------------------
-        if self._shot_blocks:
-            self._paint_shot_lane(painter, vis_left, vis_right)
-
-        # Hard baselines under each strip.  Without the lower one the shot
-        # lane and the range highlight directly beneath it merge into one
-        # block, which reads as the highlight overshooting the header; the
-        # upper one keeps the numbers from running into the lane.
-        for y, alpha in ((_RULER_HEIGHT - 1.0, 90), (_HEADER_HEIGHT - 1.0, 140)):
+        # Hard baselines: the header's bottom, and the ruler's when lanes sit
+        # under it.  Without the lower one a lane and the range highlight
+        # directly beneath it merge into one block, which reads as the
+        # highlight overshooting the header; the upper one keeps the numbers
+        # from running into the lane.
+        lines = [(self._height - 1.0, 140)]
+        if self._height > _RULER_HEIGHT:
+            lines.insert(0, (_RULER_HEIGHT - 1.0, 90))
+        for y, alpha in lines:
             painter.fillRect(
                 QtCore.QRectF(vis_left, y, vis_right - vis_left, 1.0),
                 QtGui.QColor(0, 0, 0, alpha),
@@ -225,73 +203,25 @@ class RulerItem(QtWidgets.QGraphicsItem):
             x = tl.time_to_x(t)
             painter.drawLine(QtCore.QPointF(x, top), QtCore.QPointF(x, bottom))
 
-    def _paint_shot_lane(self, painter, vis_left: float, vis_right: float) -> None:
-        """Draw one band per shot, in the strip below the ruler.
+    def _paint_lanes(self, painter, vis_left: float, vis_right: float) -> None:
+        """Hand each layer's lane its strip under the ruler, top to bottom.
 
-        Selection has to read at a glance without turning the ruler into a
-        second timeline, so it is carried by three quiet cues that agree with
-        each other: a tinted band, a solid rule along the top of the lane, and
-        bright ticks at the shot's two bounds.  Unselected shots get a flat
-        dim band and a hairline separator -- enough to show the layout and
-        nothing more.
+        The painter's state is the lane's to change: it is restored after
+        each one, so a lane cannot leak a pen or font into the next.
         """
-        tl = self._timeline
-        top = _RULER_HEIGHT
-
-        label_font = QtGui.QFont(painter.font())
-        label_font.setPointSize(7)
-        label_font.setBold(True)
-        painter.setFont(label_font)
-        metrics = QtGui.QFontMetrics(label_font)
-
-        accent = QtGui.QColor(_SELECTED_ACCENT)
-        # NO accent wash on the active band: every band gets the same neutral
-        # tint, so the lane shows the LAYOUT and nothing else.  Which shot is
-        # selected is said by the accent rule and bound ticks below, which are
-        # lines rather than a background -- a second blue box stacked on the
-        # range highlight read as one oversized block.
-        band_fill = QtGui.QColor("#FFFFFF")
-        band_fill.setAlpha(12)
-        for blk in sorted(self._shot_blocks, key=lambda b: b["start"]):
-            bx0 = tl.time_to_x(blk["start"])
-            bx1 = tl.time_to_x(blk["end"])
-            if bx1 < vis_left or bx0 > vis_right:
-                continue
-            is_active = bool(blk.get("active", False))
-            band = QtCore.QRectF(bx0, top, max(1.0, bx1 - bx0), _SHOT_LANE_HEIGHT)
-
-            painter.fillRect(band, band_fill)
-
-            painter.setPen(QtCore.Qt.NoPen)
-            if is_active:
-                # The rule says WHICH lane is selected; the ticks say exactly
-                # where it starts and ends -- the band alone blurs at low zoom.
-                rule = QtGui.QColor(accent)
-                rule.setAlpha(230)
-                painter.fillRect(QtCore.QRectF(bx0, top, band.width(), 2.0), rule)
-                for x in (bx0, bx1 - 1.0):
-                    painter.fillRect(
-                        QtCore.QRectF(x, top, 1.0, _SHOT_LANE_HEIGHT), rule
+        top = float(_RULER_HEIGHT)
+        for layer, height in self._timeline.parent_sequencer._lane_stack:
+            paint = getattr(layer, "paint_lane", None)
+            if paint is not None:
+                painter.save()
+                try:
+                    paint(
+                        painter,
+                        QtCore.QRectF(vis_left, top, vis_right - vis_left, height),
                     )
-            else:
-                sep = QtGui.QColor("#000000")
-                sep.setAlpha(90)
-                painter.fillRect(
-                    QtCore.QRectF(bx1 - 1.0, top, 1.0, _SHOT_LANE_HEIGHT), sep
-                )
-
-            name = blk.get("name", "")
-            if not name:
-                continue
-            s = round(blk["start"])
-            e = round(blk["end"])
-            label = f"{name}  {s}-{e}  {e - s}f"
-            avail = max(0, int(bx1 - bx0) - 6)
-            label = metrics.elidedText(label, QtCore.Qt.ElideRight, avail)
-            tc = QtGui.QColor("#FFFFFF" if is_active else "#CCCCCC")
-            tc.setAlpha(240 if is_active else 150)
-            painter.setPen(tc)
-            painter.drawText(QtCore.QPointF(bx0 + 3, _HEADER_HEIGHT - 3), label)
+                finally:
+                    painter.restore()
+            top += height
 
     @staticmethod
     def _nice_interval(raw: float) -> int:

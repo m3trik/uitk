@@ -58,7 +58,7 @@ class MarkingMenuLeafClickWhileGrabHeld(QtBaseTestCase):
         self.track_widget(self.parent)
 
         self.mm = DriveableMarkingMenu(self.parent, dict(DEFAULT_BINDINGS))
-        # Blender's TclBlender constructs with suppress_default_on_reentry=True.
+        # tentacle's launcher (Tcl.build) constructs with suppress_default_on_reentry=True.
         self.mm._suppress_default_on_reentry = True
         QtWidgets.QWidget.show(self.mm)
         self.track_widget(self.mm)

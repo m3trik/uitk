@@ -44,13 +44,6 @@ class _HostingMixin:
     #: ``("*",)`` limits the preload to the binding targets.
     PRELOAD_EXCLUDE: tuple = ()
 
-    #: For a host whose own event loop is native code (Maya): the warm-up then
-    #: advances only from that loop, and waits while a Python caller is
-    #: beneath its timer -- a script pumping ``processEvents`` (a progress
-    #: loop, a ``QMenu.exec``, a test suite), where building a whole page lands
-    #: mid-script. Off for a host that pumps Qt from Python (Blender, tests).
-    PRELOAD_ONLY_FROM_HOST_LOOP: bool = False
-
     # ── Hosted-window themes ────────────────────────────────────────────
     # The two window styles this menu hosts were historically hard-pinned to
     # "dark": the radial startmenu/submenu pages (menu_theme) and the standalone
@@ -396,7 +389,12 @@ class _HostingMixin:
             # instead of raising into the DCC event loop.
             self._preload_queue = None
             return
-        if not busy and self.PRELOAD_ONLY_FROM_HOST_LOOP:
+        # A host whose own event loop is native code (its
+        # ``preload_only_from_host_loop``): the warm-up advances only from that
+        # loop, and waits while a Python caller is beneath its timer -- a script
+        # pumping ``processEvents`` (a progress loop, a ``QMenu.exec``, a test
+        # suite), where building a whole page lands mid-script.
+        if not busy and getattr(self.host, "preload_only_from_host_loop", False):
             try:
                 sys._getframe(1)  # a Python caller beneath this tick
                 busy = True

@@ -1,6 +1,6 @@
 # Slots
 
-The contract between a Qt Designer `.ui` file and a Python class. Most of UITK reduces to this single idea: **widget name in Designer ↔ method name in Python**.
+The contract between a UI — a Qt Designer `.ui` file, or a widget tree built in code and registered with `sb.register_ui` — and a Python class. Most of UITK reduces to this single idea: **widget `objectName` ↔ method name in Python**.
 
 **Nav**: [← README](README.md) · [User Guide](USER_GUIDE.md) · [Widgets](WIDGETS.md) · [Marking Menu](MARKING_MENU.md) · [Architecture](ARCHITECTURE.md) · [Cookbook](COOKBOOK.md) · [API](API_REFERENCE.md)
 
@@ -286,17 +286,16 @@ Large apps split slot logic by domain. Each slot class handles one UI; a shared 
 
 ```
 slots/
-├── maya/
-│   ├── _slots_maya.py     # class SlotsMaya: shared DCC base
-│   ├── cameras.py         # class CamerasSlots(SlotsMaya)
-│   ├── editors.py         # class EditorsSlots(SlotsMaya)
-│   ├── selection.py       # class SelectionSlots(SlotsMaya)
-│   └── scene.py           # class SceneSlots(SlotsMaya)
+├── _slots.py          # class Slots: shared base
+├── cameras.py         # class CamerasSlots(Slots)
+├── editors.py         # class EditorsSlots(Slots)
+├── selection.py       # class SelectionSlots(Slots)
+└── scene.py           # class SceneSlots(Slots)
 ```
 
-Each slot class wires a single UI (`cameras.ui`, `editors.ui`, …). The shared `_slots_maya` base carries `self.sb` setup, logging, common helpers.
+Each slot class wires a single UI (`cameras.ui`, `editors.ui`, …). The shared `_slots` base carries `self.sb` setup, logging, common helpers.
 
-See `tentacle/tentacle/slots/maya/` for a full example.
+See `tentacle/tentacle/slots/` for a full example (one class per category serves every host, reaching it through an injected toolkit).
 
 ---
 

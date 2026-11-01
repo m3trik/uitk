@@ -946,6 +946,61 @@ class TestLegacyMigration(BaseTestCase):
         )
 
 
+class TestCarryPresets(BaseTestCase):
+    """``PresetManager.carry_presets``: a panel's presets follow it to another
+    folder (a panel folded into another: tentacle's Unity Bridge into extapps'
+    Unity Workflow), copied, never over one the target already holds.
+    Added: 2026-10-31"""
+
+    def setUp(self):
+        super().setUp()
+        self.tmp = Path(tempfile.mkdtemp(prefix="uitk_carry_presets_"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.src = self.tmp / "mayatk" / "unity_bridge"
+        self.dst = self.tmp / "extapps" / "unity_workflow"
+
+    def _write(self, path, data):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_each_preset_the_target_lacks_is_copied_with_its_template(self):
+        self._write(self.src / "copy_to_assets" / "hero.json", {"param_a": 1})
+        self._write(self.src / "manage_scripts" / "all.json", {"param_b": 2})
+        (self.src / "copy_to_assets" / ".domain").write_text("x", encoding="utf-8")
+        copied = PresetManager.carry_presets(self.src, self.dst)
+        self.assertEqual(
+            sorted(p.relative_to(self.dst).as_posix() for p in copied),
+            ["copy_to_assets/hero.json", "manage_scripts/all.json"],
+        )
+        self.assertEqual(
+            json.loads((self.dst / "copy_to_assets" / "hero.json").read_text()),
+            {"param_a": 1},
+        )
+        self.assertFalse((self.dst / "copy_to_assets" / ".domain").exists())
+        self.assertTrue((self.src / "copy_to_assets" / "hero.json").is_file())
+
+    def test_a_preset_the_target_holds_wins(self):
+        self._write(self.src / "copy_to_assets" / "hero.json", {"param_a": 1})
+        self._write(self.dst / "copy_to_assets" / "hero.json", {"param_a": 9})
+        self.assertEqual(PresetManager.carry_presets(self.src, self.dst), [])
+        self.assertEqual(
+            json.loads((self.dst / "copy_to_assets" / "hero.json").read_text()),
+            {"param_a": 9},
+        )
+
+    def test_relative_folders_resolve_under_the_presets_root(self):
+        self._write(self.src / "copy_to_assets" / "hero.json", {"param_a": 1})
+        with mock.patch.object(PresetManager, "get_presets_root", return_value=self.tmp):
+            copied = PresetManager.carry_presets(
+                Path("mayatk/unity_bridge"), "extapps/unity_workflow"
+            )
+        self.assertEqual(copied, [self.dst / "copy_to_assets" / "hero.json"])
+
+    def test_a_missing_source_carries_nothing(self):
+        self.assertEqual(PresetManager.carry_presets(self.src, self.dst), [])
+        self.assertFalse(self.dst.exists())
+
+
 class TestSetupComboIdempotent(QtBaseTestCase):
     """Repeat ``setup()`` on a Menu parent wires ONE preset combo.
 

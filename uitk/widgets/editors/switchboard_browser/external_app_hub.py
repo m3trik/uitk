@@ -26,7 +26,7 @@ can still put an app on the desktop.
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Iterable, Optional, Sequence, Tuple
 
 import pythontk as ptk
 from qtpy import QtCore, QtWidgets
@@ -130,8 +130,12 @@ class _ExternalAppHubInternal:
         sb.app.setWindowIcon(QtGui.QIcon(self.icon or self._DEFAULT_ICON))
         handler = sb.handlers.external_app
         # A source checkout on PYTHONPATH has no installed entry points: as a
-        # provider, its pyproject.toml is read instead (see discover()).
-        handler.add_provider(self.package)
+        # provider, its pyproject.toml is read instead (see discover()), found
+        # by the package and matched by the distribution's name. So is each
+        # other provider the hub names; a missing one installs on a launch miss.
+        handler.add_provider(self.dist, probe_module=self.package)
+        for dist, package in self.providers:
+            handler.add_provider(dist, probe_module=package)
         handler.discover()
         return sb
 
@@ -267,6 +271,15 @@ class ExternalAppHub(_ExternalAppHubInternal):
             shortcuts; uitk's grid icon when omitted.
         app_id: Its Windows taskbar identity (AppUserModelID);
             ``uitk.<package>`` when omitted.
+        dist: The distribution that installs *package*, where its name differs
+            (``pip install <dist>``): what a source checkout's ``pyproject.toml``
+            is matched by, and what a missing provider installs. *package* when
+            omitted.
+        providers: Other packages whose apps this hub serves too, as
+            ``(distribution, import name)`` pairs: read from their checkout the
+            same way, and installed when an app of theirs is asked for while they
+            are missing. For a hub that keeps a program name its apps moved away
+            from, so launchers written before the move still open them.
     """
 
     def __init__(
@@ -275,11 +288,17 @@ class ExternalAppHub(_ExternalAppHubInternal):
         title: Optional[str] = None,
         icon: Optional[str] = None,
         app_id: Optional[str] = None,
+        dist: Optional[str] = None,
+        providers: Iterable[Tuple[str, str]] = (),
     ):
         self.package = package
         self.title = title or package
         self.icon = icon
         self.app_id = app_id or f"uitk.{package}"
+        self.dist = dist or package
+        self.providers: Tuple[Tuple[str, str], ...] = tuple(
+            (str(dist_name), str(name)) for dist_name, name in providers
+        )
 
     def __repr__(self) -> str:
         return f"ExternalAppHub({self.package!r}, title={self.title!r})"
@@ -419,7 +438,7 @@ class ExternalAppHub(_ExternalAppHubInternal):
             raise RuntimeError(
                 f"{self.package} does not import in {python} outside this "
                 f"application ({problem}). A desktop launcher runs that Python on "
-                f"its own: install {self.package} into it with pip, or put its "
+                f"its own: install it there (pip install {self.dist}), or put its "
                 f"folder on a PYTHONPATH saved in your user environment."
             )
         # One app's launcher carries the hub's name too: "Converter" alone

@@ -61,7 +61,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         self.setAcceptHoverEvents(True)
         self.setFlags(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges)
         self.sync_selectable()
-        # Dimmed (non-active shot) clips sit behind active clips
+        # Dimmed clips (outside the host's active range) sit behind active clips
         if clip_data.data.get("dimmed"):
             self.setZValue(-0.5)
         # Sub-row clips show label as tooltip instead of inline text
@@ -362,7 +362,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         'consolidated' colour), i.e. most clips in a real scene.  Blending
         toward the accent instead is visible on every fill, including the ones
         already at full brightness, and matches the blue the ruler marks the
-        selected shot in.
+        selected range in.
 
         Deliberately not routed through ``StyleSheet._blend``: that one exists
         to assemble QSS token STRINGS (it parses and re-formats ``rgb()`` /
@@ -435,7 +435,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         if self._data.pattern is not None:
             PatternRegistry.paint_pattern(painter, rect, self._data.pattern)
 
-        # Interpolated-motion overlay (no physical keys in this shot)
+        # Interpolated-motion overlay (no physical keys in this clip's span)
         if self._data.data.get("interpolated"):
             hc = QtGui.QColor(color.darker(180))
             hc.setAlpha(90)
@@ -443,7 +443,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 rect, PatternRegistry.pattern_brush("diagonal", hc, HATCH_DENSE)
             )
 
-        # Status tint overlay (assessment severity from shot manifest)
+        # Status tint overlay (a host's status colour, e.g. a check's severity)
         status_hex = self._data.data.get("status_color")
         if status_hex:
             sc = QtGui.QColor(status_hex)
@@ -565,7 +565,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                     self._data.label,
                 )
 
-        # Lock indicator (skip for read-only clips from non-active shots)
+        # Lock indicator (skip for read-only clips outside the active range)
         if (
             self._data.locked
             and not self._data.data.get("read_only")
@@ -941,12 +941,12 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
     # -- drag interaction ---------------------------------------------------
     def mousePressEvent(self, event):
         # A press inside the clip is the clip's, even on an edge that sits on
-        # the active shot's bound: the bound keeps the pixels OUTSIDE the clip
-        # (the range highlight's handle reaches past its edge) and the shot
+        # the active range's bound: the bound keeps the pixels OUTSIDE the clip
+        # (the range highlight's handle reaches past its edge) and a host
         # lane's band.  Yielding the clip's own edge pixels to the bound
         # (2026-10-06, for a bound that could not be grabbed at a gap of zero)
-        # left a clip that ends on its shot's end with no end of its own to
-        # take (2026-10-10: "I keep grabbing the shot boundary").
+        # left a clip that ends on its range's end with no end of its own to
+        # take (2026-10-10: the bound kept taking the grab).
         if event.button() == QtCore.Qt.LeftButton:
             self._press_modifiers = event.modifiers()
             self._press_selection(event.modifiers())
@@ -1055,7 +1055,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             reach = self._scale_anchor - lead
             # Only a selection that currently sits at or after frame 0 gets
             # the frame-0 ceiling -- the same clamp the single-clip path
-            # applies.  A shot padded before 0 already reaches back there,
+            # applies.  A range padded before 0 already reaches back there,
             # and measuring the ceiling from ITS lead would pin the scale at
             # its floor and collapse the whole group on the first move.
             if lead >= 0.0 and reach > 1e-9:
@@ -1109,9 +1109,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
                 return
             self._arm_drag(event)
 
-        if not getattr(self, "_undo_captured", False):
-            self._undo_captured = True
-            self._timeline.parent_sequencer._capture_undo()
+        self._capture_drag_undo()
 
         if self._align_times is None:
             sq = self._timeline.parent_sequencer
@@ -1430,7 +1428,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
             selected_clips = [self]
         multi = len(selected_clips) > 1
 
-        menu = MenuUtils._styled_menu()
+        menu = MenuUtils.styled_menu()
 
         # Lock / Unlock — operates on all selected clips.
         all_locked = all(c._data.locked for c in selected_clips)
@@ -1451,7 +1449,7 @@ class ClipItem(DraggableItemMixin, QtWidgets.QGraphicsRectItem):
         # Extensibility hook — let consumers add domain-specific actions
         widget.clip_menu_requested.emit(menu, self._data.clip_id)
 
-        chosen = menu.exec_(MenuUtils._menu_exec_pos(event))
+        chosen = menu.exec_(MenuUtils.menu_exec_pos(event))
         if self.scene() is None:
             # A rebuild (keyframe debounce, store event, undo callback) ran
             # inside the menu's nested event loop and retired this item —

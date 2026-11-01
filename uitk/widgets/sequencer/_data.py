@@ -121,14 +121,11 @@ class MarkerData:
 _TRACK_HEIGHT = 28
 _SUB_ROW_HEIGHT = 22  # default height for expanded attribute sub-rows
 _TRACK_PADDING = 2
+#: The frame ruler: numbers and key ticks all the way down, every row of it
+#: the scrub.  A layer's lane is a strip of its own below it
+#: (``SequencerWidget.add_layer``) -- sharing the ruler's band put a lane's
+#: grabs where the scrub belongs.
 _RULER_HEIGHT = 24
-_SHOT_LANE_HEIGHT = 12  # height of the always-visible shot block lane
-#: Ruler + shot lane.  The two are separate strips: the ruler is frame
-#: numbers and key ticks all the way down, the lane below it carries the
-#: shot blocks and the grabs that move them.  Sharing one band meant the
-#: active shot was painted inside the ruler and the ruler's bottom rows
-#: grabbed the shot instead of scrubbing.
-_HEADER_HEIGHT = _RULER_HEIGHT + _SHOT_LANE_HEIGHT
 _HANDLE_WIDTH = 5  # pixels from edge that activates resize cursor
 _MIN_CLIP_DURATION = 1.0
 _MIN_POINT_CLIP_WIDTH = 4  # minimum pixel width for zero-duration clips
@@ -189,10 +186,11 @@ _ROW_METRICS_PRESETS: Dict[str, RowMetrics] = {
     ),
 }
 
-#: The one accent every "this is selected" cue is drawn in -- the shot band in
-#: the ruler, the range highlight over the tracks, and a selected clip's
-#: outline.  Kept here rather than in any one painter so the three agree: three
-#: separate blues would read as three unrelated decorations.
+#: The one accent every "this is selected" cue is drawn in -- a lane's
+#: selected band (``SequencerWidget.SELECTED_ACCENT``, for a layer), the range
+#: highlight over the tracks, and a selected clip's outline.  Kept here rather
+#: than in any one painter so they agree: separate blues would read as
+#: unrelated decorations.
 SELECTED_ACCENT = "#5A8CDC"
 
 #: The colours of the widget's own display rows -- the only attribute colours
@@ -208,10 +206,12 @@ _MENU_STYLESHEET = (
 
 
 class MenuUtils:
-    """Construction/placement helpers for the sequencer's context menus."""
+    """Construction/placement helpers for the sequencer's context menus --
+    its own items' and a layer's (``SequencerWidget.add_layer``), so every
+    menu on the timeline reads alike."""
 
     @staticmethod
-    def _styled_menu(parent=None) -> QtWidgets.QMenu:
+    def styled_menu(parent=None) -> QtWidgets.QMenu:
         """Create a QMenu with the sequencer's standard dark stylesheet."""
         menu = QtWidgets.QMenu(parent)
         # Pinned first: a sheet of its own would otherwise draw its check
@@ -222,7 +222,7 @@ class MenuUtils:
         return menu
 
     @staticmethod
-    def _menu_exec_pos(event) -> QtCore.QPoint:
+    def menu_exec_pos(event) -> QtCore.QPoint:
         """Return a screen position suitable for ``QMenu.exec_``."""
         if hasattr(event, "screenPos"):
             return event.screenPos()
@@ -465,6 +465,12 @@ _PATTERN_CACHE_MAX = 128
 
 class PatternRegistry:
     """Registry of tile-painters + cached tiled brushes for background fills."""
+
+    #: The spacing tiers, by name, for a caller outside the package (a layer's
+    #: items): :meth:`pattern_brush`'s *spacing*.
+    HATCH_DENSE = HATCH_DENSE
+    HATCH_MEDIUM = HATCH_MEDIUM
+    HATCH_SPARSE = HATCH_SPARSE
 
     # Registered tile-painters, keyed by style name.
     _pattern_painters: Dict[str, PatternPainter] = {}

@@ -96,6 +96,29 @@ python main.py
 
 That's a complete working application — file dialog, rich text loading, live path validation, persistent window geometry — in ~20 lines of Python.
 
+### Or build the UI in code
+
+Designer is one way to build the widget tree; code is another. Register a builder — a `QWidget` subclass or any function returning a widget — under the UI's name, and it resolves, wraps and binds exactly as a `.ui` file does: built on first ask, wrapped in a `MainWindow`, each widget bound by `objectName` to the slot class, its state saved and restored.
+
+```python
+from qtpy import QtWidgets
+from uitk import Switchboard
+
+class EditorWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QtWidgets.QVBoxLayout(self)
+        save = QtWidgets.QPushButton("Save")
+        save.setObjectName("btn_save")  # binds to EditorSlots.btn_save
+        layout.addWidget(save)
+
+sb = Switchboard(slot_source="./slots")
+sb.register_ui("editor", EditorWidget)
+sb.loaded_ui.editor.show(app_exec=True)
+```
+
+A `.ui` file of the same name wins. A name with neither a file nor a builder still resolves to its slot class, as an empty window the slot class fills in its constructor. For forms, `sb.form_panel(fields)` builds the rows from plain dicts.
+
 ---
 
 ## 3. The naming convention
@@ -164,6 +187,8 @@ See [WIDGETS.md](WIDGETS.md) for the full widget catalog.
 ## 5. State persistence
 
 UITK auto-saves widget values on change and restores them on next show. No setup required.
+
+They live under `QSettings("uitk", "shared")` (on Windows, the registry key `HKCU\Software\uitk\shared`), one branch per UI name and host. So two apps that each have a UI named `editor` share its saved values: give an app's UIs distinctive names.
 
 ```python
 # User types in txt_path, closes app.

@@ -2,11 +2,11 @@
 # coding=utf-8
 """Action option for OptionBox - provides customizable action buttons."""
 
-from ._options import ButtonOption
+from ._options import ButtonOption, HiddenWhileEmptyMixin
 from ._persistence import PersistedOption
 
 
-class ActionOption(PersistedOption, ButtonOption):
+class ActionOption(HiddenWhileEmptyMixin, PersistedOption, ButtonOption):
     """A customizable action button option.
 
     This option can execute any callable when clicked, or trigger
@@ -31,6 +31,7 @@ class ActionOption(PersistedOption, ButtonOption):
         states=None,
         order=None,
         settings_key=None,
+        hide_when_empty=False,
     ):
         """Initialize the action option.
 
@@ -51,6 +52,9 @@ class ActionOption(PersistedOption, ButtonOption):
                 When omitted, the key is auto-derived from the wrapped
                 widget's objectName (if available). Pass ``False`` to
                 disable persistence entirely.
+            hide_when_empty: Show the button only while the wrapped field
+                holds a value, as the clear button does (an action that does
+                nothing on an empty field: a search, a rename).
         """
         super().__init__(
             wrapped_widget=wrapped_widget,
@@ -59,6 +63,7 @@ class ActionOption(PersistedOption, ButtonOption):
             callback=lambda: self._handle_action(),
             order=order,
         )
+        self._auto_hide = hide_when_empty
         self._action_handler = callback
         self._text = text
         self._state_cycle = None

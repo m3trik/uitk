@@ -155,6 +155,7 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
         replace=True,
         states=None,
         settings_key=None,
+        hide_when_empty=False,
     ):
         """Set the action handler (fluent interface).
 
@@ -172,6 +173,8 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
             settings_key: Optional explicit persistence key. When omitted
                 the key is auto-derived from the widget's objectName.
                 Pass ``False`` to disable persistence entirely.
+            hide_when_empty: Show the button only while the field holds a
+                value, as the clear button does.
 
         Returns:
             The created :class:`ActionOption`. Keep a reference to a
@@ -199,6 +202,7 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
             text=text,
             states=states,
             settings_key=settings_key,
+            hide_when_empty=hide_when_empty,
         )
         self.add_option(action_option)
         return action_option
@@ -211,6 +215,7 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
         text=None,
         states=None,
         settings_key=None,
+        hide_when_empty=False,
     ):
         """Add an action button without replacing existing ones.
 
@@ -225,6 +230,7 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
             text: Optional text to display instead of icon
             states: Optional list of state dicts for multi-state cycling.
             settings_key: Optional explicit persistence key.
+            hide_when_empty: Show the button only while the field holds a value.
 
         Returns:
             The created :class:`ActionOption` (see :meth:`set_action`).
@@ -237,6 +243,7 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
             replace=False,
             states=states,
             settings_key=settings_key,
+            hide_when_empty=hide_when_empty,
         )
 
     def set_toggle(
@@ -573,6 +580,7 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
         settings_key=None,
         order=None,
         replace: bool = True,
+        noun: Optional[str] = None,
     ):
         """Add an inline affix-mode picker — fluent.
 
@@ -615,6 +623,9 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
             order: Explicit sort position. See :class:`BaseOption`.
             replace: When ``True`` (default), removes any existing AffixOption
                 first.
+            noun: What the field's text marks (``"Material"``): the option keeps
+                the field's placeholder and tooltip on the current mode
+                (``"Material Prefix"``). ``None`` leaves both to the caller.
 
         Returns:
             self: For fluent chaining. Retrieve the option via
@@ -638,6 +649,7 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
                 on_change=on_change,
                 settings_key=settings_key,
                 order=order,
+                noun=noun,
                 **extra,
             )
         )

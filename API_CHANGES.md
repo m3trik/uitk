@@ -1,7 +1,468 @@
 # uitk — API Changes
 
-_Diff vs the last release (origin/main @ 68fc685)._
+_Diff vs the last release (origin/main @ 8004002)._
 
-## Added (1)
+## Moved out (182)
 
-- `__init__.py::MOVED_NAMES(constant)`
+- `bridge/slots.py::BridgeSlotsBase` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.b000` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.bridge` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.clear_log` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.cmb000_init` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.collect_param_values` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.default_output_dir` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.docs_url` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.empty_scope_message` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.ensure_bridge_temp_dir` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.ensure_optional_package` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.format_param_tooltip` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.header_init` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.header_menu_items` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.help_spec` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.list_template_modes` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.live_param_tooltip_blocks` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.live_param_tooltips` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.make_bridge` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.make_preset_store` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.open_templates_folder` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.optional_package_available` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.optional_packages` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.panel_log` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.param_supersessions` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.params_module` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.peek_bridge` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.refresh_templates` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.register_log_link_handler` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.require_output_dir` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.resolve_scope_objects` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.resolved_output_dir` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.reveal_folder` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.scoped_objects` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.select_initial_template_index` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.set_param_enabled` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.template_description` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `bridge/slots.py::BridgeSlotsBase.template_dir` → `uitk.ParamPanelSlots` (from 1.9.0)
+- `switchboard/control_groups.py::SwitchboardControlGroupsMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/control_groups.py::SwitchboardControlGroupsMixin.add_reset_buttons` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/control_groups.py::SwitchboardControlGroupsMixin.connect_multi` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/control_groups.py::SwitchboardControlGroupsMixin.create_button_groups` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/control_groups.py::SwitchboardControlGroupsMixin.get_axis_from_checkboxes` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/control_groups.py::SwitchboardControlGroupsMixin.hide_unmatched_groupboxes` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/control_groups.py::SwitchboardControlGroupsMixin.link_spinboxes` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/control_groups.py::SwitchboardControlGroupsMixin.set_axis_for_checkboxes` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/control_groups.py::SwitchboardControlGroupsMixin.toggle_multi` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.busy_cursor` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.confirm` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.data_view_dialog` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.dir_dialog` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.file_dialog` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.form_dialog` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.form_panel` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.input_dialog` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.list_input_dialog` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.message_box` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.modal_menu` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.preview_dialog` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.progress` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.progress_adapter` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.save_data_dialog` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.save_file_dialog` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/dialogs.py::SwitchboardDialogsMixin.text_view_dialog` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/editors.py::SwitchboardEditorsMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/editors.py::SwitchboardEditorsMixin.editors` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/event_loop.py::SwitchboardEventLoopMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/event_loop.py::SwitchboardEventLoopMixin.defer_with_timer` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/event_loop.py::SwitchboardEventLoopMixin.gc_protect` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/event_loop.py::SwitchboardEventLoopMixin.invert_on_modifier` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/event_loop.py::SwitchboardEventLoopMixin.simulate_key_press` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.convert_to_legal_name` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.edit_tags` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.filter_tags` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.get_base_name` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.get_methods_by_string_pattern` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.get_slot_class_names` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.get_slot_file_names` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.get_tags_from_name` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.get_unknown_tags` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.get_widgets_by_string_pattern` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.has_tags` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/names.py::SwitchboardNameMixin.unpack_names` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/namespace.py::SwitchboardNamespaceMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/placement.py::SwitchboardPlacementMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/placement.py::SwitchboardPlacementMixin.center_widget` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/placement.py::SwitchboardPlacementMixin.get_cursor_offset_from_center` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/rules.py::SwitchboardRulesMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/rules.py::SwitchboardRulesMixin.enable_when` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/rules.py::SwitchboardRulesMixin.refresh_dependencies` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/rules.py::SwitchboardRulesMixin.show_when` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/rules.py::SwitchboardRulesMixin.text_from` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/rules.py::SwitchboardRulesMixin.value_from` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.dispose_shortcuts` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.get_command_registry` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.get_shortcut_registry` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.get_static_shortcut_registry` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.register_command` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.register_slots_shortcuts` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.set_binding_editable` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.set_binding_hidden` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.set_command_shortcut` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.set_user_shortcut` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.unregister_command` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/shortcuts.py::SwitchboardShortcutMixin.widget_has_shortcut` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.call_slot` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.connect_slot` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.get_available_signals` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.get_default_signals` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.get_slot` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.get_slot_from_widget` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.get_slots_instance` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.init_slot` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.mark_missing_slot` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.notify_missing_slot` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.slot_history` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/slots.py::SwitchboardSlotsMixin.slots_instantiated` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/style.py::SwitchboardStyleMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/style.py::SwitchboardStyleMixin.style` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widget_values.py::SwitchboardWidgetValuesMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.apply_visibility_policy` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.gate` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.get_all_widgets` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.get_all_windows` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.get_icon` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.get_parent_widgets` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.get_widget` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.get_widget_at` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.get_widget_from_slot` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.is_registered_ui` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.is_widget` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.menu_button_target_name` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.menu_button_target_resolves` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.recheck_gates` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.register_widget` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.resolve_widget_class` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.ui_name_resolves` → `uitk.Switchboard` (from 1.9.0)
+- `switchboard/widgets.py::SwitchboardWidgetMixin.unmet_policy` → `uitk.Switchboard` (from 1.9.0)
+- `widgets/mixins/text.py::TextTruncation` → `pythontk.StrUtils.truncate` (from 1.9.0)
+- `widgets/mixins/text.py::TextTruncation.apply_text_truncation` → `pythontk.StrUtils.truncate` (from 1.9.0)
+- `widgets/mixins/text.py::TextTruncation.calculate_character_truncation` → `pythontk.StrUtils.truncate` (from 1.9.0)
+- `widgets/mixins/text.py::TextTruncation.calculate_path_truncation` → `pythontk.StrUtils.truncate` (from 1.9.0)
+- `widgets/mixins/text.py::TextTruncation.calculate_text_truncation` → `pythontk.StrUtils.truncate` (from 1.9.0)
+- `widgets/mixins/text.py::TextTruncation.calculate_word_truncation` → `pythontk.StrUtils.truncate` (from 1.9.0)
+- `widgets/mixins/text.py::TextTruncation.create_truncated_button` → `pythontk.StrUtils.truncate` (from 1.9.0)
+- `widgets/mixins/text.py::TextTruncation.create_truncated_label` → `pythontk.StrUtils.truncate` (from 1.9.0)
+- `widgets/mixins/text.py::TextTruncation.update_widget_text_truncation` → `pythontk.StrUtils.truncate` (from 1.9.0)
+- `widgets/sequencer/_ruler.py::RulerItem.clear_shot_blocks` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_shot_blocks` (from 1.9.0)
+- `widgets/sequencer/_ruler.py::RulerItem.selected_block` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.selected_shot` (from 1.9.0)
+- `widgets/sequencer/_ruler.py::RulerItem.set_shot_blocks` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_shot_blocks` (from 1.9.0)
+- `widgets/sequencer/_ruler.py::RulerItem.shot_block_at` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.shot_block_at` (from 1.9.0)
+- `widgets/sequencer/_sequencer.py::SequencerWidget.add_gap_overlay` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.add_gap_overlay` (from 1.9.0)
+- `widgets/sequencer/_sequencer.py::SequencerWidget.clear_gap_overlays` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_gap_overlays` (from 1.9.0)
+- `widgets/sequencer/_sequencer.py::SequencerWidget.clear_shot_blocks` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_shot_blocks` (from 1.9.0)
+- `widgets/sequencer/_sequencer.py::SequencerWidget.frame_shot` → `uitk.SequencerWidget.frame_range` (from 1.9.0)
+- `widgets/sequencer/_sequencer.py::SequencerWidget.selected_shot` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.selected_shot` (from 1.9.0)
+- `widgets/sequencer/_sequencer.py::SequencerWidget.set_all_gap_overlays_locked` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_all_gap_overlays_locked` (from 1.9.0)
+- `widgets/sequencer/_sequencer.py::SequencerWidget.set_shot_blocks` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_shot_blocks` (from 1.9.0)
+- `widgets/sequencer/_sequencer.py::SequencerWidget.show_gap_overlays` → `tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.show_gap_overlays` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.action_color_formatter` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.add_section_row` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.apply_formatting` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.clear_formatters` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.column_truncation` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.ensure_valid_color` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.format_item` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.is_section_row` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.make_color_map_formatter` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.set_action_color` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.set_cell_formatter` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.set_column_formatter` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.set_column_truncation` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.set_header_formatter` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::CellFormatMixin.truncated_column_text` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::HeaderMixin` → `uitk.TableWidget` (from 1.9.0)
+- `widgets/tableWidget.py::HeaderMixin.default_header_click_behavior` → `uitk.TableWidget` (from 1.9.0)
+
+## Added (248)
+
+- `bridge/slots.py::ParamPanelSlots(class)`
+- `bridge/slots.py::ParamPanelSlots.add_param_rows(self) -> List[str]`
+- `bridge/slots.py::ParamPanelSlots.b000(self)`
+- `bridge/slots.py::ParamPanelSlots.bridge(self)`
+- `bridge/slots.py::ParamPanelSlots.clear_log(self) -> None`
+- `bridge/slots.py::ParamPanelSlots.cmb000_init(self, widget) -> None`
+- `bridge/slots.py::ParamPanelSlots.collect_param_values(self) -> Dict[str, Any]`
+- `bridge/slots.py::ParamPanelSlots.default_output_dir(self) -> str`
+- `bridge/slots.py::ParamPanelSlots.docs_url(self) -> str`
+- `bridge/slots.py::ParamPanelSlots.empty_scope_message(scope: str) -> str`
+- `bridge/slots.py::ParamPanelSlots.ensure_bridge_temp_dir(tag: str) -> str`
+- `bridge/slots.py::ParamPanelSlots.ensure_optional_package(self, spec: str, import_name: str = None, *, feature: str = None) -> bool`
+- `bridge/slots.py::ParamPanelSlots.format_param_tooltip(self, spec: AttributeSpec) -> str`
+- `bridge/slots.py::ParamPanelSlots.header_init(self, widget) -> None`
+- `bridge/slots.py::ParamPanelSlots.header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]`
+- `bridge/slots.py::ParamPanelSlots.help_spec(self) -> Optional[Dict[str, Any]]`
+- `bridge/slots.py::ParamPanelSlots.list_template_modes(self) -> List[Tuple[str, str]]`
+- `bridge/slots.py::ParamPanelSlots.live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]`
+- `bridge/slots.py::ParamPanelSlots.live_param_tooltips(self) -> Dict[str, Callable[[], str]]`
+- `bridge/slots.py::ParamPanelSlots.make_bridge(self)`
+- `bridge/slots.py::ParamPanelSlots.make_preset_store(self)`
+- `bridge/slots.py::ParamPanelSlots.open_templates_folder(self) -> None`
+- `bridge/slots.py::ParamPanelSlots.optional_package_available(spec: str, import_name: str = None) -> bool`
+- `bridge/slots.py::ParamPanelSlots.optional_packages(self)`
+- `bridge/slots.py::ParamPanelSlots.panel_log(self, message: str, level: str = 'info') -> None`
+- `bridge/slots.py::ParamPanelSlots.param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]`
+- `bridge/slots.py::ParamPanelSlots.params_module(self)`
+- `bridge/slots.py::ParamPanelSlots.peek_bridge(self)`
+- `bridge/slots.py::ParamPanelSlots.refresh_templates(self) -> None`
+- `bridge/slots.py::ParamPanelSlots.register_log_link_handler(handler: Callable) -> None`
+- `bridge/slots.py::ParamPanelSlots.require_output_dir(self, mode: Optional[str] = None) -> Optional[str]`
+- `bridge/slots.py::ParamPanelSlots.resolve_scope_objects(self, scope: str)`
+- `bridge/slots.py::ParamPanelSlots.resolved_output_dir(self) -> str`
+- `bridge/slots.py::ParamPanelSlots.reveal_folder(self, path) -> bool`
+- `bridge/slots.py::ParamPanelSlots.scoped_objects(self, params, warn: bool = True)`
+- `bridge/slots.py::ParamPanelSlots.select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int`
+- `bridge/slots.py::ParamPanelSlots.set_param_enabled(self, key: str, enabled: bool, reason: str = '') -> None`
+- `bridge/slots.py::ParamPanelSlots.template_description(self, template_path: Path) -> Optional[str]`
+- `bridge/slots.py::ParamPanelSlots.template_dir(self) -> Path`
+- `managers/panel_renames.py::PanelRenames(class)`
+- `managers/panel_renames.py::PanelRenames.carry(cls, switchboard, renamed_from: RenamedFrom, slot_class_names: Optional[Callable[[str], Sequence[str]]] = None) -> List[str]`
+- `managers/panel_renames.py::PanelRenames.renamed_key(key: str, widgets: Mapping[str, str], classes: Dict[str, str]) -> str`
+- `managers/preset_manager.py::PresetManager.carry_presets(cls, source: Union[str, Path], target: Union[str, Path]) -> List[Path]`
+- `managers/preview_controller.py::PreviewController(class)`
+- `managers/preview_controller.py::PreviewController.cleanup(self) -> None`
+- `managers/preview_controller.py::PreviewController.cleanup_all_instances(cls) -> None`
+- `managers/preview_controller.py::PreviewController.conditionally_disable(self) -> None`
+- `managers/preview_controller.py::PreviewController.conditionally_enable(self) -> None`
+- `managers/preview_controller.py::PreviewController.disable(self) -> None`
+- `managers/preview_controller.py::PreviewController.enable(self) -> None`
+- `managers/preview_controller.py::PreviewController.finalize_changes(self) -> None`
+- `managers/preview_controller.py::PreviewController.init_show_hide_behavior(self, enable_on_show: bool, disable_on_hide: bool) -> None`
+- `managers/preview_controller.py::PreviewController.is_enabled(self) -> bool`
+- `managers/preview_controller.py::PreviewController.refresh(self, *args) -> None`
+- `managers/preview_controller.py::PreviewController.toggle(self, state: bool) -> None`
+- `managers/preview_controller.py::PreviewController.validate_operation(self, objects: List[Any]) -> bool`
+- `managers/preview_controller.py::PreviewSession(class)`
+- `managers/preview_controller.py::PreviewSession.apply(self, objects: Sequence[Any]) -> None`
+- `managers/preview_controller.py::PreviewSession.begin(self, objects: Sequence[Any]) -> None`
+- `managers/preview_controller.py::PreviewSession.commit(self) -> None`
+- `managers/preview_controller.py::PreviewSession.discard(self, reselect: bool) -> None`
+- `managers/preview_controller.py::PreviewSession.rollback(self) -> None`
+- `managers/preview_controller.py::PreviewSession.run(self) -> None`
+- `managers/preview_controller.py::PreviewSession.select_result(self, checkbox: Any, results: Any, committed: bool) -> None`
+- `managers/preview_controller.py::PreviewSession.selection(self) -> List[Any]`
+- `managers/preview_controller.py::PreviewSession.undo_step(self, name: str) -> ContextManager`
+- `managers/preview_controller.py::PreviewSession.unrecorded(self) -> ContextManager`
+- `managers/state_manager.py::StateManager.rename_widget_key(cls, key: str, renames: Mapping[str, str]) -> str`
+- `switchboard/_core.py::Switchboard.add_reset_buttons(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), **set_reset_kwargs)`
+- `switchboard/_core.py::Switchboard.apply_visibility_policy(self, widget) -> bool`
+- `switchboard/_core.py::Switchboard.busy_cursor(shape=QtCore.Qt.WaitCursor)`
+- `switchboard/_core.py::Switchboard.call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs)`
+- `switchboard/_core.py::Switchboard.center_widget(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)`
+- `switchboard/_core.py::Switchboard.confirm(self, question, yes='Yes', no='No') -> bool`
+- `switchboard/_core.py::Switchboard.connect_multi(self, ui, widgets, signals, slots)`
+- `switchboard/_core.py::Switchboard.connect_slot(self, widget, slot=None)`
+- `switchboard/_core.py::Switchboard.convert_to_legal_name(name: str) -> str`
+- `switchboard/_core.py::Switchboard.create_button_groups(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]`
+- `switchboard/_core.py::Switchboard.data_view_dialog(self, data: Any, *, title: str = '', save_path: Optional[str] = '', empty_message: str = 'Nothing to show.', size=(720, 560), parent=None)`
+- `switchboard/_core.py::Switchboard.defer_with_timer(self, func: callable, *args, ms: int = 300, **kwargs) -> None`
+- `switchboard/_core.py::Switchboard.dir_dialog(title: str = 'Select a directory', start_dir: str = '/home') -> str`
+- `switchboard/_core.py::Switchboard.dispose_shortcuts(self) -> int`
+- `switchboard/_core.py::Switchboard.edit_tags(self, target: Union[str, QtWidgets.QWidget], add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]`
+- `switchboard/_core.py::Switchboard.editors(self) -> _EditorRegistry`
+- `switchboard/_core.py::Switchboard.enable_when(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)`
+- `switchboard/_core.py::Switchboard.file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]`
+- `switchboard/_core.py::Switchboard.filter_tags(self, tag_string: str, keep_tags: list[str] = None, remove_tags: list[str] = None) -> str`
+- `switchboard/_core.py::Switchboard.form_dialog(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', validate: Callable = None, message: str = '') -> Optional[dict]`
+- `switchboard/_core.py::Switchboard.form_panel(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', cancel_text: str = None, validate: Callable = None, message: str = '', help_text: str = '', on_run: Callable = None, apply_text: str = 'Apply', output: bool = True, min_width: int = 560, settings=None, settings_key: str = 'window_geometry')`
+- `switchboard/_core.py::Switchboard.gate(self, widget, available, reason: str = '') -> bool`
+- `switchboard/_core.py::Switchboard.gc_protect(self, obj=None, clear=False)`
+- `switchboard/_core.py::Switchboard.get_all_widgets(name=None)`
+- `switchboard/_core.py::Switchboard.get_all_windows(name=None)`
+- `switchboard/_core.py::Switchboard.get_available_signals(self, widget, derived=True, exc=None)`
+- `switchboard/_core.py::Switchboard.get_axis_from_checkboxes(self, checkboxes, ui=None, return_type='str')`
+- `switchboard/_core.py::Switchboard.get_base_name(self, name: str) -> str`
+- `switchboard/_core.py::Switchboard.get_command_registry(self) -> List[Dict[str, Any]]`
+- `switchboard/_core.py::Switchboard.get_cursor_offset_from_center(widget)`
+- `switchboard/_core.py::Switchboard.get_default_signals(self, widget: QtWidgets.QWidget) -> set`
+- `switchboard/_core.py::Switchboard.get_icon(self, icon_name: str) -> QtGui.QIcon`
+- `switchboard/_core.py::Switchboard.get_methods_by_string_pattern(self, clss, name_string)`
+- `switchboard/_core.py::Switchboard.get_parent_widgets(widget, object_names=False)`
+- `switchboard/_core.py::Switchboard.get_shortcut_registry(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]`
+- `switchboard/_core.py::Switchboard.get_slot(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]`
+- `switchboard/_core.py::Switchboard.get_slot_class_names(self, base_name: str) -> List[str]`
+- `switchboard/_core.py::Switchboard.get_slot_file_names(self, base_name: str) -> List[str]`
+- `switchboard/_core.py::Switchboard.get_slot_from_widget(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]`
+- `switchboard/_core.py::Switchboard.get_slots_instance(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]`
+- `switchboard/_core.py::Switchboard.get_static_shortcut_registry(self, ui_name: str) -> List[Dict[str, Any]]`
+- `switchboard/_core.py::Switchboard.get_tags_from_name(self, name: str) -> set[str]`
+- `switchboard/_core.py::Switchboard.get_unknown_tags(self, tag_string: str, known_tags: list[str]) -> list[str]`
+- `switchboard/_core.py::Switchboard.get_widget(self, name, ui=None)`
+- `switchboard/_core.py::Switchboard.get_widget_at(pos, top_widget_only=True)`
+- `switchboard/_core.py::Switchboard.get_widget_from_slot(self, method)`
+- `switchboard/_core.py::Switchboard.get_widgets_by_string_pattern(self, ui, name_string)`
+- `switchboard/_core.py::Switchboard.has_tags(self, ui, tags=None) -> bool`
+- `switchboard/_core.py::Switchboard.hide_unmatched_groupboxes(self, ui, unknown_tags) -> None`
+- `switchboard/_core.py::Switchboard.init_slot(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None`
+- `switchboard/_core.py::Switchboard.input_dialog(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str`
+- `switchboard/_core.py::Switchboard.invert_on_modifier(value)`
+- `switchboard/_core.py::Switchboard.is_registered_ui(self, name: str) -> bool`
+- `switchboard/_core.py::Switchboard.is_widget(self, obj)`
+- `switchboard/_core.py::Switchboard.link_spinboxes(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), icon: str = 'lock', icon_off: str = 'unlock', tooltip_on: str = 'Linked. Changing this shifts the other linked fields by the same amount. Click to unlink.', tooltip_off: str = 'Unlinked. Click to link this field so it moves with the others.', initial: bool = False, active_color: str = _LOCK_ACTIVE_COLOR, disabled_color: str = _LOCK_INACTIVE_COLOR, **set_toggle_kwargs)`
+- `switchboard/_core.py::Switchboard.list_input_dialog(items, title: str = 'Select', label: str = 'Select item(s):', parent: QtWidgets.QWidget = None, multi: bool = True, selected=None) -> list`
+- `switchboard/_core.py::Switchboard.mark_missing_slot(self, widget)`
+- `switchboard/_core.py::Switchboard.menu_button_target_name(self, widget) -> Optional[str]`
+- `switchboard/_core.py::Switchboard.menu_button_target_resolves(self, widget) -> bool`
+- `switchboard/_core.py::Switchboard.message_box(self, string, *buttons, location='topMiddle', timeout='auto', background=0.75, default=None)`
+- `switchboard/_core.py::Switchboard.modal_menu(content_fn, parent=None, **kwargs)`
+- `switchboard/_core.py::Switchboard.notify_missing_slot(self, widget)`
+- `switchboard/_core.py::Switchboard.preview_dialog(self, render: Callable[[dict], str], specs=(), *, values: Optional[dict] = None, on_change: Optional[Callable[[str, Any], None]] = None, actions: Optional[dict] = None, status: Optional[Callable[[dict, str], str]] = None, title: str = '', size=(960, 600), monospace: bool = True, word_wrap: bool = False, parent=None)`
+- `switchboard/_core.py::Switchboard.progress(self, ui=None, total: Optional[int] = None, text: str = '', busy: Optional[bool] = None)`
+- `switchboard/_core.py::Switchboard.progress_adapter(update: Callable[..., bool]) -> Callable[..., bool]`
+- `switchboard/_core.py::Switchboard.recheck_gates(self) -> int`
+- `switchboard/_core.py::Switchboard.refresh_dependencies(self, ui) -> None`
+- `switchboard/_core.py::Switchboard.register_command(self, name: str, callback: Optional[Callable] = None, *, label: Optional[str] = None, sequence: str = '', scope: str = 'application', doc: str = '', hidden: bool = False, editable: bool = True, bind: bool = True, clearable: bool = True, on_rebind: Optional[Callable[[str, str], None]] = None, value_getter: Optional[Callable[[], str]] = None) -> str`
+- `switchboard/_core.py::Switchboard.register_slots_shortcuts(self, ui: QtWidgets.QWidget, slots_instance: object) -> None`
+- `switchboard/_core.py::Switchboard.register_ui(self, name: str, build) -> None`
+- `switchboard/_core.py::Switchboard.register_widget(self, widget)`
+- `switchboard/_core.py::Switchboard.resolve_widget_class(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]`
+- `switchboard/_core.py::Switchboard.save_data_dialog(self, data: Any, title: str = '', path: str = '', parent=None) -> Optional[str]`
+- `switchboard/_core.py::Switchboard.save_file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]`
+- `switchboard/_core.py::Switchboard.set_axis_for_checkboxes(self, checkboxes, axis, ui=None)`
+- `switchboard/_core.py::Switchboard.set_binding_editable(self, name: str, editable: bool = True) -> None`
+- `switchboard/_core.py::Switchboard.set_binding_hidden(self, name: str, hidden: bool = True) -> None`
+- `switchboard/_core.py::Switchboard.set_command_shortcut(self, name: str, sequence: str, scope: Optional[str] = None) -> None`
+- `switchboard/_core.py::Switchboard.set_user_shortcut(self, ui: QtWidgets.QWidget, slot_name: str, sequence: str, scope: Optional[str] = None) -> None`
+- `switchboard/_core.py::Switchboard.show_when(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)`
+- `switchboard/_core.py::Switchboard.simulate_key_press(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)`
+- `switchboard/_core.py::Switchboard.slot_history(self, index=None, allow_duplicates=False, inc=None, exc=None, add=None, remove=None, length=200)`
+- `switchboard/_core.py::Switchboard.slots_instantiated(self, key: str) -> bool`
+- `switchboard/_core.py::Switchboard.style(self)`
+- `switchboard/_core.py::Switchboard.text_from(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], formatter: Callable[..., str], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]`
+- `switchboard/_core.py::Switchboard.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None, link_handler=None, on_refresh: Optional[Callable[[], Any]] = None)`
+- `switchboard/_core.py::Switchboard.toggle_multi(self, ui, trigger=None, signal=None, apply_now=True, **kwargs)`
+- `switchboard/_core.py::Switchboard.ui_name_resolves(self, name: str) -> bool`
+- `switchboard/_core.py::Switchboard.ui_names(self) -> List[str]`
+- `switchboard/_core.py::Switchboard.unmet_policy(self) -> str`
+- `switchboard/_core.py::Switchboard.unpack_names(cls, name_string)`
+- `switchboard/_core.py::Switchboard.unregister_command(self, name: str) -> None`
+- `switchboard/_core.py::Switchboard.value_from(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], resolver: Callable[..., Any], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]`
+- `switchboard/_core.py::Switchboard.widget_has_shortcut(self, widget: QtWidgets.QWidget) -> bool`
+- `widgets/editors/shortcut_editor/registry_facade.py::RegistrySwitchboardFacade.ui_names(self) -> List[str]`
+- `widgets/footer.py::Footer.edit_status(self, text: str, on_commit: Callable[[str], None], on_cancel: Optional[Callable[[], None]] = None) -> QtWidgets.QLineEdit`
+- `widgets/footer.py::Footer.eventFilter(self, watched, event) -> bool`
+- `widgets/footer.py::Footer.is_editing_status(self) -> bool`
+- `widgets/footer.py::FooterApply(class)`
+- `widgets/footer.py::FooterApply.apply(self) -> None`
+- `widgets/footer.py::FooterApply.arm(self, commit: Callable, note: Optional[str] = None) -> None`
+- `widgets/footer.py::FooterApply.disarm(self, *_signal_args) -> None`
+- `widgets/footer.py::FooterApply.pending(self) -> Optional[Callable]`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.activate(self, buttons=None) -> None`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.activation_key(self) -> Optional[int]`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.armed(self) -> bool`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.keyReleaseEvent(self, event) -> None`
+- `widgets/marking_menu/_marking_menu.py::MarkingMenu.release(self) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost(class)`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.adopt_window(self, widget) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.attach(self, menu) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.bind_activation_key(self, menu, key: str) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.key_event(self, menu, event) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.main_window(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuHost.mouse_buttons(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost(class)`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost.defer(self, fn: Callable[[], Any]) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost.live_menu(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost.report(self, message: str, error: bool = False) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost.start(self, app: Optional[str] = None) -> None`
+- `widgets/marking_menu/marking_menu_host.py::MarkingMenuLaunchHost.teardown(self) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost(class)`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.adopt_window(self, widget) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.attach(self, menu) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.bind_activation_key(self, menu, key: str) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.defer(self, fn: Callable[[], Any]) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.key_event(self, menu, event) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.live_menu(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.main_window(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.mouse_buttons(self) -> Any`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.report(self, message: str, error: bool = False) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.start(self, app: Optional[str] = None) -> None`
+- `widgets/marking_menu/marking_menu_host.py::PureMarkingMenuHost.teardown(self) -> None`
+- `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin(class)`
+- `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.eventFilter(self, obj, event)`
+- `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.set_wrapped_widget(self, widget)`
+- `widgets/optionBox/options/_options.py::HiddenWhileEmptyMixin.setup_widget(self)`
+- `widgets/optionBox/options/affix.py::AffixMode.placeholder_for(self, noun: str) -> str`
+- `widgets/sequencer/_data.py::MenuUtils.menu_exec_pos(event) -> QtCore.QPoint`
+- `widgets/sequencer/_data.py::MenuUtils.styled_menu(parent=None) -> QtWidgets.QMenu`
+- `widgets/sequencer/_layer.py::SequencerLayer(class)`
+- `widgets/sequencer/_layer.py::SequencerLayer.claims_press(self, scene_pos) -> bool`
+- `widgets/sequencer/_layer.py::SequencerLayer.clear(self) -> None`
+- `widgets/sequencer/_layer.py::SequencerLayer.context_entries(self, time: float, entries: List[Optional[dict]]) -> List[Optional[dict]]`
+- `widgets/sequencer/_layer.py::SequencerLayer.gesture_group_at(self, viewport_pos) -> Optional[str]`
+- `widgets/sequencer/_layer.py::SequencerLayer.legend(self, editor: str, rows: Tuple[Gesture, ...]) -> Sequence[Gesture]`
+- `widgets/sequencer/_layer.py::SequencerLayer.menu_zone(self, zone: str, time: float) -> str`
+- `widgets/sequencer/_layer.py::SequencerLayer.mouse_move(self, event) -> bool`
+- `widgets/sequencer/_layer.py::SequencerLayer.mouse_press(self, event) -> bool`
+- `widgets/sequencer/_layer.py::SequencerLayer.mouse_release(self, event) -> bool`
+- `widgets/sequencer/_layer.py::SequencerLayer.paint_lane(self, painter: QtGui.QPainter, rect: QtCore.QRectF) -> None`
+- `widgets/sequencer/_layer.py::SequencerLayer.relayout(self) -> None`
+- `widgets/sequencer/_layer.py::SequencerLayer.time_bounds(self) -> Optional[Tuple[float, float]]`
+- `widgets/sequencer/_ruler.py::RulerItem.set_height(self, height: float) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.add_layer(self, layer: SequencerLayer) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.add_track_item(self, item: QtWidgets.QGraphicsItem) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.content_span(self) -> Tuple[float, float]`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.frame_range(self) -> bool`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.layer(self, name: str) -> SequencerLayer`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.range_highlight_item(self) -> Optional[RangeHighlightItem]`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.refresh_extent(self) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.remove_track_item(self, item: QtWidgets.QGraphicsItem) -> None`
+- `widgets/sequencer/_sequencer.py::SequencerWidget.timeline(self) -> TimelineView`
+- `widgets/sequencer/_timeline.py::TimelineView.hit_zone(self, viewport_y: float) -> str`
+- `widgets/tableWidget.py::TableWidget.action_color_formatter(self, item, value, *_)`
+- `widgets/tableWidget.py::TableWidget.add_section_row(table: QtWidgets.QTableWidget, title: str, row: int = -1, col_count: int = None, bg: Any = None, fg: Any = '#999', bold: bool = True, font_delta: int = -1, height: int = 22) -> int`
+- `widgets/tableWidget.py::TableWidget.apply_formatting(self)`
+- `widgets/tableWidget.py::TableWidget.clear_formatters(self)`
+- `widgets/tableWidget.py::TableWidget.column_truncation(self, col)`
+- `widgets/tableWidget.py::TableWidget.default_header_click_behavior(self, col)`
+- `widgets/tableWidget.py::TableWidget.ensure_valid_color(self, color, color_type, item, row, col)`
+- `widgets/tableWidget.py::TableWidget.format_item(self, item: QtWidgets.QTableWidgetItem, key: str = None, italic: bool = None, bold: bool = None, fg: Any = None, bg: Any = None)`
+- `widgets/tableWidget.py::TableWidget.is_section_row(table: QtWidgets.QTableWidget, row: int) -> bool`
+- `widgets/tableWidget.py::TableWidget.make_color_map_formatter(self, color_map: dict)`
+- `widgets/tableWidget.py::TableWidget.set_action_color(self, item: QtWidgets.QTableWidgetItem, key: str, row: int = -1, col: int = -1, use_bg: bool = False)`
+- `widgets/tableWidget.py::TableWidget.set_cell_formatter(self, row, col, formatter, append=False)`
+- `widgets/tableWidget.py::TableWidget.set_column_formatter(self, col, formatter, append=False)`
+- `widgets/tableWidget.py::TableWidget.set_column_truncation(self, col, length=None, mode='start', insert='..', head=None)`
+- `widgets/tableWidget.py::TableWidget.set_header_formatter(self, header, formatter, append=False)`
+- `widgets/tableWidget.py::TableWidget.truncated_column_text(self, col: int, text: str) -> str`
+
+## Moved (3)
+
+_Still resolvable at the same call site -- hoisted to a base class or re-exported from another module. NOT a removal: no alias or minor bump is owed._
+
+- `widgets/optionBox/options/clear.py::ClearOption.eventFilter`
+- `widgets/optionBox/options/clear.py::ClearOption.set_wrapped_widget`
+- `widgets/optionBox/options/clear.py::ClearOption.setup_widget`
+
+## Signature changed (6)
+
+- `switchboard/_core.py::Switchboard.register`
+  - was: `(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None)`
+  - now: `(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None, exclude=None)`
+- `widgets/footer.py::Footer.setStatusText`
+  - was: `(self, text: str | None = None, level: Optional[str] = None) -> None`
+  - now: `(self, text: str | None = None, level: Optional[str] = None, color: Optional[str] = None) -> None`
+- `widgets/footer.py::Footer.setText`
+  - was: `(self, text: str, level: Optional[str] = None) -> None`
+  - now: `(self, text: str, level: Optional[str] = None, color: Optional[str] = None) -> None`
+- `widgets/optionBox/option_box_manager.py::OptionBoxManager.add_action`
+  - was: `(self, callback=None, icon='menu', tooltip='Options', text=None, states=None, settings_key=None)`
+  - now: `(self, callback=None, icon='menu', tooltip='Options', text=None, states=None, settings_key=None, hide_when_empty=False)`
+- `widgets/optionBox/option_box_manager.py::OptionBoxManager.set_action`
+  - was: `(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None)`
+  - now: `(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None, hide_when_empty=False)`
+- `widgets/optionBox/option_box_manager.py::OptionBoxManager.set_affix`
+  - was: `(self, *, default: str = 'auto', modes=None, convention_key=None, on_change=None, tooltip: Optional[str] = None, settings_key=None, order=None, replace: bool = True)`
+  - now: `(self, *, default: str = 'auto', modes=None, convention_key=None, on_change=None, tooltip: Optional[str] = None, settings_key=None, order=None, replace: bool = True, noun: Optional[str] = None)`

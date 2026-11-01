@@ -3,20 +3,14 @@
 from qtpy import QtWidgets, QtCore, QtGui
 
 
-class SwitchboardPlacementMixin:
-    """Window placement: centering a widget on a point, the screen or the
-    cursor, and the cursor's offset from a widget's center."""
+class _Placement:
+    """Window placement behind the Switchboard's ``center_widget`` and
+    ``get_cursor_offset_from_center``: centering a widget on a point, the screen
+    or the cursor, and the cursor's offset from a widget's center. Stateless.
+    """
 
     @staticmethod
     def get_cursor_offset_from_center(widget):
-        """Get the relative position of the cursor with respect to the center of a given widget.
-
-        Parameters:
-            widget (QWidget): The widget to query.
-
-        Returns:
-            (obj) QPoint
-        """
         return QtGui.QCursor.pos() - widget.rect().center()
 
     @staticmethod
@@ -29,17 +23,6 @@ class SwitchboardPlacementMixin:
         padding_y=None,
         relative: QtWidgets.QWidget = None,
     ):
-        """Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor, or at the widget's current position if no point is given.
-
-        Parameters:
-            widget (QWidget): The widget to move and resize.
-            pos (QPoint/str, optional): A point to move to, or 'screen' to center on screen, or 'cursor' to center at cursor position. Defaults to None.
-            offset_x (int, optional): The desired offset percentage on the x axis. Defaults to 0.
-            offset_y (int, optional): The desired offset percentage on the y axis. Defaults to 0.
-            padding_x (int, optional): Additional width from the widget's minimum size or relative widget. If not specified, the widget's current width is used. A maximumWidth too small to fit the result is raised to fit, unless minimumWidth == maximumWidth (a deliberate fixed-size lock, left untouched).
-            padding_y (int, optional): Additional height from the widget's minimum size or relative widget. If not specified, the widget's current height is used. Same maximumHeight handling as padding_x.
-            relative (QWidget, optional): If given, use this widget's current size as the base size for resizing.
-        """
         # Resize the widget if padding values are provided
         if padding_x is not None or padding_y is not None:
             p1 = widget.rect().center()

@@ -265,6 +265,41 @@ class TestMainWindowSignals(QtBaseTestCase):
         self.assertTrue(signal_received)
 
 
+class TestEmbeddedFooterBeforeSlots(QtBaseTestCase):
+    """A Slots class built while the central widget's children register reads
+    ``ui.footer``: the ``.ui``'s embedded footer is adopted before then.
+
+    Setting the central widget registers its children, and the first child with
+    a ``*_init`` slot builds the Slots class; an ``__init__`` that read
+    ``ui.footer`` there got ``None`` (the footer was adopted after)."""
+
+    def test_a_childs_slot_init_sees_the_embedded_footer(self):
+        from uitk.widgets.footer import Footer
+        from uitk.widgets.mainWindow import MainWindow
+
+        seen = []
+        sb = MockSwitchboard()
+        sb.init_slot = lambda widget: seen.append(widget.ui.footer)
+
+        central = QtWidgets.QWidget()
+        central.setObjectName("central_widget")  # named, so it registers
+        layout = QtWidgets.QVBoxLayout(central)
+        button = QtWidgets.QPushButton("Go")
+        button.setObjectName("b000")
+        layout.addWidget(button)
+        footer = Footer()
+        footer.setObjectName("footer")
+        layout.addWidget(footer)
+
+        # A loaded .ui arrives polished; parenting a polished widget sends
+        # ChildPolished at once, which is what registers it mid-set.
+        central.ensurePolished()
+        window = self.track_widget(MainWindow("TestWindow", sb, central_widget=central))
+        self.assertTrue(seen, "no child registered while the central widget was set")
+        self.assertIs(seen[0], footer)
+        self.assertIs(window.footer, footer)
+
+
 class TestMainWindowWidgetRegistration(QtBaseTestCase):
     """Tests for MainWindow widget registration."""
 

@@ -44,6 +44,7 @@ from uitk.managers.cursor_manager import CursorManager
 from uitk.managers.value_manager import ValueManager
 
 from uitk.widgets.windowPanel import WindowPanel
+from uitk.widgets.footer import FooterApply
 
 
 class FormPanel(WindowPanel):
@@ -159,8 +160,7 @@ class FormPanel(WindowPanel):
         self._running = False
         self._validation_error = ""
         self._apply_text = apply_text
-        self._apply_btn = None
-        self._pending_commit = None
+        self._apply = None  # the FooterApply, once the footer exists
 
         self.setMinimumWidth(min_width)
         self.setProperty("class", self.__class__.__name__)
@@ -738,10 +738,11 @@ class FormPanel(WindowPanel):
 
     def apply_pending(self) -> None:
         """Commit the plan the last preview armed, reported like any other run."""
-        commit = self._pending_commit
-        if commit is None or self._running:
-            return
-        self._invoke(commit, self.values())
+        self._armed_apply.apply()
+
+    def _commit_armed(self, commit: Callable) -> None:
+        if not self._running:
+            self._invoke(commit, self.values())
 
     def _invoke(self, call, values) -> None:
         """Run one pass — a preview, a live run, or an armed commit — and report it.
@@ -792,9 +793,22 @@ class FormPanel(WindowPanel):
     # -- armed preview ---------------------------------------------------
 
     @property
+    def _armed_apply(self) -> FooterApply:
+        """The footer's Apply affordance (:class:`FooterApply`), built on first use."""
+        if self._apply is None:
+            self._apply = FooterApply(
+                self.footer,
+                self._commit_armed,
+                text=self._apply_text,
+                tooltip="Apply the changes the last preview reported.",
+                note=f"Preview only — {self._apply_text} to commit",
+            )
+        return self._apply
+
+    @property
     def pending_commit(self):
         """The call the armed Apply button would make, or None."""
-        return self._pending_commit
+        return self._armed_apply.pending
 
     def arm_apply(self, commit: Callable, note: str = None) -> None:
         """Hold *commit* — the identical live call — behind an Apply button.
@@ -802,33 +816,13 @@ class FormPanel(WindowPanel):
         The button is created on first use and lives to the RIGHT of the
         accept button: the verb the user pressed stays where they pressed it,
         and the new affordance arrives beside it rather than under their
-        cursor. Same contract as the naming panel's dry run.
+        cursor. The footer's :class:`FooterApply`, as the naming panel's dry run.
         """
-        self._pending_commit = commit
-        if self._apply_btn is None:
-            self._apply_btn = self.footer.add_action_button(
-                text=self._apply_text,
-                icon_name="check",
-                tooltip="Apply the changes the last preview reported.",
-                callback=self.apply_pending,
-            )
-        self._apply_btn.setVisible(True)
-        self.set_status(
-            note or f"Preview only — {self._apply_text} to commit", level="warning"
-        )
+        self._armed_apply.arm(commit, note)
 
     def disarm_apply(self) -> None:
-        """Drop any armed plan and hide the Apply button.
-
-        Gated on having BEEN armed, not on ``isVisible()``: a child of an
-        unshown window reads as invisible however it was set, which would
-        leave the footer note behind.
-        """
-        was_armed = self._pending_commit is not None
-        self._pending_commit = None
-        if self._apply_btn is not None and was_armed:
-            self._apply_btn.setVisible(False)
-            self.set_status("")
+        """Drop any armed plan and hide the Apply button."""
+        self._armed_apply.disarm()
 
     def _on_reject(self) -> None:
         self._accepted = False

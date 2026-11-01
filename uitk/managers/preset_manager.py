@@ -1144,6 +1144,50 @@ class PresetManager(_PresetWidgetScope, _PresetRootMigration, ptk.LoggingMixin):
         except (TypeError, ValueError):
             return False
 
+    @classmethod
+    def carry_presets(
+        cls, source: Union[str, Path], target: Union[str, Path]
+    ) -> List[Path]:
+        """Copy the presets saved under *source* into *target*, never over one there.
+
+        For a panel whose presets move to another folder -- renamed, or folded
+        into another panel (its widget names kept, so a snapshot still loads):
+        each preset file under *source*, its template subfolders kept, that
+        *target* does not hold is copied in. A preset already at the target wins,
+        and *source* is left as it was. Relative folders resolve under
+        :meth:`get_presets_root`; marker files (dotfiles) stay behind.
+        Best-effort: a file that cannot be copied is skipped, logged at debug.
+
+        Parameters:
+            source: The folder the presets were saved under.
+            target: The folder the panel now reads them from.
+
+        Returns:
+            list: The copied files' paths under *target*.
+        """
+        import shutil
+
+        root = cls.get_presets_root()
+        src, dst = (Path(p) if Path(p).is_absolute() else root / p for p in (source, target))
+        copied: List[Path] = []
+        if not src.is_dir():
+            return copied
+        for path in sorted(src.rglob("*")):
+            rel = path.relative_to(src)
+            if not path.is_file() or any(part.startswith(".") for part in rel.parts):
+                continue
+            out = dst / rel
+            if out.exists():
+                continue
+            try:
+                out.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, out)
+            except OSError as error:
+                cls.logger.debug(f"preset not carried: {path}: {error}")
+                continue
+            copied.append(out)
+        return copied
+
     @staticmethod
     def get_presets_root() -> Path:
         """Root directory under which every relative ``preset_dir`` is resolved.

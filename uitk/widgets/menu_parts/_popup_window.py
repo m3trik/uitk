@@ -9,12 +9,11 @@ mouse grab from the popup beneath it for as long as it is shown. The mechanics
 are the shared popup kit's (``uitk.widgets.popup``); this is the menu's use of
 them.
 
-One part of :class:`~uitk.widgets.menu.Menu`, which inherits it; it holds no
-state of its own (``Menu.__init__`` declares every attribute used here) and
-is never instantiated alone.
+One part of :class:`~uitk.widgets.menu.Menu` (see ``menu_parts``).
 """
 
 import weakref
+from typing import TYPE_CHECKING, Optional
 
 from qtpy import QtCore, QtWidgets
 
@@ -22,11 +21,31 @@ from uitk.widgets.popup.dismissal import AncestorDismissal
 from uitk.widgets.popup.placement import PopupPlacement
 from uitk.widgets.popup.window import PopupWindow
 
+if TYPE_CHECKING:
+    from uitk.widgets.menu import Menu
 
-class _MenuPopupWindowMixin:
-    """The menu's popup window: its window type, input grab, and screen clamp."""
 
-    def _install_dismiss_on_move_filter(self, anchor_widget) -> None:
+class _MenuPopupWindow:
+    """A :class:`Menu`'s popup window: its window type, input grab, and screen clamp.
+
+    Owns whether (and as which window type) the menu was promoted, the popup
+    whose native grab it took, and the dismiss-on-ancestor-move filter.
+    """
+
+    def __init__(self, menu: "Menu") -> None:
+        self._menu = menu
+        self.popup_configured = False  # Track if popup setup has been done
+        # Window type the last ``setup_as_popup`` pass applied (Qt.Tool or
+        # Qt.Popup). Re-checked on every show: a menu opened while another
+        # popup holds the app-wide grab must itself be a Qt.Popup to get
+        # any input at all. See ``resolve_popup_window_type``.
+        self.popup_window_type: Optional[QtCore.Qt.WindowType] = None
+        # The popup whose native mouse grab this menu stole on show (weakref),
+        # to hand back on hide. See ensure_popup_input_grab.
+        self.grab_stolen_from: Optional["weakref.ref"] = None
+        self.dismiss_on_move_filter: Optional[AncestorDismissal] = None
+
+    def install_dismiss_on_move_filter(self, anchor_widget) -> None:
         """Install (or replace) the dismiss-on-ancestor-move filter.
 
         Detaches any previous filter first so re-shows don't accumulate
@@ -35,29 +54,27 @@ class _MenuPopupWindowMixin:
         that chain hides the menu while it is visible and not pinned
         (:class:`~uitk.widgets.popup.dismissal.AncestorDismissal`).
         """
-        existing = getattr(self, "_dismiss_on_move_filter", None)
-        if existing is not None:
-            existing.detach()
-            self._dismiss_on_move_filter = None
+        self.detach_dismiss_on_move_filter()
         if anchor_widget is None:
             return
+        menu = self._menu
         # Resolved per event (lambdas, not bound methods) so an override or
         # instance patch of hide/is_pinned applies, as it did when the filter
         # called them on its target directly.
-        self._dismiss_on_move_filter = AncestorDismissal(
+        self.dismiss_on_move_filter = AncestorDismissal(
             anchor_widget,
-            dismiss=lambda: self.hide(),
-            when=lambda: self.isVisible() and not self.is_pinned,
-            parent=self,
+            dismiss=lambda: menu.hide(),
+            when=lambda: menu.isVisible() and not menu.is_pinned,
+            parent=menu,
         )
 
-    def _detach_dismiss_on_move_filter(self) -> None:
-        existing = getattr(self, "_dismiss_on_move_filter", None)
+    def detach_dismiss_on_move_filter(self) -> None:
+        existing = self.dismiss_on_move_filter
         if existing is not None:
             existing.detach()
-            self._dismiss_on_move_filter = None
+            self.dismiss_on_move_filter = None
 
-    def _resolve_popup_window_type(self) -> QtCore.Qt.WindowType:
+    def resolve_popup_window_type(self) -> QtCore.Qt.WindowType:
         """The window type this menu must use for the *current* show.
 
         ``Qt.Tool`` normally — a tool window floats above its parent, keeps
@@ -77,15 +94,15 @@ class _MenuPopupWindowMixin:
         hiding it pops the stack and hands the grab back.
         """
         active = QtWidgets.QApplication.activePopupWidget()
-        if active is self:
+        if active is self._menu:
             # A re-show while we already hold the grab: keep the type we have,
             # since re-declaring it would drop the grab mid-life.
-            return self._popup_window_type or QtCore.Qt.Popup
+            return self.popup_window_type or QtCore.Qt.Popup
         if active is not None:
             return QtCore.Qt.Popup
         return QtCore.Qt.Tool
 
-    def _ensure_popup_input_grab(self, prev_popup) -> None:
+    def ensure_popup_input_grab(self, prev_popup) -> None:
         """Route native mouse input here while this menu overlays another popup's grab.
 
         Qt 6.8 rewrote popup handling: ``QWidgetWindow`` no longer remaps a
@@ -100,25 +117,26 @@ class _MenuPopupWindowMixin:
         to this menu. Window-level, not ``QWidget.grabMouse`` — a widget
         grab funnels events to the menu widget itself, bypassing its child
         buttons. The grab is handed back on hide
-        (:meth:`_release_popup_input_grab`) so the underlying popup's
+        (:meth:`release_popup_input_grab`) so the underlying popup's
         click-outside dismissal keeps working. No-op in the common
         single-popup case (*prev_popup* is None). Best-effort: a platform
         that refuses the grab leaves behavior unchanged.
         """
-        if prev_popup is None or prev_popup is self or not self.isVisible():
+        menu = self._menu
+        if prev_popup is None or prev_popup is menu or not menu.isVisible():
             return
-        if self._popup_window_type != QtCore.Qt.Popup:
+        if self.popup_window_type != QtCore.Qt.Popup:
             return
         try:
-            handle = self.windowHandle()
+            handle = menu.windowHandle()
             if handle is None:
                 return
             handle.setMouseGrabEnabled(True)
-            self._grab_stolen_from = weakref.ref(prev_popup.window())
+            self.grab_stolen_from = weakref.ref(prev_popup.window())
         except Exception as e:  # pragma: no cover - platform-defensive
-            self.logger.debug(f"_ensure_popup_input_grab skipped: {e}")
+            menu.logger.debug(f"_ensure_popup_input_grab skipped: {e}")
 
-    def _release_popup_input_grab(self) -> None:
+    def release_popup_input_grab(self) -> None:
         """Hand a stolen native mouse grab back to the popup it came from.
 
         Runs on hide. Without the hand-back, the underlying popup (the combo
@@ -127,11 +145,12 @@ class _MenuPopupWindowMixin:
         Re-granting a grab Qt already restored itself (pre-6.8 hosts) is a
         harmless duplicate ``SetCapture``.
         """
-        ref, self._grab_stolen_from = self._grab_stolen_from, None
+        ref, self.grab_stolen_from = self.grab_stolen_from, None
         if ref is None:
             return
+        menu = self._menu
         try:
-            handle = self.windowHandle()
+            handle = menu.windowHandle()
             if handle is not None:
                 handle.setMouseGrabEnabled(False)
             prev = ref()
@@ -140,42 +159,43 @@ class _MenuPopupWindowMixin:
                 if prev_handle is not None:
                     prev_handle.setMouseGrabEnabled(True)
         except Exception as e:  # pragma: no cover - platform-defensive
-            self.logger.debug(f"_release_popup_input_grab skipped: {e}")
+            menu.logger.debug(f"_release_popup_input_grab skipped: {e}")
 
-    def _setup_as_popup(self):
+    def setup_as_popup(self):
         """Configure this menu as a popup window.
 
         Idempotent per window type: it re-runs only when
-        :meth:`_resolve_popup_window_type` returns something other than what
+        :meth:`resolve_popup_window_type` returns something other than what
         is currently applied (Tool -> Popup when opened inside a foreign
         popup grab), since reparenting recreates the native handle.
         """
-        window_type = self._resolve_popup_window_type()
-        if self._popup_configured and window_type == self._popup_window_type:
+        window_type = self.resolve_popup_window_type()
+        if self.popup_configured and window_type == self.popup_window_type:
             return
 
-        self._popup_configured = True
-        self._popup_window_type = window_type
+        self.popup_configured = True
+        self.popup_window_type = window_type
 
         # One setParent(parent, flags) call (a single native recreation); a
         # parentless menu is owned by the active window. Translucent: a
         # Menu's ground is the translucent WINDOW_BACKGROUND.
-        had_parent = self.parentWidget() is not None
+        menu = self._menu
+        had_parent = menu.parentWidget() is not None
         owner = PopupWindow.promote(
-            self,
+            menu,
             window_type | QtCore.Qt.FramelessWindowHint,
             parent_fallback=PopupWindow.active_window,
             translucent=True,
         )
         if not had_parent and owner is not None:
-            self.logger.debug(
+            menu.logger.debug(
                 f"Menu._setup_as_popup: Parented to active window {owner}"
             )
 
-    def _ensure_on_screen(self) -> None:
+    def ensure_on_screen(self) -> None:
         """Moves the menu to be fully visible on the screen if it is partially off-screen.
 
         See :meth:`PopupPlacement.clamp_to_screen
         <uitk.widgets.popup.placement.PopupPlacement.clamp_to_screen>`.
         """
-        PopupPlacement.clamp_to_screen(self)
+        PopupPlacement.clamp_to_screen(self._menu)

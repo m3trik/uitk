@@ -2,28 +2,28 @@
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide6%20via%20qtpy-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/Tests-5600%20passed-brightgreen.svg)](test/)
+[![Tests](https://img.shields.io/badge/Tests-5826%20passed-brightgreen.svg)](test/)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2C%20Linux-lightgrey.svg)
 
 # uitk
 
 > **Name it, and it connects.**
-> A convention-driven Qt framework that turns Qt Designer files + Python slot classes into working applications with zero glue code.
+> A convention-driven Qt framework that turns UIs — Qt Designer files or widget trees built in code — plus Python slot classes into working applications with zero glue code.
 
-Design the UI in Qt Designer, name your widgets, write matching Python methods. UITK discovers the files, wires signals to slots, persists state, applies themes, and manages the window lifecycle. When you need control, every convention is overridable.
+Design the UI in Qt Designer or build it in code, name your widgets, write matching Python methods. UITK discovers the files, wires signals to slots, persists state, applies themes, and manages the window lifecycle. When you need control, every convention is overridable.
 
 ## Why uitk exists
 
-UITK comes from years of building artist tooling for DCC pipelines (Maya, Blender, 3ds Max), where you don't need one big application — you need *dozens of small ones*. Each traditionally pays the same Qt tax before doing anything useful: load the `.ui`, `findChild()` every widget, `.connect()` every signal, restore and save state, style it, and behave correctly standalone or inside a host app. None of that code is the tool — and hand-rolling it slightly differently each time is how a toolkit of thirty tools becomes thirty apps by thirty authors.
+UITK comes from years of building artist tooling for DCC pipelines (Maya, Blender), where you don't need one big application — you need *dozens of small ones*. Each traditionally pays the same Qt tax before doing anything useful: load the `.ui`, `findChild()` every widget, `.connect()` every signal, restore and save state, style it, and behave correctly standalone or inside a host app. None of that code is the tool — and hand-rolling it slightly differently each time is how a toolkit of thirty tools becomes thirty apps by thirty authors.
 
 UITK drives the marginal cost of a **well-behaved** tool toward zero:
 
 - **The convention is the wiring.** `btn_save` in Designer connects to `def btn_save(self)` because the names match; UI files map to slot classes, filename tags map to UI hierarchy. What remains in a slot class is only the code that does something.
 - **Good behavior is the default.** Every widget persists state, every window remembers geometry, theming and positioning just work — no opt-in. Fifty tools wired one way feel like a single application.
-- **DCC-agnostic core, host-aware edges.** Built on `qtpy` over PySide6; runs standalone or hosted in Maya / Blender / 3ds Max via pluggable handlers. Extending UITK — handlers, widgets, mixins — never requires editing it.
+- **DCC-agnostic core, host-aware edges.** Built on `qtpy` over PySide6; runs standalone or hosted in an application such as Maya or Blender via pluggable handlers. Extending UITK — handlers, widgets, mixins — never requires editing it.
 - **Escape hatches everywhere.** `@Signals(...)` overrides wiring, handlers override host behavior, every enhancement is opt-out per widget or per UI.
 
-**Fits:** fleets of small-to-medium Designer-based tools — especially DCC-hosted — where consistency and iteration speed beat bespoke UI architecture. **Doesn't:** a single large app with its own hand-rolled UI layer, non-Qt targets, or a workflow without Qt Designer.
+**Fits:** fleets of small-to-medium tools — Designer-built or code-built (`sb.register_ui`), standalone or hosted in an app such as a DCC — where consistency and iteration speed beat bespoke UI architecture. **Doesn't:** a single large app with its own hand-rolled UI layer, or non-Qt targets.
 
 ### What each subsystem is for
 
@@ -35,7 +35,7 @@ UITK drives the marginal cost of a **well-behaved** tool toward zero:
 | Marking menu | Muscle-memory access inside a DCC viewport: an entire toolkit reachable from one held key. |
 | Sequencer & editors | An NLE-style timeline widget (clips, keyframes, markers, audio scrub), plus bundled Style / Shortcut / Browser panels on `sb.editors`. |
 | Handlers | Host-specific behavior (Maya vs. Blender vs. standalone) without forking the library or the tools. |
-| Bridge | Parameterised script panels that drive external DCC processes from one shared form/preset/logging engine. |
+| Bridge | Parameter panels — a template/mode picker, option rows built from specs, presets, a log and a Run button — on one shared form/preset/logging engine; any tool that runs a parameterised job (a DCC bridge is one). |
 
 ## Install
 
@@ -82,7 +82,7 @@ No `.connect()` calls. No `findChild()`. No manual state restore.
 | [Slots Contract](docs/SLOTS.md) | The slot method spec — naming, signals, `@Signals`, parameter injection, debounce, timeout |
 | [Widgets](docs/WIDGETS.md) | Every enhanced widget — `.menu`, `.option_box`, sequencer, editors, marking menu; and [using them in Qt Designer](docs/WIDGETS.md#using-the-widgets-in-qt-designer) (`python -m uitk.designer`) |
 | [Marking Menu](docs/MARKING_MENU.md) | Radial gesture menus — bindings, chords, DCC integration |
-| [Architecture](docs/ARCHITECTURE.md) | Internals — Switchboard mixins, registries, MainWindow lifecycle, handler ecosystem |
+| [Architecture](docs/ARCHITECTURE.md) | Internals — the Switchboard facade and its collaborators, registries, MainWindow lifecycle, handler ecosystem |
 | [Cookbook](docs/COOKBOOK.md) | Recipes from real consumers — hosted-vs-standalone launch, per-domain slots, presets, cross-UI sync |
 | [Tutorial](docs/EXAMPLES.md) | Step-by-step walkthrough from empty folder to working app |
 | [API Reference](docs/API_REFERENCE.md) | Public signatures — `Switchboard`, `MainWindow`, `Signals`, `UiHandler`, `MarkingMenu` |
@@ -90,8 +90,9 @@ No `.connect()` calls. No `findChild()`. No manual state restore.
 
 ## Used by
 
-- **[tentacle](https://github.com/m3trik/tentacle)** — Maya / Max / Blender artist toolkit. Uses UITK's `MarkingMenu` as a radial gesture shell around per-domain slot classes (`cameras.py`, `selection.py`, `scene.py`, …).
-- **[mayatk](https://github.com/m3trik/mayatk)** — Maya utility library. Embeds UITK Switchboards for standalone tools (Channels, Shot Sequencer, Texture Path Editor) with a dual-mode `launch(sb=None)` pattern that works both hosted in tentacle and standalone.
+- **[tentacle](https://github.com/m3trik/tentacle)** — Maya / Blender artist toolkit. Uses UITK's `MarkingMenu` as a radial gesture shell around per-domain slot classes (`cameras.py`, `selection.py`, `scene.py`, …).
+- **[mayatk](https://github.com/m3trik/mayatk)** / **[blendertk](https://github.com/m3trik/blendertk)** — the Maya and Blender host libraries. Each subclasses `UiHandler` to wrap its host's native menus, and declares its bridges' parameters through `uitk.bridge`; the tool panels over them (Channels, Shot Sequencer, Texture Path Editor, …) are tentacle's.
+- **[extapps](https://github.com/m3trik/extapps)** — standalone content-pipeline apps (texture compositing, photogrammetry, Substance / Marmoset automation, …), each a Switchboard panel and Slots class on pythontk and uitk alone; a uitk host opens one by name (`ExternalAppHandler`).
 
 ## Contributing
 

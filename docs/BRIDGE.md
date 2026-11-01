@@ -1,16 +1,16 @@
-# DCC Bridge
+# Parameter Forms and Panels
 
-The shared engine behind uitk's "parameterised script panel" tools — panels that render a script template's parameters as widgets, collect the values, format them as target-language literals, and hand the result to an external DCC process (Marmoset, Substance, RizomUV, and any future bridge).
+Two layers under [`uitk/bridge/`](../uitk/bridge/). **Parameter forms** — `AttributeSpec`, the `KindFactory` registry, `Formatters`, `ParamRegistry` — describe a set of parameters once and build, read and write their widgets; they stand alone (`AttributeWindow` uses them). **Parameter panels** — `ParamPanelSlots` — assemble them into a tool panel: a template picker, the parameter rows, presets, a log and a Run button, for any job that renders a template's parameters and hands them to a process. A DCC bridge (Marmoset, Substance, RizomUV) is one such job; so are the photogrammetry, Unity and WebXR apps.
 
 **Nav**: [← README](README.md) · [Widgets](WIDGETS.md) · [Architecture](ARCHITECTURE.md) · [Cookbook](COOKBOOK.md) · [API](API_REFERENCE.md)
 
 ## Why it exists
 
-Every "drive an external app from a panel" tool is the same tool wearing a different logo: pick a template, tweak its parameters, press send. Before `uitk.bridge`, each one (marmoset, substance, rizom) re-implemented parameter-widget construction, presets, logging, and template plumbing — and each copy drifted. The bridge subsystem centralizes that machinery once: a per-bridge subclass contributes only the DCC-specific bits (its parameter module, its bridge transport class, its template directory, and the send action), and inherits everything else — including every widget *kind* the shared registry knows about.
+Every "run a parameterised job from a panel" tool is the same tool wearing a different logo: pick a template, tweak its parameters, press send. Before `uitk.bridge`, each one (marmoset, substance, rizom) re-implemented parameter-widget construction, presets, logging, and template plumbing — and each copy drifted. This package centralizes that machinery once: a panel subclass contributes only its own bits (its parameter module, its transport, its template directory, and the send action), and inherits everything else — including every widget *kind* the shared registry knows about.
 
-## Anatomy of a bridge
+## Anatomy of a parameter panel
 
-The subsystem is six public modules under [`uitk/bridge/`](../uitk/bridge/), all re-exported (lazily) from [`__init__.py`](../uitk/bridge/__init__.py) so consumers write `from uitk.bridge import AttributeSpec, KindFactory, Formatters, Parameters, ParamRegistry, Tooltip, BridgeSlotsBase`:
+The subsystem is six public modules under [`uitk/bridge/`](../uitk/bridge/), all re-exported (lazily) from [`__init__.py`](../uitk/bridge/__init__.py) so consumers write `from uitk.bridge import AttributeSpec, KindFactory, Formatters, Parameters, ParamRegistry, Tooltip, ParamPanelSlots`:
 
 | Module | Owns |
 |:---|:---|
@@ -19,13 +19,13 @@ The subsystem is six public modules under [`uitk/bridge/`](../uitk/bridge/), all
 | [`formatters.py`](../uitk/bridge/formatters.py) | `Formatters` — per-target-language value renderers (`python_literal`, `lua_literal`, `js_literal`, `cli_raw`) |
 | [`parameters.py`](../uitk/bridge/parameters.py) | `Parameters` — helpers over a per-bridge `PARAMS` dict (`referenced_keys`, `defaults`, `render_context`) plus the shared specs (`scope_spec`, `carrier_spec`, `rig_mode_spec`); `ParamRegistry` — the base a bridge's registry subclasses so it declares only its `PARAMS` |
 | [`tooltip.py`](../uitk/bridge/tooltip.py) | `Tooltip` — rich-text parameter tooltips + per-template description extraction |
-| [`slots.py`](../uitk/bridge/slots.py) | `BridgeSlotsBase` — the slot base class that assembles it all into a panel. The module is the facade (the contract, the init flow, bridge access, scope); the machinery lives in one private part per concept, composed through `_BridgeSlotsInternal`: [`_output_dir.py`](../uitk/bridge/_output_dir.py), [`_param_rows.py`](../uitk/bridge/_param_rows.py), [`_presets.py`](../uitk/bridge/_presets.py), [`_template_combo.py`](../uitk/bridge/_template_combo.py), [`_log_panel.py`](../uitk/bridge/_log_panel.py), [`_header_menu.py`](../uitk/bridge/_header_menu.py). Every hook below is overridable exactly as on one class |
+| [`slots.py`](../uitk/bridge/slots.py) | `ParamPanelSlots` — the slot base class that assembles it all into a panel. The module is the facade (the contract, the init flow, bridge access, scope); the machinery lives in one private part per concept: the stateful `_OutputDirRow` / `_ParamRows` / `_Presets` the panel builds and the stateless `_TemplateCombo` / `_LogPane` / `_HeaderMenu` that take the panel per call, while `_ParamPanelSlotsInternal` holds the protected hooks they call through the panel: [`_output_dir.py`](../uitk/bridge/_output_dir.py), [`_param_rows.py`](../uitk/bridge/_param_rows.py), [`_presets.py`](../uitk/bridge/_presets.py), [`_template_combo.py`](../uitk/bridge/_template_combo.py), [`_log_panel.py`](../uitk/bridge/_log_panel.py), [`_header_menu.py`](../uitk/bridge/_header_menu.py). Every hook below is overridable exactly as on one class |
 
 **The surface is class-only.** Each module exposes one class namespace; there are no flat function re-exports (`KindFactory.make_widget`, `Formatters.python_literal`, `Parameters.referenced_keys`, `Tooltip.format_param_tooltip`).
 
 ### The panel `.ui` contract
 
-`BridgeSlotsBase.__init__` resolves its panel via `self.sb.loaded_ui.<UI_NAME>` and injects rows into a fixed set of widgets the `.ui` file must provide (verified against `blender_bridge.ui` in mayatk):
+`ParamPanelSlots.__init__` resolves its panel via `self.sb.loaded_ui.<UI_NAME>` and injects rows into a fixed set of widgets the UI must provide (a `.ui` file or a widget tree registered with `sb.register_ui`). The five names are this base's convention, not a uitk-wide rule (verified against tentacle's `ui/tools/dcc_bridge.ui`):
 
 - `grp_process` — the group box whose layout receives the injected Output Dir row, "Parameters" group, and preset controls.
 - `cmb000` — the template combo (populated by the `cmb000_init` Switchboard hook).
@@ -35,7 +35,7 @@ The subsystem is six public modules under [`uitk/bridge/`](../uitk/bridge/), all
 
 ### Subclass contract
 
-A subclass **must** set / implement (from the `BridgeSlotsBase` docstring and body):
+A subclass **must** set / implement (from the `ParamPanelSlots` docstring and body):
 
 - `UI_NAME` — the loaded-ui attribute name (e.g. `"marmoset_bridge"`). Empty raises `ValueError` at init.
 - `PRESETS_ROOT` — per-bridge preset storage root (required unless `make_preset_store` returns a store; then presets are semantic and `PRESETS_ROOT` is unused).
@@ -43,22 +43,24 @@ A subclass **must** set / implement (from the `BridgeSlotsBase` docstring and bo
 - `template_dir` (class attr or property) — the per-bridge template directory.
 - `make_bridge()` — factory returning the transport instance; called once, lazily, via the `bridge` property. The instance must expose `.logger` and `.send(...)`, optionally `.STARTUP_INFO`. In practice this is a `pythontk.ScriptLaunchBridge` subclass (from `pythontk.core_utils.handoff.app_handoff`), whose `send()` runs the shared resolve → preflight → produce → deliver skeleton and inherits `.logger` from `LoggingMixin`. It may return `None` when the engine lives in an optional package the user hasn't installed — the panel still opens (so its own controls can offer the install); the `bridge` property then raises `RuntimeError`, and `peek_bridge()` / `panel_log()` are the never-raising accessors.
 - `list_template_modes()` — `[(stem, mode), ...]` pairs for the combo.
-- `b000()` — the DCC-specific send action.
+- `b000()` — the Run action: gather the inputs and hand them to the engine.
 
 Optional overrides:
 
 - `select_initial_template_index(pairs)` — bias the starting combo entry (default: index 0).
-- `default_output_dir()` — DCC-side fallback for a blank Output Dir (default `""`, which mayatk's and blendertk's bridge-slots bases keep; a bridge with a natural output root overrides it).
+- `default_output_dir()` — the job's fallback for a blank Output Dir (default `""`, which tentacle's `HostBridge` keeps; a bridge with a natural output root overrides it).
 - `REQUIRE_OUTPUT_DIR` — set `False` for bridges with no user-visible output; the row is never built and `require_output_dir()` returns `""`.
 - `TEMP_OUTPUT_FALLBACK` — set `True` for file-staging bridges whose output is transient export artifacts; `require_output_dir()` then falls back to a per-tag temp dir (`ensure_bridge_temp_dir`: a detached `ptk.TempArtifacts` store that outlives the host -- a launched app's project may still read it -- and is swept 7 days after its last write) instead of erroring, so an unsaved scene can still hand off.
-- `resolve_scope_objects(scope)` — turn a `SCOPE` value into host objects; implemented once per DCC package on its bridge-slots base, which hands its scene reads (selection, whole scene, visible) to `pythontk.HandoffScope.resolve` — the words and their fallbacks (unknown → selected; a widening read that cannot answer → the selection) are pythontk's (default: empty list = no scope support). Slot code consumes it via `scoped_objects(params)`, which logs a scope-aware message when the set is empty.
+- `resolve_scope_objects(scope)` — turn a `SCOPE` value into host objects; implemented once on a host-flavored base (tentacle's `HostBridge` asks the host library's `BridgeHost.resolve_scope`), which hands its scene reads (selection, whole scene, visible) to `pythontk.HandoffScope.resolve` — the words and their fallbacks (unknown → selected; a widening read that cannot answer → the selection) are pythontk's (default: empty list = no scope support). Slot code consumes it via `scoped_objects(params)`, which logs a scope-aware message when the set is empty.
 - `TEMPLATE_EXTENSION` — `.py` (default) or `.lua` etc.; locates the placeholder source for row visibility and dispatches the description extractor.
 - `make_preset_store()` — return a `pythontk.PresetStore` to switch presets to semantic mode (see [Panel services](#panel-services)).
 - `_relevant_param_keys()` — which parameter rows are visible for the current selection (default: the `__KEY__` tokens referenced by the active template file). Run-mode panels override this to gate on a mode instead of a template file. A panel may re-run `_refresh_param_visibility()` off a live edit: a set already on screen is not re-applied, so the window is not re-fitted per keystroke.
+- `add_param_rows()` — for a registry that grows after the panel is built (a host hands the built panel an engine whose rows `params_module` then declares, as the Unity Workflow app's Current Scene source does): builds a row for each key that has none, where the registry puts it, joined to the visibility, the folds, the presets and Reset like the rest; returns the keys added.
 - `TEMPLATE_MENU` — set `False` when `cmb000` picks a mode rather than a template file: no Refresh / Open Folder rows, and with one entry or none the combo hides (it returns when a repopulate brings a second).
 - `FOLDABLE_SECTIONS` — `True` (default): each section's titled divider is a disclosure that folds its rows, the folded set kept per panel (`StateManager.save_custom`) and the window re-fitted; a row the panel hides stays hidden when its section opens. `False` keeps plain captions.
 - `LABEL_MIN_WIDTH` — the label column's floor (90). The built panel widens it to its widest row label and keeps that as the instance's value, so every row -- the Output Dir row and a subclass's own rows built from it afterwards included -- starts its value at one x.
 - `_configure_output_dir_options(edit)` — the option-box buttons on the Output Dir field (default: persisted recent-values history + directory browse).
+- `OUTPUT_DIR_LABEL` / `OUTPUT_DIR_PLACEHOLDER` / `OUTPUT_DIR_TOOLTIP` — the Output Dir row's words, in the job's terms. The defaults (`"Output Dir:"`, `"(blank: the panel's default)"`, a tooltip naming no artifact) suit any panel; tentacle's `HostBridge` names a hand-off's export artifacts, the photogrammetry apps an output root, the Unity Workflow app its project.
 - `template_description(path)` / `format_param_tooltip(spec)` — per-bridge rendering hooks; defaults delegate to [`tooltip.py`](../uitk/bridge/tooltip.py).
 - `HEADER_MENU_TITLE` / `HEADER_MENU_ITEMS` / `HELP_SPEC` (or the `header_menu_items()` / `help_spec()` hooks) — header-menu data (see [Panel services](#panel-services)).
 - `DOCS_URL` / `DOCS_LABEL` (or the `docs_url()` hook) — the panel's documentation link, logged once at open as a clickable anchor in the log pane (see [Panel services](#panel-services)); empty (the default) logs nothing.
@@ -67,14 +69,14 @@ Optional overrides:
 
 Init order in `__init__(switchboard)`: Output Dir row (if `REQUIRE_OUTPUT_DIR`) → parameter widgets → `action`-button wiring → preset controls → enablement-refresh wiring → log redirect + `anchorClicked` wiring → `STARTUP_INFO` → docs link (`DOCS_URL`). `cmb000_init` then populates the template combo (and builds its context menu) and fires the first `_on_template_changed`, which shows only the rows the template references, re-applies row enablement, re-points the preset dir (widget-state mode only), and logs the template's description.
 
-A concrete walk-through, from `mayatk.env_utils.blender_bridge` (Maya → Blender hand-off): `BlenderBridgeSlots` subclasses `MayaBridgeSlotsBase` (itself a thin `BridgeSlotsBase` subclass adding the Maya output-dir fallback and `SCOPE` resolution), sets `UI_NAME` / `PRESETS_ROOT` / `LOG_TAG` / `REQUIRE_OUTPUT_DIR = False` / `HELP_SPEC`, points `params_module` at its `parameters.py` and `template_dir` at its `templates/` folder, and implements `b000` — which collects the parameter values, resolves the export set from the shared `SCOPE` parameter via `scoped_objects()`, reads the active `(template, mode)` pair via `_selected_template_mode()`, and calls:
+A concrete walk-through, from tentacle's DCC Bridge (`slots/tools/dcc_bridge.py`, the hand-off to the other DCC: the Blender Bridge in Maya, the Maya Bridge in Blender): `DccBridgeSlots` subclasses tentacle's `HostBridge` (a thin `ParamPanelSlots` subclass that reaches the host toolkit for the engine, the `SCOPE` resolution and the presets folder), sets `UI_NAME` / `LOG_TAG` / `REQUIRE_OUTPUT_DIR = False`, computes its help (`help_spec()`, naming the target app), names its engine (the host's bridge to the other app, `EnvUtils.foreign_scene_bridge()`: in Maya `mayatk.BlenderBridge`, whose `params_registry()` and `TEMPLATE_DIR` the base serves as `params_module` and `template_dir`), and implements `b000` — which collects the parameter values, resolves the export set from the shared `SCOPE` parameter via `scoped_objects()`, reads the active `(template, mode)` pair via `_selected_template_mode()`, and calls:
 
 ```python
-# mayatk.env_utils.blender_bridge.blender_bridge_slots — b000 (abridged)
+# tentacle/slots/tools/dcc_bridge.py — b000 (abridged)
 params = self.collect_param_values()
 selection = self.scoped_objects(params)   # SCOPE → Maya objects; logs when empty
 template, mode = self._selected_template_mode()
-with self.sb.progress(text=f"Working: Send to Blender ({template})"):
+with self.sb.progress(text=f"Working: Send to {self.target_app} ({template})"):
     self.bridge.send(
         objects=selection, template=template, mode=mode, params=params
     )
@@ -88,7 +90,7 @@ with self.sb.progress(text=f"Working: Send to Blender ({template})"):
 
 ### `AttributeSpec`
 
-A frozen dataclass describing one editable parameter: `key` (required, non-empty — becomes the widget's `objectName`), `label` (display falls back to `key` via `display_label`), `kind`, `default`, `minimum` / `maximum` / `step`, `decimals` (float precision), `choices` (values or `(label, value)` pairs), `tooltip`, `section` — an optional category label; `BridgeSlotsBase` inserts a titled `Separator` before the first spec of each new section (sections are expected contiguous in iteration order) — and `inline`.
+A frozen dataclass describing one editable parameter: `key` (required, non-empty — becomes the widget's `objectName`), `label` (display falls back to `key` via `display_label`), `kind`, `default`, `minimum` / `maximum` / `step`, `decimals` (float precision), `choices` (values or `(label, value)` pairs), `tooltip`, `section` — an optional category label; `ParamPanelSlots` inserts a titled `Separator` before the first spec of each new section (sections are expected contiguous in iteration order) — and `inline`.
 
 `inline=True` renders the spec to the **right of the preceding one** instead of on a row of its own: a compact cell (label with no minimum width, no stretch) appended to the previous row, for a modifier of the value beside it — an "Auto" toggle next to the number it overrides. It stays a separately addressable row, so `set_param_enabled` and the visibility pass work per key (and `set_param_enabled` deliberately skips another parameter's inline cell — greying a value must never grey the toggle that greys it). It rides the host row's visibility, so an inline spec must be referenced by the same templates as the spec it follows. Ignored on the first spec of a registry and on the first spec of a section, both of which keep their own row.
 
@@ -122,11 +124,11 @@ Registering a custom kind is one call — exactly how the built-ins register the
 | `file_list` | composite: `QListWidget` + Add… / Remove buttons | `list[str]` | custom `connect` on the model's `rowsInserted` / `rowsRemoved` |
 | `action` | composite: one `QPushButton` per `choices` entry (`(label, action_id[, tooltip])`; the first takes the row's stretch) | none — `read` returns `None`, excluded from `collect_param_values` | deliberate no-op (clicks never dirty presets) |
 
-An `action` row's "value" is a set of commands, not data: `BridgeSlotsBase._wire_action_params` connects each `action_id` to the same-named method on the slot class, so a registry declares panel actions as data with zero per-panel wiring; an id with no matching method is disabled with an explanatory tooltip.
+An `action` row's "value" is a set of commands, not data: `ParamPanelSlots._wire_action_params` connects each `action_id` to the same-named method on the slot class, so a registry declares panel actions as data with zero per-panel wiring; an id with no matching method is disabled with an explanatory tooltip.
 
-Unset `minimum` / `maximum` default to the full 32-bit int range (`int`) or ±1e100 (`float`). `choice` writing matches by `itemData` first, then by text. The `path` and `file_list` containers expose their inner widget as `_line_edit` / `_list_widget`; `BridgeSlotsBase.TALL_KINDS` lists the kinds taller than one input line (`path`, `file_list`, `check_list`) so they escape the 19 px height clamp applied to single-line input widgets.
+Unset `minimum` / `maximum` default to the full 32-bit int range (`int`) or ±1e100 (`float`). `choice` writing matches by `itemData` first, then by text. The `path` and `file_list` containers expose their inner widget as `_line_edit` / `_list_widget`; `ParamPanelSlots.TALL_KINDS` lists the kinds taller than one input line (`path`, `file_list`, `check_list`) so they escape the 19 px height clamp applied to single-line input widgets.
 
-The choice-driven kinds (`choice`, `check_list`) take `choices` as bare values, `(label, value)` pairs, or `(label, value, tooltip)` triples. When the real entry set is only knowable in the live session (installed app versions, deployable scripts, scene contents), declare the spec with empty `choices` and fill it at runtime: `KindFactory.set_choices(widget, choices)`, or slot-side `BridgeSlotsBase._set_param_choices(key, choices)` from the panel's `__init__`. Values still selected/checked survive the refill when they reappear. A kind with no entry set (`str`, `int`, …) raises `TypeError` rather than silently no-op'ing.
+The choice-driven kinds (`choice`, `check_list`) take `choices` as bare values, `(label, value)` pairs, or `(label, value, tooltip)` triples. When the real entry set is only knowable in the live session (installed app versions, deployable scripts, scene contents), declare the spec with empty `choices` and fill it at runtime: `KindFactory.set_choices(widget, choices)`, or slot-side `ParamPanelSlots._set_param_choices(key, choices)` from the panel's `__init__`. Values still selected/checked survive the refill when they reappear. A kind with no entry set (`str`, `int`, …) raises `TypeError` rather than silently no-op'ing.
 
 ## Value formatters and the PARAMS module
 
@@ -151,7 +153,7 @@ Each formatter is a `Formatters` staticmethod in [`formatters.py`](../uitk/bridg
 
 It also owns the specs uitk holds **on behalf of** several bridges, so they cannot drift apart on the same knob: `Parameters.scope_spec()` (the words of `pythontk.HandoffScope`: selected / all / visible), `carrier_spec()` and `rig_mode_spec()` (pythontk's handoff vocabularies). Each call returns a fresh object. Only `SCOPE`'s scene *reads* are DCC-specific — each package's bridge-slots base implements `resolve_scope_objects(scope)` once over `HandoffScope.resolve`, consumed slot-side via `scoped_objects(params)`.
 
-Each bridge binds these to its own `PARAMS` once, by subclassing `ParamRegistry`: the subclass inherits `referenced_keys(text)` / `defaults()` / `render_context(values, formatter=None)` / `affix_parts(value)` as classmethods over `PARAMS`, renders through its `FORMATTER` (default `Formatters.python_literal`), and carries `SUPERSESSIONS` (default `None`). It is both the slot's `params_module` and the namespace a headless engine calls (`Parameters.defaults()`). Condensed from `mayatk.env_utils.unity_bridge.parameters`:
+Each bridge binds these to its own `PARAMS` once, by subclassing `ParamRegistry`: the subclass inherits `referenced_keys(text)` / `defaults()` / `render_context(values, formatter=None)` / `affix_parts(value)` as classmethods over `PARAMS`, renders through its `FORMATTER` (default `Formatters.python_literal`), and carries `SUPERSESSIONS` (default `None`). It is both the slot's `params_module` and the namespace a headless engine calls (`Parameters.defaults()`). Condensed from the Unity Workflow app's registry (`extapps.unity_workflow.parameters`):
 
 ```python
 from uitk.bridge import AttributeSpec, ParamRegistry
@@ -179,7 +181,7 @@ A registry whose rule differs overrides the method and reaches the default throu
 
 The typical implementation delegates to the transport: `pythontk.ScriptLaunchBridge.list_template_modes()` lists `*.ext` files in the template dir (skipping `_`-prefixed stems) and parses each template's top-level `BRIDGE_MODES = (...)` tuple textually — without importing, since pre-substitution templates carry raw `__KEY__` tokens — falling back to `("send_to",)` when absent.
 
-On every combo change, `BridgeSlotsBase`:
+On every combo change, `ParamPanelSlots`:
 
 1. **Refreshes row visibility** — the default `_relevant_param_keys()` reads `<template><TEMPLATE_EXTENSION>` from `template_dir` and shows only rows whose keys `params_module.referenced_keys` finds in it. Section separators hide when their whole section is hidden; the Parameters group hides when nothing is relevant.
 2. **Re-points the preset dir** (widget-state preset mode only) to `PRESETS_ROOT / <template stem>`.
@@ -198,7 +200,7 @@ What every subclass gets for free from [`slots.py`](../uitk/bridge/slots.py):
 
 Every parameter widget's change signal (via `KindFactory.connect_changed`) re-evaluates the combo's "modified" marker. The Reset button speaks uitk's shared reset grammar through [`ResetGesture`](../uitk/managers/reset_gesture.py) over `_BridgeDefaults`: Click writes each widget's spec `default` (or the value saved over it) and abandons the active preset, Shift+Click saves the current values as the panel's defaults, Ctrl+Shift+Click forgets them. A live switch (`preset=False`) is outside all three.
 
-**Log panel** — the bridge's logger is piped into `txt000` through the registered `TextEditLogHandler` widget (no-op when unavailable). `action://open?path=...` links in log output open the path in the OS file manager cross-platform — handled inside uitk so panels work as standalone apps. Node-based actions (select / reveal in the Outliner) go through dependency inversion: DCC packages register a handler via `BridgeSlotsBase.register_log_link_handler` (mayatk and blendertk each register their `UiUtils.dispatch_log_link` from their `UiHandler.__init__`), so uitk never imports a DCC package; handlers are tried in registration order, and with none registered (standalone app) non-`open` links no-op. `STARTUP_INFO` on the bridge class, if declared, is logged once at panel load; so is the slot's `DOCS_URL` (as `"<DOCS_LABEL>: <url>"`), via `panel_log` so it still shows when the optional engine is missing. Plain `http(s)` anchors — that docs link, or any URL a bridge logs — open in the default browser: `TextEditLogHandler.route_links` (applied by the handler's constructor and again explicitly in `__init__`) disables the browser widget's own navigation and routes web schemes to `QDesktopServices` off `anchorClicked`, leaving `action://` to the dispatch above. The header help is deliberately not where the docs link lives — it is a `QToolTip`, which renders rich text but cannot be clicked.
+**Log panel** — the bridge's logger is piped into `txt000` through the registered `TextEditLogHandler` widget (no-op when unavailable). `action://open?path=...` links in log output open the path in the OS file manager cross-platform — handled inside uitk so panels work as standalone apps. Node-based actions (select / reveal in the Outliner) go through dependency inversion: DCC packages register a handler via `ParamPanelSlots.register_log_link_handler` (mayatk and blendertk each register their `UiUtils.dispatch_log_link` from their `UiHandler.__init__`), so uitk never imports a DCC package; handlers are tried in registration order, and with none registered (standalone app) non-`open` links no-op. `STARTUP_INFO` on the bridge class, if declared, is logged once at panel load; so is the slot's `DOCS_URL` (as `"<DOCS_LABEL>: <url>"`), via `panel_log` so it still shows when the optional engine is missing. Plain `http(s)` anchors — that docs link, or any URL a bridge logs — open in the default browser: `TextEditLogHandler.route_links` (applied by the handler's constructor and again explicitly in `__init__`) disables the browser widget's own navigation and routes web schemes to `QDesktopServices` off `anchorClicked`, leaving `action://` to the dispatch above. The header help is deliberately not where the docs link lives — it is a `QToolTip`, which renders rich text but cannot be clicked.
 
 **Header menu** — the default `header_init` builds a titled separator (`HEADER_MENU_TITLE`, default "Utilities"), one button per `HEADER_MENU_ITEMS` entry — `(label, objectName, tooltip, handler_method_name)` tuples, each handler resolved on the slot via `getattr` — and the rich-text help from `HELP_SPEC` (a keyword dict for the tooltip-mixin `fmt()`: `title` / `body` / `bullets` / `steps` / `rows` / `sections` / `notes`). The stock item set is just Clear Log (backed by `clear_log`) — template actions live on the template combo's context menu, not the header. `open_templates_folder` / `refresh_templates` and the shared `reveal_folder` helper are provided for subclass menus to name. Subclasses customise by setting data (or the `header_menu_items()` / `help_spec()` hooks), not code; overriding `header_init` wholesale remains possible.
 
@@ -206,17 +208,17 @@ Every parameter widget's change signal (via `KindFactory.connect_changed`) re-ev
 
 **Parameter tooltips** — each row's label and widget get `format_param_tooltip(spec)`: rich-text HTML with the spec's title and body plus Type / Range / Step / Default rows and, for the choice-driven kinds (`choice` / `check_list`), a bullet list of options (`\n` in registry tooltips becomes `<br>` so hand-wrapped text keeps its line breaks).
 
-## Writing a new bridge
+## Writing a new parameter panel
 
 1. **Transport** — subclass `pythontk.ScriptLaunchBridge` (declare a `ScriptLaunchSpec`: app discovery, template dir, launch argv), or any class exposing `.logger` and `.send(...)`.
 2. **Parameters module** — a `PARAMS` dict of `AttributeSpec`s and `class Parameters(ParamRegistry): PARAMS = PARAMS` (snippet above), setting `FORMATTER` when the template language is not Python.
 3. **Templates directory** — one script per template, `__KEY__` tokens for every exposed knob, an optional `BRIDGE_MODES` tuple, and a leading docstring / `--` comment block as its description.
 4. **`.ui` file** — provide `header`, `grp_process`, `cmb000`, `b000`, `txt000` (copy an existing bridge panel's layout).
-5. **Slots class** — subclass `BridgeSlotsBase` (or a DCC-flavored base like mayatk's `MayaBridgeSlotsBase`) and fill in the contract:
+5. **Slots class** — subclass `ParamPanelSlots` (or a host-flavored base like tentacle's `HostBridge`) and fill in the contract:
 
 ```python
-# Modeled on mayatk.env_utils.blender_bridge.blender_bridge_slots
-class MyBridgeSlots(BridgeSlotsBase):
+# Modeled on tentacle's slots/tools/dcc_bridge.py
+class MyBridgeSlots(ParamPanelSlots):
     UI_NAME = "my_bridge"
     PRESETS_ROOT = Path("mytool/my_bridge")
     LOG_TAG = "my_bridge"

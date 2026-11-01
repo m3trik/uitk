@@ -20,9 +20,9 @@ from conftest import QtBaseTestCase, QtWait, setup_qt_application
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
 
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtTest
 
-from uitk.widgets.footer import Footer, FooterStatusController
+from uitk.widgets.footer import Footer, FooterApply, FooterStatusController
 
 
 class TestFooterCreation(QtBaseTestCase):
@@ -122,6 +122,23 @@ class TestFooterStatusText(QtBaseTestCase):
         footer.setStatusText("Fine")
         self.assertNotIn("color:", footer.status_label.styleSheet())
 
+    def test_an_explicit_color_tints_the_label_until_the_next_plain_text(self):
+        """A host's own colour (not a severity) through the public API: the
+        Shot panels styled the private label by hand, behind the level cache."""
+        footer = self.track_widget(Footer())
+        footer.setText("Moved 2 keys.", color="#E0A0A0")
+        self.assertIn("color: #E0A0A0", footer.status_label.styleSheet())
+        self.assertIn("background: transparent", footer.status_label.styleSheet())
+        footer.setText("Plain")
+        self.assertNotIn("color:", footer.status_label.styleSheet())
+
+    def test_an_explicit_color_outranks_the_level(self):
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Boom", level="error", color="#123456")
+        qss = footer.status_label.styleSheet()
+        self.assertIn("#123456", qss)
+        self.assertNotIn(Footer.LEVEL_COLORS["error"], qss)
+
     def _shown(self, width):
         from qtpy import QtWidgets
 
@@ -161,6 +178,142 @@ class TestFooterStatusText(QtBaseTestCase):
         self.assertEqual(Footer.LEVEL_COLORS["error"], log_colors["ERROR"])
         self.assertEqual(Footer.LEVEL_COLORS["warning"], log_colors["WARNING"])
         self.assertEqual(Footer.LEVEL_COLORS["success"], log_colors["SUCCESS"])
+
+
+class TestFooterStatusEdit(QtBaseTestCase):
+    """The status text edited in place (``edit_status``), and the double-click
+    that asks for it (``status_double_clicked``)."""
+
+    def _editing(self, text="cube"):
+        footer = self.track_widget(Footer())
+        footer.setStatusText(text)
+        footer.resize(300, 19)
+        footer.show()
+        committed, cancelled = [], []
+        editor = footer.edit_status(
+            text, on_commit=committed.append, on_cancel=lambda: cancelled.append(1)
+        )
+        QtWidgets.QApplication.processEvents()
+        return footer, editor, committed, cancelled
+
+    def test_editing_shows_a_field_holding_the_text_in_the_labels_place(self):
+        footer, editor, _, _ = self._editing()
+        self.assertTrue(footer.is_editing_status)
+        self.assertIsInstance(editor, QtWidgets.QLineEdit)
+        self.assertEqual(editor.text(), "cube")
+        self.assertTrue(editor.isVisible())
+        self.assertFalse(footer.status_label.isVisible())
+
+    def test_enter_commits_the_edit_once_and_shows_the_label(self):
+        footer, editor, committed, cancelled = self._editing()
+        editor.setText("box")
+        QtTest.QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        editor.clearFocus()  # the focus loss after Enter must not commit again
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(committed, ["box"])
+        self.assertEqual(cancelled, [])
+        self.assertFalse(footer.is_editing_status)
+        self.assertTrue(footer.status_label.isVisible())
+
+    def test_escape_cancels_without_committing(self):
+        footer, editor, committed, cancelled = self._editing()
+        editor.setText("box")
+        QtTest.QTest.keyClick(editor, QtCore.Qt.Key_Escape)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(committed, [])
+        self.assertEqual(cancelled, [1])
+        self.assertFalse(footer.is_editing_status)
+
+    def test_a_new_edit_cancels_the_one_it_replaces(self):
+        """Its caller hears the end of every edit it started."""
+        footer, editor, committed, cancelled = self._editing("first")
+        second = []
+        footer.edit_status("second", on_commit=second.append)
+        self.assertEqual(cancelled, [1], "the superseded edit is cancelled")
+        QtTest.QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        self.assertEqual(committed, [])
+        self.assertEqual(second, ["second"])
+
+    def test_a_double_click_on_the_status_is_announced(self):
+        footer = self.track_widget(Footer())
+        footer.resize(300, 19)
+        footer.show()
+        QtWidgets.QApplication.processEvents()
+        heard = []
+        footer.status_double_clicked.connect(lambda: heard.append(1))
+        QtTest.QTest.mouseDClick(footer.status_label, QtCore.Qt.LeftButton)
+        # QTest's double click ends on a press: release it as a real mouse
+        # does, or Qt believes the button is still held and the next test's
+        # hover dispatch is skipped (test_header's stale-hover heal failed
+        # after this one, 2026-11-01).
+        QtTest.QTest.mouseRelease(footer.status_label, QtCore.Qt.LeftButton)
+        self.assertEqual(heard, [1])
+        self.assertEqual(QtWidgets.QApplication.mouseButtons(), QtCore.Qt.NoButton)
+
+
+class TestFooterApply(QtBaseTestCase):
+    """``FooterApply``: the Apply button a dry run arms on a footer, holding the
+    call that would commit what the preview showed (2026-11-01: the naming and
+    material-updater panels and ``FormPanel`` each wrote it)."""
+
+    def _footer(self):
+        footer = self.track_widget(Footer())
+        footer.resize(300, 19)
+        footer.show()
+        QtWidgets.QApplication.processEvents()
+        return footer
+
+    def test_no_button_until_a_dry_run_arms_one(self):
+        footer = self._footer()
+        applied = []
+        apply = FooterApply(footer, applied.append)
+        self.assertIsNone(apply.button)
+        self.assertIsNone(apply.pending)
+        apply.apply()  # nothing armed: nothing happens
+        self.assertEqual(applied, [])
+
+    def test_arming_shows_the_button_and_the_note(self):
+        footer = self._footer()
+        apply = FooterApply(footer, lambda commit: commit())
+        commit = lambda: None  # noqa: E731
+        apply.arm(commit)
+        self.assertIs(apply.pending, commit)
+        self.assertTrue(apply.button.isVisible())
+        self.assertEqual(apply.button.text(), "Apply")
+        self.assertEqual(footer.statusText(), "Dry run — Apply to commit")
+        apply.arm(commit, note="Preview only — Apply to commit")
+        self.assertEqual(footer.statusText(), "Preview only — Apply to commit")
+
+    def test_a_click_hands_the_armed_call_over(self):
+        footer = self._footer()
+        applied = []
+        apply = FooterApply(footer, applied.append, text="Commit")
+        commit = lambda: None  # noqa: E731
+        apply.arm(commit)
+        apply.button.click()
+        self.assertEqual(applied, [commit])
+        self.assertEqual(footer.statusText(), "Dry run — Commit to commit")
+
+    def test_disarming_hides_it_and_clears_only_its_own_note(self):
+        footer = self._footer()
+        apply = FooterApply(footer, lambda commit: None)
+        footer.setText("someone else's line")
+        apply.disarm("a signal's payload")  # never armed: leaves the footer be
+        self.assertEqual(footer.statusText(), "someone else's line")
+        apply.arm(lambda: None)
+        apply.disarm()
+        self.assertIsNone(apply.pending)
+        self.assertFalse(apply.button.isVisible())
+        self.assertEqual(footer.statusText(), "")
+
+    def test_a_panel_with_no_footer_still_holds_the_call(self):
+        apply = FooterApply(None, lambda commit: None)
+        commit = lambda: None  # noqa: E731
+        apply.arm(commit)
+        self.assertIs(apply.pending, commit)
+        self.assertIsNone(apply.button)
+        apply.disarm()
+        self.assertIsNone(apply.pending)
 
 
 class TestFooterDefaultStatusText(QtBaseTestCase):

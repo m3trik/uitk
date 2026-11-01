@@ -186,12 +186,19 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
             # Walk the raw frame chain (cheap — no source-context loading
             # like inspect.stack) collecting each distinct source file,
             # innermost first.  files[0] is always this module.
+            # pythontk's frames are never a caller: a decorator's wrapper there
+            # (``ptk.Deprecation.parameter`` on ``Switchboard.__init__``) counted
+            # as one shifted every index, and a relative source resolved under
+            # pythontk instead of beside the file that named it.
+            wrappers = os.path.normcase(os.path.dirname(os.path.abspath(ptk.__file__)))
             files: List[str] = []
             seen = set()
             frame = sys._getframe()
             while frame is not None:
                 filename = frame.f_code.co_filename
-                if filename not in seen:
+                if filename not in seen and not os.path.normcase(
+                    os.path.abspath(filename)
+                ).startswith(wrappers + os.sep):
                     seen.add(filename)
                     files.append(filename)
                 frame = frame.f_back
@@ -352,6 +359,27 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
         setattr(self, descriptor, container)
         return container
 
+    @staticmethod
+    def _class_row(cls_obj: type, fields: List[str]) -> Tuple:
+        """The registry row for a class object, read off the class itself (the
+        fields :meth:`ptk.get_classes_from_path` reports), importing nothing."""
+        module = sys.modules.get(cls_obj.__module__)
+        try:
+            path = inspect.getsourcefile(cls_obj)
+        except TypeError:  # a built-in or a class with no source file
+            path = None
+        path = path or getattr(module, "__file__", None)
+        path = os.path.normpath(os.path.abspath(path)) if path else None
+        values = {
+            "classname": cls_obj.__name__,
+            "classobj": cls_obj,
+            "file": os.path.basename(path) if path else None,
+            "filename": os.path.splitext(os.path.basename(path))[0] if path else None,
+            "filepath": path,
+            "module": module,
+        }
+        return tuple(values.get(field) for field in fields)
+
     def _collect_file_info(self, obj: Any, **metadata) -> List[Tuple]:
         """Collect file-record rows for a single path/module/class object.
 
@@ -414,8 +442,15 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
             )
             recursive = bool(metadata.get("recursive", False))
 
-            if needs_classes:
-                class_name = obj.__name__ if inspect.isclass(obj) else None
+            if needs_classes and inspect.isclass(obj):
+                # A class handed in directly IS its row. Scanning its file
+                # imported that file a second time (a loose one as
+                # ``<stem>_ptk_loader_<id>``): the registry kept a copy that was
+                # not the class it was given, and a quickstart script with no
+                # ``__main__`` guard ran itself again, nested, until it crashed.
+                file_info = [self._class_row(obj, fields)]
+
+            elif needs_classes:
                 if os.path.isdir(dir_path):
                     py_files = ptk.get_dir_contents(
                         dir_path,
@@ -435,22 +470,10 @@ class RegistryManager(ptk.HelpMixin, ptk.LoggingMixin):
                         ptk.get_classes_from_path(
                             f_path,
                             fields,
-                            inc=class_name,
                             top_level_only=False,
                             force_tuples=True,
                         )
                     )
-
-                # When registering a class object directly, patch in the live
-                # object where the scanner could not import one.
-                if class_name and "classname" in fields and "classobj" in fields:
-                    name_i = fields.index("classname")
-                    obj_i = fields.index("classobj")
-                    for i, row in enumerate(file_info):
-                        if row[name_i] == class_name and row[obj_i] is None:
-                            patched = list(row)
-                            patched[obj_i] = obj
-                            file_info[i] = tuple(patched)
 
             elif os.path.isdir(dir_path):
                 files = ptk.get_dir_contents(

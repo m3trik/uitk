@@ -1,10 +1,10 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Regression tests for CellFormatMixin's colour formatting.
+"""Regression tests for TableWidget's colour formatting.
 
-These two mixins -- ``CellFormatMixin`` (tableWidget) and ``TreeFormatMixin``
-(treeWidget) -- are forked copies of one formatter, and the fork has a history
-of one-sided changes in both directions: ``test_tree_formatting`` covers a
+These two -- ``TableWidget``'s formatting (once ``CellFormatMixin``) and
+``TreeFormatMixin`` (treeWidget) -- were forked copies of one formatter, and
+the fork has a history of one-sided changes in both directions: ``test_tree_formatting`` covers a
 recursion guard the TREE lacked and the TABLE had, and the colour map below had
 a key the TABLE had and the TREE lacked. These cases pin the parts that must
 stay in step until the two share a base.
@@ -33,7 +33,7 @@ class TestColorMapFormatterNoneEntries(QtBaseTestCase):
     2026-03-19); the table copy does NOT, and an audit read that asymmetry as
     an un-back-ported fix. Measured 2026-09-16 it is not one: the table's
     ``ensure_valid_color(None, ...)`` falls back to
-    ``_get_default_colors(item, row, col)``, so the unconditional
+    ``_CellFormats.default_colors(item, row, col)``, so the unconditional
     ``setForeground`` re-assigns the colour the item already had. Same outcome,
     different route. What makes it worth a test is that the equivalence is
     incidental -- it rests entirely on that fallback, and anyone "simplifying"
@@ -103,26 +103,26 @@ class TestActionColorMapParity(unittest.TestCase):
     """
 
     def test_both_mixins_define_the_same_keys(self):
-        from uitk.widgets.tableWidget import CellFormatMixin
+        from uitk.widgets.tableWidget import TableWidget
         from uitk.widgets.treeWidget import TreeFormatMixin
 
         self.assertEqual(
-            set(CellFormatMixin.ACTION_COLOR_MAP),
+            set(TableWidget.ACTION_COLOR_MAP),
             set(TreeFormatMixin.ACTION_COLOR_MAP),
-            "CellFormatMixin and TreeFormatMixin action colour maps have "
+            "TableWidget and TreeFormatMixin action colour maps have "
             "diverged; a consumer cannot rely on either.",
         )
 
     def test_shared_keys_carry_the_same_values(self):
-        from uitk.widgets.tableWidget import CellFormatMixin
+        from uitk.widgets.tableWidget import TableWidget
         from uitk.widgets.treeWidget import TreeFormatMixin
 
-        for key in set(CellFormatMixin.ACTION_COLOR_MAP) & set(
+        for key in set(TableWidget.ACTION_COLOR_MAP) & set(
             TreeFormatMixin.ACTION_COLOR_MAP
         ):
             with self.subTest(key=key):
                 self.assertEqual(
-                    CellFormatMixin.ACTION_COLOR_MAP[key],
+                    TableWidget.ACTION_COLOR_MAP[key],
                     TreeFormatMixin.ACTION_COLOR_MAP[key],
                     "'%s' resolves to a different colour per widget type" % key,
                 )
@@ -131,10 +131,10 @@ class TestActionColorMapParity(unittest.TestCase):
         """Not two maps kept in step: one, on the shared base -- with the
         formatter store and colour resolution it drives."""
         from uitk.widgets.mixins.item_format import ItemFormatMixin
-        from uitk.widgets.tableWidget import CellFormatMixin
+        from uitk.widgets.tableWidget import TableWidget
         from uitk.widgets.treeWidget import TreeFormatMixin
 
-        for mixin in (CellFormatMixin, TreeFormatMixin):
+        for mixin in (TableWidget, TreeFormatMixin):
             with self.subTest(mixin=mixin.__name__):
                 self.assertTrue(issubclass(mixin, ItemFormatMixin))
                 self.assertIs(mixin.ACTION_COLOR_MAP, ItemFormatMixin.ACTION_COLOR_MAP)

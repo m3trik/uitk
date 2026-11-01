@@ -2,52 +2,52 @@
 # coding=utf-8
 """``Menu``: uitk's popup menu widget -- the facade, its configuration and placement.
 
-``Menu`` is assembled from one mixin per concept in :mod:`uitk.widgets.menu_parts`
-(layout and chrome, items, trigger hook, hide on leave, popup window, action
-buttons, persistent mode, item registration); this module keeps construction,
-the show / hide lifecycle that orchestrates the parts, and placement
-(:class:`MenuPositioner`, ``show_as_popup``). Its path is frozen: ``.ui``
-headers name ``uitk.widgets.menu``.
+``Menu`` is a facade over one collaborator per concept in
+:mod:`uitk.widgets.menu_parts` (frame and chrome, items, trigger hook, hide on
+leave, popup window, action buttons, persistent mode, item registration), each
+owning its own state and holding the menu. This module keeps construction, the
+public surface, the Qt virtuals and slots (which delegate), the show / hide
+lifecycle that orchestrates the parts, and placement (:class:`MenuPositioner`,
+``show_as_popup``). Its path is frozen: ``.ui`` headers name
+``uitk.widgets.menu``.
 """
 
-import weakref
 from dataclasses import dataclass, field
-from typing import Optional, Union, Dict, Any, Tuple, TYPE_CHECKING
+from typing import Optional, Union, Dict, Any
 from qtpy import QtWidgets, QtCore, QtGui
 import pythontk as ptk
 
-if TYPE_CHECKING:
-    from uitk.widgets.popup.dismissal import AncestorDismissal
-
 # From this package:
+from uitk._facade import _Forward
 from uitk.widgets.header import Header
 from uitk.widgets.footer import Footer
 from uitk.themes.style_sheet import StyleSheet
+from uitk.managers.reset_gesture import ResetGesture
 from uitk.widgets.mixins.attributes import AttributesMixin
 
-# The concept parts (base classes: needed at class definition). The underscore
-# names re-exported here were module attributes of this file before the split.
+# The concept parts. The underscore names re-exported here were module
+# attributes of this file before the split.
 from uitk.widgets.menu_parts._actions import (  # noqa: F401
     ActionButtonManager,
     _ActionButtonConfig,
-    _MenuActionsMixin,
+    _MenuActions,
 )
 from uitk.widgets.menu_parts._items import (  # noqa: F401
     _HEIGHT_CONSTRAINED_TYPES,
     _LAZY_WIDGET_TYPES,
     _WIDGET_TYPE_CACHE,
-    _MenuItemsMixin,
+    _MenuItems,
 )
-from uitk.widgets.menu_parts._layout import _MenuLayoutMixin
-from uitk.widgets.menu_parts._leave import _LEAVE_DEBUG, _MenuLeaveMixin  # noqa: F401
-from uitk.widgets.menu_parts._persistent_mode import _MenuPersistentModeMixin
-from uitk.widgets.menu_parts._popup_window import _MenuPopupWindowMixin
-from uitk.widgets.menu_parts._registration import _MenuRegistrationMixin
-from uitk.widgets.menu_parts._triggers import _MenuTriggersMixin
+from uitk.widgets.menu_parts._layout import _MenuFrame
+from uitk.widgets.menu_parts._leave import _LEAVE_DEBUG, _MenuLeave  # noqa: F401
+from uitk.widgets.menu_parts._persistent_mode import _MenuPersistentMode
+from uitk.widgets.menu_parts._popup_window import _MenuPopupWindow
+from uitk.widgets.menu_parts._registration import _MenuRegistration
+from uitk.widgets.menu_parts._triggers import _MenuTrigger
 
 # Every Menu with a pending deferred-registration queue (see
-# ``_MenuRegistrationMixin``); the same set object, under its old name.
-_menus_awaiting_registration = _MenuRegistrationMixin._awaiting_registration
+# ``_MenuRegistration``); the same set object, under its old name.
+_menus_awaiting_registration = _MenuRegistration.awaiting_registration
 
 
 @dataclass
@@ -297,23 +297,7 @@ class MenuPositioner:
         )
 
 
-class Menu(
-    # The concept parts come BEFORE QWidget: several override QWidget virtuals
-    # (eventFilter) or are reached from its overrides here, and a base listed
-    # after QWidget would lose any shared name to it. Their names are disjoint,
-    # so their own order is immaterial.
-    _MenuLayoutMixin,
-    _MenuItemsMixin,
-    _MenuTriggersMixin,
-    _MenuLeaveMixin,
-    _MenuPopupWindowMixin,
-    _MenuActionsMixin,
-    _MenuPersistentModeMixin,
-    _MenuRegistrationMixin,
-    QtWidgets.QWidget,
-    AttributesMixin,
-    ptk.LoggingMixin,
-):
+class Menu(QtWidgets.QWidget, AttributesMixin, ptk.LoggingMixin):
     """A custom Qt Widget that serves as a popup menu with additional features.
 
     The Menu class inherits from QtWidgets.QWidget and provides a customizable
@@ -326,6 +310,21 @@ class Menu(
         on_item_interacted (QtCore.Signal): Signal emitted when an item in the menu is interacted with.
         on_hidden (QtCore.Signal): Signal emitted when the menu is hidden.
     """
+
+    # A facade: each concept is a collaborator in ``menu_parts`` that owns its
+    # state and holds the menu -- ``_scaffold`` (_MenuFrame), ``_items``,
+    # ``_trigger``, ``_leave``, ``_popup`` (_MenuPopupWindow), ``_actions``,
+    # ``_persistent`` and ``_registration``. Every public member stays here.
+    # The parts reach one another through the menu's own names (public, or a
+    # private ``_Forward`` below), so a patch of a menu name reaches every
+    # caller. The override points are this class's real methods -- the public
+    # surface, the Qt virtuals, the slots (so connections keep a QObject
+    # receiver that dies with the menu) and the private hooks a subclass
+    # overrides or a test patches on the class (``_shortcut_filter_candidates``,
+    # ``_shortcut_filter_emptied``, ``_setup_apply_button``,
+    # ``_setup_defaults_button``, ``_prepare_for_show``, ``_apply_position``).
+    # A ``_Forward`` name reads, writes and instance-patches its part's member;
+    # a subclass method of that name is not what the part runs.
 
     # Not a Designer widget-box entry: a popup owned by its host widget
     # (`widget.menu`), never placed on a form.
@@ -417,6 +416,17 @@ class Menu(
         """
         super().__init__(parent)
 
+        # The parts first: every Qt virtual and slot below delegates to one,
+        # so they exist before Qt can call any of them.
+        self._scaffold = _MenuFrame(self)
+        self._items = _MenuItems(self, empty_message, empty_timeout_ms)
+        self._trigger = _MenuTrigger(self)
+        self._leave = _MenuLeave(self)
+        self._popup = _MenuPopupWindow(self)
+        self._actions = _MenuActions(self, add_defaults_button)
+        self._persistent = _MenuPersistentMode(self)
+        self._registration = _MenuRegistration(self)
+
         if name is not None:
             if not isinstance(name, str):
                 raise TypeError(f"Expected 'name' to be a string, got {type(name)}")
@@ -424,83 +434,29 @@ class Menu(
 
         self.logger.setLevel(log_level)
 
-        # Items this menu hid because their action already has a shortcut —
-        # tracked so only those are restored when the preference goes off.
-        self._shortcut_hidden_items = []
-
-        # Core event state
-        self._event_filters_installed = False
-        self._mouse_has_entered = False
+        # The lifecycle's own state: the anchor ``show_as_popup`` is placing
+        # against, the window active before the show (focus goes back to it on
+        # hide), the placement cache, and whether the owning MainWindow tracks
+        # this menu.
         self._current_anchor_widget = None
         self._active_window_before_show = None
-        self._filter_target = None
-        self._pending_event_filter_install = False
-        self._parent_signal_source: Optional[Tuple[QtWidgets.QWidget, str]] = None
-        self._pending_trigger_hook = False
+        self._last_parent_geometry = None
+        self._cached_menu_position = None
+        self._tracked_as_menu = False  # Registered with owning MainWindow.menus()
 
-        # Per-item _register_with_main_window calls are coalesced into a
-        # single deferred drain (see _schedule_registration / _drain_pending_registrations).
-        # Order of registration is preserved; the contract is "after add() returns",
-        # not "one tick per item" — see test_register_with_main_window_deferred_not_synchronous.
-        self._pending_registrations: list = []
-        self._registration_drain_scheduled: bool = False
-        # Owning MainWindow, captured (weakly) while the menu is still nested
-        # under its host so deferred registration survives the menu reparenting
-        # to a top-level popup on show — see _resolve_registration_window.
-        self._registration_window_ref: Optional["weakref.ref"] = None
-
-        # ``add()`` blocks signals for the duration of the (potentially
-        # recursive, bulk) insert so Qt's internal layout churn doesn't
-        # cascade.  ``on_item_added`` emits land in this queue while blocked
-        # and are flushed once the OUTERMOST add() unwinds (tracked by
-        # ``_add_depth``) and the menu is settled — otherwise the documented
-        # signal never reaches listeners.
-        self._pending_item_added_emits: list = []
-        self._add_depth: int = 0
-
-        # Widget structure
-        self._layout: Optional[QtWidgets.QVBoxLayout] = None
+        # Widget structure (built by the scaffold)
         self.gridLayout: Optional[QtWidgets.QGridLayout] = None
         self.centralWidgetLayout: Optional[QtWidgets.QVBoxLayout] = None
-        self._central_widget: Optional[QtWidgets.QWidget] = None
-        self._frame_layout: Optional[QtWidgets.QVBoxLayout] = None
-        self._pending_title: Optional[str] = None
         self.style: Optional[StyleSheet] = None
         self.header: Optional[Header] = None
         self.footer: Optional[Footer] = None
 
-        # Helpers and caches
-        self._button_manager = ActionButtonManager(self)
-        self._leave_timer: Optional[QtCore.QTimer] = None
-        self._leave_start_timer: Optional[QtCore.QTimer] = None
-        self._last_parent_geometry = None
-        self._cached_menu_position = None
-        self._popup_configured = False  # Track if popup setup has been done
-        # Window type the last ``_setup_as_popup`` pass applied (Qt.Tool or
-        # Qt.Popup). Re-checked on every show: a menu opened while another
-        # popup holds the app-wide grab must itself be a Qt.Popup to get
-        # any input at all. See ``_resolve_popup_window_type``.
-        self._popup_window_type: Optional[QtCore.Qt.WindowType] = None
-        self._tracked_as_menu = False  # Registered with owning MainWindow.menus()
-        self._dismiss_on_move_filter: Optional[AncestorDismissal] = None
-        self._activating_chain = False  # Re-entrancy guard for sizeHint activation
-        # The popup whose native mouse grab this menu stole on show (weakref),
-        # to hand back on hide. See _ensure_popup_input_grab.
-        self._grab_stolen_from: Optional["weakref.ref"] = None
-
-        # Transient popup family: child popups (option-menu dropdowns, context
-        # menus, value popups) opened from within this menu that should keep it
-        # alive while the pointer is over them and be torn down with it. Held
-        # weakly and pruned lazily, so a child destroyed/hidden without notice
-        # is cleaned up on next access. See adopt_transient / _pointer_in_family.
-        self._transient_children: list = []  # list[weakref.ref[QWidget]]
         # hide_on_leave debounce: require this many consecutive out-of-family
         # samples before hiding, so crossing the gap between this menu and a
         # child popup (or a brief excursion) can't dismiss it. Default 1 keeps
         # the legacy single-sample behavior; adopt_transient raises it so only
         # menus that actually spawn children pay the small grace.
         self.leave_grace_samples: int = 1
-        self._outside_samples: int = 0
         # A menu can open away from the cursor (anchored to a button the user
         # just clicked), so its body is never under the pointer. It must still
         # auto-dismiss if the user never reaches it — otherwise a hide_on_leave
@@ -512,9 +468,6 @@ class Menu(
         # Data containers and flags
         self.widget_data: Dict[QtWidgets.QWidget, Any] = {}
         self.prevent_hide = False
-        self._persistent_mode = False
-        self._persistent_state: Dict[str, Any] = {}
-        self._persistent_hide_button: Optional[QtWidgets.QPushButton] = None
 
         # Configuration attributes
         self.trigger_button = trigger_button
@@ -522,28 +475,16 @@ class Menu(
         self.min_item_height = min_item_height
         self.max_item_height = max_item_height
         self.fixed_item_height = fixed_item_height
-        self._add_defaults_button = add_defaults_button
-        self._add_presets = False
         self.add_header = add_header
         self.add_footer = add_footer
         self.add_apply_button = add_apply_button
         self.match_parent_width = match_parent_width
 
-        self._hide_on_leave = False
+        # The explicit argument wins over what a left-click trigger implied.
+        self._leave.enabled = False
         self.hide_on_leave = hide_on_leave
         self.hide_on_trigger = hide_on_trigger
-        # Deferred hide used by hide_on_trigger (parented so it dies with the
-        # menu instead of firing into a deleted widget).
-        self._trigger_hide_timer: Optional[QtCore.QTimer] = None
         self.ensure_on_screen = ensure_on_screen
-
-        # Empty-state behavior: when shown with no items, display a brief
-        # message ("No options" by default) then auto-hide.  Set
-        # ``empty_message=None`` or ``empty_timeout_ms=0`` to disable.
-        self._empty_message = empty_message
-        self._empty_timeout_ms = max(0, int(empty_timeout_ms))
-        self._empty_placeholder: Optional[QtWidgets.QLabel] = None
-        self._empty_timer: Optional[QtCore.QTimer] = None
 
         # Base styling handled via QSS type selectors
         self.setSizePolicy(
@@ -579,6 +520,114 @@ class Menu(
         # pin-check + signal-emitting override (which doesn't apply at
         # construction time and would emit ``on_hidden`` from the ctor).
         super().hide()
+
+    # ------------------------------------------------------------------
+    # Private names, each on the part that owns it (see the class comment)
+    # ------------------------------------------------------------------
+
+    # _MenuFrame
+    _layout = _Forward("_scaffold", "layout")
+    _frame = _Forward("_scaffold", "frame")
+    _frame_layout = _Forward("_scaffold", "frame_layout")
+    _central_widget = _Forward("_scaffold", "central_widget")
+    _pending_title = _Forward("_scaffold", "pending_title")
+    _ensure_layout_created = _Forward("_scaffold", "ensure_layout_created")
+    _ensure_style_initialized = _Forward("_scaffold", "ensure_style_initialized")
+    _ensure_chrome = _Forward("_scaffold", "ensure_chrome")
+    _resize_height_to_content = _Forward("_scaffold", "resize_height_to_content")
+    _activate_inner_layouts = _Forward("_scaffold", "activate_inner_layouts")
+    # _MenuItems
+    _add_depth = _Forward("_items", "add_depth")
+    _pending_item_added_emits = _Forward("_items", "pending_item_added_emits")
+    _empty_message = _Forward("_items", "empty_message")
+    _empty_timeout_ms = _Forward("_items", "empty_timeout_ms")
+    _empty_placeholder = _Forward("_items", "empty_placeholder")
+    _empty_timer = _Forward("_items", "empty_timer")
+    _shortcut_hidden_items = _Forward("_items", "shortcut_hidden_items")
+    _add_empty_placeholder = _Forward("_items", "add_empty_placeholder")
+    _remove_empty_placeholder = _Forward("_items", "remove_empty_placeholder")
+    _item_has_shortcut = _Forward("_items", "item_has_shortcut")
+    _apply_shortcut_item_filter = _Forward("_items", "apply_shortcut_item_filter")
+    _expose_as_attribute = _Forward("_items", "expose_as_attribute")
+    _remove_item_event_filter = _Forward("_items", "remove_item_event_filter")
+    # _MenuTrigger
+    _trigger_button = _Forward("_trigger", "button")
+    _event_filters_installed = _Forward("_trigger", "event_filters_installed")
+    _filter_target = _Forward("_trigger", "filter_target")
+    _parent_signal_source = _Forward("_trigger", "parent_signal_source")
+    _pending_trigger_hook = _Forward("_trigger", "pending_trigger_hook")
+    _pending_event_filter_install = _Forward("_trigger", "pending_event_filter_install")
+    _trigger_hide_timer = _Forward("_trigger", "hide_timer")
+    _should_trigger = _Forward("_trigger", "should_trigger")
+    _resolve_hide_on_trigger = _Forward("_trigger", "resolve_hide_on_trigger")
+    _is_wrapped_item = _Forward("_trigger", "is_wrapped_item")
+    _schedule_hide_on_trigger = _Forward("_trigger", "schedule_hide_on_trigger")
+    _get_anchor_widget = _Forward("_trigger", "get_anchor_widget")
+    _ensure_trigger_hook = _Forward("_trigger", "ensure_trigger_hook")
+    _install_event_filters = _ensure_trigger_hook  # its older name
+    _uninstall_event_filters = _Forward("_trigger", "uninstall_event_filters")
+    # _MenuLeave
+    _hide_on_leave = _Forward("_leave", "enabled")
+    _leave_timer = _Forward("_leave", "leave_timer")
+    _leave_start_timer = _Forward("_leave", "leave_start_timer")
+    _mouse_has_entered = _Forward("_leave", "mouse_has_entered")
+    _outside_samples = _Forward("_leave", "outside_samples")
+    _transient_children = _Forward("_leave", "transient_children")
+    _ensure_timer_created = _Forward("_leave", "ensure_timer_created")
+    _widget_in_subtree = _Forward("_leave", "widget_in_subtree")  # family protocol
+    _iter_transient_family = _Forward("_leave", "iter_transient_family")  # ditto
+    _living_transients = _Forward("_leave", "living_transients")
+    _pointer_in_family = _Forward("_leave", "pointer_in_family")
+    _hide_transient_children = _Forward("_leave", "hide_transient_children")
+    _text_edit_in_progress = _Forward("_leave", "text_edit_in_progress")
+    _demote_editor_autofocus = _Forward("_leave", "demote_editor_autofocus")
+    # _MenuPopupWindow
+    _popup_configured = _Forward("_popup", "popup_configured")
+    _popup_window_type = _Forward("_popup", "popup_window_type")
+    _grab_stolen_from = _Forward("_popup", "grab_stolen_from")
+    _dismiss_on_move_filter = _Forward("_popup", "dismiss_on_move_filter")
+    _install_dismiss_on_move_filter = _Forward(
+        "_popup", "install_dismiss_on_move_filter"
+    )
+    _detach_dismiss_on_move_filter = _Forward("_popup", "detach_dismiss_on_move_filter")
+    _resolve_popup_window_type = _Forward("_popup", "resolve_popup_window_type")
+    _ensure_popup_input_grab = _Forward("_popup", "ensure_popup_input_grab")
+    _release_popup_input_grab = _Forward("_popup", "release_popup_input_grab")
+    _setup_as_popup = _Forward("_popup", "setup_as_popup")
+    _ensure_on_screen = _Forward("_popup", "ensure_on_screen")
+    # _MenuActions
+    _button_manager = _Forward("_actions", "button_manager")
+    _add_defaults_button = _Forward("_actions", "add_defaults_button")
+    _add_presets = _Forward("_actions", "add_presets")
+    _defaults_gesture = _Forward("_actions", "defaults_gesture")
+    _defaults_scope = _Forward("_actions", "defaults_scope")
+    _update_apply_button_visibility = _Forward(
+        "_actions", "update_apply_button_visibility"
+    )
+    _update_defaults_button_visibility = _Forward(
+        "_actions", "update_defaults_button_visibility"
+    )
+    _setup_presets = _Forward("_actions", "setup_presets")
+    # _MenuPersistentMode
+    _persistent_mode = _Forward("_persistent", "active")
+    _persistent_state = _Forward("_persistent", "state")
+    _persistent_hide_button = _Forward("_persistent", "hide_button")
+    # _MenuRegistration
+    _pending_registrations = _Forward("_registration", "pending")
+    _registration_drain_scheduled = _Forward("_registration", "drain_scheduled")
+    _registration_window_ref = _Forward("_registration", "window_ref")
+    _resolve_registration_window = _Forward("_registration", "resolve_window")
+    _register_with_main_window = _Forward("_registration", "register_with_main_window")
+    _schedule_registration = _Forward("_registration", "schedule")
+
+    # Called on the class (``Menu._flush_pending_registrations(window)``,
+    # ``Menu._resolve_widget_class(name)``), so real static methods.
+    _flush_pending_registrations = staticmethod(_MenuRegistration.flush_pending)
+    _resolve_widget_class = staticmethod(_MenuItems.resolve_widget_class)
+
+    # ------------------------------------------------------------------
+    # Construction helpers
+    # ------------------------------------------------------------------
 
     @classmethod
     def create_context_menu(
@@ -854,18 +903,10 @@ class Menu(
         if visible:
             self._setup_as_popup()
             if not self.contains_items:
-                self._add_empty_placeholder()
-                if self._empty_timeout_ms > 0:
-                    if self._empty_timer is None:
-                        self._empty_timer = QtCore.QTimer(self)
-                        self._empty_timer.setSingleShot(True)
-                        self._empty_timer.timeout.connect(self._on_empty_timeout)
-                    self._empty_timer.start(self._empty_timeout_ms)
+                self._items.start_empty_state()
             self._prepare_for_show()
         else:
-            if self._empty_timer is not None:
-                self._empty_timer.stop()
-            self._remove_empty_placeholder()
+            self._items.end_empty_state()
         super().setVisible(visible)
 
     def _prepare_for_show(self) -> None:
@@ -1100,19 +1141,9 @@ class Menu(
         self._ensure_style_initialized()
         self._ensure_timer_created()
 
-        # Check if cursor is already inside menu when it appears
-        # This prevents immediate hide-on-leave when menu pops up under cursor
-        self._outside_samples = 0
-        cursor_pos = self.mapFromGlobal(QtGui.QCursor.pos())
-        if self.rect().contains(cursor_pos):
-            self._mouse_has_entered = True
-            self.logger.debug(
-                "showEvent: Cursor already inside menu, marking as entered"
-            )
-        else:
-            # Reset to False when cursor is outside - menu must wait for cursor to enter
-            self._mouse_has_entered = False
-            self.logger.debug("showEvent: Cursor outside menu, waiting for entry")
+        # Has the cursor already entered? A menu that pops up under the
+        # cursor must not hide on leave before the cursor moves.
+        self._leave.note_shown()
 
         # Setup presets combo on first show if requested and not already created
         if self.add_presets and not self._button_manager.get_widget("presets"):
@@ -1149,20 +1180,9 @@ class Menu(
         if self.position and not self._current_anchor_widget:
             self._apply_position()
 
-        # Start leave timer if enabled
-        # Add grace period before first check to prevent immediate hide when menu
-        # appears at cursor position but cursor hasn't entered menu bounds yet
-        if self._leave_timer:
-            # Delay timer start by 200ms to give user time to move cursor into menu.
-            # Note: _mouse_has_entered was already set above based on cursor position.
-            # A QTimer parented to self (not a bare singleShot free function) so the
-            # deferred call is destroyed along with the menu instead of firing into
-            # an already-deleted _leave_timer (singleShot has no owner to cancel it).
-            if self._leave_start_timer is None:
-                self._leave_start_timer = QtCore.QTimer(self)
-                self._leave_start_timer.setSingleShot(True)
-                self._leave_start_timer.timeout.connect(self._arm_leave_timer)
-            self._leave_start_timer.start(200)
+        # Start the leave poll, if enabled, after a grace period: a menu that
+        # appears at the cursor must not hide before the cursor enters it.
+        self._leave.arm_on_show()
 
         # Register with the owning MainWindow so it can enumerate its open
         # menus (e.g. for the marking menu's window-dim pass). Once per menu:
@@ -1206,9 +1226,7 @@ class Menu(
         when menu (Qt.Tool window) is hidden.
         """
         # Stop leave timer when menu is hidden
-        if self._leave_timer and self._leave_timer.isActive():
-            self._leave_timer.stop()
-            self.logger.debug("hideEvent: Leave timer stopped")
+        self._leave.stop()
 
         # Detach the dismiss-on-move filter (if any) so we don't accumulate
         # watchers across re-shows and don't keep stale references to
@@ -1324,6 +1342,545 @@ class Menu(
             # Cache the calculated position
             self._last_parent_geometry = anchor_geo
             self._cached_menu_position = self.pos()
+
+    # ------------------------------------------------------------------
+    # Frame: layouts, central widget, chrome and size (_MenuFrame)
+    # ------------------------------------------------------------------
+
+    def setCentralWidget(self, widget, overwrite=False):
+        self._scaffold.set_central_widget(widget, overwrite)
+
+    def centralWidget(self):
+        """Return the central widget."""
+        return self._scaffold.central_widget
+
+    def init_layout(self):
+        """Initialize the menu layout. Called lazily on first item add."""
+        self._scaffold.init_layout()
+
+    def ensure_chrome(self) -> None:
+        """Force-build the deferred Header/Footer now.
+
+        For callers that read ``.header`` / ``.footer`` BEFORE the menu is shown
+        (e.g. modal dialogs that configure the header up front). Normal menus do
+        not need this — chrome builds automatically on first show.
+        """
+        self._ensure_chrome()
+
+    def title(self) -> str:
+        """Get the menu's title text (the pending value if the header isn't built yet)."""
+        return self._scaffold.title()
+
+    def setTitle(self, title="") -> None:
+        """Set the menu's title to the given string.
+
+        If the header hasn't been built yet (chrome is deferred to first show),
+        the title is stashed and applied when the header is created.
+
+        Parameters:
+            title (str): Text to apply to the menu's title.
+        """
+        self._scaffold.set_title(title)
+
+    def sizeHint(self):
+        """Return the recommended size for the widget.
+
+        This method calculates the total size of the widgets contained in the layout of the ExpandableList, including margins and spacing.
+
+        Returns:
+            QtCore.QSize: The recommended size for the widget.
+        """
+        if self._scaffold.layout is None:
+            return super().sizeHint()
+        return self._scaffold.size_hint()
+
+    # ------------------------------------------------------------------
+    # Items (_MenuItems)
+    # ------------------------------------------------------------------
+
+    @property
+    def contains_items(self) -> bool:
+        """Check if the QMenu contains any genuine items.
+
+        The transient empty-state placeholder (see :meth:`_add_empty_placeholder`)
+        is intentionally excluded — callers asking "does this menu have
+        anything to offer?" should get False while only the placeholder
+        is on screen.
+        """
+        return self._items.contains_items()
+
+    def _shortcut_filter_candidates(self) -> list:
+        """Items the shortcut filter may hide (overridden where the body is
+        not the grid — see :class:`~uitk.widgets.context_menu.ContextMenu`)."""
+        return self.get_items()
+
+    def _shortcut_filter_emptied(self) -> None:
+        """Every filterable item is hidden — show the empty-state placeholder
+        instead of a bare popup."""
+        self._add_empty_placeholder()
+
+    def _on_empty_timeout(self) -> None:
+        """Hide the menu when the empty-state timer fires (unless items arrived)."""
+        self._items.on_empty_timeout()
+
+    def get_items(self, types=None):
+        """Get all items in the list, optionally filtered by type.
+
+        Parameters:
+            types (str, type, list of str, list of type, optional): The type(s) or type name(s) of widgets to retrieve. Defaults to None.
+
+        Returns:
+            list: A list of all QWidget items in the list, filtered by type if specified.
+        """
+        return self._items.get_items(types)
+
+    def get_item(self, identifier):
+        """Return a QAction or QWidgetAction by index or text.
+
+        Parameters:
+            identifier (int or str): If an int, treats it as an index. If a str, treats it as the text of the item.
+
+        Raises:
+            ValueError: If the identifier is not an integer (index) or string (text).
+
+        Returns:
+            QAction or QWidgetAction: The item found by the identifier.
+        """
+        return self._items.get_item(identifier)
+
+    def get_item_text(self, widget: QtWidgets.QWidget) -> Optional[str]:
+        """Get the textual representation of a widget.
+
+        This method attempts to retrieve text from various widget types by trying
+        common text-retrieval methods in order of likelihood.
+
+        Parameters:
+            widget: The widget to get text from.
+
+        Returns:
+            str: The text associated with the widget, or None if unavailable.
+        """
+        return _MenuItems.get_item_text(widget)
+
+    def get_item_data(self, widget):
+        """Get data associated with a widget in the list or its sublists.
+
+        This method returns the data associated with the widget in the list or any sublist. If the widget is not found, it returns None.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to get the data for.
+
+        Returns:
+            Any: The data associated with the widget, or None if the widget is not found.
+        """
+        try:
+            return self.widget_data.get(widget)
+        except KeyError:
+            return None
+
+    def set_item_data(self, widget, data):
+        """Set data associated with a widget in the list or its sublists.
+
+        This method sets the data associated with a widget in the list. If the widget is not found, it does nothing.
+
+        Parameters:
+            widget (QtWidgets.QWidget): The widget to set the data for.
+            data: The data to associate with the widget.
+        """
+        if widget in self.get_items():
+            self.widget_data[widget] = data
+
+    def remove_widget(self, widget):
+        """Remove a widget from the layout.
+
+        The item filter :meth:`add` installed comes off with it: this hands
+        the widget's lifetime back to the caller, and a menu that goes on
+        filtering a widget it no longer owns both pins the menu alive through
+        the widget's filter list and keeps answering that widget's events.
+
+        If this results in an empty menu, the PARENT trigger hooks are
+        uninstalled too (:meth:`_uninstall_event_filters`, which covers only
+        those -- never the per-item filters).
+        """
+        self._items.remove_widget(widget)
+
+    def clear(self) -> None:
+        """Clear all items in the list.
+
+        Each item gives up the filter :meth:`add` installed on it BEFORE it is
+        deleted. ``deleteLater`` only schedules the destruction, so an item
+        keeps receiving events until the loop drains it -- with the menu still
+        filtering them, through ``widget in items`` / ``objectName()`` /
+        :meth:`_resolve_hide_on_trigger` on an object being torn down.
+
+        :meth:`_uninstall_event_filters` below does NOT cover this: it removes
+        the PARENT/trigger hooks only, which is what its own name means.
+        """
+        self._items.clear()
+
+    def add(
+        self,
+        x: Union[str, QtWidgets.QWidget, type, dict, list, tuple, set, zip, map],
+        data: Any = None,
+        row: Optional[int] = None,
+        col: int = 0,
+        rowSpan: int = 1,
+        colSpan: Optional[int] = None,
+        **kwargs,
+    ) -> Union[QtWidgets.QWidget, list]:
+        """Add an item or multiple items to the list.
+
+        The function accepts a string, an object, or a collection of items (a dictionary, list, tuple, set, or map).
+
+        Parameters:
+            x (str, object, dict, list, tuple, set, map): The item or items to add.
+            data: Data to associate with the added item or items. Default is None.
+            row (int): The row index at which to add the widget. Default is the last row.
+            col (int): The column index at which to add the widget. Default is 0.
+            rowSpan (int): The number of rows the widget should span. Default is 1.
+            colSpan (int): The number of columns the widget should span. Default is the total number of columns.
+            **kwargs: Additional arguments to set on the added item or items.
+
+        Returns:
+            widget/list: The added widget or list of added widgets.
+        """
+        return self._items.add(
+            x, data=data, row=row, col=col, rowSpan=rowSpan, colSpan=colSpan, **kwargs
+        )
+
+    def add_row(
+        self,
+        items: list,
+        title: Optional[str] = None,
+        spacing: int = 4,
+        stretch: bool = True,
+        justify: Optional[str] = None,
+        **shared_kwargs,
+    ) -> list:
+        """Add a single horizontal row of widgets, optionally under a titled separator.
+
+        The menu's default is one widget per full-width row. ``add_row`` places
+        several controls side-by-side by nesting them in a lightweight container
+        so the surrounding single-column rows are never reflowed (adding raw
+        multi-column grid cells would grow the grid's column count and squeeze
+        every other row into the first column). Each child is still exposed as
+        ``menu.<objectName>`` and is discoverable via ``findChildren``, so the
+        preset system and ``getattr(menu, name)`` lookups behave exactly as they
+        do for widgets added one-per-row.
+
+        Parameters:
+            items (list): One entry per column. Each entry is a widget-type
+                string (e.g. ``"QCheckBox"``), a ``QWidget`` instance/subclass,
+                or a ``(spec, kwargs)`` tuple whose ``kwargs`` configure that one
+                widget (``setObjectName`` / ``setText`` / ``setChecked`` /
+                ``setToolTip`` / ``addItems`` / …).
+            title (str, optional): When given, a titled ``Separator`` is added on
+                the row above (mirrors ``add("Separator", setTitle=title)``).
+            spacing (int): Horizontal spacing, in px, between the row's widgets.
+            stretch (bool): Legacy left-pack toggle used only when ``justify`` is
+                ``None``: ``True`` appends a trailing stretch so the widgets pack
+                to the left; ``False`` lets them fill the row.
+            justify (str, optional): How to distribute the widgets across the
+                container's full width (the container itself always spans the
+                menu column). Overrides ``stretch`` when given. One of:
+                ``"left"`` (trailing stretch — same as the legacy default),
+                ``"right"`` (leading stretch), ``"center"`` (stretch both ends),
+                ``"between"`` (equal gaps between widgets, first/last flush to the
+                edges — spans the width), ``"around"`` (equal gaps including the
+                ends), or ``"expand"`` (every widget gets an equal stretch factor,
+                so each occupies an equal-width slot).
+            **shared_kwargs: Applied to every widget in the row (an item's own
+                kwargs win on conflict).
+
+        Returns:
+            list: The created widgets, in column order.
+        """
+        return self._items.add_row(
+            items,
+            title=title,
+            spacing=spacing,
+            stretch=stretch,
+            justify=justify,
+            **shared_kwargs,
+        )
+
+    # ------------------------------------------------------------------
+    # Trigger hook and hide on trigger (_MenuTrigger)
+    # ------------------------------------------------------------------
+
+    @property
+    def trigger_button(self) -> Union[QtCore.Qt.MouseButton, tuple, None, bool]:
+        """Get the current trigger button(s).
+
+        Returns:
+            QtCore.Qt.MouseButton: Single button constant
+            tuple: Multiple button constants
+            None: Any button triggers
+            False: No auto-trigger (manual show only)
+        """
+        return self._trigger.button
+
+    @trigger_button.setter
+    def trigger_button(
+        self, value: Union[QtCore.Qt.MouseButton, str, tuple, list, None]
+    ) -> None:
+        """Set the trigger button(s).
+
+        Accepts Qt constants, strings ("left", "right", "middle", "any", "none"), or tuples/lists.
+
+        Parameters:
+            value: Single button (Qt constant or string), tuple/list of buttons,
+                  "any" for any button, or "none" to disable auto-triggering
+        """
+        self._trigger.set_button(value)
+
+    def set_hide_on_trigger(
+        self, widget: QtWidgets.QWidget, hide: Optional[bool]
+    ) -> None:
+        """Include/exclude one item from the menu-level :attr:`hide_on_trigger`.
+
+        Parameters:
+            widget: A menu item (as returned by :meth:`add`).
+            hide: ``True`` — this item always hides the menu when triggered;
+                ``False`` — this item never hides it; ``None`` — clear the
+                override and follow the menu-level setting again.
+        """
+        widget.setProperty("hide_on_trigger", hide)
+
+    def _handle_nested_trigger(self, container, item) -> None:
+        """Hide-on-trigger for an interaction nested inside a container item
+        (connected at ``add()`` time; see ``_MenuTrigger.handle_nested_trigger``)."""
+        self._trigger.handle_nested_trigger(container, item)
+
+    def _on_parent_triggered(self, checked: bool = False) -> None:  # type: ignore[override]
+        """Handle parent widget signal (clicked or pressed)."""
+        self._trigger.on_parent_triggered()
+
+    def eventFilter(self, widget, event):
+        """Handle events for the menu and its children.
+
+        This filter handles:
+        - Parent widget clicks to toggle menu visibility
+        - Parent hide events to auto-hide menu
+        - Item interactions to emit signals
+        """
+        self._trigger.filter(widget, event)
+        return super().eventFilter(widget, event)
+
+    def trigger_from_widget(
+        self,
+        widget: Optional[QtWidgets.QWidget] = None,
+        *,
+        button: QtCore.Qt.MouseButton = QtCore.Qt.LeftButton,
+    ) -> None:
+        """Toggle visibility using the same rules as the parent click event.
+
+        This method allows programmatic triggering of the menu without
+        requiring a parent widget or event filter. It respects the same
+        trigger button constraints as interactive clicks.
+
+        Parameters:
+            widget: Optional anchor widget to position the menu relative to
+            button: The mouse button to simulate (default: LeftButton)
+        """
+        self._trigger.trigger_from_widget(widget, button)
+
+    # ------------------------------------------------------------------
+    # Hide on leave and the transient popup family (_MenuLeave)
+    # ------------------------------------------------------------------
+
+    @property
+    def hide_on_leave(self) -> bool:
+        """Get whether menu auto-hides when mouse leaves.
+
+        Returns:
+            bool: True if menu auto-hides on leave, False otherwise
+        """
+        return self._leave.enabled
+
+    @hide_on_leave.setter
+    def hide_on_leave(self, value: bool) -> None:
+        """Set whether menu auto-hides when mouse leaves.
+
+        Parameters:
+            value: True to enable auto-hide on leave, False to disable
+        """
+        self._leave.set_enabled(value)
+
+    def _check_cursor_position(self):
+        """The leave poll's tick (see ``_MenuLeave.check_cursor_position``)."""
+        self._leave.check_cursor_position()
+
+    def _arm_leave_timer(self):
+        """Start the leave-poll timer after showEvent's initial grace period."""
+        self._leave.arm_leave_timer()
+
+    def _prune_transients(self) -> None:
+        """Drop dead/deleted children from the registry."""
+        self._leave.prune_transients()
+
+    def adopt_transient(self, child: QtWidgets.QWidget) -> None:
+        """Keep this menu open while the pointer is over *child*.
+
+        Registers a child popup — an option-menu dropdown, a context menu, a
+        value popup, a nested ``Menu`` — as part of this menu's *transient
+        family*. While any adopted child is visible, ``hide_on_leave`` treats
+        the pointer being over that child (by window geometry OR by QObject
+        subtree) as "still inside", and hiding this menu cascades to the child.
+
+        Ownership here is logical, not a QObject relationship: child popups are
+        frequently parented to the wrapped widget (a sibling of this menu) for
+        lifetime/positioning reasons, which puts them outside this menu's
+        subtree. Adoption re-establishes the relationship so the existing
+        subtree check (:meth:`_widget_in_subtree`) becomes one special case of
+        a broader "is the pointer in my family?" test.
+
+        Children are held weakly and pruned lazily, so one destroyed or hidden
+        without notice is cleaned up on next access — a child that dies can
+        never wedge this menu open. Adoption is idempotent. The first adoption
+        raises :attr:`leave_grace_samples` so a brief gap-crossing toward the
+        child does not dismiss this menu.
+
+        Parameters:
+            child: The top-level popup widget to adopt. ``self`` and
+                non-widgets are ignored.
+        """
+        self._leave.adopt_transient(child)
+
+    # ------------------------------------------------------------------
+    # The Menu Actions section (_MenuActions)
+    # ------------------------------------------------------------------
+
+    @property
+    def presets(self):
+        """Lazy-initialized PresetManager namespace for saving/loading named presets.
+
+        The simplest way to enable presets is via :attr:`add_presets`::
+
+            widget.menu.add_presets = True
+            widget.menu.presets.preset_dir = "~/.myapp/presets"  # optional
+
+        For advanced use, call ``setup()`` directly::
+
+            widget.menu.presets.setup(preset_dir="~/.myapp/presets")
+
+        Returns:
+            PresetManager: The preset manager bound to this menu.
+        """
+        return self._actions.presets()
+
+    @presets.setter
+    def presets(self, _):
+        """No-op setter so the switchboard can harmlessly reassign."""
+        pass
+
+    # Real methods (not forwards): tests and tools patch them on the class.
+    def _setup_apply_button(self):
+        """Create the Apply button that re-emits the anchor's ``clicked``."""
+        self._actions.setup_apply_button()
+
+    def _setup_defaults_button(self):
+        """Create the Restore Defaults button."""
+        self._actions.setup_defaults_button()
+
+    def _restore_menu_defaults(
+        self, from_sync: bool = False, action: str = ResetGesture.RESET
+    ):
+        """Apply a defaults *action* to this menu's fields.
+
+        The name is the mirroring protocol: :meth:`_sync_restore_defaults`
+        finds the other instances of a menu by it (see
+        ``_MenuActions.restore_menu_defaults``).
+        """
+        self._actions.restore_menu_defaults(from_sync=from_sync, action=action)
+
+    def _sync_restore_defaults(self, action: str = ResetGesture.RESET):
+        """Mirror a defaults *action* onto other instances of this menu."""
+        self._actions.sync_restore_defaults(action)
+
+    @property
+    def add_defaults_button(self) -> bool:
+        """Whether the 'Restore Defaults' button is enabled.
+
+        Setting to ``False`` at runtime removes the button and hides
+        the action-button container if no other buttons remain.
+        """
+        return self._actions.add_defaults_button
+
+    @add_defaults_button.setter
+    def add_defaults_button(self, value: bool) -> None:
+        self._actions.set_add_defaults_button(value)
+
+    @property
+    def add_presets(self) -> bool:
+        """Whether the presets combo is enabled.
+
+        When ``True``, a ``ComboBox`` preset selector is placed
+        in the *Menu Actions* container at the bottom of the menu
+        (alongside the *Restore Defaults* and *Apply* buttons).  The
+        actual setup is deferred to the first ``showEvent``.
+
+        Set the preset directory separately::
+
+            widget.menu.add_presets = True
+            widget.menu.presets.preset_dir = "~/.myapp/presets"
+
+        Setting to ``False`` at runtime removes the combo and hides
+        the action container if no other items remain.
+        """
+        return self._actions.add_presets
+
+    @add_presets.setter
+    def add_presets(self, value: bool) -> None:
+        self._actions.set_add_presets(value)
+
+    # ------------------------------------------------------------------
+    # Persistent mode (_MenuPersistentMode)
+    # ------------------------------------------------------------------
+
+    def enable_persistent_mode(self, hide_button_tooltip: str = "Hide menu") -> None:
+        """Keep the menu visible until the user explicitly hides it.
+
+        This temporarily disables all automatic hide behaviour and injects a
+        dedicated Hide button into the header. Call :meth:`disable_persistent_mode`
+        to restore the original behaviour.
+
+        Args:
+            hide_button_tooltip: Tooltip shown on the injected Hide button.
+        """
+        self._persistent.enable(hide_button_tooltip)
+
+    def disable_persistent_mode(self) -> None:
+        """Restore default hide behaviour after persistent mode."""
+        self._persistent.disable()
+
+    @property
+    def is_persistent_mode(self) -> bool:
+        """Return True when persistent mode is active."""
+        return self._persistent.active
+
+    def _on_persistent_hide_clicked(self) -> None:
+        """Handle clicks on the injected Hide button."""
+        self._persistent.on_hide_clicked()
+
+    # ------------------------------------------------------------------
+    # Registration with the owning window (_MenuRegistration)
+    # ------------------------------------------------------------------
+
+    def owner_window(self) -> Optional[QtWidgets.QWidget]:
+        """Public alias for the owning ``MainWindow``, or ``None``.
+
+        Thin wrapper over :meth:`_resolve_registration_window` so collaborators
+        (e.g. a window-scoped :class:`PresetManager`) can reach the host window
+        through the same reparent-race-robust resolver used for dynamic-widget
+        registration, without depending on a private method.
+        """
+        return self._resolve_registration_window()
+
+    def _drain_pending_registrations(self) -> None:
+        """Process every queued registration in insertion order (the
+        coalesced drain's slot; see ``_MenuRegistration.drain``)."""
+        self._registration.drain()
 
 
 # -----------------------------------------------------------------------------

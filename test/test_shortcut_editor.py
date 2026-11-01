@@ -1369,6 +1369,25 @@ class TestOpenOverFacade(QtBaseTestCase):
         self.assertEqual(present.call_count, 1)
 
 
+class TestShortcutEditorListsCodeBuiltUis(QtBaseTestCase):
+    """A UI built in code (``Switchboard.register_ui``) is a target the editor
+    lists, as a ``.ui`` file is; listing it never builds it (2026-11-01)."""
+
+    def test_the_target_list_carries_a_ui_built_in_code(self):
+        from uitk import examples
+        from qtpy import QtWidgets
+
+        built = []
+        sb = Switchboard(ui_source=examples, slot_source=ExampleSlots)
+        sb.register_ui("panel#submenu", lambda: built.append(1) or QtWidgets.QWidget())
+        editor = ShortcutEditor(sb, parent=None)
+        self.addCleanup(editor.close)
+        names = editor._registered_ui_names()
+        self.assertIn("panel_submenu", names)
+        self.assertIn("example", names)
+        self.assertEqual(built, [], "listing never builds")
+
+
 class TestShortcutEditorHideEmptyUis(ShortcutEditorRequirements, QtBaseTestCase):
     """The 'Hide empty UIs' view option drops UIs whose only content would be
     the "No shortcuts defined for this UI." placeholder from the target combo,

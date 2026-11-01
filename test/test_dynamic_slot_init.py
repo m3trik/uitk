@@ -151,7 +151,7 @@ class _DynamicInitBase(QtBaseTestCase):
 
 class TestSlotConstructorReentrancy(_DynamicInitBase):
     """Locks down the placeholder + ``deferred_widgets`` machinery in
-    :func:`uitk.switchboard.slots._create_slots_instance`.
+    :meth:`uitk.switchboard.slots._Slots.create_slots_instance`.
 
     The scene_exporter pattern reaches into ``self.ui.<child>`` from the
     slot ``__init__`` (e.g. ``self.ui.txt001.setText("")``).  Each access
@@ -321,10 +321,9 @@ class TestInitErrorKeepsItsTraceback(_DynamicInitBase):
 
 class TestRefreshOnShow(_DynamicInitBase):
     """Locks down the gate at
-    :func:`uitk.switchboard.slots._perform_slot_init`
-    around line 427.  Slot init is idempotent by default; when
-    ``widget.refresh_on_show = True`` the slot body re-runs on every
-    ``init_slot()`` call.
+    :meth:`uitk.switchboard.slots._Slots.perform_slot_init`. Slot init is
+    idempotent by default; when ``widget.refresh_on_show = True`` the slot
+    body re-runs on every ``init_slot()`` call.
     """
 
     def test_init_skips_when_initialized_and_not_refresh(self):

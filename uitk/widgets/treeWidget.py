@@ -200,7 +200,7 @@ class TreeFormatMixin(ItemFormatMixin):
 
     The colour map, formatter store and colour resolution are
     :class:`~uitk.widgets.mixins.item_format.ItemFormatMixin`'s, shared with
-    the table's ``CellFormatMixin`` (one ``ACTION_COLOR_MAP``: mayatk's
+    ``TableWidget`` (one ``ACTION_COLOR_MAP``: mayatk's
     reference_manager reads ``widget.ACTION_COLOR_MAP["current"]`` off either).
     """
 
@@ -232,7 +232,7 @@ class TreeFormatMixin(ItemFormatMixin):
         # (foreground/background), which fires itemChanged -> _on_item_edited
         # -> formatters -> ... (unbounded recursion -> RecursionError when
         # multiple/appended formatters set differing roles). Mirrors the same
-        # guard on CellFormatMixin.apply_formatting.
+        # guard on TableWidget.apply_formatting.
         with self._formatting_signals_blocked():
             iterator = QtWidgets.QTreeWidgetItemIterator(self)
             while iterator.value():

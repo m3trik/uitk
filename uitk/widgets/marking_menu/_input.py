@@ -263,15 +263,21 @@ class _InputMixin:
         return False
 
     def _host_mouse_buttons(self):
-        """Current mouse-button mask for hover/drag tracking — overridable per host.
+        """Current mouse-button mask for hover/drag tracking: the host's answer
+        (``MarkingMenuHost.mouse_buttons``).
 
-        Defaults to Qt's own query. A host whose native event loop owns the mouse
-        (Blender's GHOST) overrides this to read the real (physical) button state,
-        so ``MouseTracking``'s drag-gated ``track()`` — which reveals the marking
-        menu's ``visible_on_mouse_over`` Regions during a grabbed chord gesture —
-        still fires when ``QApplication.mouseButtons()`` is blind to GHOST events.
+        Qt's own query for a plain Qt app. A host whose native event loop owns the
+        mouse reads the real (physical) button state, so ``MouseTracking``'s
+        drag-gated ``track()`` — which reveals the marking menu's
+        ``visible_on_mouse_over`` Regions during a grabbed chord gesture — still
+        fires when ``QApplication.mouseButtons()`` is blind to the host's events.
+        A raising host gets Qt's answer instead: this runs on every tracked move.
         """
-        return QtWidgets.QApplication.mouseButtons()
+        try:
+            return self.host.mouse_buttons()
+        except Exception as error:
+            self.logger.debug(f"host mouse_buttons failed: {error}")
+            return QtWidgets.QApplication.mouseButtons()
 
     def _transfer_mouse_control(self, button, buttons_mask) -> None:
         """Transfer mouse control to this widget by grabbing and synthesizing a press."""
@@ -383,8 +389,20 @@ class _InputMixin:
         )
         event.accept()
 
+    def keyReleaseEvent(self, event) -> None:
+        """Show the host the release first (``MarkingMenuHost.key_event``)."""
+        self._host_key_event(event)
+        super().keyReleaseEvent(event)
+
+    def _host_key_event(self, event) -> None:
+        try:
+            self.host.key_event(self, event)
+        except Exception as error:
+            self.logger.debug(f"host key_event failed: {error}")
+
     def keyPressEvent(self, event) -> None:
         """Handle key press for non-activation key bindings."""
+        self._host_key_event(event)
         if event.key() == self._activation_key:
             super().keyPressEvent(event)
             return

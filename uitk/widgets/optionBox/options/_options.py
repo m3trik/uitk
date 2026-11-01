@@ -413,6 +413,78 @@ class ButtonOption(BaseOption, ptk.LoggingMixin):
             )
 
 
+class HiddenWhileEmptyMixin:
+    """Show a button option only while its wrapped field holds a value.
+
+    Shared by :class:`ClearOption` (on by default) and :class:`ActionOption`
+    (``hide_when_empty``): the text-signal hookup, the visibility rule, and the
+    show-time re-check a state restore needs. ``_auto_hide`` switches it.
+    """
+
+    _auto_hide = False
+    _text_connected = False
+
+    def setup_widget(self):
+        super().setup_widget()
+        if self._auto_hide and self._widget:
+            # Here too, not only in set_wrapped_widget: an option's __init__
+            # wraps its field before a subclass sets ``_auto_hide``.
+            self._connect_text_signals(self.wrapped_widget)
+            # Catch the button's own show events for the re-check below.
+            self._widget.installEventFilter(self)
+            # Initial state SYNCHRONOUSLY: an empty field's button must never
+            # paint visible-then-hide (an init flash). Later text changes
+            # update via the connected signals.
+            self._update_visibility()
+
+    def eventFilter(self, obj, event):
+        if self._auto_hide and event.type() == QtCore.QEvent.Show and obj is self._widget:
+            # Synchronous first so the shown state is correct on this very
+            # paint; the deferred pass is the safety net for a state restore
+            # that lands later in the same show cascade -- a no-op when the
+            # state didn't change.
+            self._update_visibility()
+            QtCore.QTimer.singleShot(0, self._update_visibility)
+        return super().eventFilter(obj, event)
+
+    def set_wrapped_widget(self, widget):
+        super().set_wrapped_widget(widget)
+        if self._auto_hide:
+            self._connect_text_signals(widget)
+
+    def _connect_text_signals(self, widget):
+        """Re-check visibility whenever the field's value changes."""
+        if self._text_connected or not widget:
+            return
+        for name in ("textChanged", "currentTextChanged", "valueChanged"):
+            signal = getattr(widget, name, None)
+            if signal is not None and hasattr(signal, "connect"):
+                signal.connect(self._update_visibility)
+                self._text_connected = True
+                return
+
+    def _get_text(self):
+        """The wrapped field's current value as text ("" when empty)."""
+        widget = self.wrapped_widget
+        if not widget:
+            return ""
+        if hasattr(widget, "text") and callable(widget.text):  # QLineEdit
+            return widget.text()
+        if hasattr(widget, "toPlainText"):  # QTextEdit, QPlainTextEdit
+            return widget.toPlainText()
+        if hasattr(widget, "currentText"):  # QComboBox
+            return ValueManager.combo_value(widget, "text")
+        # QSpinBox, QDoubleSpinBox: "empty" at the minimum.
+        if hasattr(widget, "value") and hasattr(widget, "minimum"):
+            return "" if widget.value() == widget.minimum() else str(widget.value())
+        return ""
+
+    def _update_visibility(self, *args):
+        """Show the button only while the field holds a value."""
+        if self._auto_hide and self._widget:
+            self._widget.setVisible(bool(self._get_text()))
+
+
 class GatingMixin:
     """Reusable *gating button* capability for option plugins.
 

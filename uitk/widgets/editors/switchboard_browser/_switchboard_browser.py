@@ -195,16 +195,15 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         # ``refresh`` is a built-in header button that emits
         # ``refresh_requested`` — we wire it post-construction (see below)
         # to drive the same re-pull as the old menu entry, but as a
-        # one-click affordance instead of a buried menu item. Matches
-        # the pattern used by mayatk.reference_manager.
+        # one-click affordance instead of a buried menu item.
         # ``menu`` hosts global browser options (presets, theme, hide
         # lists, …); ``minimize`` is the standard window control.
         #
         # ``on_top=False`` matches EditorPanel's default but is kept
         # explicit at the construction site as load-bearing intent: the
         # browser is a *launcher*, not a config surface for another
-        # window, and mayatk's UIs (e.g. reference_manager) parent to
-        # Maya without forcing themselves above every other window.
+        # window, and a host's tool panels parent to the host window
+        # without forcing themselves above every other window.
         super().__init__(
             title="UI Browser",
             header_buttons=["refresh", "menu", "minimize", "hide"],
@@ -495,9 +494,8 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
 
         # Refresh is wired as a top-level header button (see
         # ``header_buttons`` in __init__) — the ``refresh_requested``
-        # signal drives the same re-pull. Mirrors mayatk's reference
-        # manager pattern; promotes Refresh from a buried menu entry
-        # to a single-click affordance.
+        # signal drives the same re-pull; promotes Refresh from a buried
+        # menu entry to a single-click affordance.
         self._header.refresh_requested.connect(self._on_refresh_clicked)
 
         # Use uitk's PushButton (not QPushButton) so the button has
@@ -647,7 +645,7 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         # governs EVERY window (marking-menu popped, browser launched, already
         # open) rather than the next browser launch. "Default (context)" defers
         # to each window's own default (``UiHandler.default_persistence`` —
-        # mayatk/blendertk tool panels declare themselves sticky there);
+        # a tool panel, registered under ``UiHandler.PANEL_TAG``, is sticky);
         # "sticky" forces a hide button (stays open) and "transient" a pin
         # button (auto-hides with the marking menu). Per-entry overrides (row
         # context menu) win over this.

@@ -13,6 +13,7 @@ setup_qt_application()
 
 from uitk import Switchboard
 from uitk.handlers.external_app_handler import ExternalAppHandler
+from uitk.handlers._version_gate import _VersionGate
 
 
 def _make_sb():
@@ -1873,6 +1874,357 @@ class TestDesktopShortcuts(unittest.TestCase):
             with self.assertRaises(ValueError) as raised:
                 self.handler.create_shortcut("panel")
         self.assertIn("ExternalAppHub", str(raised.exception))
+
+
+class _Prompt:
+    """A recording stand-in for ``Switchboard.message_box``: the
+    ``(message, *buttons) -> chosen`` contract, answering from a script."""
+
+    def __init__(self, *answers):
+        self.answers = list(answers)
+        self.calls = []
+
+    def __call__(self, message, *buttons):
+        self.calls.append((message, buttons))
+        return self.answers.pop(0) if self.answers else (buttons or ("Ok",))[-1]
+
+
+class TestVersionAwareLaunch(unittest.TestCase):
+    """An install spec may carry a version range (``extapps>=0.8.0,<0.9``).
+
+    A host that opens another product's apps by name pins the range it was
+    released against, so a host update cannot leave its users on a provider
+    it was never tested with. Installed but outside the range, the handler
+    asks before updating and never launches the mismatched app silently;
+    with no range given it behaves exactly as before.
+    """
+
+    SPEC = "fakeapp>=0.8.0,<0.9"
+
+    def setUp(self):
+        self.h = _make_sb().handlers.external_app
+        self.h._apps.clear()
+        self.h._providers.clear()
+        self.h._bootstrapped.clear()
+        self.addCleanup(setattr, self.h, "prompt", None)
+
+    def _register(self, spec=SPEC, mode="subprocess", module="fakeapp.ui"):
+        self.h.register(
+            "fake",
+            module=module,
+            entry="FakeUI",
+            install_spec=spec,
+            python=sys.executable,
+            mode=mode,
+        )
+
+    def _launch(self, installed, prompt=None, importable=True):
+        """Launch "fake" with *installed* the version read, recording what ran."""
+        self.h.prompt = prompt
+        self.pm = MagicMock()
+        versions = installed if isinstance(installed, list) else [installed]
+        with (
+            patch.object(
+                _VersionGate, "installed_version", side_effect=versions
+            ),
+            patch.object(
+                ExternalAppHandler,
+                "_is_importable",
+                side_effect=importable if isinstance(importable, list) else None,
+                return_value=importable,
+            ),
+            patch("pythontk.PackageManager", return_value=self.pm) as self.pm_cls,
+            patch.object(
+                ExternalAppHandler, "_spawn", return_value=MagicMock()
+            ) as spawn,
+        ):
+            self.spawn = spawn
+            return self.h.launch("fake")
+
+    def test_inside_the_range_it_launches_and_installs_nothing(self):
+        self._register()
+        prompt = _Prompt()
+        self._launch("0.8.3", prompt)
+        self.spawn.assert_called_once()
+        self.pm_cls.assert_not_called()
+        self.assertEqual(prompt.calls, [])
+
+    def test_outside_the_range_yes_updates_with_the_spec_then_launches(self):
+        for installed in ("0.7.9", "0.9.0"):  # below the floor, at the cap
+            with self.subTest(installed=installed):
+                self._register()
+                prompt = _Prompt("Yes")
+                self._launch([installed, "0.8.4"], prompt)
+                # pip is handed the RANGE, so it picks a release inside it --
+                # an upgrade from below, a downgrade from above.
+                self.pm.update.assert_called_once_with(self.SPEC)
+                self.spawn.assert_called_once()
+                ((message, buttons),) = prompt.calls
+                self.assertEqual(buttons, ("Yes", "No"))
+                self.assertIn("update", message.lower())
+                self.assertIn(installed, message)
+                # The cap's "<" must reach the HTML prompt escaped.
+                self.assertIn("fakeapp&gt;=0.8.0,&lt;0.9", message)
+
+    def test_outside_the_range_no_refuses_and_names_both_versions(self):
+        for installed in ("0.7.9", "0.9.1"):
+            with self.subTest(installed=installed):
+                self._register()
+                with self.assertRaises(RuntimeError) as raised:
+                    self._launch(installed, _Prompt("No"))
+                self.assertIn(installed, str(raised.exception))
+                self.assertIn(self.SPEC, str(raised.exception))
+                self.spawn.assert_not_called()
+                self.pm_cls.assert_not_called()
+
+    def test_an_update_an_imported_in_process_app_needs_says_restart(self):
+        import types
+
+        top = "fakeapp_loaded_xyz"
+        sys.modules[top] = types.ModuleType(top)
+        self.addCleanup(sys.modules.pop, top, None)
+        self._register(
+            spec="fakeapp_loaded_xyz>=0.8.0,<0.9", mode="in_process", module=f"{top}.ui"
+        )
+        prompt = _Prompt("Yes")
+        with (
+            patch.object(ExternalAppHandler, "_import_entry") as import_entry,
+            self.assertRaises(RuntimeError) as raised,
+        ):
+            self._launch("0.7.0", prompt)
+        self.pm.update.assert_called_once_with("fakeapp_loaded_xyz>=0.8.0,<0.9")
+        # The stale import is never launched...
+        import_entry.assert_not_called()
+        # ... and the user is told why, in the box after the question.
+        self.assertEqual(len(prompt.calls), 2)
+        self.assertIn("restart", prompt.calls[1][0].lower())
+        self.assertIn("restart", str(raised.exception).lower())
+
+    def test_without_a_range_nothing_is_read_or_asked(self):
+        self._register(spec="fakeapp")
+        prompt = _Prompt()
+        with patch.object(_VersionGate, "installed_version") as read:
+            self.h.prompt = prompt
+            with (
+                patch.object(ExternalAppHandler, "_is_importable", return_value=True),
+                patch("pythontk.PackageManager") as pm_cls,
+                patch.object(
+                    ExternalAppHandler, "_spawn", return_value=MagicMock()
+                ) as spawn,
+            ):
+                self.h.launch("fake")
+        read.assert_not_called()
+        pm_cls.assert_not_called()
+        spawn.assert_called_once()
+        self.assertEqual(prompt.calls, [])
+
+    def test_not_installed_it_installs_with_the_spec_unasked(self):
+        self._register()
+        prompt = _Prompt()
+        self._launch(None, prompt, importable=[False, True])
+        self.pm.install.assert_called_once_with(self.SPEC)
+        self.spawn.assert_called_once()
+        self.assertEqual(prompt.calls, [])
+
+    def test_a_providers_range_covers_the_apps_it_ships(self):
+        """Discovery registers an app under its bare distribution name; the
+        host states the range once, on the provider it opens."""
+        self.h.add_provider(self.SPEC, probe_module="fakeapp")
+        self._register(spec="fakeapp")
+        with self.assertRaises(RuntimeError) as raised:
+            self._launch("0.7.0", _Prompt("No"))
+        self.assertIn(self.SPEC, str(raised.exception))
+        # ... and a missing one installs inside it, not at the index's latest.
+        self._launch(None, _Prompt(), importable=[False, True])
+        self.pm.install.assert_called_once_with(self.SPEC)
+        # The standalone snippet keeps the range too.
+        self.assertIn(f"install_spec={self.SPEC!r}", self.h.launch_code("fake"))
+
+    def test_a_source_checkout_outside_the_range_is_not_pip_updated(self):
+        """pip cannot replace the copy that imports: say where it is instead."""
+        self._register()
+        prompt = _Prompt("Yes")
+        with (
+            patch.object(
+                _VersionGate, "checkout_of", return_value="/src/fakeapp"
+            ),
+            self.assertRaises(RuntimeError) as raised,
+        ):
+            self._launch("0.9.2", prompt)
+        self.assertIn("/src/fakeapp", str(raised.exception))
+        self.assertIn("0.9.2", str(raised.exception))
+        self.assertEqual(prompt.calls, [])
+        self.pm_cls.assert_not_called()
+
+    def test_a_provider_outside_its_range_is_offered_on_a_launch_miss(self):
+        """An app only the newer release ships is not registered at all, so the
+        miss itself is where the stale provider is offered its update -- and a
+        "No" is asked again on the next click, not remembered as tried."""
+        self.h.add_provider(self.SPEC, probe_module="fakeapp")
+        for _ in range(2):
+            self.h.prompt = _Prompt("No")
+            with (
+                patch.object(
+                    _VersionGate, "installed_version", return_value="0.7.0"
+                ),
+                patch.object(ExternalAppHandler, "_is_importable", return_value=True),
+                patch.object(
+                    ExternalAppHandler, "discover", lambda self_, groups=None: 0
+                ),
+                patch("pythontk.PackageManager") as pm_cls,
+                self.assertRaises(RuntimeError) as raised,
+            ):
+                self.h.launch("only_in_0_8")
+            self.assertIn("0.7.0", str(raised.exception))
+            self.assertEqual(len(self.h.prompt.calls), 1)
+            pm_cls.assert_not_called()
+
+
+class TestInstalledVersion(unittest.TestCase):
+    """The version a range is checked against is the one that will IMPORT:
+    a loaded module's, a source checkout's own ``__version__`` (an editable
+    install's metadata is as old as the install), else the installed
+    metadata -- all read without importing the provider."""
+
+    def setUp(self):
+        self.h = _make_sb().handlers.external_app
+        self.pkg = "version_probe_pkg_xyz"
+        self.root = os.path.join(
+            os.path.dirname(__file__), "temp_tests", f"{self.pkg}_{os.getpid()}"
+        )
+
+    def tearDown(self):
+        import shutil
+
+        while self.root in sys.path:
+            sys.path.remove(self.root)
+        sys.modules.pop(self.pkg, None)
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _lay_out(self, version_line, pyproject=True):
+        import importlib
+
+        os.makedirs(os.path.join(self.root, self.pkg), exist_ok=True)
+        with open(os.path.join(self.root, self.pkg, "__init__.py"), "w") as fh:
+            fh.write(f'"""Probe."""\n{version_line}\n')
+        if pyproject:
+            with open(os.path.join(self.root, "pyproject.toml"), "w") as fh:
+                fh.write(f'[project]\nname = "{self.pkg}"\ndynamic = ["version"]\n')
+        sys.path.insert(0, self.root)
+        importlib.invalidate_caches()
+
+    def test_installed_metadata_answers_for_an_installed_wheel(self):
+        import pythontk as ptk
+
+        with patch.object(ptk.PackageManager, "metadata_version", return_value="0.8.1"):
+            found = self.h._versions.installed_version(
+                "nodist", "no_such_pkg_xyz.ui", sys.executable
+            )
+        self.assertEqual(found, "0.8.1")
+
+    def test_a_source_checkout_reads_its_own_version_unimported(self):
+        import pythontk as ptk
+
+        self._lay_out('__version__ = "0.8.4"')
+        # Stale editable metadata loses to the source that will import.
+        with patch.object(ptk.PackageManager, "metadata_version", return_value="0.1.0"):
+            found = self.h._versions.installed_version(
+                self.pkg, f"{self.pkg}.ui", sys.executable
+            )
+        self.assertEqual(found, "0.8.4")
+        self.assertNotIn(self.pkg, sys.modules)
+
+    def test_without_metadata_a_package_reads_its_own_version(self):
+        import pythontk as ptk
+
+        self._lay_out('__version__ = "0.8.5"', pyproject=False)
+        with patch.object(ptk.PackageManager, "metadata_version", return_value=None):
+            self.assertEqual(
+                self.h._versions.installed_version(self.pkg, self.pkg, sys.executable), "0.8.5"
+            )
+
+    def test_a_present_package_with_no_readable_version_is_not_absent(self):
+        import pythontk as ptk
+
+        self._lay_out("__version__ = compute()", pyproject=False)
+        with patch.object(ptk.PackageManager, "metadata_version", return_value=None):
+            self.assertEqual(
+                self.h._versions.installed_version(self.pkg, self.pkg, sys.executable), ""
+            )
+            self.assertIsNone(
+                self.h._versions.installed_version("nodist", "no_such_pkg_xyz", sys.executable)
+            )
+
+    def test_a_loaded_module_answers_for_an_in_process_launch_only(self):
+        import types
+        import pythontk as ptk
+
+        mod = types.ModuleType(self.pkg)
+        mod.__version__ = "0.7.0"
+        sys.modules[self.pkg] = mod
+        module = f"{self.pkg}.ui"
+        self.assertEqual(
+            self.h._versions.installed_version("x", module, sys.executable, in_process=True),
+            "0.7.0",
+        )
+        # A subprocess launch starts a fresh interpreter, which reads the disk.
+        with patch.object(ptk.PackageManager, "metadata_version", return_value="0.8.0"):
+            self.assertEqual(
+                self.h._versions.installed_version("x", module, sys.executable), "0.8.0"
+            )
+
+    def test_another_interpreter_is_asked_with_a_short_query(self):
+        with patch("uitk.handlers._version_gate.subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout="0.8.2\n")
+            self.assertEqual(
+                self.h._versions.installed_version("extapps", "extapps.ui", "/other/python"),
+                "0.8.2",
+            )
+            args = run.call_args.args[0]
+            self.assertEqual(args[:2], ["/other/python", "-c"])
+            self.assertNotIn("pip", args[2])
+            run.return_value = MagicMock(returncode=3, stdout="")
+            self.h._versions.forget()  # the answer above is kept until forgotten
+            self.assertIsNone(
+                self.h._versions.installed_version("extapps", "extapps.ui", "/other/python")
+            )
+
+    def test_another_interpreters_answer_is_kept_until_an_install(self):
+        """One ``-c`` query per (interpreter, distribution) a session: it forks
+        a python with a 15 s timeout, and every launch of the app asked again
+        (2026-11-01). An install or update through the handler forgets it."""
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout="0.8.2\n")
+            for _ in range(3):
+                self.assertEqual(
+                    self.h._versions.installed_version("extapps", "extapps.ui", "/other/python"),
+                    "0.8.2",
+                )
+            self.assertEqual(run.call_count, 1)
+            self.h._versions.installed_version("pythontk", "pythontk", "/other/python")
+            self.h._versions.installed_version("extapps", "extapps.ui", "/third/python")
+            self.assertEqual(run.call_count, 3, "each pair asked once")
+            with patch("pythontk.PackageManager"):
+                self.h.register(
+                    "fresh", module="fresh_pkg_xyz.ui", install_spec="fresh-pkg-xyz",
+                    python="/other/python",
+                )
+                with (
+                    patch.object(
+                        ExternalAppHandler, "_is_importable", side_effect=[False, True]
+                    ),
+                    patch.object(ExternalAppHandler, "_spawn", return_value=MagicMock()),
+                    patch.object(
+                        ExternalAppHandler, "_pip_capable_python", side_effect=lambda py: py
+                    ),
+                ):
+                    self.h.launch("fresh")
+            run.return_value = MagicMock(returncode=0, stdout="0.9.0\n")
+            self.assertEqual(
+                self.h._versions.installed_version("extapps", "extapps.ui", "/other/python"),
+                "0.9.0",
+                "an install forgets what was read before it",
+            )
 
 
 if __name__ == "__main__":

@@ -652,7 +652,7 @@ class _KindFactoryInternal(object):
     # or ``(label, action_id, tip, icon)`` and becomes one button. The
     # container exposes ``_action_buttons = {action_id: QPushButton}`` so the
     # hosting panel can wire each button to its own method after build
-    # (BridgeSlotsBase does this automatically for action ids that name a slot
+    # (ParamPanelSlots does this automatically for action ids that name a slot
     # method). ``read`` returns ``None`` -- there is no value to collect or
     # preset -- and the change-wirer is a deliberate no-op so preset
     # dirty-tracking ignores clicks. The first action is the primary affordance
@@ -749,7 +749,7 @@ class _KindFactoryInternal(object):
         # Wrapped only now that the primary is layout-managed: the option box
         # replaces it in place (keeping the stretch) instead of briefly showing
         # as a top-level widget, whose showEvent collapses the container -- the
-        # same ordering BridgeSlotsBase's output-dir row documents.
+        # same ordering ParamPanelSlots's output-dir row documents.
         manager = (
             _KindFactoryInternal._option_box(primary) if primary is not None else None
         )

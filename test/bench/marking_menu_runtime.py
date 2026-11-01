@@ -412,7 +412,7 @@ class MarkingMenuRuntimeBench:
             construct_ms = (time.perf_counter() - t0) * 1000.0
             # The bench pumps Qt from Python, which a host-loop-only preload
             # reads as a script pumping events: it would never advance.
-            mm.PRELOAD_ONLY_FROM_HOST_LOOP = False
+            mm.host.preload_only_from_host_loop = False
 
             # Each event-loop pass while the deferred preload drains warms at
             # most one page (or runs work a warmed page deferred): its length

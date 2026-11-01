@@ -55,7 +55,7 @@ _FILES = {
         "open(os.path.join(os.path.dirname(__file__), 'ran'), 'w').close()\n"
         "raise SystemExit(2)\n"
     ),
-    # A provider without a hub whose package import does work (extapps'
+    # A provider without a hub whose package import does work (a root that
     # imports every app it ships).
     "busypkg/__init__.py": (
         "import os\n"
@@ -358,6 +358,90 @@ class TestCreateShortcut(_HubCase):
             button.click()
         create.assert_called_once_with(self.hub, "desktop")
         self.assertIn("Hub.lnk", browser.footer.statusText())
+
+
+class TestDistributionNamedApart(BaseTestCase):
+    """A package installed by a distribution of another name (``pip install
+    mypkg-dist`` for ``import mypkg``): its source checkout is matched by the
+    distribution's name, which the hub is told -- and so is another provider's,
+    which a hub can name as data."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        here = os.path.dirname(os.path.abspath(__file__))
+        cls.root = os.path.join(here, "temp_tests", f"hub dist {os.getpid()}")
+        files = {
+            "distpkg/__init__.py": "",
+            "distpkg/app.py": (
+                "from qtpy import QtWidgets\n"
+                "class DistAppUI(QtWidgets.QMainWindow):\n"
+                "    pass\n"
+            ),
+            "pyproject.toml": (
+                "[project]\n"
+                'name = "distpkg-dist"\n'
+                '[project.entry-points."uitk.external_apps.in_process"]\n'
+                'dist_app = "distpkg.app:DistAppUI"\n'
+            ),
+        }
+        for relative, text in files.items():
+            path = os.path.join(cls.root, relative)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(text)
+        sys.path.insert(0, cls.root)
+
+    @classmethod
+    def tearDownClass(cls):
+        sys.path.remove(cls.root)
+        for name in [m for m in sys.modules if m.split(".")[0] == "distpkg"]:
+            del sys.modules[name]
+        shutil.rmtree(cls.root, ignore_errors=True)
+        super().tearDownClass()
+
+    def test_dist_defaults_to_the_package(self):
+        self.assertEqual(ExternalAppHub("somepkg").dist, "somepkg")
+
+    @unittest.skipIf(
+        ExternalAppHandler._toml_loader() is None, "no TOML reader for the checkout"
+    )
+    def test_a_checkout_is_matched_by_the_distribution(self):
+        named = ExternalAppHub("distpkg", dist="distpkg-dist")._switchboard()
+        self.assertTrue(named.handlers.external_app.is_registered("dist_app"))
+        # Matched by the package's own name, the checkout's pyproject reads as
+        # another project's and is refused.
+        bare = ExternalAppHub("distpkg")._switchboard()
+        self.assertFalse(bare.handlers.external_app.is_registered("dist_app"))
+
+    def test_extra_providers_default_to_none(self):
+        self.assertEqual(ExternalAppHub("somepkg").providers, ())
+
+    @unittest.skipIf(
+        ExternalAppHandler._toml_loader() is None, "no TOML reader for the checkout"
+    )
+    def test_a_hub_serves_another_providers_apps(self):
+        """A hub that keeps a program name its apps left (launchers made before
+        they moved run it) names their new provider -- ``(distribution, import
+        name)`` -- and serves its apps from its checkout too."""
+        hub = ExternalAppHub("otherpkg", providers=[("distpkg-dist", "distpkg")])
+        sb = hub._switchboard()
+        self.assertTrue(sb.handlers.external_app.is_registered("dist_app"))
+        self.assertEqual(
+            sb.handlers.external_app._providers["distpkg-dist"]["probe_module"],
+            "distpkg",
+        )
+
+    def test_a_refused_launcher_names_the_distribution_to_install(self):
+        """The fix it prints is a pip line that installs the package: the
+        distribution's name, not the import name (another project on PyPI)."""
+        hub = ExternalAppHub("distpkg", dist="distpkg-dist")
+        with patch.object(
+            ptk.AppLauncher, "windowless_python", return_value=sys.executable
+        ), patch.object(ExternalAppHub, "_import_problem", return_value="no module"):
+            with self.assertRaises(RuntimeError) as caught:
+                hub.create_shortcut()
+        self.assertIn("pip install distpkg-dist", str(caught.exception))
 
 
 class TestImportCheck(_HubCase):

@@ -317,6 +317,14 @@ class _BindingsMixin:
         self._shortcut_instance.released.connect(self._on_activation_release)
 
     def set_activation_key(self, new_key: str) -> None:
+        """Rebind the marking menu's activation key across every chord, then let the
+        host move its own half of the binding (``MarkingMenuHost.bind_activation_key``)
+        -- also when the key is unchanged or invalid: a redundant call re-syncs a host
+        half that drifted. See :meth:`_rebind_activation_key`."""
+        self._rebind_activation_key(new_key)
+        self._bind_host_activation()
+
+    def _rebind_activation_key(self, new_key: str) -> None:
         """Rebind the marking menu's activation key across every chord.
 
         The activation key (``key_show``) is the shared prefix of *every* binding
@@ -367,10 +375,11 @@ class _BindingsMixin:
         The set the host's "Menu Bindings" combos pick a target menu from.
         ``short=True`` strips the ``#startmenu`` tag ("cameras"); ``False`` keeps
         the registered filename ("cameras#startmenu"). Centralizes what the host's
-        settings slot used to compute inline (``_get_startmenus``).
+        settings slot used to compute inline (``_get_startmenus``). Read from
+        :meth:`Switchboard.ui_names`, so a menu built in code
+        (``register_ui``) is a target as a ``.ui`` file is.
         """
-        filenames = self.sb.registry.ui_registry.get("filename") or []
-        names = sorted(f for f in filenames if "#startmenu" in f)
+        names = sorted(f for f in self.sb.ui_names() if "#startmenu" in f)
         return [n.replace("#startmenu", "") for n in names] if short else names
 
     # -- unified shortcut-editor register ("hotkey register" integration) ---

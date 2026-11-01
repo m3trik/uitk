@@ -9,33 +9,52 @@ so it lands before the window's first paint. The owning window is captured
 while the menu still sits under it, because showing the menu reparents it to a
 top-level popup.
 
-One part of :class:`~uitk.widgets.menu.Menu`, which inherits it; it holds no
-state of its own (``Menu.__init__`` declares every attribute used here) and
-is never instantiated alone.
+One part of :class:`~uitk.widgets.menu.Menu` (see ``menu_parts``).
 """
 
 import logging
 import weakref
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from qtpy import QtCore, QtWidgets
+
+if TYPE_CHECKING:
+    from uitk.widgets.menu import Menu
 
 _logger = logging.getLogger("uitk.widgets.menu")
 
 
-class _MenuRegistrationMixin:
-    """Registering the menu's items with the window that owns it."""
+class _MenuRegistration:
+    """A :class:`Menu`'s deferred registration of its items with the owning window.
+
+    Owns the pending queue, whether its drain is scheduled, and the owning
+    window captured weakly. The process-wide set of menus with a pending queue
+    is a class attribute (see :meth:`flush_pending`).
+    """
 
     # Every Menu with a non-empty deferred-registration queue (see
-    # Menu._schedule_registration). Weak so a menu destroyed before its drain
-    # simply drops out. Consumed by _flush_pending_registrations, which
-    # MainWindow.register_children calls to complete all menu-item registration
-    # inside the pre-paint window instead of on the post-paint tick-0 timer (the
-    # init-flash "drain" phase).
-    _awaiting_registration: "weakref.WeakSet" = weakref.WeakSet()
+    # schedule). Weak so a menu destroyed before its drain simply drops out.
+    # Consumed by flush_pending, which MainWindow.register_children calls
+    # (as ``Menu._flush_pending_registrations``) to complete all menu-item
+    # registration inside the pre-paint window instead of on the post-paint
+    # tick-0 timer (the init-flash "drain" phase).
+    awaiting_registration: "weakref.WeakSet" = weakref.WeakSet()
+
+    def __init__(self, menu: "Menu") -> None:
+        self._menu = menu
+        # Per-item registrations are coalesced into a single deferred drain
+        # (see schedule / drain). Order of registration is preserved; the
+        # contract is "after add() returns", not "one tick per item" — see
+        # test_register_with_main_window_deferred_not_synchronous.
+        self.pending: list = []
+        self.drain_scheduled: bool = False
+        # Owning MainWindow, captured (weakly) while the menu is still nested
+        # under its host so deferred registration survives the menu reparenting
+        # to a top-level popup on show — see resolve_window.
+        self.window_ref: Optional["weakref.ref"] = None
 
     @staticmethod
-    def _flush_pending_registrations(window=None) -> int:
+    def flush_pending(window=None) -> int:
         """Synchronously drain every menu's deferred item registrations.
 
         ``Menu.add`` defers each item's ``register_widget`` to a coalesced
@@ -54,14 +73,18 @@ class _MenuRegistrationMixin:
         a safety cap. The already-armed tick-0 timers later find empty queues
         and no-op.
 
+        Each menu is read through its own ``Menu`` names, never its parts, so
+        a wrapper left behind by a deleted menu still answers them.
+
         Returns the number of menus drained.
         """
+        awaiting = _MenuRegistration.awaiting_registration
         drained = 0
         for _ in range(10):  # fixpoint cap — see warning below
             # Snapshot: draining mutates the set (menus discard themselves).
             batch = [
                 m
-                for m in list(_MenuRegistrationMixin._awaiting_registration)
+                for m in list(awaiting)
                 # Plain Python attrs — safe even on a dead C++ wrapper.
                 if m._pending_registrations and m._add_depth == 0
             ]
@@ -76,7 +99,7 @@ class _MenuRegistrationMixin:
                         if m._resolve_registration_window() is window:
                             alive.append(m)
                     except RuntimeError:
-                        _MenuRegistrationMixin._awaiting_registration.discard(m)
+                        awaiting.discard(m)
                 batch = alive
             if not batch:
                 return drained
@@ -92,61 +115,51 @@ class _MenuRegistrationMixin:
         )
         return drained
 
-    def owner_window(self) -> Optional[QtWidgets.QWidget]:
-        """Public alias for the owning ``MainWindow``, or ``None``.
-
-        Thin wrapper over :meth:`_resolve_registration_window` so collaborators
-        (e.g. a window-scoped :class:`PresetManager`) can reach the host window
-        through the same reparent-race-robust resolver used for dynamic-widget
-        registration, without depending on a private method.
-        """
-        return self._resolve_registration_window()
-
-    def _resolve_registration_window(self) -> Optional[QtWidgets.QWidget]:
+    def resolve_window(self) -> Optional[QtWidgets.QWidget]:
         """Return the owning MainWindow for dynamic-widget registration.
 
-        Registration is *deferred* (see :meth:`_schedule_registration`); by the
-        time the drain runs the menu may have reparented itself to a top-level
-        popup / Tool window on show, severing the parent chain back to the
-        MainWindow. A plain ``self.parent()`` walk then finds nothing and
-        registration is silently skipped — the widget never gets
-        ``restore_state``, so its value is neither saved nor restored. This was
-        the prime suspect behind menu-hosted options resetting only in live
-        interactive DCC sessions (where show/reparent races the drain).
+        Registration is *deferred* (see :meth:`schedule`); by the time the
+        drain runs the menu may have reparented itself to a top-level popup /
+        Tool window on show, severing the parent chain back to the MainWindow.
+        A plain ``parent()`` walk then finds nothing and registration is
+        silently skipped — the widget never gets ``restore_state``, so its
+        value is neither saved nor restored. This was the prime suspect behind
+        menu-hosted options resetting only in live interactive DCC sessions
+        (where show/reparent races the drain).
 
         To stay robust we (1) prefer a live parent-chain walk — correct and
         cheap in the common, un-reparented case — and (2) fall back to the
         MainWindow captured weakly while the chain was still intact. The cache
         is refreshed on every successful live walk.
         """
-        curr = self.parent()
+        curr = self._menu.parent()
         while curr is not None:
             if hasattr(curr, "register_widget") and hasattr(curr, "widgets"):
-                self._registration_window_ref = weakref.ref(curr)
+                self.window_ref = weakref.ref(curr)
                 return curr
             curr = curr.parent()
 
-        ref = self._registration_window_ref
+        ref = self.window_ref
         window = ref() if ref is not None else None
         if window is not None:
             try:
                 window.objectName()  # dead C++ wrapper -> RuntimeError
                 return window
             except RuntimeError:
-                self._registration_window_ref = None
+                self.window_ref = None
         return None
 
-    def _register_with_main_window(self, widget: QtWidgets.QWidget) -> None:
+    def register_with_main_window(self, widget: QtWidgets.QWidget) -> None:
         """Find the owning MainWindow and register *widget* with it.
 
         This enables signal wiring, slot discovery, and QSettings-based
-        state persistence for widgets added dynamically via :meth:`add`.
-        Resolution goes through :meth:`_resolve_registration_window` so a menu
-        that has already reparented to a popup still resolves its MainWindow.
+        state persistence for widgets added dynamically via ``Menu.add``.
+        Resolution goes through :meth:`resolve_window` so a menu that has
+        already reparented to a popup still resolves its MainWindow.
         """
-        window = self._resolve_registration_window()
+        window = self.resolve_window()
         if window is None:
-            self.logger.debug(
+            self._menu.logger.debug(
                 "_register_with_main_window: no MainWindow reachable for "
                 f"{widget.objectName()!r}; its state will not persist"
             )
@@ -156,30 +169,32 @@ class _MenuRegistrationMixin:
         except Exception:
             pass
 
-    def _schedule_registration(self, widget: QtWidgets.QWidget) -> None:
+    def schedule(self, widget: QtWidgets.QWidget) -> None:
         """Queue *widget* for deferred registration with the main window.
 
         Coalesces N per-item ``QTimer.singleShot`` calls into a single
         drain pass.  Registration order (FIFO) and the deferred-not-sync
-        contract from :meth:`Menu.add` are preserved.
+        contract from ``Menu.add`` are preserved.
         """
         # Capture the owning MainWindow once, while the menu is still nested
         # under its host and the parent chain is intact. By drain time the menu
         # may have reparented to a popup, breaking the walk; the cache set here
-        # lets _resolve_registration_window recover it. A later legitimate
-        # reparent is still honored — drain-time resolution re-walks live first.
-        if self._registration_window_ref is None:
-            self._resolve_registration_window()
-        self._pending_registrations.append(widget)
-        # Track for the pre-paint flush (_flush_pending_registrations) so
-        # register_children can complete registration before first paint;
-        # the timer below stays as the fallback for post-show dynamic adds.
-        _MenuRegistrationMixin._awaiting_registration.add(self)
-        if not self._registration_drain_scheduled:
-            self._registration_drain_scheduled = True
-            QtCore.QTimer.singleShot(0, self._drain_pending_registrations)
+        # lets resolve_window recover it. A later legitimate reparent is still
+        # honored — drain-time resolution re-walks live first.
+        if self.window_ref is None:
+            self.resolve_window()
+        self.pending.append(widget)
+        # Track for the pre-paint flush (flush_pending) so register_children
+        # can complete registration before first paint; the timer below stays
+        # as the fallback for post-show dynamic adds.
+        menu = self._menu
+        _MenuRegistration.awaiting_registration.add(menu)
+        if not self.drain_scheduled:
+            self.drain_scheduled = True
+            # The menu's own slot: a QObject receiver, as before the split.
+            QtCore.QTimer.singleShot(0, menu._drain_pending_registrations)
 
-    def _drain_pending_registrations(self) -> None:
+    def drain(self) -> None:
         """Process every queued registration in insertion order.
 
         Anything appended *during* the drain (e.g. a registration that
@@ -195,19 +210,20 @@ class _MenuRegistrationMixin:
         swallowed silently; any other exception is logged so latent bugs
         don't go unnoticed but the drain still completes.
         """
-        pending, self._pending_registrations = self._pending_registrations, []
-        self._registration_drain_scheduled = False
+        menu = self._menu
+        pending, self.pending = self.pending, []
+        self.drain_scheduled = False
         # Registrations appended DURING the drain land in the fresh queue and
         # re-add this menu; discarding here keeps the awaiting-set accurate.
-        _MenuRegistrationMixin._awaiting_registration.discard(self)
+        _MenuRegistration.awaiting_registration.discard(menu)
         for widget in pending:
             try:
-                self._register_with_main_window(widget)
+                self.register_with_main_window(widget)
             except RuntimeError:
                 # Widget destroyed between schedule and drain; skip silently.
                 continue
             except Exception as exc:  # noqa: BLE001 — preserve per-timer isolation
-                self.logger.error(
+                menu.logger.error(
                     f"_drain_pending_registrations: {type(exc).__name__} during "
                     f"_register_with_main_window: {exc}",
                 )

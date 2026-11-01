@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Tests for ``SwitchboardEditorsMixin`` — the ``sb.editors`` registry.
+"""Tests for ``Switchboard.editors`` — the ``sb.editors`` registry.
 
 Covers:
 - Editor name registry (``style``, ``shortcut``, ``browser``, ``presets``)
@@ -86,24 +86,6 @@ class EditorsProperty(_Base):
             with self.subTest(name=name):
                 header = self.sb.editors.get(name)._header.title()
                 self.assertEqual(header.lower().replace(" ", "_"), name)
-
-    def test_a_retired_name_warns_and_reaches_the_same_editor(self):
-        import warnings
-
-        for old, new in (
-            ("style", "style_editor"),
-            ("shortcut", "shortcut_editor"),
-            ("browser", "ui_browser"),
-            ("presets", "preset_editor"),
-        ):
-            with self.subTest(old=old):
-                with warnings.catch_warnings(record=True) as caught:
-                    warnings.simplefilter("always")
-                    editor = self.sb.editors.get(old)
-                self.assertIs(editor, self.sb.editors.peek(new))
-                self.assertTrue(
-                    any(issubclass(w.category, DeprecationWarning) for w in caught)
-                )
 
 
 class EditorsGet(_Base):

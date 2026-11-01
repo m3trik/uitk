@@ -883,7 +883,7 @@ for w in (tabs, group, line, bar, table, tree):
 StyleSheet().set(win, theme="dark")
 win.resize(300, 420)
 images = [win.grab().toImage()]
-for menu in (W.QMenu(win), MenuUtils._styled_menu(win)):
+for menu in (W.QMenu(win), MenuUtils.styled_menu(win)):
     act = menu.addAction("checked"); act.setCheckable(True); act.setChecked(True)
     menu.addMenu("sub").addAction("x")
     menu.ensurePolished(); menu.adjustSize()

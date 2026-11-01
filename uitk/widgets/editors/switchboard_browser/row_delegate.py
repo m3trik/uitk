@@ -34,6 +34,7 @@ _KIND_CHIP_LABELS = {
     "external_subprocess": "external",
     "external_in_process": "external:in-proc",
     "editor": "editor",
+    "ui_built": "code",
 }
 
 

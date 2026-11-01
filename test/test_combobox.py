@@ -679,6 +679,17 @@ class DoubleClickBodyStartsRename(QtBaseTestCase):
         host.activateWindow()
         QTest.qWaitForWindowActive(host)
         combo.setCurrentIndex(1)
+        # A fresh synthetic clock for this gesture: the gestures pass delay=1,
+        # so a first press came 1 ms after the previous test's last press at
+        # the same screen spot and Qt read it as a double-click (a rename,
+        # not the popup). A default-delay click on the host's empty corner
+        # steps QTest's clock past the double-click interval.
+        QTest.mouseClick(
+            host.windowHandle(),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+            QtCore.QPoint(290, 190),
+        )
         return combo
 
     @staticmethod

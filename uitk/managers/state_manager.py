@@ -3,7 +3,7 @@
 import enum
 import weakref
 from contextlib import contextmanager
-from typing import Any, Optional, Union
+from typing import Any, Mapping, Optional, Union
 from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 from uitk.managers.settings_manager import SettingsManager
@@ -37,6 +37,8 @@ class StateManager(ptk.LoggingMixin):
     # Key prefix under which ``save_defaults`` persists a widget's saved
     # default, beside its session value (``<name>/<signal>``).
     _SAVED_DEFAULTS_PREFIX = "defaults/"
+    # Key prefix of the non-widget values ``save_custom`` persists.
+    _CUSTOM_PREFIX = "custom/"
 
     # Index-based widgets (combo boxes) report ``-1`` for "no selection",
     # which they briefly do while their model is being (re)populated.
@@ -76,6 +78,34 @@ class StateManager(ptk.LoggingMixin):
 
     def _get_settings(self, widget: QtWidgets.QWidget) -> QtCore.QSettings:
         return self.qsettings
+
+    @classmethod
+    def rename_widget_key(cls, key: str, renames: Mapping[str, str]) -> str:
+        """*key*, one this manager stores, with its widget renamed per *renames*.
+
+        The one reader of this manager's key format outside it: a panel renamed
+        or merged carries its stored values under its widgets' names now
+        (``PanelRenames``). A session value ``<objectName>/<signal>`` and a saved
+        default ``defaults/<objectName>/<signal>`` follow their widget; a custom
+        value (``custom/<key>``) names no widget, and is returned as it is, as is
+        any key not of this format.
+
+        Parameters:
+            key: A key of the panel's store.
+            renames: ``{former objectName: its name now}``.
+
+        Returns:
+            str: The key the renamed widget's value is stored under.
+        """
+        if key.startswith(cls._CUSTOM_PREFIX):
+            return key
+        prefix = cls._SAVED_DEFAULTS_PREFIX
+        if not key.startswith(prefix):
+            prefix = ""
+        name, sep, rest = key[len(prefix) :].partition("/")
+        if not sep:
+            return key
+        return f"{prefix}{renames.get(name, name)}/{rest}"
 
     def _get_state_key(
         self, widget: QtWidgets.QWidget, prefix: str = ""
@@ -909,7 +939,7 @@ class StateManager(ptk.LoggingMixin):
         if stored is self._UNSUPPORTED:
             self.logger.debug(f"Unsupported type for custom key {key}: {type(value)}")
             return
-        self.qsettings.setValue(f"custom/{key}", stored)
+        self.qsettings.setValue(f"{self._CUSTOM_PREFIX}{key}", stored)
 
     def load_custom(self, key: str, default: Any = None) -> Any:
         """Retrieve a previously stored custom key/value pair.
@@ -920,15 +950,15 @@ class StateManager(ptk.LoggingMixin):
             # SettingsManager.value() already decodes stored values and
             # returns the default verbatim on a missing key; decoding again
             # would mangle strings like "1.10" a second time.
-            return self.qsettings.value(f"custom/{key}", default)
+            return self.qsettings.value(f"{self._CUSTOM_PREFIX}{key}", default)
         decoded = SettingsManager.decode_stored_value(
-            self.qsettings.value(f"custom/{key}")
+            self.qsettings.value(f"{self._CUSTOM_PREFIX}{key}")
         )
         return default if decoded is None else decoded
 
     def clear_custom(self, key: str) -> None:
         """Remove a single custom key from storage."""
-        self.qsettings.remove(f"custom/{key}")
+        self.qsettings.remove(f"{self._CUSTOM_PREFIX}{key}")
 
 
 # -----------------------------------------------------------------------------

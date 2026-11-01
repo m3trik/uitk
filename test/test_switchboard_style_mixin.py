@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Tests for ``SwitchboardStyleMixin`` and lazy ``EditorPanel.style``.
+"""Tests for ``Switchboard.style`` and lazy ``EditorPanel.style``.
 
 Covers:
 - ``sb.style`` returns the StyleSheet class

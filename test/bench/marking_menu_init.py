@@ -24,7 +24,7 @@ Phases timed (sub-millisecond resolution, ``time.perf_counter``):
       Construct the :class:`Switchboard` with the project's UI / slot
       sources.  Cost is dominated by registry scans and module imports.
       Subclasses whose marking menu builds its own switchboard
-      internally (e.g. tentacle's ``TclMaya``) may return ``None``
+      internally (e.g. tentacle's ``Tcl.build``) may return ``None``
       here — phase 03 then absorbs the bundled cost.
 
   ``03_marking_menu_construct``
@@ -138,7 +138,7 @@ class MarkingMenuInitBench:
         """Construct and return a configured :class:`uitk.Switchboard`.
 
         Subclasses whose marking menu builds its own switchboard
-        internally (e.g. tentacle's ``TclMaya``) may return ``None``;
+        internally (e.g. tentacle's ``Tcl.build``) may return ``None``;
         :meth:`run` will then read ``mm.sb`` after marking-menu
         construction and the ``02_switchboard_construct`` phase will
         report ~0 ms.

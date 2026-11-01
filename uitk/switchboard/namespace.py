@@ -1,6 +1,6 @@
 # !/usr/bin/python
 # coding=utf-8
-"""Mixin that falls back to the uitk package namespace for unknown attributes.
+"""The Switchboard's fallback to the uitk package namespace for unknown attributes.
 
 Makes the Switchboard the single uitk entry point for anything that already holds
 one — notably slot classes, which are handed ``self.sb`` for free::
@@ -22,7 +22,7 @@ Scope and safety
 ----------------
 ``__getattr__`` runs only after normal lookup has already failed, so this can
 never shadow a Switchboard attribute, property or method — including the
-high-traffic shortcuts ``sb.style`` (see :mod:`~uitk.switchboard.style`),
+high-traffic shortcuts ``sb.style`` (the lazy :class:`StyleSheet` accessor),
 ``sb.registered_widgets`` and ``sb.registered_icons``, which resolve normally and
 never reach here.
 
@@ -68,20 +68,22 @@ the leak above past an earlier version of that file.
 """
 
 
-class SwitchboardNamespaceMixin:
-    """Resolve otherwise-unknown Switchboard attributes against the ``uitk`` namespace."""
+class _UitkNamespace:
+    """Resolve otherwise-unknown Switchboard attributes against the ``uitk``
+    namespace -- the body of ``Switchboard.__getattr__``. Stateless."""
 
-    def __getattr__(self, name):
+    @staticmethod
+    def resolve(sb, name):
         # Private/dunder probes never reach uitk — see the module docstring.
         if name.startswith("_"):
             raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{name}'"
+                f"'{type(sb).__name__}' object has no attribute '{name}'"
             )
         import uitk
 
         if name not in (uitk.__all__ or ()):
             raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{name}' "
+                f"'{type(sb).__name__}' object has no attribute '{name}' "
                 f"(and '{name}' is not a public uitk symbol)"
             )
         # Registered: any failure here is a real resolution error (a broken import

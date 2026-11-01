@@ -10,7 +10,7 @@ Signatures below are verified against the generated registry ([API_INDEX.md](../
 
 ## `uitk.Switchboard`
 
-Source: [switchboard/_core.py](../uitk/switchboard/_core.py) (composes partials from sibling modules — `slots.py`, `widgets.py`, `widget_values.py`, `rules.py`, `control_groups.py`, `dialogs.py`, `placement.py`, `event_loop.py`, `names.py`, `editors.py`, `style.py`, `shortcuts.py`)
+Source: [switchboard/_core.py](../uitk/switchboard/_core.py) (a facade over private collaborators in sibling modules — `slots.py`, `widgets.py`, `widget_values.py`, `rules.py`, `control_groups.py`, `dialogs.py`, `placement.py`, `event_loop.py`, `names.py`, `editors.py`, `namespace.py`, `shortcuts.py`)
 
 ```python
 Switchboard(
@@ -20,8 +20,8 @@ Switchboard(
     widget_source=None,    # path | module | list thereof
     icon_source=None,      # path | module | list thereof
     handlers: dict = None, # {"name": HandlerClass | instance}
-    tag_delimiter: str = None,         # default "#"
-    ui_name_delimiters: str = None,    # default "."
+    tag_delimiter: str = None,         # default "#"; every tag / name method splits on it
+    ui_name_delimiters: str = None,    # deprecated, removed in 1.10.0: nothing reads it
     log_level: str = "warning",
     base_dir=None,
     loader="runtime",                  # "runtime" | "compiled"
@@ -60,7 +60,8 @@ Switchboard(
 
 ```python
 TAG_DELIMITER = "#"
-UI_NAME_DELIMITER = "."
+UI_NAME_DELIMITER = "."  # deprecated, removed in 1.10.0: nothing reads it
+STACKED_TAGS = ("startmenu", "submenu")  # a stacked page's tags: no footer, never a panel
 SLOT_SUFFIX = "Slots"
 INIT_SUFFIX = "_init"
 ```
@@ -74,7 +75,8 @@ INIT_SUFFIX = "_init"
 | `add_ui(name, widget=None, parent=None, tags=None, path=None, overwrite=False, **kwargs) -> MainWindow` | Wrap a loaded widget in `MainWindow` and register it |
 | `get_ui(ui=None) -> QWidget` | Resolve by name, return current if `None`, pass-through if already a widget |
 | `get_ui_relatives(ui, upstream=False, exact=False, downstream=False, reverse=False) -> list` | Tag-depth-based relatives via shared base name |
-| `find_ui_filename(legal_name, unique_match=False) -> str \| list \| None` | Legal-name-to-original-filename resolver |
+| `ui_names() -> list[str]` | Every registered UI name: each `.ui` file stem, then each `register_ui` name (a name both register is listed once). The one list relatives, legal-name lookup, the launcher's rows and the shortcut editor's targets read; nothing is built |
+| `find_ui_filename(legal_name, unique_match=False) -> str \| list \| None` | Legal name to the registered name(s) among `ui_names()` (`editor_submenu` finds `editor#submenu`) |
 | `save_ui_tags(path, tags)` | Persist tags into a `.ui` file as a Designer-safe dynamic property |
 | `ui_history(index=None, allow_duplicates=False, inc=None, exc=None)` | Ordered history of current-UI transitions |
 | `show_prev_ui() -> QWidget \| None` | Re-show the most-recent non-transient UI not already on screen |
@@ -120,6 +122,7 @@ INIT_SUFFIX = "_init"
 | Method | Purpose |
 |:---|:---|
 | `register(ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive=False, validate=1, tags=None)` | Add new sources after construction |
+| `register_ui(name, build)` | Register a UI built in code: *build* (any callable returning a `QWidget`) runs once, the first time *name* is asked for, and its result is added exactly as a loaded `.ui` is (wrapped, bound by `objectName` to `<Name>Slots`, state saved, `name#tag` stacking); a `.ui` file of the same name wins. Listed by `ui_names()` and the UI Browser (kind `ui_built`) |
 | `register_handler(name, instance, defaults=None)` | Attach `instance` at `sb.handlers.<name>`, merge `defaults` into `sb.configurable.<name>` |
 | `register_command(name, callback, ...)` / `set_command_shortcut(name, sequence)` | Register a UI-less command and bind a shortcut to it (for slot shortcuts, decorate the slot with `@Shortcut("Ctrl+S")`) |
 
@@ -303,7 +306,7 @@ LAUNCH_DEFAULTS = {      # launch() options; launch_code spells out only overrid
 | Method | Purpose |
 |:---|:---|
 | `get(name, **kwargs) -> QWidget \| None` | Resolve UI + apply styles (extra kwargs accepted and ignored for call-site compatibility) |
-| `can_resolve(name) -> bool` | Whether `get` would resolve `name` — without building it |
+| `can_resolve(name) -> bool` | Whether `get` would resolve `name` — without building it. A claimed name no `.ui` file or Slots class provides is then built by the switchboard's `get_ui` through `get` |
 | `show(ui, pos=None, force=False, **kw) -> QWidget` | Show and position a UI |
 | `apply_styles(ui, style=None, theme=None)` | Apply `DEFAULT_STYLE` (or override) with tag-based adjustments; `theme` overrides for this call |
 | `setup_lifecycle(ui, hide_signal=None)` | Connect a signal to `ui.request_hide()` |
@@ -360,7 +363,7 @@ Source: [handlers/base_handler.py](../uitk/handlers/base_handler.py) · [handler
 |:---|:---|
 | `register(name, *, module, entry=None, install_spec=None, python=None, show_kwargs=None, mode="subprocess", tags=None, hidden_in=None, description=None)` | Pre-register an app so it can be launched by name |
 | `discover(groups=None) -> int` | Auto-register every app advertised under a uitk entry-point group |
-| `add_provider(install_spec, *, probe_module=None, group=None, python=None)` | Register a provider package that ships discoverable apps |
+| `add_provider(install_spec, *, probe_module=None, group=None, python=None)` | Register a provider package that ships discoverable apps. A version range in the spec (`"pkg>=0.8.0,<0.9"`) covers every app it ships: a missing one installs inside it, and one installed outside it is offered an update through the handler's `prompt` (`(message, *buttons) -> button`, default `sb.message_box`) instead of launching. With no range nothing about the version is read |
 | `is_registered(name)` / `unregister(name)` | Query / remove |
 | `launch(name=None, *, module=None, entry=None, install_spec=None, python=None, show_kwargs=None, mode=None, show=True)` | Launch a registered app, or an ad-hoc app from kwargs |
 | `entries()` / `close(name)` / `is_visible(name)` / `save_tags(name, tags)` | Launchable contract + tag persistence |
@@ -427,6 +430,7 @@ MarkingMenu(
     precompile: bool = False,
     preload: bool = False,
     context_tags=None,
+    host=None,                      # a MarkingMenuHost; None = PureMarkingMenuHost (plain Qt)
     **kwargs,
 )
 ```
@@ -455,12 +459,23 @@ HANDLERS = {"ui": UiHandler}   # merged with any `handlers` arg at construction
 | `restore_other_windows()` | Restore opacity — called by `hideEvent`, so any hide un-dims; callers rarely need it |
 | `setCurrentWidget(widget)` | Stacked-widget-style current-widget swap |
 | `add_child_event_filter(widgets)` | Install the internal child event filter on widgets |
+| `start_menu_names(short=True)` | The `#startmenu` names a binding can target, `.ui` files and `register_ui` builders alike |
+| `activate(buttons=None)` / `release()` / `armed` / `activation_key` | What a host that owns the keyboard calls to drive the menu ([MARKING_MENU.md](MARKING_MENU.md)) |
+| `set_activation_key(new_key)` | Rewrite the activation key across every chord and record it as the user's choice |
+| `stored_activation_key(context_tags=None)` *(classmethod)* | The user's chosen activation key for a host context, readable before a menu exists |
+| `get_route_target(buttons=())` / `set_route_target(buttons, menu)` | The menu a mouse gesture on the activation key opens |
+| `on_bindings_changed(callback)` | Subscribe to the persisted bindings store |
+| `preload_menus(names=None, *, defer=True)` | Warm the binding-target menus and the submenus they open |
+| `retire()` / `retire_all()` *(classmethod)* | Give up input for good; `retire_all` retires every live instance before a reload and returns them |
+| `enable_input_logging(path=None, level="DEBUG")` / `disable_input_logging()` | Tee input-handoff DEBUG logs to a file |
 
-### Subclass override points
+### Hosting it in an application
 
-- `HANDLERS` class dict — register DCC-specific handlers.
-- `_setup_registry` — custom handler initialization logic.
-- `_init_ui`, `_show_window` — customize per-UI-type lifecycle.
+An application's behaviour comes in through `host=`, never a subclass: a `MarkingMenuHost`
+(main window, shortcut window, parenting, mouse buttons, the activation binding, key events),
+with `PureMarkingMenuHost` as the plain-Qt default. A launcher's half (start, defer, the live
+menu, teardown, report) is `MarkingMenuLaunchHost`. Both are in [MARKING_MENU.md](MARKING_MENU.md).
+Handler precedence: the `HANDLERS` class default, then the host's `ui_handler` over its `"ui"` entry, then an explicit `handlers=` entry over both.
 
 ---
 
@@ -662,10 +677,51 @@ PresetManager.from_widgets(preset_dir, widgets, builtin_dir=None)
 | `list() -> list[str]` | Names of available presets across both tiers (user + builtin) |
 | `wire_combo(combo, on_loaded=None, placeholder=None)` | Wire a `ComboBox` as a preset selector (option-box toolbar: Refresh/Save/⋯-menu, inline naming). Returns the option-box container. |
 | `make_preset_combo(parent=None, name=None, tooltip=None, on_loaded=None, placeholder=None)` | Build + wire a preset `ComboBox`; returns its option-box container (`container.preset_combo` reaches the combo). |
+| `carry_presets(source, target) -> list[Path]` | Class method — copy the preset files saved under *source* into *target* (template subfolders kept, dotfile markers left), never over one there, leaving *source* as it was: for a panel whose presets moved (renamed, or folded into another with its widget names kept). Relative folders resolve under `get_presets_root()`; best-effort, a file that cannot be copied is skipped and logged |
 
 `preset_dir` accepts absolute paths, `~` expansion, `$ENV` variables, or short names (`"mayatk/reference_manager"`) resolved under `PresetManager.get_presets_root()` — which *is* pythontk's `UserConfig.user_config_root()` (one resolver for the GUI store and the headless `PresetStore`): `%LOCALAPPDATA%/uitk` (`~/.config/uitk`, `~/Library/Preferences/uitk`) by default, redirectable wholesale via `$UITK_PRESETS_ROOT` (`ptk.UserConfig.CONFIG_ROOT_ENV_VAR`).
 
 The module is the facade; its parts are private modules beside it, inherited by `PresetManager`: [`_preset_widgets.py`](../uitk/managers/_preset_widgets.py) (capture scope, candidate widgets, the per-widget value authority), [`_preset_combo.py`](../uitk/managers/_preset_combo.py) (the selector `wire_combo` builds) and [`_preset_migration.py`](../uitk/managers/_preset_migration.py) (presets saved under older layouts, carried into the root on first use).
+
+---
+
+## Panel seams — `PanelRenames`, `PreviewController` / `PreviewSession`
+
+The two managers a host or a tool library builds panels on, beside `Switchboard.register_ui` (a UI built in code, above) and `PresetManager.carry_presets` (a panel's preset files, above).
+
+### `PanelRenames`
+
+Source: [managers/panel_renames.py](../uitk/managers/panel_renames.py)
+
+```python
+PanelRenames.carry(switchboard, renamed_from, slot_class_names=None) -> list[str]  # the former panels carried
+```
+
+A panel's user state lives under its name, so a panel renamed, or merged into another, would open on its defaults. Run `carry` as the host registers its panels, before any of them loads. `renamed_from` is `{panel: {former panel: {former widget name: its name now}}}` (a widget kept by name needs no entry). Per former panel it copies, key by key, its settings branch (widget states under the renamed widgets' names), its shortcut overrides under the new panel's Slots class (`slot_class_names(panel)`, the class first and older spellings after it; default `switchboard.get_slot_class_names`) and its window-persistence override when the new panel has none. A value the new panel already holds wins, the former branch stays in place, and each former panel is recorded once carried (`PanelRenames.CARRIED_KEY` in the host-namespaced `configurable` store), so a value the user clears afterwards stays cleared. Best-effort: an unreadable store leaves the panels on their defaults, logged at debug, never raised into a launch. tentacle's `slots.tools.RENAMED_FROM` is its table; a panel folded into another carries its preset files with `PresetManager.carry_presets`.
+
+### `PreviewController` / `PreviewSession`
+
+Source: [managers/preview_controller.py](../uitk/managers/preview_controller.py)
+
+```python
+PreviewController(
+    operation_instance,              # perform_operation(objects, ...); optional prepare_operation(objects)
+    preview_checkbox, create_button, # duck-typed: toggled / clicked / setEnabled; window() may offer on_show / on_hide
+    finalize_func=None, message_func=print,
+    enable_on_show=False, disable_on_hide=True,
+    validation_func=None,            # (objects) -> bool; False refuses the selection
+    select_result_checkbox=None, result_provider=None,
+    reselect_on_disable=True, require_preview=False,
+    undo_message=None, restore_func=None,
+    *, session=None,                 # a PreviewSession; None builds SESSION_CLASS(operation)
+)
+```
+
+A preview panel's lifecycle over the host's scene: checking the box runs the operation on the selection as a throwaway pass; each option change rolls it back and runs it again (`refresh`, wired to the option widgets); unchecking rolls it back for good; the commit button keeps the result as one undo step, and with no preview running runs the operation once on the selection, as one undo step too (`require_preview=True` keeps the button dead until a preview runs). An operation failure is reported through `message_func` and switches the preview off. Methods: `enable()` / `disable()` / `toggle(state)` / `is_enabled`, `refresh()`, `finalize_changes()` (the commit), `cleanup()`; `cleanup_all_instances()` (class) discards every live preview, a host's teardown.
+
+The scene is reached only through a `PreviewSession`, a `Protocol` of ten small methods called in this order: `selection()`, `begin(objects)`, then `run()` and `rollback()` (a refresh is a rollback and a run), and to end either `rollback()` + `discard(reselect)` or `commit()` inside `undo_step(name)`; a commit with no preview is `selection()` and `apply(objects)` inside `undo_step`. `unrecorded()` keeps edits off the undo queue and `select_result(checkbox, results, committed)` (de)selects the result. Each host library implements one and binds it as its `Preview` (`SESSION_CLASS`): mayatk's `MayaPreviewSession`, blendertk's `BlenderPreviewSession`, so a panel builds one the same way in every host, `self.preview = tk.Preview(self, ui.chk000, ui.b000, ...)`. There is no `Pure` session: a session is a scene's rollback and undo, which a process with no scene does not have, so a stand-in would preview by running the operation for real; a plain-Python caller (a test) passes its own `session=`.
+
+The panel holds its controller: the registry of live previews is weak, so one nothing holds is collected and its running preview discarded.
 
 ---
 
@@ -706,12 +762,11 @@ Mixin-provided properties:
 
 ---
 
-## Text mixins — `RichTextFormatter`, `TextTruncation`, `RichText`, `TextOverlay`
+## Text mixins — `RichTextFormatter`, `RichText`, `TextOverlay`
 
 Source: [widgets/mixins/text.py](../uitk/widgets/mixins/text.py)
 
 - **`RichTextFormatter`** — stateless HTML pipeline shared by the rich-text widgets. `RichTextFormatter.format(string, *, align="left", font_color="white", font_size=None)` applies the standard pipeline; `apply_prefix_styles(string)` colors level-prefix tokens (`Error:`, `Warning:`, …), `apply_inline_styles(string)` upgrades bare HTML tags, `wrap_font_color(string, color)` / `wrap_font_size(string, size)` / `resolve_background(background)` are the primitives.
-- **`TextTruncation`** — reusable elision: `calculate_text_truncation` (pixel-based via font metrics), `calculate_character_truncation`, `calculate_word_truncation`, `calculate_path_truncation`, plus `apply_text_truncation` / `create_truncated_button` / `create_truncated_label` / `update_widget_text_truncation`.
 - **`RichText`** / **`TextOverlay`** — the widget-inheritance mixins (HTML text via an internal label; overlay text). Which widgets carry them: [Widgets](WIDGETS.md).
 
 ---
@@ -772,7 +827,14 @@ The remaining public top-level symbols (`uitk/__init__.py` → `DEFAULT_INCLUDE`
 | `Cancelable` | [Slots](SLOTS.md) § `@Cancelable`; host strategy `CancelManager` / `CancelProvider` ([managers/cancel_manager.py](../uitk/managers/cancel_manager.py)) is covered there too |
 | `RuntimeLoader`, `CompiledLoader`, `UiCompiler`, `PrecompileJob` | [Architecture](ARCHITECTURE.md) § UI loading & compilation |
 | `DesignerPlugin`, `DesignerWidget` | [Widgets § Using the widgets in Qt Designer](WIDGETS.md) |
-| `AttributeSpec`, `KindHandler`, `KindFactory` | [Bridge](BRIDGE.md) — the kind-handler registry |
+| `AttributeSpec`, `KindHandler`, `KindFactory`, `Parameters`, `ParamRegistry`, `Tooltip`, `ParamPanelSlots` | [Bridge](BRIDGE.md) — the kind-handler registry, a job's parameter registry, and the parameter panel's slot base |
+| `PanelRenames`, `PreviewController`, `PreviewSession` | [§ Panel seams](#panel-seams--panelrenames-previewcontroller--previewsession) |
+| `FooterApply` | [Widgets § Footer](WIDGETS.md) — the Apply button a dry run arms: `arm(commit)`, `disarm()`, `pending` |
+| Sequencer parts — `SequencerEditor`, `TrackEditor`, `GraphEditor`, `ClipItem`, `KeyframeItem`, `RowMetrics`, `HeldGeometryMixin`, `DraggableItemMixin`, `FrameTooltip`, `MenuUtils`, `PatternRegistry`, `TransportControls`, `AttributeColorDialog` | [Widgets § Sequencer package](WIDGETS.md) |
+| Colour editing — `ColorModel` (one observable colour, float HSVA), `ColorEditor` (sections over one model), `ColorEditorPopup`, `ColorRampEditor` (one editor per ramp end), `RampPreview`, `PulseWaveform` / `FadeWaveform` (a keyed channel drawn flat), `GradientSlider` (a channel's live ramp in its groove) | [managers/color_model.py](../uitk/managers/color_model.py), [widgets/editors/color_editor.py](../uitk/widgets/editors/color_editor.py), [widgets/gradient_slider.py](../uitk/widgets/gradient_slider.py) |
+| More editors and menus — `PresetEditor`, `CollisionConflict` (one shortcut-editor conflict), `NamingConventionEditor` (affix rows editing a naming convention in place), `ContextMenu` / `MenuRow` (a `Menu` whose rows open flyouts), `FormPanel` (a themed form window over field specs, with a dry run's Apply) | [Widgets § Editors package](WIDGETS.md); [widgets/editors/naming_convention_editor.py](../uitk/widgets/editors/naming_convention_editor.py), [widgets/context_menu.py](../uitk/widgets/context_menu.py), [widgets/formPanel.py](../uitk/widgets/formPanel.py) |
+| `OverflowIndicator`, `ChoiceOption` | [Widgets](WIDGETS.md) — § Overflow arrows on scroll views, § Option box system |
+| Window and input services — `CursorManager` / `OverrideCursorGuard`, `HostExitGuard`, `ResetGesture`, `FieldVisibility`, `WindowAutoHide` (hide a window once the cursor leaves it after entering) | [Widgets](WIDGETS.md) — § Cursors, § Quitting inside a host, § Built-in Apply / Defaults / Presets bars, § CollapsableGroup; [managers/window_auto_hide.py](../uitk/managers/window_auto_hide.py) |
 | `Bootstrap` | [_bootstrap.py](../uitk/_bootstrap.py) — setup for standalone processes (`configure_platform`, `configure_high_dpi`, before the `QApplication`) and the window-system capabilities widgets branch on (`composites`, `set_translucent`, ...); the desktop-launch helpers (`detach_console`, `capture_output`, `report_uncaught`, `set_app_id`) are tabled under [`uitk.ExternalAppHub`](#uitkexternalapphub) |
 | `EmbeddedMenuWidget`, `PersistentMenu` | [widgets/embeddedMenu.py](../uitk/widgets/embeddedMenu.py) — host a live `QMenu` as ordinary widget content, sized exactly to it (`content_size`, `fit_to_window`; `PersistentMenu` ignores hide attempts) |
 | `IconManager` | Theme-aware SVG icon loader — `get(name, size, color)`, `set_icon`, `register_icon_dir`, `set_default_color`; usage notes in [Widgets](WIDGETS.md) |

@@ -9,7 +9,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`bridge/attribute_spec.py`](#bridge--attribute_spec) — The Qt-free half of the parameter-panel contract: :class:`AttributeSpec`.
 - [`bridge/formatters.py`](#bridge--formatters) — Per-target-language value formatters for bridge parameter rendering.
 - [`bridge/parameters.py`](#bridge--parameters) — Registry helpers for bridge parameter dicts.
-- [`bridge/slots.py`](#bridge--slots) — Generic DCC-bridge slot base class.
+- [`bridge/slots.py`](#bridge--slots) — The parameter panel's slot base class, :class:`ParamPanelSlots`.
 - [`bridge/spec.py`](#bridge--spec) — Kind-handler registry for parameterised forms (the Qt half of the contract).
 - [`bridge/tooltip.py`](#bridge--tooltip) — Rich-text tooltip + template-description helpers for bridge panels.
 - [`compile.py`](#compile) — Compile Qt Designer .ui files to switchboard-augmented _ui.py modules.
@@ -32,7 +32,9 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`managers/icon_manager.py`](#managers--icon_manager)
 - [`managers/model_binding.py`](#managers--model_binding) — Keep widgets in step with a model uitk never sees: read on change, write on edit.
 - [`managers/optional_package_manager.py`](#managers--optional_package_manager) — Provisioning for optional packages a panel needs importable in THIS session.
+- [`managers/panel_renames.py`](#managers--panel_renames) — Carry a renamed panel's saved values to the panel that took its name.
 - [`managers/preset_manager.py`](#managers--preset_manager)
+- [`managers/preview_controller.py`](#managers--preview_controller) — A live preview bound to its panel's widgets, over the host's scene session.
 - [`managers/recent_values_store.py`](#managers--recent_values_store) — Widget-free *recent values* model — the shared source of truth for value history.
 - [`managers/registry_manager.py`](#managers--registry_manager) — Typed file registries backing Switchboard discovery.
 - [`managers/reset_gesture.py`](#managers--reset_gesture) — ``ResetGesture`` — the click grammar every *Restore Defaults* control shares.
@@ -43,20 +45,9 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`managers/window_auto_hide.py`](#managers--window_auto_hide) — Hide a floating window once the cursor has visited it and left.
 - [`managers/window_height.py`](#managers--window_height) — How a window follows the height of what it is holding.
 - [`switchboard/_core.py`](#switchboard--_core)
-- [`switchboard/control_groups.py`](#switchboard--control_groups)
-- [`switchboard/dialogs.py`](#switchboard--dialogs)
-- [`switchboard/editors.py`](#switchboard--editors) — Mixin that exposes the bundled editor windows on the Switchboard.
-- [`switchboard/event_loop.py`](#switchboard--event_loop)
 - [`switchboard/history.py`](#switchboard--history) — Ordered, capped history with optional weak storage and key-based filtering.
-- [`switchboard/names.py`](#switchboard--names)
-- [`switchboard/namespace.py`](#switchboard--namespace) — Mixin that falls back to the uitk package namespace for unknown attributes.
-- [`switchboard/placement.py`](#switchboard--placement)
-- [`switchboard/rules.py`](#switchboard--rules)
 - [`switchboard/shortcuts.py`](#switchboard--shortcuts) — Switchboard-side keyboard shortcut machinery.
 - [`switchboard/slots.py`](#switchboard--slots)
-- [`switchboard/style.py`](#switchboard--style) — Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
-- [`switchboard/widget_values.py`](#switchboard--widget_values)
-- [`switchboard/widgets.py`](#switchboard--widgets)
 - [`testing.py`](#testing) — Test isolation for every suite in the ecosystem — keep test runs off live user state.
 - [`themes/style_sheet.py`](#themes--style_sheet)
 - [`widgets/attribute_window.py`](#widgets--attribute_window) — Dynamic attribute editor -- :class:`AttributeWindow`, a ``Menu`` popup whose
@@ -102,6 +93,7 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/mainWindow.py`](#widgets--mainWindow)
 - [`widgets/marking_menu/_marking_menu.py`](#widgets--marking_menu--_marking_menu)
 - [`widgets/marking_menu/_resolver.py`](#widgets--marking_menu--_resolver) — Pure menu-resolution logic for the MarkingMenu.
+- [`widgets/marking_menu/marking_menu_host.py`](#widgets--marking_menu--marking_menu_host) — What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`, and
 - [`widgets/marking_menu/overlay.py`](#widgets--marking_menu--overlay)
 - [`widgets/menu.py`](#widgets--menu) — ``Menu``: uitk's popup menu widget -- the facade, its configuration and placement.
 - [`widgets/menuButton.py`](#widgets--menuButton)
@@ -155,8 +147,9 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 - [`widgets/sequencer/_editor.py`](#widgets--sequencer--_editor) — Editors: what the sequencer's content area shows -- the seam a view plugs into.
 - [`widgets/sequencer/_graph_editor.py`](#widgets--sequencer--_graph_editor) — The graph editor: animation curves in value space, edited like Maya's.
 - [`widgets/sequencer/_keyframe.py`](#widgets--sequencer--_keyframe) — The interactive items of an expanded attribute sub-row.
+- [`widgets/sequencer/_layer.py`](#widgets--sequencer--_layer) — Layers: a host's vocabulary on the timeline -- the seam a domain plugs into.
 - [`widgets/sequencer/_markers.py`](#widgets--sequencer--_markers) — MarkerItem — named marker on the timeline with drag and context menu.
-- [`widgets/sequencer/_overlays.py`](#widgets--sequencer--_overlays) — Range-related overlay items: static ranges, gap hatching, and highlights.
+- [`widgets/sequencer/_overlays.py`](#widgets--sequencer--_overlays) — Range-related overlay items: static ranges, snap guides, and the range highlight.
 - [`widgets/sequencer/_playhead.py`](#widgets--sequencer--_playhead) — PlayheadItem — vertical playhead line with frame-number badge.
 - [`widgets/sequencer/_ruler.py`](#widgets--sequencer--_ruler) — Ruler item for the timeline header area.
 - [`widgets/sequencer/_scrub_player.py`](#widgets--sequencer--_scrub_player) — Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
@@ -183,8 +176,8 @@ _Auto-generated. Do not edit by hand. Refresh via `m3trik/scripts/generate_api_r
 
 UITK - User Interface Toolkit for Qt/PySide applications.
 
-- [`DEFAULT_INCLUDE`](uitk/uitk/__init__.py#L54) — constant
-- [`MOVED_NAMES`](uitk/uitk/__init__.py#L274) — constant
+- [`DEFAULT_INCLUDE`](uitk/uitk/__init__.py#L55) — constant
+- [`MOVED_NAMES`](uitk/uitk/__init__.py#L298) — constant
 
 <a id="_bootstrap"></a>
 ### `_bootstrap.py`
@@ -251,46 +244,47 @@ Registry helpers for bridge parameter dicts.
 <a id="bridge--slots"></a>
 ### `bridge/slots.py`
 
-Generic DCC-bridge slot base class.
+The parameter panel's slot base class, :class:`ParamPanelSlots`.
 
-- **[`class BridgeSlotsBase(_BridgeSlotsInternal)`](uitk/uitk/bridge/slots.py#L86)** — Base class for DCC-bridge slot panels.
-  - `BridgeSlotsBase.params_module(self)` *(property)*
-  - `BridgeSlotsBase.template_dir(self) -> Path` *(property)*
-  - `BridgeSlotsBase.make_bridge(self)` — Return a fresh bridge instance.
-  - `BridgeSlotsBase.list_template_modes(self) -> List[Tuple[str, str]]`
-  - `BridgeSlotsBase.b000(self)` — Implement the per-bridge send action.
-  - `BridgeSlotsBase.optional_packages(self)` *(property)* — This panel's :class:`OptionalPackageManager` (built once, lazily).
-  - `BridgeSlotsBase.optional_package_available(spec: str, import_name: str = None) -> bool` *(static)* — Is an optional package importable in THIS interpreter? Silent.
-  - `BridgeSlotsBase.ensure_optional_package(self, spec: str, import_name: str = None, *, feature: str = None) -> bool` — Make an optional package importable, offering to install it on demand.
-  - `BridgeSlotsBase.resolve_scope_objects(self, scope: str)` — Hook: turn a ``SCOPE`` value into host objects.
-  - `BridgeSlotsBase.empty_scope_message(scope: str) -> str` *(static)* — The message shown when a scope resolves to nothing.
-  - `BridgeSlotsBase.scoped_objects(self, params, warn: bool = True)` — Objects for the ``SCOPE`` in *params*;
-  - `BridgeSlotsBase.bridge(self)` *(property)* — Lazy-instantiated bridge (caches a single instance per slot).
-  - `BridgeSlotsBase.peek_bridge(self)` — The bridge if it can be built, else ``None`` — never raises.
-  - `BridgeSlotsBase.panel_log(self, message: str, level: str = 'info') -> None` — Log to the panel, working whether or not the engine exists.
-  - `BridgeSlotsBase.default_output_dir(self) -> str` — Hook: fallback path when the user leaves Output Dir blank.
-  - `BridgeSlotsBase.ensure_bridge_temp_dir(tag: str) -> str` *(static)* — Create (once per host process) and return a temp Output Dir for *tag*.
-  - `BridgeSlotsBase.resolved_output_dir(self) -> str` — Return the current Output Dir text trimmed of whitespace.
-  - `BridgeSlotsBase.require_output_dir(self, mode: Optional[str] = None) -> Optional[str]` — Return the Output Dir for a run in *mode*, or log an error on empty.
-  - `BridgeSlotsBase.format_param_tooltip(self, spec: AttributeSpec) -> str` — Hook: build the rich-text tooltip for one parameter spec.
-  - `BridgeSlotsBase.live_param_tooltips(self) -> Dict[str, Callable[[], str]]` — Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.
-  - `BridgeSlotsBase.live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]` — Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.
-  - `BridgeSlotsBase.set_param_enabled(self, key: str, enabled: bool, reason: str = '') -> None` — Grey out (or re-enable) one parameter row, with *reason* as its tooltip.
-  - `BridgeSlotsBase.param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]` — The ``(trigger, governed, reason)`` triples in effect for this panel.
-  - `BridgeSlotsBase.collect_param_values(self) -> Dict[str, Any]` — Snapshot every widget's current value, regardless of visibility.
-  - `BridgeSlotsBase.make_preset_store(self)` — Hook: return a :class:`pythontk.PresetStore` to switch presets into
-  - `BridgeSlotsBase.select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int` — Return the index of the preferred initial entry in *pairs*.
-  - `BridgeSlotsBase.template_description(self, template_path: Path) -> Optional[str]` — Hook: extract a brief description from a template file.
-  - `BridgeSlotsBase.cmb000_init(self, widget) -> None` — Switchboard hook: populate the template combobox + wire change handler.
-  - `BridgeSlotsBase.refresh_templates(self) -> None` — Re-scan disk and rebuild the template combo + parameter UI.
-  - `BridgeSlotsBase.open_templates_folder(self) -> None` — Reveal :attr:`template_dir` in the OS file manager.
-  - `BridgeSlotsBase.register_log_link_handler(handler: Callable) -> None` *(static)* — Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel
-  - `BridgeSlotsBase.docs_url(self) -> str` — Hook: the panel's documentation URL, or ``""`` for no docs link.
-  - `BridgeSlotsBase.clear_log(self) -> None` — Clear the log panel (wired by subclass header menus).
-  - `BridgeSlotsBase.header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]` — Hook: the header-menu items.
-  - `BridgeSlotsBase.help_spec(self) -> Optional[Dict[str, Any]]` — Hook: the ``fmt()`` keyword dict for the header help, or ``None``.
-  - `BridgeSlotsBase.header_init(self, widget) -> None` — Default header menu: a "Utilities" separator, the declared
-  - `BridgeSlotsBase.reveal_folder(self, path) -> bool` — Open *path* in the OS file manager (logs + returns False if missing).
+- **[`class ParamPanelSlots(_ParamPanelSlotsInternal)`](uitk/uitk/bridge/slots.py#L304)** — A parameter panel: a template picker, parameter rows built from specs,
+  - `ParamPanelSlots.params_module(self)` *(property)*
+  - `ParamPanelSlots.template_dir(self) -> Path` *(property)*
+  - `ParamPanelSlots.make_bridge(self)` — Return a fresh bridge instance.
+  - `ParamPanelSlots.list_template_modes(self) -> List[Tuple[str, str]]`
+  - `ParamPanelSlots.b000(self)` — Implement the per-bridge send action.
+  - `ParamPanelSlots.optional_packages(self)` *(property)* — This panel's :class:`OptionalPackageManager` (built once, lazily).
+  - `ParamPanelSlots.optional_package_available(spec: str, import_name: str = None) -> bool` *(static)* — Is an optional package importable in THIS interpreter? Silent.
+  - `ParamPanelSlots.ensure_optional_package(self, spec: str, import_name: str = None, *, feature: str = None) -> bool` — Make an optional package importable, offering to install it on demand.
+  - `ParamPanelSlots.resolve_scope_objects(self, scope: str)` — Hook: turn a ``SCOPE`` value into host objects.
+  - `ParamPanelSlots.empty_scope_message(scope: str) -> str` *(static)* — The message shown when a scope resolves to nothing.
+  - `ParamPanelSlots.scoped_objects(self, params, warn: bool = True)` — Objects for the ``SCOPE`` in *params*;
+  - `ParamPanelSlots.bridge(self)` *(property)* — Lazy-instantiated bridge (caches a single instance per slot).
+  - `ParamPanelSlots.peek_bridge(self)` — The bridge if it can be built, else ``None`` — never raises.
+  - `ParamPanelSlots.panel_log(self, message: str, level: str = 'info') -> None` — Log to the panel, working whether or not the engine exists.
+  - `ParamPanelSlots.default_output_dir(self) -> str` — Hook: fallback path when the user leaves Output Dir blank.
+  - `ParamPanelSlots.ensure_bridge_temp_dir(tag: str) -> str` *(static)* — Create (once per host process) and return a temp Output Dir for *tag*.
+  - `ParamPanelSlots.resolved_output_dir(self) -> str` — Return the current Output Dir text trimmed of whitespace.
+  - `ParamPanelSlots.require_output_dir(self, mode: Optional[str] = None) -> Optional[str]` — Return the Output Dir for a run in *mode*, or log an error on empty.
+  - `ParamPanelSlots.format_param_tooltip(self, spec: AttributeSpec) -> str` — Hook: build the rich-text tooltip for one parameter spec.
+  - `ParamPanelSlots.live_param_tooltips(self) -> Dict[str, Callable[[], str]]` — Hook: ``{param key: provider}`` for rows whose tooltip tracks LIVE state.
+  - `ParamPanelSlots.live_param_tooltip_blocks(self) -> Dict[str, Callable[[], str]]` — Hook: ``{param key: provider}`` for a live block APPENDED to a row's tips.
+  - `ParamPanelSlots.set_param_enabled(self, key: str, enabled: bool, reason: str = '') -> None` — Grey out (or re-enable) one parameter row, with *reason* as its tooltip.
+  - `ParamPanelSlots.param_supersessions(self) -> Tuple[Tuple[str, Tuple[str, ...], str], ...]` — The ``(trigger, governed, reason)`` triples in effect for this panel.
+  - `ParamPanelSlots.add_param_rows(self) -> List[str]` — Build a row for each registry key that has none yet;
+  - `ParamPanelSlots.collect_param_values(self) -> Dict[str, Any]` — Snapshot every widget's current value, regardless of visibility.
+  - `ParamPanelSlots.make_preset_store(self)` — Hook: return a :class:`pythontk.PresetStore` to switch presets into
+  - `ParamPanelSlots.select_initial_template_index(self, pairs: List[Tuple[str, str]]) -> int` — Return the index of the preferred initial entry in *pairs*.
+  - `ParamPanelSlots.template_description(self, template_path: Path) -> Optional[str]` — Hook: extract a brief description from a template file.
+  - `ParamPanelSlots.cmb000_init(self, widget) -> None` — Switchboard hook: populate the template combobox + wire change handler.
+  - `ParamPanelSlots.refresh_templates(self) -> None` — Re-scan disk and rebuild the template combo + parameter UI.
+  - `ParamPanelSlots.open_templates_folder(self) -> None` — Reveal :attr:`template_dir` in the OS file manager.
+  - `ParamPanelSlots.register_log_link_handler(handler: Callable) -> None` *(static)* — Register a ``handler(url, logger) -> bool`` for non-``open`` log-panel
+  - `ParamPanelSlots.docs_url(self) -> str` — Hook: the panel's documentation URL, or ``""`` for no docs link.
+  - `ParamPanelSlots.clear_log(self) -> None` — Clear the log panel (wired by subclass header menus).
+  - `ParamPanelSlots.header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]` — Hook: the header-menu items.
+  - `ParamPanelSlots.help_spec(self) -> Optional[Dict[str, Any]]` — Hook: the ``fmt()`` keyword dict for the header help, or ``None``.
+  - `ParamPanelSlots.header_init(self, widget) -> None` — Default header menu: a "Utilities" separator, the declared
+  - `ParamPanelSlots.reveal_folder(self, path) -> bool` — Open *path* in the OS file manager (logs + returns False if missing).
 
 <a id="bridge--spec"></a>
 ### `bridge/spec.py`
@@ -432,7 +426,7 @@ Launchable-contract front end for the Switchboard's bundled editors.
 
 Register, install-on-demand, and launch external Python apps as subprocesses.
 
-- **[`class ExternalAppHandler(BaseHandler)`](uitk/uitk/handlers/external_app_handler.py#L40)** — Switchboard handler for launching external Python apps.
+- **[`class ExternalAppHandler(BaseHandler)`](uitk/uitk/handlers/external_app_handler.py#L104)** — Switchboard handler for launching external Python apps.
   - `ExternalAppHandler.discover(self, groups: Optional[Iterable[str]] = None) -> int` — Auto-register every app advertised under a uitk entry-point group.
   - `ExternalAppHandler.add_provider(self, install_spec: str, *, probe_module: Optional[str] = None, group: Optional[str] = None, python: Optional[str] = None) -> None` — Register a provider package that ships discoverable apps.
   - `ExternalAppHandler.register(self, name: str, *, module: str, entry: Optional[str] = None, install_spec: Optional[str] = None, python: Optional[str] = None, show_kwargs: Optional[dict] = None, mode: str = 'subprocess', tags: Optional[Iterable[str]] = None, hidden_in: Optional[Iterable[str]] = None, description: Optional[str] = None) -> None` — Pre-register an app so it can be launched by name.
@@ -476,7 +470,7 @@ Unified launchable-entry data class shared by all Switchboard handlers.
   - `UiHandler.is_persistence_explicit(self, ui, name: Optional[str] = None) -> bool` — Whether a *user* choice (per-window override or a non-context global)
   - `UiHandler.reapply_persistence(self, name: Optional[str] = None) -> None` — Re-chrome loaded windows after a persistence preference change.
   - `UiHandler.apply_styles(self, ui, style: Dict = None, theme: str = None)` — Apply default styles to the UI instance.
-  - `UiHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per .ui registered with the Switchboard.
+  - `UiHandler.entries(self) -> Iterable[HandlerEntry]` — Yield one :class:`HandlerEntry` per UI registered with the Switchboard
   - `UiHandler.hosting_handler(self, name: str)` — Return the registered handler that claims windowing ownership of *name*.
   - `UiHandler.launch(self, name: str, **options)` — Launch the named UI applying the browser's per-launch style options.
   - `UiHandler.close(self, name: str) -> None` — Hide the named UI as its own hide button would (:meth:`_dismiss`).
@@ -651,8 +645,8 @@ Keep widgets in step with a model uitk never sees: read on change, write on edit
 
 Provisioning for optional packages a panel needs importable in THIS session.
 
-- **[`class OptionalPackageManager(_OptionalPackageManagerInternal)`](uitk/uitk/managers/optional_package_manager.py#L71)** — Probe for, and offer to install, an optional package.
-  - `OptionalPackageManager.available(spec: str, import_name: str = None) -> bool` *(static)* — Is *spec* importable in THIS interpreter, at or above any floor? Silent.
+- **[`class OptionalPackageManager(_OptionalPackageManagerInternal)`](uitk/uitk/managers/optional_package_manager.py#L87)** — Probe for, and offer to install, an optional package.
+  - `OptionalPackageManager.available(spec: str, import_name: str = None) -> bool` *(static)* — Is *spec* importable in THIS interpreter, inside any version range? Silent.
   - `OptionalPackageManager.pip_python() -> Optional[str]` *(static)* — Interpreter to drive pip with, for an install this session must import.
   - `OptionalPackageManager.default_install(spec: str) -> None` *(static)* — ``pip install --user`` *spec* against the running interpreter.
   - `OptionalPackageManager.install(self, spec: str) -> None` — Install *spec* via the injected installer, else :meth:`default_install`.
@@ -660,10 +654,19 @@ Provisioning for optional packages a panel needs importable in THIS session.
   - `OptionalPackageManager.version_tuple(text: str) -> Tuple[int, ...]` *(static)* — ``"0.0.8"`` -> ``(0, 0, 8)``;
   - `OptionalPackageManager.split_requirement(spec: str) -> Tuple[str, Optional[Tuple[int, ...]]]` *(static)* — ``"unitytk>=0.0.8"`` -> ``("unitytk", (0, 0, 8))``;
 
+<a id="managers--panel_renames"></a>
+### `managers/panel_renames.py`
+
+Carry a renamed panel's saved values to the panel that took its name.
+
+- **[`class PanelRenames(object)`](uitk/uitk/managers/panel_renames.py#L23)** — The one-shot carry of renamed panels' saved values (module docstring).
+  - `PanelRenames.carry(cls, switchboard, renamed_from: RenamedFrom, slot_class_names: Optional[Callable[[str], Sequence[str]]] = None) -> List[str]` *(class)* — Copy each former panel's saved values into the panel that took its name.
+  - `PanelRenames.renamed_key(key: str, widgets: Mapping[str, str], classes: Dict[str, str]) -> str` *(static)* — *key* as the new panel stores it.
+
 <a id="managers--preset_manager"></a>
 ### `managers/preset_manager.py`
 
-- [`PRESETS_ROOT_ENV_VAR`](uitk/uitk/managers/preset_manager.py#L1195) — constant
+- [`PRESETS_ROOT_ENV_VAR`](uitk/uitk/managers/preset_manager.py#L1239) — constant
 - **[`class PresetManager(_PresetWidgetScope, _PresetRootMigration, pythontk.LoggingMixin)`](uitk/uitk/managers/preset_manager.py#L28)** — Manages named presets for widget state, stored as external JSON files.
   - `PresetManager.from_widgets(cls, preset_dir, widgets: List[QtWidgets.QWidget], builtin_dir: Optional[Union[str, Path]] = None) -> 'PresetManager'` *(class)* — Create a standalone PresetManager for an explicit list of widgets.
   - `PresetManager.setup(self, preset_dir=None, widgets: Optional[List[QtWidgets.QWidget]] = None, on_loaded=None, metadata_provider: Optional[Callable[[], dict]] = None, on_metadata_loaded: Optional[Callable[[dict], None]] = None, builtin_dir: Optional[Union[str, Path]] = None, value_provider: Optional[Callable[[], Dict[str, Any]]] = None, value_applier: Optional[Callable[[Dict[str, Any]], int]] = None) -> 'PresetManager'` — Configure and optionally auto-wire a preset combo.
@@ -690,12 +693,43 @@ Provisioning for optional packages a panel needs importable in THIS session.
   - `PresetManager.refresh_combo(self, select_name: Optional[str] = None) -> None` — Repopulate the wired preset combo from disk (no-op when none).
   - `PresetManager.make_preset_combo(self, parent: Optional[QtWidgets.QWidget] = None, name: Optional[str] = None, tooltip: Optional[str] = None, on_loaded: Optional[Callable[[], None]] = None, placeholder: Optional[str] = None) -> 'QtWidgets.QWidget'` — Create a fully-wired preset selector and return its layout container.
   - `PresetManager.wire_combo(self, combo, on_loaded=None, placeholder=None)` — Wire a uitk ``ComboBox`` as a fully-functional preset selector.
+  - `PresetManager.carry_presets(cls, source: Union[str, Path], target: Union[str, Path]) -> List[Path]` *(class)* — Copy the presets saved under *source* into *target*, never over one there.
   - `PresetManager.get_presets_root() -> Path` *(static)* — Root directory under which every relative ``preset_dir`` is resolved.
   - `PresetManager.scope(self) -> str` *(property)* — Which widget set a save/load operates on.
   - `PresetManager.exclude(self, *names_or_widgets) -> 'PresetManager'` — Exclude widgets (by ``objectName`` or instance) from capture/restore.
   - `PresetManager.include(self, *names_or_widgets) -> 'PresetManager'` — Restrict capture/restore to *only* these widgets (allowlist).
   - `PresetManager.QStandardPaths_writableLocation() -> str` *(static)* — Return Qt's per-application writable config directory.
   - `PresetManager.QStandardPaths_genericConfigLocation() -> str` *(static)* — Return Qt's host-independent writable config directory.
+
+<a id="managers--preview_controller"></a>
+### `managers/preview_controller.py`
+
+A live preview bound to its panel's widgets, over the host's scene session.
+
+- **[`class PreviewSession(Protocol)`](uitk/uitk/managers/preview_controller.py#L51)** — What a :class:`PreviewController` asks of the scene it previews in.
+  - `PreviewSession.selection(self) -> List[Any]` — The objects a preview or a commit would act on now ([] for none).
+  - `PreviewSession.begin(self, objects: Sequence[Any]) -> None` — Capture *objects* and the scene state a rollback returns to.
+  - `PreviewSession.run(self) -> None` — Run the operation over the captured objects as a pass
+  - `PreviewSession.rollback(self) -> None` — Reverse the last pass (none: a no-op);
+  - `PreviewSession.discard(self, reselect: bool) -> None` — End the preview without keeping it, after its rollback: drop the
+  - `PreviewSession.commit(self) -> None` — Keep the previewed result as the scene's own, undoably, and end the
+  - `PreviewSession.apply(self, objects: Sequence[Any]) -> None` — Run the operation once over *objects* with no preview, undoably.
+  - `PreviewSession.undo_step(self, name: str) -> ContextManager` — Everything done inside is ONE undo step, named *name*.
+  - `PreviewSession.unrecorded(self) -> ContextManager` — Scene edits made inside reach no undo queue.
+  - `PreviewSession.select_result(self, checkbox: Any, results: Any, committed: bool) -> None` — Select the operation's *results* while *checkbox* reads checked
+- **[`class PreviewController(_PreviewControllerInternal)`](uitk/uitk/managers/preview_controller.py#L166)** — A panel's live preview: its widgets bound to a host scene session.
+  - `PreviewController.cleanup_all_instances(cls) -> None` *(class)* — Discard every live preview and forget them all.
+  - `PreviewController.init_show_hide_behavior(self, enable_on_show: bool, disable_on_hide: bool) -> None` — Hook the window's show / hide to the preview.
+  - `PreviewController.conditionally_enable(self) -> None` — Start the preview if :attr:`enable_on_show` (the window showed).
+  - `PreviewController.conditionally_disable(self) -> None` — Discard the preview if :attr:`disable_on_hide` (the window hid).
+  - `PreviewController.is_enabled(self) -> bool` *(property)* — Whether a preview is running.
+  - `PreviewController.toggle(self, state: bool) -> None` — Start (*state*) or discard the preview.
+  - `PreviewController.validate_operation(self, objects: List[Any]) -> bool` — Whether *validation_func* accepts *objects* (none given: True).
+  - `PreviewController.enable(self) -> None` — Start the preview on the selection (running: a no-op).
+  - `PreviewController.refresh(self, *args) -> None` — Roll the running preview back and run it again (an option changed;
+  - `PreviewController.disable(self) -> None` — Discard the preview: roll it back without committing.
+  - `PreviewController.finalize_changes(self) -> None` — Commit: keep the running preview, or run the operation once on the
+  - `PreviewController.cleanup(self) -> None` — Discard a running preview and forget this one.
 
 <a id="managers--recent_values_store"></a>
 ### `managers/recent_values_store.py`
@@ -815,6 +849,7 @@ Generic keyboard-shortcut primitives, usable by any Qt widget.
 ### `managers/state_manager.py`
 
 - **[`class StateManager(pythontk.LoggingMixin)`](uitk/uitk/managers/state_manager.py#L13)** — Manages widget state persistence using QSettings.
+  - `StateManager.rename_widget_key(cls, key: str, renames: Mapping[str, str]) -> str` *(class)* — *key*, one this manager stores, with its widget renamed per *renames*.
   - `StateManager.apply(self, widget: QtWidgets.QWidget, value: Any) -> bool` — Apply the given value to the widget using ValueManager.
   - `StateManager.suppress_save(self)` — Context manager that temporarily suppresses QSettings writes.
   - `StateManager.is_applying(self) -> bool` *(property)* — True while values are applied FOR the user rather than BY them.
@@ -874,7 +909,7 @@ How a window follows the height of what it is holding.
 <a id="switchboard--_core"></a>
 ### `switchboard/_core.py`
 
-- **[`class Switchboard(QtCore.QObject, pythontk.HelpMixin, pythontk.LoggingMixin, SwitchboardSlotsMixin, SwitchboardShortcutMixin, SwitchboardWidgetMixin, SwitchboardRulesMixin, SwitchboardWidgetValuesMixin, SwitchboardControlGroupsMixin, SwitchboardDialogsMixin, SwitchboardPlacementMixin, SwitchboardEventLoopMixin, SwitchboardNameMixin, SwitchboardEditorsMixin, SwitchboardStyleMixin, SwitchboardNamespaceMixin)`](uitk/uitk/switchboard/_core.py#L38)** — Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
+- **[`class Switchboard(QtCore.QObject, pythontk.HelpMixin, pythontk.LoggingMixin)`](uitk/uitk/switchboard/_core.py#L42)** — Switchboard is a dynamic UI loader and event handler for PyQt/PySide applications.
   - `Switchboard.register_handler(self, name: str, instance, defaults: dict = None)` — Register a handler instance and apply defaults to its config.
   - `Switchboard.iter_handler_entries(self)` — Yield every :class:`HandlerEntry` from every launchable handler.
   - `Switchboard.active_ui(self) -> Optional[QtWidgets.QWidget]` *(property)* — Return the currently set UI, or None — no auto-load, no warning.
@@ -882,69 +917,111 @@ How a window follows the height of what it is holding.
   - `Switchboard.prev_ui(self) -> Optional[QtWidgets.QWidget]` *(property)* — Get the previous UI from history — the one before the current UI.
   - `Switchboard.prev_slot(self) -> object` *(property)* — Get the last called slot.
   - `Switchboard.visible_windows(self) -> set` *(property)* — Return all currently visible MainWindow instances.
-  - `Switchboard.register(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None)` — Add new locations to the Switchboard registries.
+  - `Switchboard.register(self, ui_location=None, slot_location=None, widget_location=None, icon_location=None, base_dir=1, recursive: bool = False, validate=1, tags=None, exclude=None)` — Add new locations to the Switchboard registries.
   - `Switchboard.load_all_ui(self) -> list` — Extends the 'load_ui' method to load all UI from a given path.
   - `Switchboard.load_ui(self, file: str) -> QtWidgets.QMainWindow` — Load a UI from the given .ui path via the configured loader delegate.
+  - `Switchboard.register_ui(self, name: str, build) -> None` — Register a UI built in code, as a ``.ui`` file registers one built in
   - `Switchboard.add_ui(self, name: str, widget: Optional[QtWidgets.QWidget] = None, parent: Optional[QtWidgets.QWidget] = None, tags: set = None, path: str = None, overwrite: bool = False, **kwargs) -> QtWidgets.QMainWindow`
   - `Switchboard.get_ui(self, ui=None) -> QtWidgets.QWidget` — Get a dynamic UI using its string name, or if no argument is given, return the current UI.
   - `Switchboard.get_ui_relatives(self, ui, upstream=False, exact=False, downstream=False, reverse=False)` — Get UIs related to the given UI via shared base name.
-  - `Switchboard.find_ui_filename(self, legal_name: str, unique_match: bool = False) -> Union[str, List[str], None]` — Convert the given legal name to its original name(s) by searching the UI files.
+  - `Switchboard.find_ui_filename(self, legal_name: str, unique_match: bool = False) -> Union[str, List[str], None]` — Convert the given legal name to its original name(s) among :meth:`ui_names`
   - `Switchboard.save_ui_tags(self, path: str, tags: Iterable[str]) -> None` — Persist tags into a .ui file as a Designer-safe dynamic property.
   - `Switchboard.ui_history(self, index=None, allow_duplicates=False, inc=None, exc=None)` — Get the UI history.
   - `Switchboard.show_prev_ui(self) -> Optional[QtWidgets.QWidget]` — Re-show the most-recent non-transient UI that isn't already on screen.
   - `Switchboard.repeat_last(self)` — Re-invoke the last slot with the exact args it last ran with.
-
-<a id="switchboard--control_groups"></a>
-### `switchboard/control_groups.py`
-
-- **[`class SwitchboardControlGroupsMixin`](uitk/uitk/switchboard/control_groups.py#L17)** — Builders that wire a set of controls as one group: button groups,
-  - `SwitchboardControlGroupsMixin.create_button_groups(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]` — Create button groups for a set of widgets.
-  - `SwitchboardControlGroupsMixin.toggle_multi(self, ui, trigger=None, signal=None, apply_now=True, **kwargs)` — Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…
-  - `SwitchboardControlGroupsMixin.connect_multi(self, ui, widgets, signals, slots)` — Connect multiple signals to multiple slots at once.
-  - `SwitchboardControlGroupsMixin.add_reset_buttons(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), **set_reset_kwargs)` — Give each matching value widget a per-field *reset-to-default* button.
-  - `SwitchboardControlGroupsMixin.link_spinboxes(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), icon: str = 'lock', icon_off: str = 'unlock', tooltip_on: str = 'Linked. Changing this shifts the other linked fields by the same amount. Click to unlink.', tooltip_off: str = 'Unlinked. Click to link this field so it moves with the others.', initial: bool = False, active_color: str = _LOCK_ACTIVE_COLOR, disabled_color: str = _LOCK_INACTIVE_COLOR, **set_toggle_kwargs)` — Give each spin box a *lock* toggle that links locked boxes by an equal delta.
-  - `SwitchboardControlGroupsMixin.set_axis_for_checkboxes(self, checkboxes, axis, ui=None)` — Set the given checkbox's check states to reflect the specified axis.
-  - `SwitchboardControlGroupsMixin.get_axis_from_checkboxes(self, checkboxes, ui=None, return_type='str')` — Get the intended axis value as a string or integer by reading the multiple checkbox's check states.
-  - `SwitchboardControlGroupsMixin.hide_unmatched_groupboxes(self, ui, unknown_tags) -> None` — Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted
-
-<a id="switchboard--dialogs"></a>
-### `switchboard/dialogs.py`
-
-- **[`class SwitchboardDialogsMixin`](uitk/uitk/switchboard/dialogs.py#L13)** — Modal dialogs and work feedback: message / input / file / form dialogs,
-  - `SwitchboardDialogsMixin.busy_cursor(shape=QtCore.Qt.WaitCursor)` *(static)* — Application busy cursor for the duration of a ``with`` block.
-  - `SwitchboardDialogsMixin.progress(self, ui=None, total: Optional[int] = None, text: str = '', busy: Optional[bool] = None)` — Context manager for cooperative progress / task feedback.
-  - `SwitchboardDialogsMixin.progress_adapter(update: Callable[..., bool]) -> Callable[..., bool]` *(static)* — Adapt the footer ``update`` callable to the shape downstream
-  - `SwitchboardDialogsMixin.confirm(self, question, yes='Yes', no='No') -> bool` — Ask *question* in a modal :meth:`message_box` and answer True when
-  - `SwitchboardDialogsMixin.message_box(self, string, *buttons, location='topMiddle', timeout='auto', background=0.75, default=None)` — Spawns a message box with the given text and optionally sets buttons.
-  - `SwitchboardDialogsMixin.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None, link_handler=None, on_refresh: Optional[Callable[[], Any]] = None)` — Spawn a scrollable text-viewer window with optional buttons.
-  - `SwitchboardDialogsMixin.preview_dialog(self, render: Callable[[dict], str], specs=(), *, values: Optional[dict] = None, on_change: Optional[Callable[[str, Any], None]] = None, actions: Optional[dict] = None, status: Optional[Callable[[dict, str], str]] = None, title: str = '', size=(960, 600), monospace: bool = True, word_wrap: bool = False, parent=None)` — A live preview of a tool's output: option rows beside the text,
-  - `SwitchboardDialogsMixin.data_view_dialog(self, data: Any, *, title: str = '', save_path: Optional[str] = '', empty_message: str = 'Nothing to show.', size=(720, 560), parent=None)` — Show structured *data* as colour-coded JSON in a text viewer.
-  - `SwitchboardDialogsMixin.save_data_dialog(self, data: Any, title: str = '', path: str = '', parent=None) -> Optional[str]` — Write *data* as indented JSON to a ``.json`` file the user picks.
-  - `SwitchboardDialogsMixin.file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]` *(static)* — Open a file dialog to select files of the given type(s) using qtpy.
-  - `SwitchboardDialogsMixin.dir_dialog(title: str = 'Select a directory', start_dir: str = '/home') -> str` *(static)* — Open a directory dialog to select a directory using qtpy.
-  - `SwitchboardDialogsMixin.save_file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]` *(static)* — Open a save-file dialog to choose a destination path.
-  - `SwitchboardDialogsMixin.input_dialog(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str` *(static)* — Show a modal text-input dialog and return the entered string.
-  - `SwitchboardDialogsMixin.list_input_dialog(items, title: str = 'Select', label: str = 'Select item(s):', parent: QtWidgets.QWidget = None, multi: bool = True, selected=None) -> list` *(static)* — Show a modal list picker and return the chosen entries.
-  - `SwitchboardDialogsMixin.form_dialog(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', validate: Callable = None, message: str = '') -> Optional[dict]` *(static)* — Show a modal form of labelled rows and return ``{name: value}``.
-  - `SwitchboardDialogsMixin.form_panel(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', cancel_text: str = None, validate: Callable = None, message: str = '', help_text: str = '', on_run: Callable = None, apply_text: str = 'Apply', output: bool = True, min_width: int = 560, settings=None, settings_key: str = 'window_geometry')` *(static)* — Build a :class:`~uitk.widgets.formPanel.FormPanel` — the modeless twin.
-  - `SwitchboardDialogsMixin.modal_menu(content_fn, parent=None, **kwargs)` *(static)* — Show a themed modal Menu popup, block until dismissed.
-
-<a id="switchboard--editors"></a>
-### `switchboard/editors.py`
-
-Mixin that exposes the bundled editor windows on the Switchboard.
-
-- **[`class SwitchboardEditorsMixin`](uitk/uitk/switchboard/editors.py#L312)** — Adds an ``editors`` property to Switchboard exposing the bundled editors.
-  - `SwitchboardEditorsMixin.editors(self) -> _EditorRegistry` *(property)* — Cached editor registry — see :class:`_EditorRegistry`.
-
-<a id="switchboard--event_loop"></a>
-### `switchboard/event_loop.py`
-
-- **[`class SwitchboardEventLoopMixin`](uitk/uitk/switchboard/event_loop.py#L7)** — Event-loop helpers: deferred calls, synthetic key presses, modifier-aware
-  - `SwitchboardEventLoopMixin.invert_on_modifier(value)` *(static)* — Invert a numerical or boolean value if the alt key is pressed.
-  - `SwitchboardEventLoopMixin.simulate_key_press(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)` *(static)* — Simulate a key press event for the given UI and optionally release the keyboard.
-  - `SwitchboardEventLoopMixin.defer_with_timer(self, func: callable, *args, ms: int = 300, **kwargs) -> None` — Defer execution of any callable with arguments after a delay.
-  - `SwitchboardEventLoopMixin.gc_protect(self, obj=None, clear=False)` — Protect the given object(s) from garbage collection by holding a strong reference.
+  - `Switchboard.style(self)` *(property)* — The :class:`StyleSheet` class (imported lazily on first access).
+  - `Switchboard.editors(self) -> _EditorRegistry` *(property)* — Cached editor registry — see :class:`_EditorRegistry`.
+  - `Switchboard.get_cursor_offset_from_center(widget)` *(static)* — Get the relative position of the cursor with respect to the center of a given widget.
+  - `Switchboard.center_widget(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)` *(static)* — Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor…
+  - `Switchboard.invert_on_modifier(value)` *(static)* — Invert a numerical or boolean value if the alt key is pressed.
+  - `Switchboard.simulate_key_press(ui, key=QtCore.Qt.Key_F12, modifiers=QtCore.Qt.NoModifier, release=False)` *(static)* — Simulate a key press event for the given UI and optionally release the keyboard.
+  - `Switchboard.defer_with_timer(self, func: callable, *args, ms: int = 300, **kwargs) -> None` — Defer execution of any callable with arguments after a delay.
+  - `Switchboard.gc_protect(self, obj=None, clear=False)` — Protect the given object(s) from garbage collection by holding a strong reference.
+  - `Switchboard.convert_to_legal_name(name: str) -> str` *(static)* — Convert a name to a legal format by replacing non-alphanumeric characters with underscores.
+  - `Switchboard.get_slot_class_names(self, base_name: str) -> List[str]` — Generate potential slot class names from a base name.
+  - `Switchboard.get_slot_file_names(self, base_name: str) -> List[str]` — Generate potential slot file names from a base name.
+  - `Switchboard.get_base_name(self, name: str) -> str`
+  - `Switchboard.get_tags_from_name(self, name: str) -> set[str]` — Extract tags from a UI name string.
+  - `Switchboard.has_tags(self, ui, tags=None) -> bool` — Check if any of the given tag(s) are present in the UI's tags set.
+  - `Switchboard.edit_tags(self, target: Union[str, QtWidgets.QWidget], add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]` — Edit tags on a widget or a tag string.
+  - `Switchboard.filter_tags(self, tag_string: str, keep_tags: list[str] = None, remove_tags: list[str] = None) -> str` — Filter tags from a tag string - either keep only specified tags or remove specified tags.
+  - `Switchboard.get_unknown_tags(self, tag_string: str, known_tags: list[str]) -> list[str]` — Get tags that are not in the known_tags list.
+  - `Switchboard.unpack_names(cls, name_string)` *(class)* — Unpacks a comma-separated string of names and returns a list of individual names.
+  - `Switchboard.get_widgets_by_string_pattern(self, ui, name_string)` — Get a list of corresponding widgets from a single shorthand formatted string.
+  - `Switchboard.get_methods_by_string_pattern(self, clss, name_string)` — Get a list of corresponding methods from a single shorthand formatted string.
+  - `Switchboard.create_button_groups(self, ui: QtWidgets.QWidget, *args: str, allow_deselect: bool = False, allow_multiple: bool = False) -> List[QtWidgets.QButtonGroup]` — Create button groups for a set of widgets.
+  - `Switchboard.toggle_multi(self, ui, trigger=None, signal=None, apply_now=True, **kwargs)` — Set multiple boolean properties for multiple widgets at once, or connect a trigger to do so automat…
+  - `Switchboard.connect_multi(self, ui, widgets, signals, slots)` — Connect multiple signals to multiple slots at once.
+  - `Switchboard.add_reset_buttons(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), **set_reset_kwargs)` — Give each matching value widget a per-field *reset-to-default* button.
+  - `Switchboard.link_spinboxes(self, ui, widgets=None, *, types=(QtWidgets.QAbstractSpinBox,), skip=(), icon: str = 'lock', icon_off: str = 'unlock', tooltip_on: str = 'Linked. Changing this shifts the other linked fields by the same amount. Click to unlink.', tooltip_off: str = 'Unlinked. Click to link this field so it moves with the others.', initial: bool = False, active_color: str = _LOCK_ACTIVE_COLOR, disabled_color: str = _LOCK_INACTIVE_COLOR, **set_toggle_kwargs)` — Give each spin box a *lock* toggle that links locked boxes by an equal delta.
+  - `Switchboard.set_axis_for_checkboxes(self, checkboxes, axis, ui=None)` — Set the given checkbox's check states to reflect the specified axis.
+  - `Switchboard.get_axis_from_checkboxes(self, checkboxes, ui=None, return_type='str')` — Get the intended axis value as a string or integer by reading the multiple checkbox's check states.
+  - `Switchboard.hide_unmatched_groupboxes(self, ui, unknown_tags) -> None` — Hides all QGroupBox widgets in the provided UI that do not match the unknown tags extracted
+  - `Switchboard.enable_when(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)` — Keep *targets* enabled exactly while *trigger*'s value satisfies
+  - `Switchboard.show_when(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)` — Keep *targets* on screen exactly while *trigger*'s value satisfies
+  - `Switchboard.text_from(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], formatter: Callable[..., str], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]` — Keep *targets*' text derived from *sources* — a self-labelling widget,
+  - `Switchboard.value_from(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], resolver: Callable[..., Any], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]` — Keep *targets*' VALUE derived from *sources* — a control that follows
+  - `Switchboard.refresh_dependencies(self, ui) -> None` — Re-apply every declarative rule on *ui* — :meth:`enable_when`'s,
+  - `Switchboard.busy_cursor(shape=QtCore.Qt.WaitCursor)` *(static)* — Application busy cursor for the duration of a ``with`` block.
+  - `Switchboard.progress(self, ui=None, total: Optional[int] = None, text: str = '', busy: Optional[bool] = None)` — Context manager for cooperative progress / task feedback.
+  - `Switchboard.progress_adapter(update: Callable[..., bool]) -> Callable[..., bool]` *(static)* — Adapt the footer ``update`` callable to the shape downstream
+  - `Switchboard.confirm(self, question, yes='Yes', no='No') -> bool` — Ask *question* in a modal :meth:`message_box` and answer True when
+  - `Switchboard.message_box(self, string, *buttons, location='topMiddle', timeout='auto', background=0.75, default=None)` — Spawns a message box with the given text and optionally sets buttons.
+  - `Switchboard.text_view_dialog(self, text: str = '', *buttons, title: str = '', size=(640, 400), monospace: bool = False, word_wrap: bool = True, background=False, parent=None, link_handler=None, on_refresh: Optional[Callable[[], Any]] = None)` — Spawn a scrollable text-viewer window with optional buttons.
+  - `Switchboard.preview_dialog(self, render: Callable[[dict], str], specs=(), *, values: Optional[dict] = None, on_change: Optional[Callable[[str, Any], None]] = None, actions: Optional[dict] = None, status: Optional[Callable[[dict, str], str]] = None, title: str = '', size=(960, 600), monospace: bool = True, word_wrap: bool = False, parent=None)` — A live preview of a tool's output: option rows beside the text,
+  - `Switchboard.data_view_dialog(self, data: Any, *, title: str = '', save_path: Optional[str] = '', empty_message: str = 'Nothing to show.', size=(720, 560), parent=None)` — Show structured *data* as colour-coded JSON in a text viewer.
+  - `Switchboard.save_data_dialog(self, data: Any, title: str = '', path: str = '', parent=None) -> Optional[str]` — Write *data* as indented JSON to a ``.json`` file the user picks.
+  - `Switchboard.file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Select files to open', start_dir: str = '/home', filter_description: str = 'All Files', allow_multiple: bool = True) -> Union[str, List[str]]` *(static)* — Open a file dialog to select files of the given type(s) using qtpy.
+  - `Switchboard.dir_dialog(title: str = 'Select a directory', start_dir: str = '/home') -> str` *(static)* — Open a directory dialog to select a directory using qtpy.
+  - `Switchboard.save_file_dialog(file_types: Union[str, List[str]] = ['*.*'], title: str = 'Save file', start_dir: str = '/home', filter_description: str = 'All Files') -> Optional[str]` *(static)* — Open a save-file dialog to choose a destination path.
+  - `Switchboard.input_dialog(title: str = 'Input', label: str = 'Enter value:', text: str = '', parent: QtWidgets.QWidget = None, placeholder: str = '', validate: callable = None, error_text: str = 'Invalid input.') -> str` *(static)* — Show a modal text-input dialog and return the entered string.
+  - `Switchboard.list_input_dialog(items, title: str = 'Select', label: str = 'Select item(s):', parent: QtWidgets.QWidget = None, multi: bool = True, selected=None) -> list` *(static)* — Show a modal list picker and return the chosen entries.
+  - `Switchboard.form_dialog(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', validate: Callable = None, message: str = '') -> Optional[dict]` *(static)* — Show a modal form of labelled rows and return ``{name: value}``.
+  - `Switchboard.form_panel(fields, title: str = 'Options', parent: QtWidgets.QWidget = None, ok_text: Union[str, Callable] = 'OK', cancel_text: str = None, validate: Callable = None, message: str = '', help_text: str = '', on_run: Callable = None, apply_text: str = 'Apply', output: bool = True, min_width: int = 560, settings=None, settings_key: str = 'window_geometry')` *(static)* — Build a :class:`~uitk.widgets.formPanel.FormPanel` — the modeless twin.
+  - `Switchboard.modal_menu(content_fn, parent=None, **kwargs)` *(static)* — Show a themed modal Menu popup, block until dismissed.
+  - `Switchboard.unmet_policy(self) -> str` *(property)* — How tools whose requirement is unmet are presented (persisted).
+  - `Switchboard.gate(self, widget, available, reason: str = '') -> bool` — Present *widget* according to whether its requirement is met.
+  - `Switchboard.recheck_gates(self) -> int` — Re-apply every live gate;
+  - `Switchboard.ui_names(self) -> List[str]` — Every registered UI name: each ``.ui`` file stem, then each name
+  - `Switchboard.is_registered_ui(self, name: str) -> bool` — True if *name* is a registered UI -- a ``.ui`` file stem, or a name
+  - `Switchboard.ui_name_resolves(self, name: str) -> bool` — True if *name* resolves to a UI, without triggering a load.
+  - `Switchboard.menu_button_target_name(self, widget) -> Optional[str]` — The registered UI name a ``MenuButton`` navigates to, or ``None``.
+  - `Switchboard.menu_button_target_resolves(self, widget) -> bool` — True if a ``MenuButton``'s ``target`` resolves to a registered UI.
+  - `Switchboard.apply_visibility_policy(self, widget) -> bool` — Hide a freshly-registered widget the current context can't serve.
+  - `Switchboard.resolve_widget_class(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]` — Return the widget class registered under the given name.
+  - `Switchboard.get_icon(self, icon_name: str) -> QtGui.QIcon` — Get a registered icon by name.
+  - `Switchboard.register_widget(self, widget)` — Register any custom widgets using the module names.
+  - `Switchboard.get_widget(self, name, ui=None)` — Case insensitive.
+  - `Switchboard.get_widget_from_slot(self, method)` — Get the corresponding widget from a given method.
+  - `Switchboard.is_widget(self, obj)` — Returns True if the given obj is a valid widget.
+  - `Switchboard.get_parent_widgets(widget, object_names=False)` *(static)* — Get the all parent widgets of the given widget.
+  - `Switchboard.get_all_windows(name=None)` *(static)* — Get Qt windows.
+  - `Switchboard.get_all_widgets(name=None)` *(static)* — Get Qt widgets.
+  - `Switchboard.get_widget_at(pos, top_widget_only=True)` *(static)* — Get visible and enabled widget(s) located at the given position.
+  - `Switchboard.register_slots_shortcuts(self, ui: QtWidgets.QWidget, slots_instance: object) -> None` — Scan a Slots instance and register shortcuts for decorated methods.
+  - `Switchboard.widget_has_shortcut(self, widget: QtWidgets.QWidget) -> bool` — Whether *widget*'s slot currently holds a bound keyboard shortcut.
+  - `Switchboard.get_shortcut_registry(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]` — Get a registry of all assignable slots and their shortcut status.
+  - `Switchboard.get_static_shortcut_registry(self, ui_name: str) -> List[Dict[str, Any]]` — Build a UI's shortcut registry WITHOUT instantiating the UI.
+  - `Switchboard.set_user_shortcut(self, ui: QtWidgets.QWidget, slot_name: str, sequence: str, scope: Optional[str] = None) -> None` — Update a shortcut setting dynamically and live-update the active QShortcut.
+  - `Switchboard.dispose_shortcuts(self) -> int` — Destroy every shortcut this Switchboard registered;
+  - `Switchboard.register_command(self, name: str, callback: Optional[Callable] = None, *, label: Optional[str] = None, sequence: str = '', scope: str = 'application', doc: str = '', hidden: bool = False, editable: bool = True, bind: bool = True, clearable: bool = True, on_rebind: Optional[Callable[[str, str], None]] = None, value_getter: Optional[Callable[[], str]] = None) -> str` — Register a UI-less, shortcut-bindable command.
+  - `Switchboard.unregister_command(self, name: str) -> None` — Remove a command and tear down its live shortcut, if any.
+  - `Switchboard.get_command_registry(self) -> List[Dict[str, Any]]` — Registry entries for every command, in the slot-shortcut entry shape.
+  - `Switchboard.set_command_shortcut(self, name: str, sequence: str, scope: Optional[str] = None) -> None` — Persist a command's override and live-rebind it (the command twin of
+  - `Switchboard.set_binding_hidden(self, name: str, hidden: bool = True) -> None` — Hide/show command *name* in the shortcut editor's default view.
+  - `Switchboard.set_binding_editable(self, name: str, editable: bool = True) -> None` — Allow/forbid the user rebinding command *name* in the editor.
+  - `Switchboard.get_default_signals(self, widget: QtWidgets.QWidget) -> set` — Retrieves the default signals for a given widget type.
+  - `Switchboard.get_available_signals(self, widget, derived=True, exc=None)` — Get all available signals for a type of widget.
+  - `Switchboard.slots_instantiated(self, key: str) -> bool`
+  - `Switchboard.get_slots_instance(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]` — Get or create a slots instance for the given UI.
+  - `Switchboard.init_slot(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None`
+  - `Switchboard.call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs)` — Call a slot method for a widget.
+  - `Switchboard.get_slot(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]`
+  - `Switchboard.get_slot_from_widget(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]`
+  - `Switchboard.mark_missing_slot(self, widget)` — Built-in ``on_missing_slot`` hook: grey the widget + explain in its tooltip.
+  - `Switchboard.notify_missing_slot(self, widget)` — Invoke the missing-slot policy hook for a widget ``connect_slot`` couldn't wire.
+  - `Switchboard.connect_slot(self, widget, slot=None)` — Connect a widget's signals to its slot.
+  - `Switchboard.slot_history(self, index=None, allow_duplicates=False, inc=None, exc=None, add=None, remove=None, length=200)` — Get the slot history.
 
 <a id="switchboard--history"></a>
 ### `switchboard/history.py`
@@ -959,123 +1036,20 @@ Ordered, capped history with optional weak storage and key-based filtering.
   - `History.view(self, *, allow_duplicates=False, inc=None, exc=None)` — Return a filtered list view of the live items (non-mutating).
   - `History.get(self, index=None, *, allow_duplicates=False, inc=None, exc=None)` — Return the item(s) at ``index`` (int or slice), or the whole view.
 
-<a id="switchboard--names"></a>
-### `switchboard/names.py`
-
-- **[`class SwitchboardNameMixin`](uitk/uitk/switchboard/names.py#L9)** — Mixin for Switchboard name and tag management.
-  - `SwitchboardNameMixin.convert_to_legal_name(name: str) -> str` *(static)* — Convert a name to a legal format by replacing non-alphanumeric characters with underscores.
-  - `SwitchboardNameMixin.get_slot_class_names(self, base_name: str) -> List[str]` — Generate potential slot class names from a base name.
-  - `SwitchboardNameMixin.get_slot_file_names(self, base_name: str) -> List[str]` — Generate potential slot file names from a base name.
-  - `SwitchboardNameMixin.get_base_name(self, name: str) -> str`
-  - `SwitchboardNameMixin.get_tags_from_name(self, name: str) -> set[str]` — Extract tags from a UI name string.
-  - `SwitchboardNameMixin.has_tags(self, ui, tags=None) -> bool` — Check if any of the given tag(s) are present in the UI's tags set.
-  - `SwitchboardNameMixin.edit_tags(self, target: Union[str, QtWidgets.QWidget], add: Union[str, List[str]] = None, remove: Union[str, List[str]] = None, clear: bool = False, reset: bool = False) -> Union[str, None]` — Edit tags on a widget or a tag string.
-  - `SwitchboardNameMixin.filter_tags(self, tag_string: str, keep_tags: list[str] = None, remove_tags: list[str] = None) -> str` — Filter tags from a tag string - either keep only specified tags or remove specified tags.
-  - `SwitchboardNameMixin.get_unknown_tags(self, tag_string: str, known_tags: list[str]) -> list[str]` — Get tags that are not in the known_tags list.
-  - `SwitchboardNameMixin.unpack_names(cls, name_string)` *(class)* — Unpacks a comma-separated string of names and returns a list of individual names.
-  - `SwitchboardNameMixin.get_widgets_by_string_pattern(self, ui, name_string)` — Get a list of corresponding widgets from a single shorthand formatted string.
-  - `SwitchboardNameMixin.get_methods_by_string_pattern(self, clss, name_string)` — Get a list of corresponding methods from a single shorthand formatted string.
-
-<a id="switchboard--namespace"></a>
-### `switchboard/namespace.py`
-
-Mixin that falls back to the uitk package namespace for unknown attributes.
-
-- **[`class SwitchboardNamespaceMixin`](uitk/uitk/switchboard/namespace.py#L71)** — Resolve otherwise-unknown Switchboard attributes against the ``uitk`` namespace.
-
-<a id="switchboard--placement"></a>
-### `switchboard/placement.py`
-
-- **[`class SwitchboardPlacementMixin`](uitk/uitk/switchboard/placement.py#L6)** — Window placement: centering a widget on a point, the screen or the
-  - `SwitchboardPlacementMixin.get_cursor_offset_from_center(widget)` *(static)* — Get the relative position of the cursor with respect to the center of a given widget.
-  - `SwitchboardPlacementMixin.center_widget(widget, pos=None, offset_x=0, offset_y=0, padding_x=None, padding_y=None, relative: QtWidgets.QWidget = None)` *(static)* — Adjust the widget's size to fit contents and center it at the given point, on the screen, at cursor…
-
-<a id="switchboard--rules"></a>
-### `switchboard/rules.py`
-
-- **[`class SwitchboardRulesMixin`](uitk/uitk/switchboard/rules.py#L8)** — Declarative widget rules: ``enable_when`` / ``show_when`` / ``text_from`` /
-  - `SwitchboardRulesMixin.enable_when(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)` — Keep *targets* enabled exactly while *trigger*'s value satisfies
-  - `SwitchboardRulesMixin.show_when(self, ui, targets, trigger, condition=True, signal=None, value=None, invert=False)` — Keep *targets* on screen exactly while *trigger*'s value satisfies
-  - `SwitchboardRulesMixin.text_from(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], formatter: Callable[..., str], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]` — Keep *targets*' text derived from *sources* — a self-labelling widget,
-  - `SwitchboardRulesMixin.value_from(self, ui, targets: Union[str, Any, List[Any]], sources: Union[str, Any, List[Any]], resolver: Callable[..., Any], signal: Optional[str] = None, value: Optional[Union[Callable[[Any], Any], Dict[str, Callable[[Any], Any]]]] = None) -> Callable[[], None]` — Keep *targets*' VALUE derived from *sources* — a control that follows
-  - `SwitchboardRulesMixin.refresh_dependencies(self, ui) -> None` — Re-apply every declarative rule on *ui* — :meth:`enable_when`'s,
-
 <a id="switchboard--shortcuts"></a>
 ### `switchboard/shortcuts.py`
 
 Switchboard-side keyboard shortcut machinery.
 
-- **[`class Shortcut`](uitk/uitk/switchboard/shortcuts.py#L32)** — Decorator to assign a keyboard shortcut to a slot method.
-- **[`class SwitchboardShortcutMixin`](uitk/uitk/switchboard/shortcuts.py#L91)** — Mixin for managing keyboard shortcuts for Switchboard Slots.
-  - `SwitchboardShortcutMixin.register_slots_shortcuts(self, ui: QtWidgets.QWidget, slots_instance: object) -> None` — Scan a Slots instance and register shortcuts for decorated methods.
-  - `SwitchboardShortcutMixin.widget_has_shortcut(self, widget: QtWidgets.QWidget) -> bool` — Whether *widget*'s slot currently holds a bound keyboard shortcut.
-  - `SwitchboardShortcutMixin.get_shortcut_registry(self, ui: QtWidgets.QWidget) -> List[Dict[str, Any]]` — Get a registry of all assignable slots and their shortcut status.
-  - `SwitchboardShortcutMixin.get_static_shortcut_registry(self, ui_name: str) -> List[Dict[str, Any]]` — Build a UI's shortcut registry WITHOUT instantiating the UI.
-  - `SwitchboardShortcutMixin.set_user_shortcut(self, ui: QtWidgets.QWidget, slot_name: str, sequence: str, scope: Optional[str] = None) -> None` — Update a shortcut setting dynamically and live-update the active QShortcut.
-  - `SwitchboardShortcutMixin.dispose_shortcuts(self) -> int` — Destroy every shortcut this Switchboard registered;
-  - `SwitchboardShortcutMixin.register_command(self, name: str, callback: Optional[Callable] = None, *, label: Optional[str] = None, sequence: str = '', scope: str = 'application', doc: str = '', hidden: bool = False, editable: bool = True, bind: bool = True, clearable: bool = True, on_rebind: Optional[Callable[[str, str], None]] = None, value_getter: Optional[Callable[[], str]] = None) -> str` — Register a UI-less, shortcut-bindable command.
-  - `SwitchboardShortcutMixin.unregister_command(self, name: str) -> None` — Remove a command and tear down its live shortcut, if any.
-  - `SwitchboardShortcutMixin.get_command_registry(self) -> List[Dict[str, Any]]` — Registry entries for every command, in the slot-shortcut entry shape.
-  - `SwitchboardShortcutMixin.set_command_shortcut(self, name: str, sequence: str, scope: Optional[str] = None) -> None` — Persist a command's override and live-rebind it (the command twin of
-  - `SwitchboardShortcutMixin.set_binding_hidden(self, name: str, hidden: bool = True) -> None` — Hide/show command *name* in the shortcut editor's default view.
-  - `SwitchboardShortcutMixin.set_binding_editable(self, name: str, editable: bool = True) -> None` — Allow/forbid the user rebinding command *name* in the editor.
+- **[`class Shortcut`](uitk/uitk/switchboard/shortcuts.py#L33)** — Decorator to assign a keyboard shortcut to a slot method.
 
 <a id="switchboard--slots"></a>
 ### `switchboard/slots.py`
 
-- **[`class Signals`](uitk/uitk/switchboard/slots.py#L15)** — Decorator to specify which signals a slot should connect to.
+- **[`class Signals`](uitk/uitk/switchboard/slots.py#L16)** — Decorator to specify which signals a slot should connect to.
   - `Signals.blockSignals(cls, func)` *(class)* — Decorator that blocks widget signals during method execution.
-- **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L73)** — Decorator: enable cooperative cancel + warning dialog for a heavy slot.
-- **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L198)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
-- **[`class SwitchboardSlotsMixin`](uitk/uitk/switchboard/slots.py#L558)** — Mixin for managing slot connections and signal-slot handling in the Switchboard.
-  - `SwitchboardSlotsMixin.get_default_signals(self, widget: QtWidgets.QWidget) -> set` — Retrieves the default signals for a given widget type.
-  - `SwitchboardSlotsMixin.get_available_signals(self, widget, derived=True, exc=None)` — Get all available signals for a type of widget.
-  - `SwitchboardSlotsMixin.slots_instantiated(self, key: str) -> bool`
-  - `SwitchboardSlotsMixin.get_slots_instance(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]` — Get or create a slots instance for the given UI.
-  - `SwitchboardSlotsMixin.init_slot(self, widget: QtWidgets.QWidget, block_signals: bool = True) -> None`
-  - `SwitchboardSlotsMixin.call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs)` — Call a slot method for a widget.
-  - `SwitchboardSlotsMixin.get_slot(self, slot_class: object, slot_name: str, wrap: bool = False, widget: Optional[QtWidgets.QWidget] = None) -> Optional[Callable]`
-  - `SwitchboardSlotsMixin.get_slot_from_widget(self, widget: QtWidgets.QWidget, wrap: bool = False) -> Optional[Callable]`
-  - `SwitchboardSlotsMixin.mark_missing_slot(self, widget)` — Built-in ``on_missing_slot`` hook: grey the widget + explain in its tooltip.
-  - `SwitchboardSlotsMixin.notify_missing_slot(self, widget)` — Invoke the missing-slot policy hook for a widget ``connect_slot`` couldn't wire.
-  - `SwitchboardSlotsMixin.connect_slot(self, widget, slot=None)` — Connect a widget's signals to its slot.
-  - `SwitchboardSlotsMixin.slot_history(self, index=None, allow_duplicates=False, inc=None, exc=None, add=None, remove=None, length=200)` — Get the slot history.
-
-<a id="switchboard--style"></a>
-### `switchboard/style.py`
-
-Mixin that exposes the :class:`StyleSheet` class on the Switchboard.
-
-- **[`class SwitchboardStyleMixin`](uitk/uitk/switchboard/style.py#L27)** — Adds a lazy ``style`` property exposing the :class:`StyleSheet` class.
-  - `SwitchboardStyleMixin.style(self)` *(property)* — The :class:`StyleSheet` class (imported lazily on first access).
-
-<a id="switchboard--widget_values"></a>
-### `switchboard/widget_values.py`
-
-- **[`class SwitchboardWidgetValuesMixin`](uitk/uitk/switchboard/widget_values.py#L7)** — What a control's value means, read and written one way: the reader /
-
-<a id="switchboard--widgets"></a>
-### `switchboard/widgets.py`
-
-- **[`class SwitchboardWidgetMixin`](uitk/uitk/switchboard/widgets.py#L9)** — Widget registration, resolution, and dynamic class loading for Switchboard.
-  - `SwitchboardWidgetMixin.unmet_policy(self) -> str` *(property)* — How tools whose requirement is unmet are presented (persisted).
-  - `SwitchboardWidgetMixin.gate(self, widget, available, reason: str = '') -> bool` — Present *widget* according to whether its requirement is met.
-  - `SwitchboardWidgetMixin.recheck_gates(self) -> int` — Re-apply every live gate;
-  - `SwitchboardWidgetMixin.is_registered_ui(self, name: str) -> bool` — True if *name* matches a known UI file stem in the registry (no load is triggered).
-  - `SwitchboardWidgetMixin.ui_name_resolves(self, name: str) -> bool` — True if *name* resolves to a UI, without triggering a load.
-  - `SwitchboardWidgetMixin.menu_button_target_name(self, widget) -> Optional[str]` — The registered UI name a ``MenuButton`` navigates to, or ``None``.
-  - `SwitchboardWidgetMixin.menu_button_target_resolves(self, widget) -> bool` — True if a ``MenuButton``'s ``target`` resolves to a registered UI.
-  - `SwitchboardWidgetMixin.apply_visibility_policy(self, widget) -> bool` — Hide a freshly-registered widget the current context can't serve.
-  - `SwitchboardWidgetMixin.resolve_widget_class(self, class_name: str) -> Optional[Type[QtWidgets.QWidget]]` — Return the widget class registered under the given name.
-  - `SwitchboardWidgetMixin.get_icon(self, icon_name: str) -> QtGui.QIcon` — Get a registered icon by name.
-  - `SwitchboardWidgetMixin.register_widget(self, widget)` — Register any custom widgets using the module names.
-  - `SwitchboardWidgetMixin.get_widget(self, name, ui=None)` — Case insensitive.
-  - `SwitchboardWidgetMixin.get_widget_from_slot(self, method)` — Get the corresponding widget from a given method.
-  - `SwitchboardWidgetMixin.is_widget(self, obj)` — Returns True if the given obj is a valid widget.
-  - `SwitchboardWidgetMixin.get_parent_widgets(widget, object_names=False)` *(static)* — Get the all parent widgets of the given widget.
-  - `SwitchboardWidgetMixin.get_all_windows(name=None)` *(static)* — Get Qt windows.
-  - `SwitchboardWidgetMixin.get_all_widgets(name=None)` *(static)* — Get Qt widgets.
-  - `SwitchboardWidgetMixin.get_widget_at(pos, top_widget_only=True)` *(static)* — Get visible and enabled widget(s) located at the given position.
+- **[`class Cancelable`](uitk/uitk/switchboard/slots.py#L74)** — Decorator: enable cooperative cancel + warning dialog for a heavy slot.
+- **[`class SlotWrapper`](uitk/uitk/switchboard/slots.py#L199)** — Wrapper class for slots to handle argument injection, history tracking, debounce, and timeout monit…
 
 <a id="testing"></a>
 ### `testing.py`
@@ -1555,7 +1529,8 @@ The unified shortcut editor: every binding in a Switchboard's registry.
 
 Generic Switchboard-shaped adapter for the unified :class:`ShortcutEditor`.
 
-- **[`class RegistrySwitchboardFacade`](uitk/uitk/widgets/editors/shortcut_editor/registry_facade.py#L96)** — Switchboard-shaped view over grouped binding entries for the editor.
+- **[`class RegistrySwitchboardFacade`](uitk/uitk/widgets/editors/shortcut_editor/registry_facade.py#L82)** — Switchboard-shaped view over grouped binding entries for the editor.
+  - `RegistrySwitchboardFacade.ui_names(self) -> List[str]` — The group names as the editor's UI names (``Switchboard.ui_names``).
   - `RegistrySwitchboardFacade.get_ui(self, name=None)` — Resolve a group name (or ``_GroupUI``) to its synthetic UI object.
   - `RegistrySwitchboardFacade.convert_to_legal_name(self, name: str) -> str`
   - `RegistrySwitchboardFacade.get_shortcut_registry(self, ui=None) -> List[dict]`
@@ -1609,7 +1584,7 @@ The browser panel: search, tag chips, row actions, and the header menu.
 
 A provider's external apps as a program of their own: one app, or all of them.
 
-- **[`class ExternalAppHub(_ExternalAppHubInternal)`](uitk/uitk/widgets/editors/switchboard_browser/external_app_hub.py#L255)** — A provider package's external apps as a standalone program.
+- **[`class ExternalAppHub(_ExternalAppHubInternal)`](uitk/uitk/widgets/editors/switchboard_browser/external_app_hub.py#L259)** — A provider package's external apps as a standalone program.
   - `ExternalAppHub.of(cls, package: str) -> Optional['ExternalAppHub']` *(class)* — The hub *package* declares as ``HUB`` in its ``__main__``, or None.
   - `ExternalAppHub.data_dir(self) -> str` *(property)* — This hub's per-user folder: its log and rendered icon
   - `ExternalAppHub.log_file(self) -> str` *(property)* — Where a run's output goes when no console shows it.
@@ -1720,15 +1695,18 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `Footer.progress_bar(self) -> ProgressBar` *(property)* — Get the embedded progress bar.
   - `Footer.status_label(self) -> QtWidgets.QLabel` *(property)* — Get the status label.
   - `Footer.size_grip(self) -> Optional[QtWidgets.QSizeGrip]` *(property)* — Get the size grip widget if it exists.
-  - `Footer.setText(self, text: str, level: Optional[str] = None) -> None` — Set the status text (convenience method matching QLabel API).
+  - `Footer.setText(self, text: str, level: Optional[str] = None, color: Optional[str] = None) -> None` — Set the status text (convenience method matching QLabel API).
   - `Footer.text(self) -> str` — Get the current displayed text (convenience method matching QLabel API).
-  - `Footer.setStatusText(self, text: str | None = None, level: Optional[str] = None) -> None` — Set the status text of the footer.
+  - `Footer.setStatusText(self, text: str | None = None, level: Optional[str] = None, color: Optional[str] = None) -> None` — Set the status text of the footer.
   - `Footer.setDefaultStatusText(self, text: str | None = None) -> None` — Set fallback text shown when no explicit status is provided.
   - `Footer.statusText(self) -> str` — Get the status text of the footer.
   - `Footer.getDefaultStatusText(self) -> str` — Get the fallback text shown when no explicit status is set.
   - `Footer.getSizeGripEnabled(self) -> bool` — Whether the footer currently shows a resize grip.
   - `Footer.setSizeGripEnabled(self, value: bool) -> None` — Show or hide the resize grip, creating it on first enable.
   - `Footer.setStatus(self, value: str) -> None` — Set the status text (Qt-property setter for :meth:`setStatusText`).
+  - `Footer.is_editing_status(self) -> bool` *(property)* — Whether :meth:`edit_status` has the status label's place.
+  - `Footer.edit_status(self, text: str, on_commit: Callable[[str], None], on_cancel: Optional[Callable[[], None]] = None) -> QtWidgets.QLineEdit` — Edit *text* in place of the status label.
+  - `Footer.eventFilter(self, watched, event) -> bool` — The status label's double-click (:attr:`status_double_clicked`) and
   - `Footer.start_progress(self, total: Optional[int] = None, text: str = '', busy: Optional[bool] = None) -> Callable[[Optional[int], Optional[str]], bool]` — Start showing progress in the footer.
   - `Footer.update_progress(self, value: Optional[int] = None, text: Optional[str] = None) -> bool` — Tick the progress bar and optionally update the status text.
   - `Footer.finish_progress(self, text: Optional[str] = None, delay_ms: int = 1000)` — Finish the progress and hide the bar.
@@ -1742,18 +1720,23 @@ Host a live ``QMenu`` as ordinary widget content (non-popup), sized exactly to i
   - `Footer.showEvent(self, event)` — Ensure text is properly sized and elided on first show.
   - `Footer.status_controller(self, resolver: Optional[Callable[[], str]] = None, default_text: str | None = '', truncate_kwargs: Optional[Mapping[str, Any]] = None) -> 'FooterStatusController'` — Bind a :class:`FooterStatusController` to this footer and return it.
   - `Footer.attach_to(self, widget: QtWidgets.QWidget) -> None` — Attach this footer to the bottom of a QWidget or QMainWindow's centralWidget.
-- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L976)** — Context manager for footer progress tracking.
-- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L1004)** — Helper that keeps a footer in sync with a resolver function.
+- **[`class FooterProgressContext`](uitk/uitk/widgets/footer.py#L1099)** — Context manager for footer progress tracking.
+- **[`class FooterStatusController`](uitk/uitk/widgets/footer.py#L1127)** — Helper that keeps a footer in sync with a resolver function.
   - `FooterStatusController.set_resolver(self, resolver: Callable[[], str]) -> None`
   - `FooterStatusController.set_truncation(self, truncate_kwargs: Optional[Mapping[str, Any]] = None, **extra_kwargs: Any) -> None` — Configure truncation behavior for footer updates via StrUtils.truncate kwargs.
   - `FooterStatusController.update(self) -> None`
+- **[`class FooterApply`](uitk/uitk/widgets/footer.py#L1191)** — The Apply button a dry run arms on a footer.
+  - `FooterApply.pending(self) -> Optional[Callable]` *(property)* — The call a click would hand to *on_apply*, or ``None``.
+  - `FooterApply.arm(self, commit: Callable, note: Optional[str] = None) -> None` — Hold *commit* behind the button and show it, with *note* (default:
+  - `FooterApply.disarm(self, *_signal_args) -> None` — Drop the armed call and hide the button.
+  - `FooterApply.apply(self) -> None` — Hand the armed call to *on_apply* (nothing armed: nothing happens).
 
 <a id="widgets--formPanel"></a>
 ### `widgets/formPanel.py`
 
 Themed form window: Header → labelled rows → output log → Footer.
 
-- **[`class FormPanel(WindowPanel)`](uitk/uitk/widgets/formPanel.py#L49)** — Themed form window over a list of field specs.
+- **[`class FormPanel(WindowPanel)`](uitk/uitk/widgets/formPanel.py#L50)** — Themed form window over a list of field specs.
   - `FormPanel.add(self, x, label: Optional[str] = None, hint: Optional[str] = None, tooltip: Optional[str] = None, companions=(), label_align=None, enabled_by: Optional[str] = None, **kwargs)` — :meth:`WindowPanel.add`, and the widget becomes a FIELD when it can.
   - `FormPanel.clear_rows(self) -> None` — The base's, plus the field registries — they point at those rows.
   - `FormPanel.set_fields(self, fields) -> None` — (Re)build the rows from *fields* — each spec is one :meth:`add`.
@@ -1965,9 +1948,13 @@ An image to look at closely: zoom about the cursor, pan, and shapes drawn over i
 <a id="widgets--marking_menu--_marking_menu"></a>
 ### `widgets/marking_menu/_marking_menu.py`
 
-- **[`class MarkingMenu(_BindingsMixin, _HostingMixin, _NavigationMixin, _InputMixin, _PresentationMixin, QtWidgets.QWidget, pythontk.SingletonMixin, pythontk.LoggingMixin, pythontk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L25)** — MarkingMenu is a marking menu based on a QWidget.
+- **[`class MarkingMenu(_BindingsMixin, _HostingMixin, _NavigationMixin, _InputMixin, _PresentationMixin, QtWidgets.QWidget, pythontk.SingletonMixin, pythontk.LoggingMixin, pythontk.HelpMixin)`](uitk/uitk/widgets/marking_menu/_marking_menu.py#L27)** — MarkingMenu is a marking menu based on a QWidget.
   - `MarkingMenu.retire_all(cls) -> list` *(class)* — Retire every live instance in the process;
   - `MarkingMenu.retire(self) -> None` — Deactivate this instance because a newer MarkingMenu now owns
+  - `MarkingMenu.activation_key(self) -> Optional[int]` *(property)* — The activation key as a Qt key code, or ``None`` when the bound key is
+  - `MarkingMenu.armed(self) -> bool` *(property)* — Whether the activation key is held: a gesture is live.
+  - `MarkingMenu.activate(self, buttons=None) -> None` — Begin a gesture, as the activation key going down does.
+  - `MarkingMenu.release(self) -> None` — End the gesture, as the activation key coming up does (see
   - `MarkingMenu.instance(cls, switchboard: Optional[Switchboard] = None, **kwargs) -> 'MarkingMenu'` *(class)*
   - `MarkingMenu.ui_handler(self)` *(property)* — Accessor for the UI handler.
   - `MarkingMenu.get(self, name: str, **kwargs) -> QtWidgets.QWidget` — Get a UI widget by name.
@@ -1975,7 +1962,7 @@ An image to look at closely: zoom about the cursor, pan, and shapes drawn over i
   - `MarkingMenu.default_bindings(self) -> dict` *(property)* — The original bindings passed at construction time.
   - `MarkingMenu.bindings(self) -> dict` *(property)* — Get bindings from persistent storage.
   - `MarkingMenu.on_bindings_changed(self, callback) -> None` — Subscribe to binding changes on this menu's persistent store.
-  - `MarkingMenu.set_activation_key(self, new_key: str) -> None` — Rebind the marking menu's activation key across every chord.
+  - `MarkingMenu.set_activation_key(self, new_key: str) -> None` — Rebind the marking menu's activation key across every chord, then let the
   - `MarkingMenu.start_menu_names(self, short: bool = True) -> list` — Available ``#startmenu`` UI names, sorted.
   - `MarkingMenu.get_route_target(self, buttons=()) -> str` — Full target menu (…#startmenu) bound to the activation key + *buttons*
   - `MarkingMenu.set_route_target(self, buttons, menu: str) -> None` — Bind the activation key + *buttons* gesture to *menu* (a …#startmenu UI
@@ -1993,6 +1980,7 @@ An image to look at closely: zoom about the cursor, pan, and shapes drawn over i
   - `MarkingMenu.child_leaveEvent(self, w, event) -> None` — Handle the leave event for child widgets.
   - `MarkingMenu.child_mouseButtonReleaseEvent(self, w, event) -> bool` — Dispatch (or forward) a release delivered to a *grabbed* child.
   - `MarkingMenu.mousePressEvent(self, event) -> None` — Handle mouse press: route through the central state-sync.
+  - `MarkingMenu.keyReleaseEvent(self, event) -> None` — Show the host the release first (``MarkingMenuHost.key_event``).
   - `MarkingMenu.keyPressEvent(self, event) -> None` — Handle key press for non-activation key bindings.
   - `MarkingMenu.mouseDoubleClickEvent(self, event) -> None`
   - `MarkingMenu.mouseReleaseEvent(self, event) -> None` — Handle mouse release: dispatch click action or sync menu state.
@@ -2026,6 +2014,37 @@ Pure menu-resolution logic for the MarkingMenu.
   - `MenuResolver.count_buttons(buttons: int) -> int` *(static)* — Count distinct buttons set in the mask.
   - `MenuResolver.resolve_target_menu(*, activation_held: bool, activation_key_str: Optional[str], buttons: int, modifiers: int, bindings: Mapping[str, str], extra_key: Optional[str] = None) -> Optional[str]` *(static)* — Return the UI name that should be visible for the given input state.
   - `MenuResolver.parse_binding_keys(raw_bindings: Mapping[str, str]) -> tuple` *(static)* — Parse user-supplied bindings into (normalized_dict, activation_key_str).
+
+<a id="widgets--marking_menu--marking_menu_host"></a>
+### `widgets/marking_menu/marking_menu_host.py`
+
+What a marking menu needs from the application hosting it: :class:`MarkingMenuHost`, and
+
+- **[`class MarkingMenuHost(Protocol)`](uitk/uitk/widgets/marking_menu/marking_menu_host.py#L30)** — The answers a marking menu asks of the application that hosts it.
+  - `MarkingMenuHost.main_window(self) -> Any` — The window the menu parents to when none is given, or ``None``.
+  - `MarkingMenuHost.mouse_buttons(self) -> Any` — The mouse buttons held now, as a ``Qt.MouseButtons`` mask.
+  - `MarkingMenuHost.bind_activation_key(self, menu, key: str) -> None` — The host's own half of the activation binding, on *key* (``"Key_Z"``).
+  - `MarkingMenuHost.adopt_window(self, widget) -> None` — Tie a top-level window to the host's own window (stacking, minimize).
+  - `MarkingMenuHost.key_event(self, menu, event) -> None` — See each key press and release the menu receives, before the menu does.
+  - `MarkingMenuHost.attach(self, menu) -> None` — Take a newly built menu: anything the host does once per menu.
+- **[`class MarkingMenuLaunchHost(Protocol)`](uitk/uitk/widgets/marking_menu/marking_menu_host.py#L76)** — What a launcher asks of the host it starts a marking menu in -- none of it is the
+  - `MarkingMenuLaunchHost.start(self, app: Optional[str] = None) -> None` — Make Qt usable in this process (a binding, a ``QApplication``, an event pump),
+  - `MarkingMenuLaunchHost.defer(self, fn: Callable[[], Any]) -> Any` — Run *fn* once the host is ready to build a UI;
+  - `MarkingMenuLaunchHost.live_menu(self) -> Any` — The menu this host already drives, or ``None``: a host that wires one menu per
+  - `MarkingMenuLaunchHost.teardown(self) -> None` — Release what the host holds for the menu -- its input wiring, docked UI --
+  - `MarkingMenuLaunchHost.report(self, message: str, error: bool = False) -> None` — Tell the user *message* where they are looking, not through the menu (a
+- **[`class PureMarkingMenuHost`](uitk/uitk/widgets/marking_menu/marking_menu_host.py#L105)** — The plain-Qt answers to both protocols: the menu behaves exactly as it does with no
+  - `PureMarkingMenuHost.start(self, app: Optional[str] = None) -> None` — Nothing to stand up: a Qt application already runs its own loop.
+  - `PureMarkingMenuHost.defer(self, fn: Callable[[], Any]) -> Any` — Run *fn* now and return its result.
+  - `PureMarkingMenuHost.live_menu(self) -> Any` — None: every launch builds its menu (a new one retires the last).
+  - `PureMarkingMenuHost.main_window(self) -> Any` — No main window of its own: the menu parents to what it is given.
+  - `PureMarkingMenuHost.mouse_buttons(self) -> Any` — Qt's own view of the mouse.
+  - `PureMarkingMenuHost.bind_activation_key(self, menu, key: str) -> None` — Nothing more: the menu's application shortcut is the whole binding.
+  - `PureMarkingMenuHost.adopt_window(self, widget) -> None` — Nothing to tie: Qt windows stack among themselves.
+  - `PureMarkingMenuHost.key_event(self, menu, event) -> None` — No key the host handles itself.
+  - `PureMarkingMenuHost.attach(self, menu) -> None` — Nothing to set up per menu.
+  - `PureMarkingMenuHost.teardown(self) -> None` — Nothing held outside the menu itself.
+  - `PureMarkingMenuHost.report(self, message: str, error: bool = False) -> None` — The process log: a plain Qt app has no surface of its own to show it on.
 
 <a id="widgets--marking_menu--overlay"></a>
 ### `widgets/marking_menu/overlay.py`
@@ -2071,7 +2090,7 @@ Pure menu-resolution logic for the MarkingMenu.
   - `MenuPositioner.position_relative_to_widget(menu: QtWidgets.QWidget, target_widget: QtWidgets.QWidget, position: str) -> None` *(static)* — Position menu relative to another widget.
   - `MenuPositioner.apply_width_matching(menu: QtWidgets.QWidget, anchor_widget: Optional[QtWidgets.QWidget], match_parent_width: bool, position: Union[str, QtCore.QPoint, tuple, list, None], logger: Optional[Any] = None) -> None` *(static)* — Apply width matching if conditions are met.
   - `MenuPositioner.position_and_match_width(menu: QtWidgets.QWidget, anchor_widget: Optional[QtWidgets.QWidget], position: Union[str, QtCore.QPoint, tuple, list, None], match_parent_width: bool, logger: Optional[Any] = None) -> None` *(static)* — Position menu and apply width matching in one operation.
-- **[`class Menu(_MenuLayoutMixin, _MenuItemsMixin, _MenuTriggersMixin, _MenuLeaveMixin, _MenuPopupWindowMixin, _MenuActionsMixin, _MenuPersistentModeMixin, _MenuRegistrationMixin, QtWidgets.QWidget, AttributesMixin, pythontk.LoggingMixin)`](uitk/uitk/widgets/menu.py#L300)** — A custom Qt Widget that serves as a popup menu with additional features.
+- **[`class Menu(QtWidgets.QWidget, AttributesMixin, pythontk.LoggingMixin)`](uitk/uitk/widgets/menu.py#L300)** — A custom Qt Widget that serves as a popup menu with additional features.
   - `Menu.create_context_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides)` *(class)* — Factory method: Create a standalone context menu with sensible defaults.
   - `Menu.create_dropdown_menu(cls, parent: Optional[QtWidgets.QWidget] = None, **overrides)` *(class)* — Factory method: Create a dropdown menu for option boxes.
   - `Menu.from_config(cls, config: MenuConfig)` *(class)* — Create a Menu from a MenuConfig object.
@@ -2133,7 +2152,7 @@ Pure menu-resolution logic for the MarkingMenu.
 
 The "Menu Actions" section: Apply, Restore Defaults and the presets selector.
 
-- **[`class ActionButtonManager`](uitk/uitk/widgets/menu_parts/_actions.py#L46)** — Manages action buttons for Menu widgets.
+- **[`class ActionButtonManager`](uitk/uitk/widgets/menu_parts/_actions.py#L45)** — Manages action buttons for Menu widgets.
   - `ActionButtonManager.container(self) -> QtWidgets.QWidget` *(property)* — Get or create the collapsible action button container.
   - `ActionButtonManager.create_button(self, button_id: str, config: _ActionButtonConfig) -> QtWidgets.QPushButton` — Create an action button with the given configuration.
   - `ActionButtonManager.add_button(self, button_id: str, config: _ActionButtonConfig, index: int = -1) -> QtWidgets.QPushButton` — Add an action button to the container.
@@ -2209,7 +2228,7 @@ Shared multi-state icon behavior for state-cycling buttons.
 
 The shared core of uitk's item-view format mixins.
 
-- **[`class ItemFormatMixin(ConvertMixin)`](uitk/uitk/widgets/mixins/item_format.py#L25)** — Formatter store + semantic colours shared by the table and tree mixins.
+- **[`class ItemFormatMixin(ConvertMixin)`](uitk/uitk/widgets/mixins/item_format.py#L25)** — Formatter store + semantic colours shared by the table and the tree.
 
 <a id="widgets--mixins--menu_mixin"></a>
 ### `widgets/mixins/menu_mixin.py`
@@ -2289,7 +2308,7 @@ Shared display behaviour for the spin-box widgets.
 
 Text rendering for uitk widgets.
 
-- **[`class RichTextFormatter`](uitk/uitk/widgets/mixins/text.py#L49)** — Stateless HTML pipeline shared by uitk's rich-text widgets.
+- **[`class RichTextFormatter`](uitk/uitk/widgets/mixins/text.py#L48)** — Stateless HTML pipeline shared by uitk's rich-text widgets.
   - `RichTextFormatter.prefix_styles(cls) -> dict` *(class)* — Map each level-prefix token to its coloured ``<hl>`` span.
   - `RichTextFormatter.apply_prefix_styles(cls, string: str) -> str` *(class)* — Replace level-prefix tokens (``Error:``, ``Warning:`` ...) with styled spans.
   - `RichTextFormatter.apply_inline_styles(cls, string: str) -> str` *(class)* — Replace bare HTML tags with their style-bearing equivalents.
@@ -2299,16 +2318,7 @@ Text rendering for uitk widgets.
   - `RichTextFormatter.wrap_font_size(string: str, size) -> str` *(static)*
   - `RichTextFormatter.resolve_background(cls, background) -> Optional[str]` *(class)* — Convert a background parameter to a CSS colour string or ``None``.
   - `RichTextFormatter.format(cls, string: str, *, align: str = 'left', font_color: str = 'white', font_size: Union[int, str, None] = None) -> str` *(class)* — Apply the standard uitk HTML pipeline to a string.
-- **[`class TextTruncation`](uitk/uitk/widgets/mixins/text.py#L292)** — Mixin providing reusable text truncation functionality for UI widgets.
-  - `TextTruncation.calculate_text_truncation(self, text, container_width=None, reserved_width=0, min_text_width=100, elide_mode=QtCore.Qt.ElideMiddle, font=None, custom_suffix='...')` — Calculate truncated text that fits within available width using Qt font metrics.
-  - `TextTruncation.calculate_character_truncation(self, text, max_chars, elide_mode=QtCore.Qt.ElideMiddle, suffix='...')` — Truncate text by character count (not pixel-based).
-  - `TextTruncation.calculate_word_truncation(self, text, max_chars, elide_mode=QtCore.Qt.ElideMiddle, suffix='...', word_boundary=True)` — Truncate text respecting word boundaries.
-  - `TextTruncation.calculate_path_truncation(self, path, max_chars, preserve_filename=True, preserve_extension=True, suffix='...')` — Truncate file/directory paths intelligently.
-  - `TextTruncation.apply_text_truncation(self, widget, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel')` — Apply text truncation to an existing widget.
-  - `TextTruncation.create_truncated_button(self, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel', **button_kwargs)` — Create a QPushButton with properly truncated text.
-  - `TextTruncation.create_truncated_label(self, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel', **label_kwargs)` — Create a QLabel with properly truncated text.
-  - `TextTruncation.update_widget_text_truncation(self, widget, text, container_width=None, reserved_width=0, tooltip=None, truncation_type='pixel')` — Update an existing widget's text with proper truncation.
-- **[`class RichText`](uitk/uitk/widgets/mixins/text.py#L733)** — Rich-text support mixin for widgets.
+- **[`class RichText`](uitk/uitk/widgets/mixins/text.py#L291)** — Rich-text support mixin for widgets.
   - `RichText.richTextLabelDict(self)` *(property)* — Returns a list containing any rich text labels that have been created.
   - `RichText.richTextSizeHintDict(self)` *(property)* — Returns a list containing the sizeHint any rich text labels that have been created.
   - `RichText.richTextSizeHint(self, index=0)` — The richTextSizeHint is the sizeHint of the actual widget if it were containing the text.
@@ -2317,7 +2327,7 @@ Text rendering for uitk widgets.
   - `RichText.richText(self, index=None)` — Returns:
   - `RichText.setRichText(self, text, index=0)` — If the text string contains rich text formatting:
   - `RichText.setAlignment(self, alignment='AlignLeft', index=0)` — Override setAlignment to accept string alignment arguments as well as QtCore.Qt.AlignmentFlags.
-- **[`class TextOverlay`](uitk/uitk/widgets/mixins/text.py#L940)**
+- **[`class TextOverlay`](uitk/uitk/widgets/mixins/text.py#L498)**
   - `TextOverlay.textOverlayLabel(self)` *(property)* — Return a QLabel inside a QHBoxLayout.
   - `TextOverlay.setTextOverlay(self, text, color=None, alignment=None)` — If the text string contains rich text formatting:
   - `TextOverlay.setTextOverlayAlignment(self, alignment='AlignLeft')` — Override setAlignment to accept string alignment arguments as well as QtCore.Qt.AlignmentFlags.
@@ -2395,8 +2405,8 @@ The :class:`OptionBoxManager` facade -- ``widget.option_box``.
   - `OptionBoxManager.option_order(self)` *(property)* — Get/set option ordering: ['clear', 'action'] or ['action', 'clear']
   - `OptionBoxManager.pin(self, settings_key: Optional[str] = None, *, double_click_to_edit: bool = False, single_click_restore: bool = False)` — Enable pin values option (fluent interface).
   - `OptionBoxManager.recent(self, settings_key: Optional[str] = None, *, max_recent: int = 10, **kwargs)` — Enable recent values option (fluent interface).
-  - `OptionBoxManager.set_action(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None)` — Set the action handler (fluent interface).
-  - `OptionBoxManager.add_action(self, callback=None, icon='menu', tooltip='Options', text=None, states=None, settings_key=None)` — Add an action button without replacing existing ones.
+  - `OptionBoxManager.set_action(self, callback=None, icon='menu', tooltip='Options', text=None, replace=True, states=None, settings_key=None, hide_when_empty=False)` — Set the action handler (fluent interface).
+  - `OptionBoxManager.add_action(self, callback=None, icon='menu', tooltip='Options', text=None, states=None, settings_key=None, hide_when_empty=False)` — Add an action button without replacing existing ones.
   - `OptionBoxManager.set_toggle(self, *, icon: str = 'filter', icon_off: Optional[str] = None, tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, disabled_color: Optional[str] = None, active_color: Optional[str] = None, gated_widgets=(), gate_wrapped: bool = False, keep_enabled_when_wrapped_disabled: bool = True, settings_key=None, replace: bool = True, on_toggled=None)` — Add a persisted binary toggle button (fluent interface).
   - `OptionBoxManager.add_toggle(self, **kwargs)` — Add a toggle without replacing existing ones.
   - `OptionBoxManager.set_filter(self, *, settings, text_key: str, on_changed, enabled_key: Optional[str] = None, initial_enabled: bool = True, on_toggled=None, tooltip_on: str = 'Filter enabled. Click to disable.', tooltip_off: str = 'Filter disabled. Click to enable.', scopes=None, scope_key: Optional[str] = None, default_scope: Optional[str] = None, on_scope_changed=None, replace: bool = True)` — Turn the wrapped text widget into a filter field (fluent interface).
@@ -2404,7 +2414,7 @@ The :class:`OptionBoxManager` facade -- ``widget.option_box``.
   - `OptionBoxManager.set_disable(self, *, icon: str = 'ban', tooltip_on: str = 'Enabled. Click to disable.', tooltip_off: str = 'Disabled. Click to enable.', initial: bool = True, gate_wrapped: bool = True, gated_widgets=(), suppress_value: bool = True, disabled_color: Optional[str] = None, active_color: Optional[str] = None, settings_key=None, replace: bool = True, on_toggled=None)` — Add a universal *disable* button (fluent interface).
   - `OptionBoxManager.add_disable(self, **kwargs)` — Add a disable button without replacing existing ones.
   - `OptionBoxManager.add_value(self, *, width: int = 46, decimals=None, suffix: str = '', order=None, replace: bool = True)` — Add an inline editable value field that mirrors the wrapped widget.
-  - `OptionBoxManager.set_affix(self, *, default: str = 'auto', modes=None, convention_key=None, on_change=None, tooltip: Optional[str] = None, settings_key=None, order=None, replace: bool = True)` — Add an inline affix-mode picker — fluent.
+  - `OptionBoxManager.set_affix(self, *, default: str = 'auto', modes=None, convention_key=None, on_change=None, tooltip: Optional[str] = None, settings_key=None, order=None, replace: bool = True, noun: Optional[str] = None)` — Add an inline affix-mode picker — fluent.
   - `OptionBoxManager.affix_mode(self) -> str` *(property)* — Current affix mode (``"auto"`` when no AffixOption is present).
   - `OptionBoxManager.resolve_affix(self, text: Optional[str] = None, *, default: str = 'prefix')` — Return ``(prefix, suffix)`` for the wrapped field under its mode.
   - `OptionBoxManager.set_reset(self, *, reset=None, icon: str = 'undo', tooltip: Optional[str] = None, tooltip_bypassed: Optional[str] = None, disabled_color: Optional[str] = None, bypass_modifier=None, replace: bool = True, on_toggled=None)` — Add a per-widget *reset-to-default* button (fluent).
@@ -2457,7 +2467,11 @@ The :class:`OptionBoxManager` facade -- ``widget.option_box``.
   - `ButtonOption.setup_widget(self)` — Setup button connections.
   - `ButtonOption.block_next_click(self)` — Block the next click event (used when popup closes to prevent immediate reopen).
   - `ButtonOption.set_checked(self, checked)` — Set the checked state of the button.
-- **[`class GatingMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L416)** — Reusable *gating button* capability for option plugins.
+- **[`class HiddenWhileEmptyMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L416)** — Show a button option only while its wrapped field holds a value.
+  - `HiddenWhileEmptyMixin.setup_widget(self)`
+  - `HiddenWhileEmptyMixin.eventFilter(self, obj, event)`
+  - `HiddenWhileEmptyMixin.set_wrapped_widget(self, widget)`
+- **[`class GatingMixin`](uitk/uitk/widgets/optionBox/options/_options.py#L488)** — Reusable *gating button* capability for option plugins.
 
 <a id="widgets--optionBox--options--_persistence"></a>
 ### `widgets/optionBox/options/_persistence.py`
@@ -2473,12 +2487,12 @@ Shared persistence wiring for OptionBox plugins.
 
 Action option for OptionBox - provides customizable action buttons.
 
-- **[`class ActionOption(PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/action.py#L9)** — A customizable action button option.
+- **[`class ActionOption(HiddenWhileEmptyMixin, PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/action.py#L9)** — A customizable action button option.
   - `ActionOption.create_widget(self)` — Create the action button widget.
   - `ActionOption.set_action_handler(self, handler)` — Set or update the action handler.
   - `ActionOption.current_state(self)` *(property)* — The current state index (0-based).
   - `ActionOption.set_states(self, states)` — Set multiple cycling states.
-- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L212)** — A menu action option specifically for showing menus.
+- **[`class MenuOption(ActionOption)`](uitk/uitk/widgets/optionBox/options/action.py#L217)** — A menu action option specifically for showing menus.
   - `MenuOption.set_menu(self, menu)` — Set or update the menu.
   - `MenuOption.set_wrapped_widget(self, widget)` — Update wrapped widget and reparent menu if needed.
 
@@ -2488,12 +2502,13 @@ Action option for OptionBox - provides customizable action buttons.
 Affix-mode picker option for OptionBox.
 
 - [`AFFIX_MODE_VALUES`](uitk/uitk/widgets/optionBox/options/affix.py#L68) — constant
-- [`BUILTIN_AFFIX_MODES`](uitk/uitk/widgets/optionBox/options/affix.py#L207) — constant
+- [`BUILTIN_AFFIX_MODES`](uitk/uitk/widgets/optionBox/options/affix.py#L219) — constant
 - **[`class AffixMode`](uitk/uitk/widgets/optionBox/options/affix.py#L72)** — One selectable state of the picker.
+  - `AffixMode.placeholder_for(self, noun: str) -> str` — The field's placeholder in this mode for a field naming *noun*.
   - `AffixMode.resolve(self, text: str, default: str = 'prefix') -> Tuple[str, str]` — ``(prefix, suffix)`` for *text* under this mode.
   - `AffixMode.text(self) -> Optional[str]` — The text this mode supplies, or ``None`` when the user's own stands.
   - `AffixMode.convention(cls, convention_key: Union[str, Callable[[], str]], *, key: str = 'convention', label: str = 'Scene', icon: str = 'link', description: str = '') -> 'AffixMode'` *(class)* — A mode bound to ``pythontk.NamingConvention`` for *convention_key*.
-- **[`class AffixOption(PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/affix.py#L232)** — Cycling affix-mode picker for a text widget.
+- **[`class AffixOption(PersistedOption, ButtonOption)`](uitk/uitk/widgets/optionBox/options/affix.py#L245)** — Cycling affix-mode picker for a text widget.
   - `AffixOption.modes(self) -> List[str]` *(property)* — The mode keys in cycle order.
   - `AffixOption.mode_spec(self, key: Optional[str] = None) -> AffixMode` — The :class:`AffixMode` for *key* (the current mode by default).
   - `AffixOption.is_compatible(cls, widget) -> bool` *(class)* — Attach only to text-bearing hosts (``resolve`` reads ``text()``).
@@ -2543,12 +2558,9 @@ Choice option for OptionBox -- an icon button that picks from a popup.
 
 Clear option for OptionBox - provides a clear button for text widgets.
 
-- **[`class ClearOption(ButtonOption)`](uitk/uitk/widgets/optionBox/options/clear.py#L10)** — A clear button option that can clear text from input widgets.
+- **[`class ClearOption(HiddenWhileEmptyMixin, ButtonOption)`](uitk/uitk/widgets/optionBox/options/clear.py#L9)** — A clear button option that can clear text from input widgets.
   - `ClearOption.create_widget(self)` — Create the clear button widget.
-  - `ClearOption.setup_widget(self)` — Setup button connections and show event handling.
-  - `ClearOption.eventFilter(self, obj, event)` — Filter show events to update visibility after state restoration.
-  - `ClearOption.set_wrapped_widget(self, widget)` — Set the wrapped widget and connect text change signals.
-- **[`class ClearButton(QtWidgets.QPushButton)`](uitk/uitk/widgets/optionBox/options/clear.py#L153)** — A standalone clear button (legacy compatibility).
+- **[`class ClearButton(QtWidgets.QPushButton)`](uitk/uitk/widgets/optionBox/options/clear.py#L67)** — A standalone clear button (legacy compatibility).
 
 <a id="widgets--optionBox--options--disable"></a>
 ### `widgets/optionBox/options/disable.py`
@@ -2869,8 +2881,8 @@ Data models and shared constants for the sequencer widget.
 - [`HATCH_DENSE`](uitk/uitk/widgets/sequencer/_data.py#L17) — constant
 - [`HATCH_MEDIUM`](uitk/uitk/widgets/sequencer/_data.py#L18) — constant
 - [`HATCH_SPARSE`](uitk/uitk/widgets/sequencer/_data.py#L19) — constant
-- [`SELECTED_ACCENT`](uitk/uitk/widgets/sequencer/_data.py#L196) — constant
-- [`DISPLAY_COLORS`](uitk/uitk/widgets/sequencer/_data.py#L203) — constant
+- [`SELECTED_ACCENT`](uitk/uitk/widgets/sequencer/_data.py#L194) — constant
+- [`DISPLAY_COLORS`](uitk/uitk/widgets/sequencer/_data.py#L201) — constant
 - **[`class PatternSpec`](uitk/uitk/widgets/sequencer/_data.py#L23)** — Declarative, hashable description of a tiled background pattern.
   - `PatternSpec.brush(self) -> QtGui.QBrush`
 - **[`class ClipData`](uitk/uitk/widgets/sequencer/_data.py#L44)** — Lightweight data record for a single clip on a track.
@@ -2879,11 +2891,13 @@ Data models and shared constants for the sequencer widget.
   - `ClipData.shown_key_times(self) -> List[float]` — The curve preview's key times that are drawn as dots.
 - **[`class TrackData`](uitk/uitk/widgets/sequencer/_data.py#L84)** — Lightweight data record for a track row.
 - **[`class MarkerData`](uitk/uitk/widgets/sequencer/_data.py#L102)** — Lightweight data record for a timeline marker.
-- **[`class RowMetrics`](uitk/uitk/widgets/sequencer/_data.py#L138)** — How tall the track rows are and how their keys are drawn: one density.
+- **[`class RowMetrics`](uitk/uitk/widgets/sequencer/_data.py#L135)** — How tall the track rows are and how their keys are drawn: one density.
   - `RowMetrics.flat_keys(self) -> bool` *(property)* — True when keys are drawn on the row's centre line.
   - `RowMetrics.preset(cls, name: str) -> 'RowMetrics'` *(class)* — The named density: ``"standard"`` (today's rows) or ``"compact"``.
   - `RowMetrics.preset_names(cls) -> tuple` *(class)* — The preset names, in display order.
-- **[`class MenuUtils`](uitk/uitk/widgets/sequencer/_data.py#L210)** — Construction/placement helpers for the sequencer's context menus.
+- **[`class MenuUtils`](uitk/uitk/widgets/sequencer/_data.py#L208)** — Construction/placement helpers for the sequencer's context menus --
+  - `MenuUtils.styled_menu(parent=None) -> QtWidgets.QMenu` *(static)* — Create a QMenu with the sequencer's standard dark stylesheet.
+  - `MenuUtils.menu_exec_pos(event) -> QtCore.QPoint` *(static)* — Return a screen position suitable for ``QMenu.exec_``.
 - **[`class CurveUtils`](uitk/uitk/widgets/sequencer/_data.py#L235)** — Shared value→pixel mapping + curve-segment path builder.
   - `CurveUtils.make_value_mapper(rect_top: float, rect_height: float, val_min: float, val_max: float)` *(static)* — Return ``(map_y, is_flat)`` — the canonical value→pixel mapping.
   - `CurveUtils.unmap_value(rect_top: float, rect_height: float, val_min: float, val_max: float, y: float) -> float` *(static)* — The value a pixel row *y* stands for -- :meth:`make_value_mapper`
@@ -2927,7 +2941,7 @@ Shared drag infrastructure for sequencer graphics items.
 
 Editors: what the sequencer's content area shows -- the seam a view plugs into.
 
-- **[`class SequencerEditor(QtCore.QObject)`](uitk/uitk/widgets/sequencer/_editor.py#L50)** — Base of the editors a :class:`SequencerWidget` hosts (module docstring).
+- **[`class SequencerEditor(QtCore.QObject)`](uitk/uitk/widgets/sequencer/_editor.py#L53)** — Base of the editors a :class:`SequencerWidget` hosts (module docstring).
   - `SequencerEditor.add_option(self, key: str, label: str, getter, setter, tooltip: str = '', section: str = '') -> None` — Add a row to this editor's Options (the header pane's band).
   - `SequencerEditor.options(self) -> List[dict]` — ``[{"key", "label", "get", "set", "tooltip", "section"}, ...]`` in
   - `SequencerEditor.is_active(self) -> bool` *(property)*
@@ -2948,7 +2962,7 @@ Editors: what the sequencer's content area shows -- the seam a view plugs into.
   - `SequencerEditor.time_bounds(self) -> Optional[Tuple[float, float]]` — ``(t0, t1)`` this editor's content spans beyond the kernel's own
   - `SequencerEditor.key_times(self) -> Optional[List[float]]` — The sorted key times next / previous key steps through, or
   - `SequencerEditor.frame_values(self) -> None` — Fit the vertical axis to what the framed time range shows (the
-- **[`class TrackEditor(SequencerEditor)`](uitk/uitk/widgets/sequencer/_editor.py#L186)** — The track rows: clips, expanded attribute rows, keys and shot overlays.
+- **[`class TrackEditor(SequencerEditor)`](uitk/uitk/widgets/sequencer/_editor.py#L189)** — The track rows: clips, expanded attribute rows, keys and range overlays.
 
 <a id="widgets--sequencer--_graph_editor"></a>
 ### `widgets/sequencer/_graph_editor.py`
@@ -2982,8 +2996,8 @@ The graph editor: animation curves in value space, edited like Maya's.
   - `GraphEditor.show_infinity(self) -> bool` *(property)* — The curves drawn dashed past their first and last keys.
   - `GraphEditor.auto_load(self) -> bool` *(property)* — Follow the host's object selection (Maya's Auto Load Selected
   - `GraphEditor.live(self) -> bool` *(property)* — Raise :attr:`curves_previewed` while a drag shapes the curves, so
-  - `GraphEditor.dim_outside(self) -> bool` *(property)* — Veil the time outside :attr:`focus_range` (the shots on screen).
-  - `GraphEditor.focus_range(self) -> Optional[Tuple[float, float]]` *(property)* — ``(t0, t1)`` the host is working in -- the shots its scope shows --
+  - `GraphEditor.dim_outside(self) -> bool` *(property)* — Veil the time outside :attr:`focus_range` (the host's working span).
+  - `GraphEditor.focus_range(self) -> Optional[Tuple[float, float]]` *(property)* — ``(t0, t1)`` the host is working in -- the range its scope shows --
   - `GraphEditor.displayed_curve_ids(self) -> List[str]`
   - `GraphEditor.curve(self, curve_id: str)` — The curve as drawn: the drag's preview, else the host's.
   - `GraphEditor.selected_keys(self) -> List[Tuple[str, List[float]]]` — ``[(curve_id, [time, ...]), ...]`` in display order.
@@ -3058,12 +3072,31 @@ The interactive items of an expanded attribute sub-row.
   - `KeyScaleBoxItem.mouseMoveEvent(self, event)`
   - `KeyScaleBoxItem.mouseReleaseEvent(self, event)`
 
+<a id="widgets--sequencer--_layer"></a>
+### `widgets/sequencer/_layer.py`
+
+Layers: a host's vocabulary on the timeline -- the seam a domain plugs into.
+
+- **[`class SequencerLayer(Protocol)`](uitk/uitk/widgets/sequencer/_layer.py#L46)** — What :meth:`SequencerWidget.add_layer` reads off a layer (module docstring).
+  - `SequencerLayer.paint_lane(self, painter: QtGui.QPainter, rect: QtCore.QRectF) -> None` — Paint the lane into *rect*: its strip, in scene coordinates, as wide
+  - `SequencerLayer.mouse_press(self, event) -> bool` — A press on the timeline (view coordinates);
+  - `SequencerLayer.mouse_move(self, event) -> bool` — A taken gesture's move, or a hover (after the active editor's);
+  - `SequencerLayer.mouse_release(self, event) -> bool` — A taken gesture's release;
+  - `SequencerLayer.gesture_group_at(self, viewport_pos) -> Optional[str]` — The legend group under the pointer, or ``None`` for the widget's.
+  - `SequencerLayer.claims_press(self, scene_pos) -> bool` — Whether a press at *scene_pos* on the range highlight's edge belongs
+  - `SequencerLayer.legend(self, editor: str, rows: Tuple[Gesture, ...]) -> Sequence[Gesture]` — The legend rows to show while the *editor* named is active, given
+  - `SequencerLayer.context_entries(self, time: float, entries: List[Optional[dict]]) -> List[Optional[dict]]` — The timeline menu's entries at *time*, given the widget's
+  - `SequencerLayer.menu_zone(self, zone: str, time: float) -> str` — The zone a right-click at *time* reports, given the strip it landed
+  - `SequencerLayer.time_bounds(self) -> Optional[Tuple[float, float]]` — ``(t0, t1)`` of what this layer draws, so the scroll extent reaches
+  - `SequencerLayer.relayout(self) -> None` — Re-place this layer's items: the zoom, the rows or the viewport
+  - `SequencerLayer.clear(self) -> None` — Drop what this layer shows: the widget was cleared
+
 <a id="widgets--sequencer--_markers"></a>
 ### `widgets/sequencer/_markers.py`
 
 MarkerItem — named marker on the timeline with drag and context menu.
 
-- **[`class MarkerItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_markers.py#L26)** — A named marker on the timeline: triangle at the ruler + dashed line.
+- **[`class MarkerItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_markers.py#L31)** — A named marker on the timeline: triangle at the ruler + dashed line.
   - `MarkerItem.marker_data(self) -> MarkerData` *(property)*
   - `MarkerItem.boundingRect(self) -> QtCore.QRectF`
   - `MarkerItem.shape(self) -> QtGui.QPainterPath`
@@ -3079,9 +3112,9 @@ MarkerItem — named marker on the timeline with drag and context menu.
 <a id="widgets--sequencer--_overlays"></a>
 ### `widgets/sequencer/_overlays.py`
 
-Range-related overlay items: static ranges, gap hatching, and highlights.
+Range-related overlay items: static ranges, snap guides, and the range highlight.
 
-- **[`class RangeHighlightItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_overlays.py#L565)** — A semi-transparent rectangle highlighting a time range on the timeline.
+- **[`class RangeHighlightItem(HeldGeometryMixin, DraggableItemMixin, QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_overlays.py#L124)** — A semi-transparent rectangle highlighting a time range on the timeline.
   - `RangeHighlightItem.start(self) -> float` *(property)*
   - `RangeHighlightItem.end(self) -> float` *(property)*
   - `RangeHighlightItem.set_range(self, start: float, end: float)`
@@ -3090,7 +3123,7 @@ Range-related overlay items: static ranges, gap hatching, and highlights.
   - `RangeHighlightItem.boundingRect(self) -> QtCore.QRectF`
   - `RangeHighlightItem.paint(self, painter: QtGui.QPainter, option, widget=None)`
   - `RangeHighlightItem.zone_at(self, scene_x: float) -> str` — ``"left"`` / ``"right"`` / ``"move"`` for *scene_x*, else ``""``.
-  - `RangeHighlightItem.begin_edge_drag(self, edge: str, scene_x: float) -> None` — Start a bound drag from outside the item (the shot lane's handles).
+  - `RangeHighlightItem.begin_edge_drag(self, edge: str, scene_x: float) -> None` — Start a bound drag from outside the item (a lane's handles).
   - `RangeHighlightItem.hoverMoveEvent(self, event)`
   - `RangeHighlightItem.mousePressEvent(self, event)`
   - `RangeHighlightItem.mouseMoveEvent(self, event)`
@@ -3113,11 +3146,8 @@ PlayheadItem — vertical playhead line with frame-number badge.
 
 Ruler item for the timeline header area.
 
-- **[`class RulerItem(QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_ruler.py#L36)** — Draws the timeline header: the frame ruler, and the shot lane below it.
-  - `RulerItem.set_shot_blocks(self, blocks: list) -> None`
-  - `RulerItem.clear_shot_blocks(self) -> None`
-  - `RulerItem.selected_block(self) -> Optional[dict]` — The block marked ``active``, or ``None`` when nothing is selected.
-  - `RulerItem.shot_block_at(self, time: float) -> Optional[dict]` — Return the shot block containing *time*, or ``None``.
+- **[`class RulerItem(QtWidgets.QGraphicsItem)`](uitk/uitk/widgets/sequencer/_ruler.py#L31)** — Draws the timeline header: the frame ruler, and the layers' lanes below it.
+  - `RulerItem.set_height(self, height: float) -> None` — Set the header's height: the ruler and the lanes under it.
   - `RulerItem.set_content_width(self, width: float) -> None` — Set the horizontal extent the ruler covers (scene pixels).
   - `RulerItem.set_key_ticks(self, times) -> None` — Frames that carry a key, drawn as faint red ticks (Maya's idiom).
   - `RulerItem.set_content_left(self, left: float) -> None` — Set the left edge of the extent the ruler covers (scene pixels).
@@ -3146,9 +3176,9 @@ Qt-side audio scrub/playback helper for :class:`SequencerWidget`.
 
 An NLE-style timeline sequencer widget.
 
-- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L76)** — Dialog for configuring attribute-type color mappings.
+- **[`class AttributeColorDialog(ColorMappingDialog)`](uitk/uitk/widgets/sequencer/_sequencer.py#L67)** — Dialog for configuring attribute-type color mappings.
   - `AttributeColorDialog.load_color_map(defaults: Optional[Mapping[str, object]] = None) -> Dict[str, str]` *(static)* — The persisted attribute color map, without opening a dialog.
-- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L276)** — A split-view NLE sequencer widget.
+- **[`class SequencerWidget(QtWidgets.QSplitter, AttributesMixin)`](uitk/uitk/widgets/sequencer/_sequencer.py#L433)** — A split-view NLE sequencer widget.
   - `SequencerWidget.window_shortcuts(self) -> bool` *(property)* — When ``True``, sequencer shortcuts are active whenever the
   - `SequencerWidget.showEvent(self, event: QtGui.QShowEvent) -> None`
   - `SequencerWidget.resizeEvent(self, event: QtGui.QResizeEvent) -> None`
@@ -3156,6 +3186,7 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.event(self, event: QtCore.QEvent) -> bool`
   - `SequencerWidget.keyPressEvent(self, event)` — Dispatch registered shortcuts when focus is on a non-timeline child.
   - `SequencerWidget.add_track(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: Optional[str] = None, text_color: Optional[str] = None) -> int` — Add a new track row.
+  - `SequencerWidget.refresh_extent(self) -> None` — Recompute the scrollable extent unless a bulk rebuild is running.
   - `SequencerWidget.bulk_updates(self)` — Suppress per-add scene-rect recomputation during a rebuild.
   - `SequencerWidget.add_clip(self, track_id: int, start: float, duration: float, label: str = '', color: Optional[str] = None, sub_row: str = '', locked: bool = False, **data) -> int` — Add a clip to an existing track.
   - `SequencerWidget.remove_clip(self, clip_id: int)` — Remove a clip by id.
@@ -3177,7 +3208,7 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.set_audio_source(self, path: str, fps: float = 24.0) -> bool` — Bind an audio file (typically a composite WAV) for scrub playback.
   - `SequencerWidget.clear_audio_source(self) -> None` — Drop the bound audio source and stop any in-flight scrub.
   - `SequencerWidget.clear(self, *, keep_range_highlight: bool = False)` — Remove all tracks, clips, and markers.
-  - `SequencerWidget.clear_decorations(self, *, keep_range_highlight: bool = False)` — Remove markers, overlays, and shot lane without touching tracks or clips.
+  - `SequencerWidget.clear_decorations(self, *, keep_range_highlight: bool = False)` — Remove markers, overlays and what each layer shows, without touching
   - `SequencerWidget.add_marker(self, time: float, note: str = '', color: Optional[str] = None, draggable: bool = True, style: str = 'triangle', line_style: str = 'dashed', opacity: float = 1.0, data: Optional[Dict[str, Any]] = None) -> int` — Add a marker at *time*.
   - `SequencerWidget.remove_marker(self, marker_id: int)` — Remove a marker by id.
   - `SequencerWidget.get_marker(self, marker_id: int) -> Optional[MarkerData]` — Return marker data, or None.
@@ -3187,16 +3218,17 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.clear_range_highlight(self)` — Remove the range highlight from the timeline.
   - `SequencerWidget.add_range_overlay(self, start: float, end: float, color: str = '#888888', alpha: int = 15)` — Add a non-interactive range overlay (e.g.
   - `SequencerWidget.clear_range_overlays(self)` — Remove all non-interactive range overlays.
-  - `SequencerWidget.add_gap_overlay(self, start: float, end: float, color: str = '#555555', alpha: int = 120, locked: bool = False, tail: bool = False, head: bool = False)` — Add a diagonal-hatch overlay for a gap between shots.
-  - `SequencerWidget.clear_gap_overlays(self)` — Remove all gap overlays.
-  - `SequencerWidget.set_all_gap_overlays_locked(self, locked: bool)` — Set the locked state on every gap overlay.
-  - `SequencerWidget.set_shot_blocks(self, blocks: list) -> None` — Show coloured shot-block indicators on the ruler.
-  - `SequencerWidget.selected_shot(self) -> Optional[dict]` — The shot block currently marked ``active``, or ``None``.
-  - `SequencerWidget.clear_shot_blocks(self) -> None` — Remove all shot-block indicators from the ruler.
+  - `SequencerWidget.content_span(self) -> Tuple[float, float]` — ``(top, height)`` of the content area an overlay spans in scene
+  - `SequencerWidget.timeline(self) -> TimelineView` *(property)* — The timeline view: time <-> x (``time_to_x``, ``x_to_time``,
+  - `SequencerWidget.range_highlight_item(self) -> Optional[RangeHighlightItem]` *(property)* — The range highlight's scene item (:meth:`set_range_highlight`), or
+  - `SequencerWidget.add_layer(self, layer: SequencerLayer) -> None` — Plug *layer* into the timeline (``SequencerLayer``, ``_layer.py``).
+  - `SequencerWidget.layer(self, name: str) -> SequencerLayer` — The layer added under *name*.
+  - `SequencerWidget.add_track_item(self, item: QtWidgets.QGraphicsItem) -> None` — Put a scene item under the track editor's content root: it hides
+  - `SequencerWidget.remove_track_item(self, item: QtWidgets.QGraphicsItem) -> None` — Take *item* out of the scene, safely from inside its own event
   - `SequencerWidget.range_highlight(self) -> Optional[tuple]` — Return ``(start, end)`` of the active highlight, or ``None``.
   - `SequencerWidget.set_hidden_tracks(self, names: List[str])` — Store a list of hidden track names for the 'show hidden' menu.
-  - `SequencerWidget.set_active_range(self, start: float, end: float)` — Set the active-shot time range painted as a column tint.
-  - `SequencerWidget.clear_active_range(self)` — Remove the active-shot column tint.
+  - `SequencerWidget.set_active_range(self, start: float, end: float)` — Set the active time range, painted as a column tint.
+  - `SequencerWidget.clear_active_range(self)` — Remove the active range's column tint.
   - `SequencerWidget.step_forward(self)` — Advance the playhead by one step (snap_interval or 1 frame).
   - `SequencerWidget.step_backward(self)` — Move the playhead back by one step (snap_interval or 1 frame).
   - `SequencerWidget.go_to_next_key(self)` — Jump the playhead to the next clip boundary.
@@ -3204,7 +3236,7 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.go_to_start(self)` — Jump the playhead to frame 0.
   - `SequencerWidget.go_to_end(self)` — Jump the playhead to the end of the last clip.
   - `SequencerWidget.add_marker_at_playhead(self)` — Add a marker at the current playhead position.
-  - `SequencerWidget.frame_shot(self) -> bool` — Zoom and scroll the timeline to frame the active shot range.
+  - `SequencerWidget.frame_range(self) -> bool` — Zoom and scroll the timeline to frame the active range.
   - `SequencerWidget.frame_time_range(self, t_min: float, t_max: float, fit_values: bool = True)` — Zoom and scroll so ``[t_min, t_max]`` fills the timeline's width.
   - `SequencerWidget.undo(self)` — Revert to the previous clip state.
   - `SequencerWidget.redo(self)` — Re-apply a previously undone change.
@@ -3216,7 +3248,6 @@ An NLE-style timeline sequencer widget.
   - `SequencerWidget.set_snap_guides(self, times) -> None` — Show vertical alignment guides at *times* (empty hides them).
   - `SequencerWidget.clear_snap_guides(self) -> None` — Remove the alignment guides.
   - `SequencerWidget.show_range_overlays(self) -> bool` *(property)*
-  - `SequencerWidget.show_gap_overlays(self) -> bool` *(property)*
   - `SequencerWidget.show_range_highlight(self) -> bool` *(property)*
   - `SequencerWidget.mark_flat_spans(self) -> bool` *(property)* — Draw a curve's flat spans apart (``CurveUtils.flat_pen``), so one
   - `SequencerWidget.add_flat_spans_option(self, editor: SequencerEditor) -> None` — Offer :attr:`mark_flat_spans` in *editor*'s Display options (an
@@ -3258,7 +3289,7 @@ An NLE-style timeline sequencer widget.
 
 Timeline view, scene, and track-header widgets.
 
-- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L96)** — Left-pane widget showing track labels, vertically synced to the timeline.
+- **[`class TrackHeaderWidget(QtWidgets.QWidget)`](uitk/uitk/widgets/sequencer/_timeline.py#L92)** — Left-pane widget showing track labels, vertically synced to the timeline.
   - `TrackHeaderWidget.set_top_margin(self, margin: int) -> None`
   - `TrackHeaderWidget.add_track_label(self, name: str, icon=None, dimmed: bool = False, italic: bool = False, color: str = None, text_color: str = None)`
   - `TrackHeaderWidget.set_track_expanded(self, track_idx: int, sub_names: List[str], sub_height: int)`
@@ -3269,10 +3300,10 @@ Timeline view, scene, and track-header widgets.
   - `TrackHeaderWidget.selected_names(self) -> List[str]`
   - `TrackHeaderWidget.add_track_actions(self, menu: QtWidgets.QMenu, names: List[str]) -> None` — The track menu's rows onto *menu*: Hide and Delete *names*, the
   - `TrackHeaderWidget.clear_tracks(self)`
-- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L494)** — Scene that owns the ruler, playhead, and all clip items.
+- **[`class TimelineScene(QtWidgets.QGraphicsScene)`](uitk/uitk/widgets/sequencer/_timeline.py#L491)** — Scene that owns the ruler, playhead, and all clip items.
   - `TimelineScene.ruler(self) -> RulerItem` *(property)*
   - `TimelineScene.playhead(self) -> PlayheadItem` *(property)*
-- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L524)** — QGraphicsView providing zoom, pan, and coordinate mapping.
+- **[`class TimelineView(QtWidgets.QGraphicsView)`](uitk/uitk/widgets/sequencer/_timeline.py#L521)** — QGraphicsView providing zoom, pan, and coordinate mapping.
   - `TimelineView.event(self, event: QtCore.QEvent) -> bool`
   - `TimelineView.keyPressEvent(self, event)`
   - `TimelineView.keyReleaseEvent(self, event)`
@@ -3284,6 +3315,7 @@ Timeline view, scene, and track-header widgets.
   - `TimelineView.resizeEvent(self, event)`
   - `TimelineView.wheelEvent(self, event)`
   - `TimelineView.zoom_at(self, factor: float, view_x: float) -> None` — Zoom time by *factor*, keeping the frame under viewport *view_x* still.
+  - `TimelineView.hit_zone(self, viewport_y: float) -> str` — The strip *viewport_y* falls in: ``"ruler"``, a lane's layer name
   - `TimelineView.mousePressEvent(self, event)`
   - `TimelineView.mouseMoveEvent(self, event)`
   - `TimelineView.leaveEvent(self, event)` — The pointer has left: no gesture context, and Shift is no longer held.
@@ -3353,29 +3385,27 @@ A corner legend of a widget's mouse gestures and keyboard shortcuts.
 <a id="widgets--tableWidget"></a>
 ### `widgets/tableWidget.py`
 
-- **[`class HeaderMixin`](uitk/uitk/widgets/tableWidget.py#L22)**
-  - `HeaderMixin.default_header_click_behavior(self, col)`
-- **[`class CellFormatMixin(ItemFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L49)** — Generic cell/column/header formatting for QTableWidget.
-  - `CellFormatMixin.set_column_formatter(self, col, formatter, append=False)` — Set a formatter for a specific column.
-  - `CellFormatMixin.set_header_formatter(self, header, formatter, append=False)` — Set a formatter for a specific header.
-  - `CellFormatMixin.set_cell_formatter(self, row, col, formatter, append=False)` — Set a formatter for a specific cell (row, column).
-  - `CellFormatMixin.clear_formatters(self)` — Clear all column, header, and cell formatters.
-  - `CellFormatMixin.set_column_truncation(self, col, length=None, mode='start', insert='..', head=None)` — Shorten a column's *displayed* text, leaving its data untouched.
-  - `CellFormatMixin.column_truncation(self, col)` — Return a column's ``(length, mode, insert, head)`` spec, or None when off.
-  - `CellFormatMixin.truncated_column_text(self, col: int, text: str) -> str` — Display form of ``text`` for ``col`` — the item's own data is unchanged.
-  - `CellFormatMixin.apply_formatting(self)` — Apply formatting based on the registered formatters.
-  - `CellFormatMixin.ensure_valid_color(self, color, color_type, item, row, col)` — Ensure a valid QColor, using fallback if needed.
-  - `CellFormatMixin.format_item(self, item: QtWidgets.QTableWidgetItem, key: str = None, italic: bool = None, bold: bool = None, fg: Any = None, bg: Any = None)` — Apply formatting to a table item.
-  - `CellFormatMixin.set_action_color(self, item: QtWidgets.QTableWidgetItem, key: str, row: int = -1, col: int = -1, use_bg: bool = False)` — Apply semantic color, but skip reset if nothing defined.
-  - `CellFormatMixin.action_color_formatter(self, item, value, *_)`
-  - `CellFormatMixin.make_color_map_formatter(self, color_map: dict)`
-  - `CellFormatMixin.add_section_row(table: QtWidgets.QTableWidget, title: str, row: int = -1, col_count: int = None, bg: Any = None, fg: Any = '#999', bold: bool = True, font_delta: int = -1, height: int = 22) -> int` *(static)* — Insert a non-selectable section header that spans all columns.
-  - `CellFormatMixin.is_section_row(table: QtWidgets.QTableWidget, row: int) -> bool` *(static)* — Return ``True`` if *row* is a section header.
-- **[`class TableSelection`](uitk/uitk/widgets/tableWidget.py#L451)** — Immutable representation of a single selected row.
+- **[`class TableSelection`](uitk/uitk/widgets/tableWidget.py#L26)** — Immutable representation of a single selected row.
   - `TableSelection.get(self, key: str, default: Any = None)`
   - `TableSelection.item(self, key: str) -> Optional[QtWidgets.QTableWidgetItem]`
   - `TableSelection.text(self, key: str, default: str = '') -> str`
-- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, HeaderMixin, AttributesMixin, CellFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L620)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
+- **[`class TableWidget(QtWidgets.QTableWidget, MenuMixin, AttributesMixin, ItemFormatMixin)`](uitk/uitk/widgets/tableWidget.py#L195)** — Enhanced QTableWidget with cell formatting, sorting, and context menu support.
+  - `TableWidget.default_header_click_behavior(self, col)`
+  - `TableWidget.set_column_formatter(self, col, formatter, append=False)` — Set a formatter for a specific column.
+  - `TableWidget.set_header_formatter(self, header, formatter, append=False)` — Set a formatter for a specific header.
+  - `TableWidget.set_cell_formatter(self, row, col, formatter, append=False)` — Set a formatter for a specific cell (row, column).
+  - `TableWidget.clear_formatters(self)` — Clear all column, header, and cell formatters.
+  - `TableWidget.set_column_truncation(self, col, length=None, mode='start', insert='..', head=None)` — Shorten a column's *displayed* text, leaving its data untouched.
+  - `TableWidget.column_truncation(self, col)` — Return a column's ``(length, mode, insert, head)`` spec, or None when off.
+  - `TableWidget.truncated_column_text(self, col: int, text: str) -> str` — Display form of ``text`` for ``col`` — the item's own data is unchanged.
+  - `TableWidget.apply_formatting(self)` — Apply formatting based on the registered formatters.
+  - `TableWidget.ensure_valid_color(self, color, color_type, item, row, col)` — Ensure a valid QColor, using fallback if needed.
+  - `TableWidget.format_item(self, item: QtWidgets.QTableWidgetItem, key: str = None, italic: bool = None, bold: bool = None, fg: Any = None, bg: Any = None)` — Apply formatting to a table item.
+  - `TableWidget.set_action_color(self, item: QtWidgets.QTableWidgetItem, key: str, row: int = -1, col: int = -1, use_bg: bool = False)` — Apply semantic color, but skip reset if nothing defined.
+  - `TableWidget.action_color_formatter(self, item, value, *_)`
+  - `TableWidget.make_color_map_formatter(self, color_map: dict)`
+  - `TableWidget.add_section_row(table: QtWidgets.QTableWidget, title: str, row: int = -1, col_count: int = None, bg: Any = None, fg: Any = '#999', bold: bool = True, font_delta: int = -1, height: int = 22) -> int` *(static)* — Insert a non-selectable section header that spans all columns.
+  - `TableWidget.is_section_row(table: QtWidgets.QTableWidget, row: int) -> bool` *(static)* — Return ``True`` if *row* is a section header.
   - `TableWidget.set_scrub_columns(self, columns: Iterable[int]) -> None` — Enable MMB-drag value scrubbing for *columns*.
   - `TableWidget.add_scrub_column(self, column: int) -> None` — Add a single column to the MMB-scrub set.
   - `TableWidget.remove_scrub_column(self, column: int) -> None` — Remove a column from the MMB-scrub set.
@@ -3555,7 +3585,7 @@ Scrollable rich-text viewer window.
 <a id="widgets--widgetComboBox"></a>
 ### `widgets/widgetComboBox.py`
 
-- **[`class WidgetComboBox(ComboBox)`](uitk/uitk/widgets/widgetComboBox.py#L136)** — ComboBox extended with widget embedding support.
+- **[`class WidgetComboBox(ComboBox)`](uitk/uitk/widgets/widgetComboBox.py#L38)** — ComboBox extended with widget embedding support.
   - `WidgetComboBox.setItemText(self, index, text)` — Override to work with QStandardItemModel.
   - `WidgetComboBox.addWidgetItem(self, widget: QtWidgets.QWidget, label: str = '', *, data: Any = None, select: bool = False) -> int` — Insert *widget* as a selectable row.
   - `WidgetComboBox.addWidgetAction(self, action: QtWidgets.QAction, label: str = '', *, select: bool = False) -> int` — Insert a QWidgetAction (or plain QAction) as a widget row.

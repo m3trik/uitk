@@ -590,6 +590,53 @@ class TestAffixConventionMode(QtBaseTestCase):
         self.assertIn("convention", opt.modes)
 
 
+class TestAffixNoun(QtBaseTestCase):
+    """``noun=``: the field's placeholder and tooltip name what its text marks,
+    in the current mode (2026-11-01: three tentacle panels each kept a copy of
+    this per-mode placeholder table)."""
+
+    def _make(self, **kw):
+        le = self.track_widget(LineEdit())
+        le.setPlaceholderText("the panel's own")
+        kw.setdefault("settings_key", False)
+        opt = AffixOption(wrapped_widget=le, **kw)
+        return le, opt
+
+    def test_the_placeholder_follows_the_mode(self):
+        le, opt = self._make(noun="Material", default="prefix", convention_key="material")
+        self.assertEqual(le.placeholderText(), "Material Prefix", "set at construction")
+        for mode, placeholder in (
+            ("suffix", "Material Suffix"),
+            ("auto", "Material Affix"),
+            ("convention", "Scene Convention"),
+            ("prefix", "Material Prefix"),
+        ):
+            opt.set_mode(mode)
+            self.assertEqual(le.placeholderText(), placeholder)
+
+    def test_the_tooltip_names_the_mode_and_what_it_does(self):
+        le, opt = self._make(noun="Material", default="suffix")
+        tip = le.toolTip()
+        self.assertTrue(tip.startswith("Material Suffix: always appended"), tip)
+        opt.set_mode("prefix")
+        self.assertTrue(le.toolTip().startswith("Material Prefix: always prepended"))
+
+    def test_a_custom_mode_names_its_own_placeholder(self):
+        custom = AffixMode(key="tag", label="Tag", icon="tag", placeholder="{noun} Tag")
+        le, _opt = self._make(noun="Layer", modes=("suffix", custom), default="tag")
+        self.assertEqual(le.placeholderText(), "Layer Tag")
+
+    def test_no_noun_leaves_the_field_to_the_panel(self):
+        le, opt = self._make(default="prefix")
+        opt.set_mode("suffix")
+        self.assertEqual(le.placeholderText(), "the panel's own")
+
+    def test_set_affix_forwards_the_noun(self):
+        le = self.track_widget(LineEdit())
+        le.option_box.set_affix(default="suffix", noun="Material", settings_key=False)
+        self.assertEqual(le.placeholderText(), "Material Suffix")
+
+
 class TestDynamicConventionKey(QtBaseTestCase):
     """The SAME Scene state, bound to a key resolved per read.
 

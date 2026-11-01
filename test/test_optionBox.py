@@ -3413,6 +3413,41 @@ class TestOptionMenuManagerWiring(QtBaseTestCase):
         return len([o for o in opts if isinstance(o, option_type)])
 
 
+class TestActionHiddenWhileEmpty(QtBaseTestCase):
+    """``set_action(hide_when_empty=True)``: an action that does nothing on an
+    empty field (a search, a rename) shows only while the field holds text, as
+    the clear button does (2026-10-31, the Naming panel's Find / Rename)."""
+
+    def _field(self, **kwargs):
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        line = QtWidgets.QLineEdit()
+        layout.addWidget(line)
+        manager = OptionBoxManager(line)
+        # The Naming panel's order: clear on, a menu row, then the action.
+        manager.clear_option = True
+        manager.menu.add("QCheckBox", setText="Ignore Case", setObjectName="chk000")
+        action = manager.set_action(callback=lambda: None, icon="search", **kwargs)
+        self.assertIsNotNone(manager.container)
+        parent.show()
+        QtWidgets.QApplication.processEvents()
+        return line, action
+
+    def test_the_action_shows_only_while_the_field_has_text(self):
+        line, action = self._field(hide_when_empty=True)
+        self.assertTrue(action.widget.isHidden(), "shown on an empty field")
+        line.setText("pCube*")
+        self.assertFalse(action.widget.isHidden())
+        line.clear()
+        self.assertTrue(action.widget.isHidden())
+
+    def test_an_action_without_the_opt_in_always_shows(self):
+        line, action = self._field()
+        self.assertFalse(action.widget.isHidden())
+
+
 class TestClearButtonDisableSticks(QtBaseTestCase):
     """Disabling the clear button must survive later text changes (finding 7)."""
 

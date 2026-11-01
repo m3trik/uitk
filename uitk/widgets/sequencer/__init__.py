@@ -34,8 +34,6 @@ lazy_exports(
             "_SUB_ROW_HEIGHT",
             "_TRACK_PADDING",
             "_RULER_HEIGHT",
-            "_SHOT_LANE_HEIGHT",
-            "_HEADER_HEIGHT",
             "_HANDLE_WIDTH",
             "_MIN_CLIP_DURATION",
             "_MIN_POINT_CLIP_WIDTH",
@@ -56,12 +54,14 @@ lazy_exports(
         # The content-area seam: a host subclasses SequencerEditor for
         # ``SequencerWidget.register_editor``.
         "_editor": ("SequencerEditor", "TrackEditor"),
+        # The timeline seam: a host's layer (a lane, its items) for
+        # ``SequencerWidget.add_layer`` -- the protocol it is read through.
+        "_layer": "SequencerLayer",
         "_graph_editor": "GraphEditor",
         "_clip": "ClipItem",
         "_keyframe": ("KeyframeItem", "TangentHandleItem", "KeyScaleBoxItem"),
         "_overlays": (
             "_StaticRangeOverlay",
-            "_GapOverlayItem",
             "_SnapGuideItem",
             "RangeHighlightItem",
         ),

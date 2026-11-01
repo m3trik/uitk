@@ -62,6 +62,7 @@ SEQUENCER_EXPORTS = (
     "ScrubPlayer",
     "ScrubPlayerPlayController",
     "SequencerEditor",
+    "SequencerLayer",
     "SequencerWidget",
     "TangentHandleItem",
     "TimelineScene",
@@ -71,13 +72,11 @@ SEQUENCER_EXPORTS = (
     "TrackHeaderWidget",
     "TransportControls",
     "_ElidingLabel",
-    "_GapOverlayItem",
     "_HANDLE_WIDTH",
     "_MENU_STYLESHEET",
     "_MIN_CLIP_DURATION",
     "_MIN_POINT_CLIP_WIDTH",
     "_RULER_HEIGHT",
-    "_SHOT_LANE_HEIGHT",
     "_SUB_ROW_HEIGHT",
     "_SnapGuideItem",
     "_StaticRangeOverlay",
@@ -87,7 +86,7 @@ SEQUENCER_EXPORTS = (
 
 BRIDGE_EXPORTS = (
     "AttributeSpec",
-    "BridgeSlotsBase",
+    "ParamPanelSlots",
     "Formatters",
     "KindFactory",
     "KindHandler",
@@ -308,7 +307,7 @@ class TestSubpackageImportIsLazy(BaseTestCase):
     def test_first_attribute_access_resolves(self):
         """Touching a name imports its module and returns the real object."""
         probes = {
-            "uitk.bridge": ("BridgeSlotsBase", "uitk.bridge.slots"),
+            "uitk.bridge": ("ParamPanelSlots", "uitk.bridge.slots"),
             "uitk.widgets.sequencer": (
                 "SequencerWidget",
                 "uitk.widgets.sequencer._sequencer",

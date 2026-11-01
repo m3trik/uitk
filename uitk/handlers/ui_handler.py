@@ -216,10 +216,12 @@ class UiHandler(BaseHandler):
     def can_resolve(self, name: str) -> bool:
         """True if :meth:`get` would resolve *name* to a UI — without building it.
 
-        Hook for the switchboard's :meth:`SwitchboardWidgetMixin.ui_name_resolves`
+        Hook for the switchboard's :meth:`Switchboard.ui_name_resolves`
         so destination resolution (nav-button click + auto-hide) can recognise UIs
         this handler produces. Base = a registered file stem; subclasses extend it
-        for non-file sources (``MayaUiHandler`` adds its native-menu names).
+        for non-file sources (``MayaUiHandler`` adds its native-menu names), and
+        the switchboard's ``get_ui`` then builds such a name through :meth:`get`
+        -- no Slots class is needed for it to resolve.
         """
         if not name:
             return False
@@ -234,9 +236,10 @@ class UiHandler(BaseHandler):
             **kwargs: Accepted and ignored for call-site compatibility. The
                 underlying :meth:`Switchboard.get_ui` takes only ``name`` and no
                 UI-reload path exists, but existing consumers pass extra
-                keywords (e.g. tentacle's ``get(name, header=True)`` and the
-                marking menu's ``get(name, **kwargs)``); tolerating them here
-                keeps those call sites working rather than raising ``TypeError``.
+                keywords (e.g. the marking menu's ``get(name, **kwargs)``, and a
+                subclass's own build options such as ``MayaUiHandler``'s
+                ``header=``); tolerating them here keeps those call sites working
+                rather than raising ``TypeError``.
 
         Returns:
             The UI widget with styles applied, or None if not found.
@@ -458,18 +461,30 @@ class UiHandler(BaseHandler):
 
     # ── Window persistence (pin vs hide chrome) ──────────────────────────
 
+    #: The tag a source registers its tool panels under (``Switchboard.register(
+    #: ..., tags={PANEL_TAG})``): sticky by default (:meth:`default_persistence`).
+    PANEL_TAG = "panel"
+
     def default_persistence(self, ui) -> str:
         """The per-window default for *ui* — what it does with no user override.
 
         This is the "context" in the UI Browser's ``Default (context)``: the
         behavior a window has always had, expressed as a persistence mode
-        instead of hardcoded header buttons. Subclasses override it to declare
-        their own defaults (mayatk / blendertk make their tool panels sticky);
-        overriding ``apply_styles`` to swap ``header_buttons`` is the wrong
-        home, because a user override then has nothing to override.
+        instead of hardcoded header buttons. A subclass overrides it to declare
+        its own defaults; overriding ``apply_styles`` to swap ``header_buttons``
+        is the wrong home, because a user override then has nothing to override.
+
+        A UI whose source registered it under :attr:`PANEL_TAG` -- a tool panel,
+        doing the work the user came for -- stays open (sticky) by default,
+        whichever package ships it; anything else is transient.
 
         Returns one of :attr:`PERSISTENCE_MODES` (never ``"context"``).
         """
+        try:
+            if ui.has_tags([self.PANEL_TAG]):
+                return self.PERSISTENCE_STICKY
+        except AttributeError:
+            pass
         return self.PERSISTENCE_TRANSIENT
 
     @property
@@ -710,7 +725,7 @@ class UiHandler(BaseHandler):
 
         # Tag-based overrides
         try:
-            if ui.has_tags(["startmenu", "submenu"]):
+            if ui.has_tags(self.sb.STACKED_TAGS):
                 style["style_class"] = "translucentBgNoBorder"
         except AttributeError:
             pass
@@ -774,19 +789,30 @@ class UiHandler(BaseHandler):
     # ── Launchable contract ──────────────────────────────────────────────
 
     def entries(self) -> Iterable[HandlerEntry]:
-        """Yield one :class:`HandlerEntry` per .ui registered with the Switchboard.
+        """Yield one :class:`HandlerEntry` per UI registered with the Switchboard
+        (:meth:`Switchboard.ui_names`): a ``.ui`` file, or a UI built in code.
 
         Tags are split into inherited (filename + source-directory) and
         file-backed (``<uitk_tags>`` XML) so the browser can render them
         with the existing inherited-vs-file UX. Only file tags are
         editable; that's signalled by passing ``file_tags`` (vs ``None``).
-        The description is the file's root ``accessibleDescription``.
+        The description is the file's root ``accessibleDescription``. A UI
+        built in code (kind ``"ui_built"``) has no file: no file tags, no
+        description, and it is never built to find them.
         """
         ui_registry = getattr(self.sb.registry, "ui_registry", None)
         if ui_registry is None:
             return
-        for name in ui_registry.get("filename") or []:
+        for name in self.sb.ui_names():
             filepath = ui_registry.get(filename=name, return_field="filepath")
+            if not filepath:
+                yield HandlerEntry(
+                    name=name,
+                    kind="ui_built",
+                    handler=self,
+                    inherited_tags=frozenset(self._inherited_tags_for(name, None)),
+                )
+                continue
             yield HandlerEntry(
                 name=name,
                 kind="ui_file",

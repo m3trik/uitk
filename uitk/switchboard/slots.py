@@ -10,6 +10,7 @@ from qtpy import QtWidgets, QtCore
 import pythontk as ptk
 from uitk.managers.cancel_manager import CancelManager
 from uitk.managers.cursor_manager import CursorManager
+from uitk.switchboard.history import History
 
 
 class Signals:
@@ -555,8 +556,12 @@ class SlotWrapper:
             pass
 
 
-class SwitchboardSlotsMixin:
-    """Mixin for managing slot connections and signal-slot handling in the Switchboard."""
+class _Slots:
+    """Slot resolution and signal-slot wiring behind the Switchboard: slot
+    classes and their instances, deferred widget init, signal connection and the
+    slot dispatch history ``repeat_last`` replays. Owns that history; reads the
+    Switchboard (registries, slot instances, the missing-slot hook) at call time.
+    """
 
     default_signals = {
         QtWidgets.QAction: "triggered",
@@ -587,21 +592,22 @@ class SwitchboardSlotsMixin:
         QtWidgets.QTreeWidget: "itemClicked",
     }
 
+    def __init__(self, sb):
+        self._sb = sb
+        # Previously-called slots (bound methods). Strong refs — a slot's
+        # lifetime is tied to its UI, which the UI history already governs.
+        self._slot_history = History(
+            maxlen=200, key=lambda m: m.__name__, filter_unmapped=True
+        )
+        # Last slot invocation, captured as its live SlotWrapper (widget context
+        # intact) so repeat_last() can re-run it. The slot_history above keeps
+        # bare methods for back-compat; the wrapper is what knows how to invoke.
+        self.last_wrapper = None
+        # Set while repeat_last() re-dispatches so the re-run doesn't overwrite
+        # the captured wrapper (a repeat bound as a slot would capture itself).
+        self.suppress_capture = False
+
     def get_default_signals(self, widget: QtWidgets.QWidget) -> set:
-        """Retrieves the default signals for a given widget type.
-
-        This method iterates over a dictionary of default signals, which maps widget types to signal names.
-        If the widget is an instance of a type in the dictionary, the method checks if the widget has a signal
-        with the corresponding name. If it does, the signal is added to a set of signals.
-
-        The method returns this set of signals, which represents all the default signals that the widget has.
-
-        Parameters:
-            widget (QWidget): The widget to get the default signals for.
-
-        Returns:
-            set: A set of signals that the widget has, according to the default signals dictionary.
-        """
         signals = set()
         for widget_type, signal_name in self.default_signals.items():
             if isinstance(widget, widget_type):
@@ -611,30 +617,6 @@ class SwitchboardSlotsMixin:
         return signals
 
     def get_available_signals(self, widget, derived=True, exc=None):
-        """Get all available signals for a type of widget.
-
-        Parameters:
-            widget (str/obj): The widget to get signals for.
-            derived (bool): Return signals from all derived classes instead of just the given widget class.
-                    ex. get: QObject, QWidget, QAbstractButton, QPushButton signals from 'QPushButton'
-            exc (list): Exclude any classes in this list. ex. exc=[QtCore.QObject, 'QWidget']
-
-        Returns:
-            (set)
-
-        Example: get_available_signals(QtWidgets.QPushButton)
-            would return:
-                clicked (QAbstractButton)
-                pressed (QAbstractButton)
-                released (QAbstractButton)
-                toggled (QAbstractButton)
-                customContextMenuRequested (QWidget)
-                windowIconChanged (QWidget)
-                windowIconTextChanged (QWidget)
-                windowTitleChanged (QWidget)
-                destroyed (QObject)
-                objectNameChanged (QObject)
-        """
         signals = set()
         clss = widget if isinstance(widget, type) else type(widget)
         signal_type = type(QtCore.Signal())
@@ -650,7 +632,7 @@ class SwitchboardSlotsMixin:
                     signals.add(k)
         return signals
 
-    def _find_slots_class(
+    def find_slots_class(
         self, base_name: str, allow_sole_fallback: bool = False
     ) -> Optional[Type]:
         """Resolve the slot class for ``base_name``.
@@ -663,34 +645,34 @@ class SwitchboardSlotsMixin:
         the sole class.
         """
         # 1. Try resolving by class name (Standard convention)
-        try_names = self.get_slot_class_names(base_name)
+        try_names = self._sb.get_slot_class_names(base_name)
 
-        self.logger.debug(f"[_find_slots_class] Looking for classes: {try_names}")
+        self._sb.logger.debug(f"[_find_slots_class] Looking for classes: {try_names}")
 
         for name in try_names:
-            cls = self.registry.slot_registry.get(
+            cls = self._sb.registry.slot_registry.get(
                 classname=name, return_field="classobj"
             )
             if cls:
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[_find_slots_class] Resolved class '{name}' to {cls}"
                 )
                 return cls
 
         # 2. Try resolving by module/file name (Fallback)
         # Look for files like <name>Slots.py or <name>_slots.py and use the first class found in them
-        try_files = self.get_slot_file_names(base_name)
-        self.logger.debug(f"[_find_slots_class] Looking for files: {try_files}")
+        try_files = self._sb.get_slot_file_names(base_name)
+        self._sb.logger.debug(f"[_find_slots_class] Looking for files: {try_files}")
 
         for name in try_files:
             # Check assuming standard .py extension.
             # get() returns the first match unless distinct is specified, which works for us
             # as we want a class from that file.
-            cls = self.registry.slot_registry.get(
+            cls = self._sb.registry.slot_registry.get(
                 filename=f"{name}.py", return_field="classobj"
             )
             if cls:
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[_find_slots_class] Resolved file '{name}.py' to {cls}"
                 )
                 return cls
@@ -709,13 +691,13 @@ class SwitchboardSlotsMixin:
             registered = [
                 c
                 for c in (
-                    self.registry.slot_registry.get(return_field="classobj") or []
+                    self._sb.registry.slot_registry.get(return_field="classobj") or []
                 )
                 if c is not None
             ]
             unique = list(dict.fromkeys(registered))
             if len(unique) == 1:
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[_find_slots_class] No name match for '{base_name}'; binding "
                     f"the sole registered slot class {unique[0]}"
                 )
@@ -724,51 +706,50 @@ class SwitchboardSlotsMixin:
         return None
 
     def slots_instantiated(self, key: str) -> bool:
-        return key in self.slot_instances and not isinstance(
-            self.slot_instances.raw(key), self.slot_instances.Placeholder
+        return key in self._sb.slot_instances and not isinstance(
+            self._sb.slot_instances.raw(key), self._sb.slot_instances.Placeholder
         )
 
     def get_slots_instance(self, ui: Union[str, QtWidgets.QWidget]) -> Optional[object]:
-        """Get or create a slots instance for the given UI."""
         if isinstance(ui, str):
-            ui = self.get_ui(ui)
+            ui = self._sb.get_ui(ui)
 
-        key = self.get_base_name(ui.objectName())
+        key = self._sb.get_base_name(ui.objectName())
 
         # Check if already instantiated
-        if self.slots_instantiated(key):
-            return self.slot_instances[key]
+        if self._sb.slots_instantiated(key):
+            return self._sb.slot_instances[key]
 
         # Check if creation is in progress using placeholder metadata
-        placeholder = self.slot_instances.get_placeholder(key)
+        placeholder = self._sb.slot_instances.get_placeholder(key)
         if placeholder and placeholder.meta.get("creation_in_progress", False):
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[get_slots_instance] [{ui.objectName()}] Slots creation already in progress"
             )
             return None
 
         # Find and create the slots instance. ``ui`` is a real registered UI
         # here, so honor an explicit single slot class even on a name mismatch.
-        slots_cls = self._find_slots_class(key, allow_sole_fallback=True)
+        slots_cls = self.find_slots_class(key, allow_sole_fallback=True)
         if slots_cls:
             try:
                 # Set creation in progress flag
                 if not placeholder:
-                    placeholder = self.slot_instances.Placeholder(
+                    placeholder = self._sb.slot_instances.Placeholder(
                         slots_cls, meta={"creation_in_progress": True}
                     )
-                    self.slot_instances.set_placeholder(key, placeholder)
+                    self._sb.slot_instances.set_placeholder(key, placeholder)
                 else:
                     placeholder.meta["creation_in_progress"] = True
 
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[get_slots_instance] [{ui.objectName()}] Creating slots instance"
                 )
-                instance = self._create_slots_instance(ui, slots_cls)
+                instance = self.create_slots_instance(ui, slots_cls)
                 return instance
             finally:
                 # Clear flag in case the placeholder still exists
-                placeholder = self.slot_instances.get_placeholder(key)
+                placeholder = self._sb.slot_instances.get_placeholder(key)
                 if placeholder and "creation_in_progress" in placeholder.meta:
                     placeholder.meta["creation_in_progress"] = False
 
@@ -776,17 +757,19 @@ class SwitchboardSlotsMixin:
 
     def _get_deferred_widgets(self, key: str) -> list:
         """Helper method to extract deferred widgets from a placeholder."""
-        placeholder = self.slot_instances.get_placeholder(key)
+        placeholder = self._sb.slot_instances.get_placeholder(key)
         if placeholder and "deferred_widgets" in placeholder.meta:
             return placeholder.meta.get("deferred_widgets", [])
         return []
 
-    def _create_slots_instance(
+    def create_slots_instance(
         self, ui: QtWidgets.QWidget, slots_cls: Type
     ) -> Optional[object]:
         """Create and initialize a new slots instance."""
-        key = self.get_base_name(ui.objectName())
-        self.logger.debug(f"[{ui.objectName()}] Creating slots instance: {slots_cls}")
+        key = self._sb.get_base_name(ui.objectName())
+        self._sb.logger.debug(
+            f"[{ui.objectName()}] Creating slots instance: {slots_cls}"
+        )
 
         try:
             # Get deferred widgets BEFORE creating the instance
@@ -799,20 +782,20 @@ class SwitchboardSlotsMixin:
             # stripped).  For tagged UIs like "display#submenu", storing under
             # the base name "display" clobbers the resolution path for the
             # standalone "display" UI, causing slots to get the wrong self.ui.
-            if key == ui.objectName() and not self.loaded_ui.has(key):
-                self.loaded_ui[key] = ui
+            if key == ui.objectName() and not self._sb.loaded_ui.has(key):
+                self._sb.loaded_ui[key] = ui
 
-            instance = slots_cls(switchboard=self)
+            instance = slots_cls(switchboard=self._sb)
 
             # Register shortcuts
-            self.register_slots_shortcuts(ui, instance)
+            self._sb.register_slots_shortcuts(ui, instance)
 
             # Update storage
-            self.slot_instances[key] = instance
+            self._sb.slot_instances[key] = instance
             ui.connected_slots["default"] = instance
 
             # Process deferred widgets AFTER instance is created
-            self._process_deferred_widgets(ui, deferred_widgets)
+            self.process_deferred_widgets(ui, deferred_widgets)
 
             return instance
         except Exception as e:
@@ -843,50 +826,50 @@ class SwitchboardSlotsMixin:
                 f"  Deferred Widgets: {deferred_count} widgets - {deferred_names}\n"
                 f"  Traceback:\n{traceback.format_exc()}"
             )
-            self.logger.error_once(error_message, cache_key=cache_key)
+            self._sb.logger.error_once(error_message, cache_key=cache_key)
             return None
 
-    def _perform_slot_init(self, ui: QtWidgets.QWidget, widget: QtWidgets.QWidget):
+    def perform_slot_init(self, ui: QtWidgets.QWidget, widget: QtWidgets.QWidget):
         """Initialize a slot for a widget."""
         # Only skip if already initialized AND not refreshing
         if getattr(widget, "is_initialized", False) and not getattr(
             widget, "refresh_on_show", False
         ):
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Already initialized, skipping"
             )
             return
 
-        slots = self.get_slots_instance(ui)
+        slots = self._sb.get_slots_instance(ui)
         if not slots:
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] No slots instance found"
             )
             return
 
         # Check for and call the widget-specific init method
-        slot_func = getattr(slots, f"{widget.objectName()}{self.INIT_SUFFIX}", None)
+        slot_func = getattr(slots, f"{widget.objectName()}{self._sb.INIT_SUFFIX}", None)
         if slot_func:
             try:
                 slot_func(widget)
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Init method executed"
                 )
             except Exception as e:
                 # exc_info: the message alone names no file or line to fix.
-                self.logger.error(
+                self._sb.logger.error(
                     f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Error in init method: {e}",
                     exc_info=True,
                 )
         else:
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] No init method found"
             )
 
         try:  # Connect widget signals to slots
             widget.connect_slot()
         except Exception as e:
-            self.logger.error(
+            self._sb.logger.error(
                 f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Error connecting slot: {e}",
                 exc_info=True,
             )
@@ -895,20 +878,20 @@ class SwitchboardSlotsMixin:
         widget.is_initialized = True
 
         try:  # Register child widgets
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Calling register_children .."
             )
             widget.register_children()
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Finished registering children from slot init"
             )
         except Exception as e:
-            self.logger.error(
+            self._sb.logger.error(
                 f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Error registering children: {e}",
                 exc_info=True,
             )
 
-        self.logger.debug(
+        self._sb.logger.debug(
             f"[_perform_slot_init] [{ui.objectName()}.{widget.objectName()}] Slot initialization complete"
         )
 
@@ -933,27 +916,27 @@ class SwitchboardSlotsMixin:
         # but BEFORE restoring persistent state
         try:
             ui.state.capture_default(widget)
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] Default captured"
             )
         except Exception as e:
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] Error capturing default: {e}"
             )
 
         # Restore widget state from persistent storage
         try:
             widget.perform_restore_state()
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] State restored"
             )
         except Exception as e:
-            self.logger.error(
+            self._sb.logger.error(
                 f"[_perform_state_init] [{ui.objectName()}.{widget.objectName()}] Error restoring state: {e}",
                 exc_info=True,
             )
 
-    def _revive_deferred_widget(
+    def revive_deferred_widget(
         self, ui: QtWidgets.QWidget, widget: QtWidgets.QWidget
     ) -> Optional[QtWidgets.QWidget]:
         """Return a live wrapper for a deferred widget, re-resolving if stale.
@@ -971,7 +954,7 @@ class SwitchboardSlotsMixin:
         Returns the live widget, or ``None`` if it can't be recovered — the
         caller then skips it rather than crashing the whole panel open.
         """
-        if self._widget_is_alive(widget):
+        if self._sb._widget_is_alive(widget):
             return widget
 
         try:
@@ -981,8 +964,8 @@ class SwitchboardSlotsMixin:
         if not name:
             return None
 
-        fresh = self._get_widget_from_ui(ui, name)
-        if fresh is None or not self._widget_is_alive(fresh):
+        fresh = self._sb._get_widget_from_ui(ui, name)
+        if fresh is None or not self._sb._widget_is_alive(fresh):
             return None
 
         # Drop the dead wrapper and (re)register the live one. register_widget
@@ -993,18 +976,18 @@ class SwitchboardSlotsMixin:
         if fresh not in ui.widgets:
             ui.register_widget(fresh)
 
-        self.logger.debug(
+        self._sb.logger.debug(
             f"[_revive_deferred_widget] [{ui.objectName()}.{name}] "
             "re-resolved a reparented deferred widget"
         )
         return fresh
 
-    def _process_deferred_widgets(
+    def process_deferred_widgets(
         self, ui: QtWidgets.QWidget, deferred_widgets: list
     ) -> None:
         """Process deferred widgets for initialization."""
         if not deferred_widgets:
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_process_deferred_widgets] [{ui.objectName()}] No deferred widgets to process"
             )
             return
@@ -1016,14 +999,14 @@ class SwitchboardSlotsMixin:
         # dropped rather than allowed to crash the batch.
         revived = []
         for widget in deferred_widgets:
-            live = self._revive_deferred_widget(ui, widget)
+            live = self.revive_deferred_widget(ui, widget)
             if live is not None:
                 revived.append(live)
         deferred_widgets = revived
         if not deferred_widgets:
             return
 
-        self.logger.debug(
+        self._sb.logger.debug(
             f"[_process_deferred_widgets] [{ui.objectName()}] Processing deferred widgets: {[w.objectName() for w in deferred_widgets]}"
         )
 
@@ -1047,9 +1030,9 @@ class SwitchboardSlotsMixin:
             # before any state operations occur
             for widget in deferred_widgets:
                 try:
-                    self._perform_slot_init(ui, widget)
+                    self.perform_slot_init(ui, widget)
                 except Exception as e:
-                    self.logger.error(
+                    self._sb.logger.error(
                         f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed slot init: {e}",
                         exc_info=True,
                     )
@@ -1060,21 +1043,21 @@ class SwitchboardSlotsMixin:
                 try:
                     self._perform_state_init(ui, widget)
                 except Exception as e:
-                    self.logger.error(
+                    self._sb.logger.error(
                         f"[_process_deferred_widgets] [{ui.objectName()}.{widget.objectName()}] Failed state init: {e}",
                         exc_info=True,
                     )
 
         # Clear the deferred widgets from the placeholder
-        key = self.get_base_name(ui.objectName())
-        placeholder = self.slot_instances.get_placeholder(key)
+        key = self._sb.get_base_name(ui.objectName())
+        placeholder = self._sb.slot_instances.get_placeholder(key)
         if placeholder and "deferred_widgets" in placeholder.meta:
             placeholder.meta["deferred_widgets"] = []
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_process_deferred_widgets] [{ui.objectName()}] Cleared deferred widgets list"
             )
 
-    def _add_to_placeholder(self, key: str, widget: QtWidgets.QWidget) -> None:
+    def add_to_placeholder(self, key: str, widget: QtWidgets.QWidget) -> None:
         """Add a widget to a placeholder's deferred_widgets metadata."""
         # Stamp the objectName now, while the wrapper is guaranteed live. A
         # deferred widget can be reparented before it is processed (e.g. an
@@ -1087,26 +1070,26 @@ class SwitchboardSlotsMixin:
         except (RuntimeError, AttributeError):
             pass
 
-        placeholder = self.slot_instances.get_placeholder(key)
+        placeholder = self._sb.slot_instances.get_placeholder(key)
         if placeholder:
             # Add widget to existing placeholder's metadata
             placeholder.meta.setdefault("deferred_widgets", []).append(widget)
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[_add_to_placeholder] [{widget.ui.objectName()}.{widget.objectName()}] Added to placeholder metadata"
             )
         else:
             # Create new placeholder with widget in metadata. ``widget.ui`` is a
             # real registered UI, so honor an explicit single slot class here too.
-            slots_cls = self._find_slots_class(key, allow_sole_fallback=True)
+            slots_cls = self.find_slots_class(key, allow_sole_fallback=True)
             if slots_cls:
-                placeholder = self.slot_instances.Placeholder(
+                placeholder = self._sb.slot_instances.Placeholder(
                     slots_cls, meta={"deferred_widgets": [widget]}
                 )
-                self.slot_instances.set_placeholder(key, placeholder)
-                self.logger.debug(
+                self._sb.slot_instances.set_placeholder(key, placeholder)
+                self._sb.logger.debug(
                     f"[_add_to_placeholder] [{widget.ui.objectName()}.{widget.objectName()}] Created placeholder with metadata"
                 )
-        self.logger.debug(
+        self._sb.logger.debug(
             f"[_add_to_placeholder] [{widget.ui.objectName()}.{widget.objectName()}] Added to placeholder '{key}'"
         )
 
@@ -1115,36 +1098,33 @@ class SwitchboardSlotsMixin:
             return
 
         ui = widget.ui
-        key = self.get_base_name(ui.objectName())
+        key = self._sb.get_base_name(ui.objectName())
 
         # Fast path: if slots are already instantiated, skip placeholder/find entirely
-        if self.slots_instantiated(key):
-            slots = self.slot_instances[key]
+        if self._sb.slots_instantiated(key):
+            slots = self._sb.slot_instances[key]
         else:
             # Add to placeholder first, in case slot isn't ready
-            self._add_to_placeholder(key, widget)
+            self.add_to_placeholder(key, widget)
             # Then try to get or create the slots instance
-            slots = self.get_slots_instance(ui)
+            slots = self._sb.get_slots_instance(ui)
 
         # If slots instance exists, process immediately (not deferred)
         if slots:
             if block_signals:
                 was_blocked = widget.blockSignals(True)
                 try:
-                    self._perform_slot_init(ui, widget)
+                    self.perform_slot_init(ui, widget)
                     self._perform_state_init(ui, widget)
                 finally:
                     widget.blockSignals(was_blocked)
             else:
-                self._perform_slot_init(ui, widget)
+                self.perform_slot_init(ui, widget)
                 self._perform_state_init(ui, widget)
 
     def call_slot(self, widget: QtWidgets.QWidget, *args, **kwargs):
-        """Call a slot method for a widget.
-        Retrieves the slot associated with the widget's UI and calls it with the provided arguments.
-        """
         if not isinstance(widget, QtWidgets.QWidget):
-            self.logger.debug(f"[call_slot] Expected QWidget, got {type(widget)}")
+            self._sb.logger.debug(f"[call_slot] Expected QWidget, got {type(widget)}")
             return
 
         ui_name = (
@@ -1153,13 +1133,13 @@ class SwitchboardSlotsMixin:
             else "UnknownUI"
         )
         widget_name = widget.objectName()
-        self.logger.debug(f"[call_slot] [{ui_name}.{widget_name}] Calling slot")
+        self._sb.logger.debug(f"[call_slot] [{ui_name}.{widget_name}] Calling slot")
 
         slot = self._persistent_slot_wrapper(widget)
         if slot:
             slot(*args, **kwargs)
         else:
-            self.logger.debug(
+            self._sb.logger.debug(
                 f"[call_slot] [{ui_name}.{widget_name}] No callable slot found"
             )
 
@@ -1183,8 +1163,8 @@ class SwitchboardSlotsMixin:
             cache = self._call_slot_wrappers = weakref.WeakKeyDictionary()
         wrapper = cache.get(widget)
         if wrapper is None:
-            wrapper = self.get_slot(
-                self.get_slots_instance(ui),
+            wrapper = self._sb.get_slot(
+                self._sb.get_slots_instance(ui),
                 widget.objectName(),
                 wrap=True,
                 widget=widget,
@@ -1204,21 +1184,21 @@ class SwitchboardSlotsMixin:
             slot = getattr(slot_class, slot_name)
         except AttributeError:
             if widget:
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[get_slot] [{widget.ui.objectName()}.{slot_name}] Slot not found in '{slot_class.__class__.__name__}'"
                 )
             else:
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[get_slot] [{slot_name}] Slot not found in '{slot_class.__class__.__name__}'"
                 )
             return None
         except Exception:
             if widget:
-                self.logger.error(
+                self._sb.logger.error(
                     f"[get_slot] [{widget.ui.objectName()}.{slot_name}] Error accessing slot in '{slot_class.__class__.__name__}':\n{traceback.format_exc()}"
                 )
             else:
-                self.logger.error(
+                self._sb.logger.error(
                     f"[get_slot] [{slot_name}] Error accessing slot in '{slot_class.__class__.__name__}':\n{traceback.format_exc()}"
                 )
             return None
@@ -1231,21 +1211,16 @@ class SwitchboardSlotsMixin:
     def get_slot_from_widget(
         self, widget: QtWidgets.QWidget, wrap: bool = False
     ) -> Optional[Callable]:
-        self.logger.debug(
+        self._sb.logger.debug(
             f"[get_slot_from_widget] [{widget.ui.objectName()}.{widget.objectName()}] Getting slot from widget"
         )
 
-        slot_class = self.get_slots_instance(widget.ui)
-        return self.get_slot(slot_class, widget.objectName(), wrap=wrap, widget=widget)
+        slot_class = self._sb.get_slots_instance(widget.ui)
+        return self._sb.get_slot(
+            slot_class, widget.objectName(), wrap=wrap, widget=widget
+        )
 
     def mark_missing_slot(self, widget):
-        """Built-in ``on_missing_slot`` hook: grey the widget + explain in its tooltip.
-
-        Gives a live "not-yet-built" map during development (installed by setting
-        ``UITK_MARK_MISSING_SLOTS`` in the environment, or passed explicitly as the
-        switchboard's ``on_missing_slot``). Never the production default — it would
-        repaint every unwired widget at init.
-        """
         widget.setEnabled(False)
         widget.setToolTip(
             f"Not implemented: no '{widget.objectName()}' slot for "
@@ -1263,13 +1238,7 @@ class SwitchboardSlotsMixin:
         )
 
     def notify_missing_slot(self, widget):
-        """Invoke the missing-slot policy hook for a widget ``connect_slot`` couldn't wire.
-
-        Only fires for widgets the switchboard *would* have connected (one with a
-        :meth:`_slot_signal`), and never for nav ``MenuButton``s (they own navigation, not a
-        slot). No-op when no ``on_missing_slot`` hook is set — the production default.
-        """
-        hook = getattr(self, "on_missing_slot", None)
+        hook = getattr(self._sb, "on_missing_slot", None)
         if not hook:
             return
         from uitk.widgets.menuButton import MenuButton
@@ -1281,20 +1250,19 @@ class SwitchboardSlotsMixin:
         try:
             hook(widget)
         except Exception as error:
-            self.logger.debug(f"[notify_missing_slot] hook raised: {error}")
+            self._sb.logger.debug(f"[notify_missing_slot] hook raised: {error}")
 
     def connect_slot(self, widget, slot=None):
-        """Connect a widget's signals to its slot."""
         ui_name = widget.ui.objectName()
         widget_name = widget.objectName()
 
         if not slot:
-            slot = self.get_slot_from_widget(widget)
+            slot = self._sb.get_slot_from_widget(widget)
             if not slot:
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[connect_slot] [{ui_name}.{widget_name}] No slot found for widget"
                 )
-                self.notify_missing_slot(widget)
+                self._sb.notify_missing_slot(widget)
                 return
 
         # A widget's slot is resolved by ``getattr(slots, objectName)``. When the
@@ -1304,7 +1272,7 @@ class SwitchboardSlotsMixin:
         # "<obj> is not a callable object". Skip with an actionable warning
         # instead — a non-callable can never be a valid slot.
         if not callable(slot):
-            self.logger.warning(
+            self._sb.logger.warning(
                 f"[connect_slot] [{ui_name}.{widget_name}] Resolved slot is a "
                 f"non-callable {type(slot).__name__}; the widget's objectName "
                 f"collides with a non-method attribute on the slots class. "
@@ -1316,14 +1284,14 @@ class SwitchboardSlotsMixin:
 
         for signal_name in signals:
             if not isinstance(signal_name, str):
-                self.logger.error(
+                self._sb.logger.error(
                     f"[connect_slot] [{ui_name}.{widget_name}] Invalid signal type: {type(signal_name)}"
                 )
                 continue
 
             signal = getattr(widget, signal_name, None)
             if not signal:
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[connect_slot] [{ui_name}.{widget_name}] Signal '{signal_name}' not found"
                 )
                 continue
@@ -1341,11 +1309,11 @@ class SwitchboardSlotsMixin:
                 widget.ui.connected_slots.setdefault(widget, {})[signal_name] = (
                     slot_wrapper
                 )
-                self.logger.debug(
+                self._sb.logger.debug(
                     f"[connect_slot] [{ui_name}.{widget_name}] Connected to signal '{signal_name}'"
                 )
             except Exception as e:
-                self.logger.error(
+                self._sb.logger.error(
                     f"[connect_slot] [{ui_name}.{widget_name}] Error connecting to signal '{signal_name}': {e}",
                     exc_info=True,
                 )
@@ -1360,7 +1328,7 @@ class SwitchboardSlotsMixin:
         Returns:
             SlotWrapper: The slot wrapper object.
         """
-        return SlotWrapper(slot, widget, self)
+        return SlotWrapper(slot, widget, self._sb)
 
     def slot_history(
         self,
@@ -1372,25 +1340,6 @@ class SwitchboardSlotsMixin:
         remove=None,
         length=200,
     ):
-        """Get the slot history.
-
-        Parameters:
-            index (int/slice, optional): Index or slice to return from the history. If not provided, returns the full list.
-            allow_duplicates (bool): When returning a list, allows for duplicate names in the returned list.
-            inc (str/int/list): The objects(s) to include.
-                            supports using the '*' operator: startswith*, *endswith, *contains*
-                            Will include all items that satisfy ANY of the given search terms.
-                            meaning: '*.png' and '*Normal*' returns all strings ending in '.png' AND all
-                            strings containing 'Normal'. NOT strings satisfying both terms.
-            exc (str/int/list): The objects(s) to exclude. Similar to include.
-                            exclude take precedence over include.
-            add (object/list, optional): New entrie(s) to append to the slot history.
-            remove (object/list, optional): Entry/entries to remove from the slot history.
-            length (int): Maximum length of the slot history. If the history exceeds this length, it will be truncated.
-
-        Returns:
-            (object/list): Slot method(s) based on index or slice.
-        """
         hist = self._slot_history
         hist.maxlen = length
         if add:
@@ -1398,6 +1347,34 @@ class SwitchboardSlotsMixin:
         if remove:
             hist.remove(remove)
         return hist.get(index, allow_duplicates=allow_duplicates, inc=inc, exc=exc)
+
+    def repeat_last(self):
+        wrapper = self.last_wrapper
+        if wrapper is None:
+            self._sb.logger.debug("[repeat_last] No slot to repeat")
+            return None
+        # The slot's widget/UI was torn down since it last ran (dead C++
+        # wrapper): repeating is undefined, so fail soft. Probed up front, not
+        # by catching RuntimeError around the call: maya.cmds raises
+        # RuntimeError for nearly every failure, so that catch also swallowed
+        # the slot's own errors, and a slot that never touches its widget
+        # re-ran against the dead one.
+        widget = getattr(wrapper, "widget", None)
+        if widget is not None and not self._sb._widget_is_alive(widget):
+            self._sb.logger.debug("[repeat_last] last slot's widget is gone")
+            return None
+        # Replay with the exact args/kwargs the slot last ran with (incl. any
+        # signal payload such as a list slot's required ``item``). Calling the
+        # wrapper bare drops those and raises TypeError for slots that require
+        # a positional. Go through _invoke so the wait cursor / timeout still
+        # apply but debounce is bypassed (a repeat should fire immediately).
+        args = getattr(wrapper, "_last_invocation_args", ())
+        kwargs = getattr(wrapper, "_last_invocation_kwargs", {})
+        self.suppress_capture = True
+        try:
+            return wrapper._invoke(*args, **kwargs)
+        finally:
+            self.suppress_capture = False
 
 
 # --------------------------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 """The graph editor: animation curves in value space, edited like Maya's.
 
 A :class:`~uitk.widgets.sequencer._editor.SequencerEditor` that takes the
-sequencer's content area over: the ruler, shot lane, playhead, markers and
+sequencer's content area over: the ruler and its lanes, playhead, markers and
 transport stay the kernel's; below them the curves are drawn against a value
 axis and edited in both directions.  The data is the host's, as plain
 values -- :meth:`GraphEditor.set_outline` names the objects and their curves,
@@ -21,7 +21,7 @@ or value about the opposite edge, a corner both (Alt: about the frame's
 centre), the body to move; a tangent handle drags its tangent (Alt breaks
 it, Shift gives every selected key the same vector); Alt+middle pans,
 Alt+right zooms per axis, the wheel zooms (Ctrl: time only, Shift: value
-only); A frames all, F the selected keys (none: the active shot), I keys
+only); A frames all, F the selected keys (none: the active range), I keys
 the displayed curves at the playhead, Delete removes the selected keys.
 
 The collaborators live here until they earn files of their own (CODE_STANDARD
@@ -139,7 +139,7 @@ class GraphEditor(SequencerEditor):
         ("View", "Alt+Middle-drag", "Pan"),
         ("View", "Alt+Right-drag", "Zoom each axis (Shift: one)"),
         ("View", "Wheel", "Zoom (Ctrl: time only, Shift: value only)"),
-        ("View", "A / F", "Frame all / the selection, else the shot"),
+        ("View", "A / F", "Frame all / the selection, else the range"),
         ("View", "I / Delete", "Key the curves at the playhead / delete keys"),
     )
 
@@ -234,9 +234,9 @@ class GraphEditor(SequencerEditor):
             (
                 "Display",
                 "dim",
-                "Dim Outside Shots",
+                "Dim Outside Range",
                 "dim_outside",
-                "Veil the time outside the shots on screen (the scope)",
+                "Veil the time outside the range the host is working in",
             ),
             (
                 "Behavior",
@@ -281,7 +281,7 @@ class GraphEditor(SequencerEditor):
         super().deactivate()
 
     def _first_frame(self) -> None:
-        # The active shot, as F frames it: never every key of the scene.  Once
+        # The active range, as F frames it: never every key of the scene.  Once
         # only: a later switch back keeps whatever the user framed since.
         if self.is_active and not self._framed_once:
             self._framed_once = True
@@ -290,7 +290,7 @@ class GraphEditor(SequencerEditor):
     def key_bindings(self):
         return [
             ("A", self.frame_all, "Frame all curves"),
-            ("F", self.frame_selection, "Frame the selected keys, else the shot"),
+            ("F", self.frame_selection, "Frame the selected keys, else the range"),
             ("Delete", self.delete_selection, "Delete the selected keys"),
             ("I", self.insert_keys_at_playhead, "Key the curves at the playhead"),
             ("Ctrl+A", self.select_all, "Select every key"),
@@ -303,6 +303,9 @@ class GraphEditor(SequencerEditor):
 
     def relayout(self) -> None:
         self._canvas.sync()
+        page = getattr(self, "_page", None)  # None while __init__ builds it
+        if page is not None:
+            page.follow_header()
 
     def draw_background(self, painter, rect) -> bool:
         # The canvas paints the whole content area opaque: the track rows
@@ -441,7 +444,7 @@ class GraphEditor(SequencerEditor):
 
     @property
     def dim_outside(self) -> bool:
-        """Veil the time outside :attr:`focus_range` (the shots on screen)."""
+        """Veil the time outside :attr:`focus_range` (the host's working span)."""
         return self._dim_outside
 
     @dim_outside.setter
@@ -451,7 +454,7 @@ class GraphEditor(SequencerEditor):
 
     @property
     def focus_range(self) -> Optional[Tuple[float, float]]:
-        """``(t0, t1)`` the host is working in -- the shots its scope shows --
+        """``(t0, t1)`` the host is working in -- the range its scope shows --
         or None; what lies outside is veiled while :attr:`dim_outside`."""
         return self._focus_range
 
@@ -540,13 +543,13 @@ class GraphEditor(SequencerEditor):
         self._fit_values(self._value_range(self._shown, lo, hi))
 
     def frame_selection(self) -> None:
-        """Frame the selected keys; with none, the active shot -- its time,
-        and the values the curves take there (``SequencerWidget.frame_shot``,
-        what F does in the track view) -- or, with no shot, every curve
+        """Frame the selected keys; with none, the active range -- its time,
+        and the values the curves take there (``SequencerWidget.frame_range``,
+        what F does in the track view) -- or, with no range, every curve
         (:meth:`frame_all`)."""
         if not self._sel:
             self._framed_once = True
-            if not self.sequencer.frame_shot():
+            if not self.sequencer.frame_range():
                 self.frame_all()
             return
         times = [t for _cid, t in self._sel]
@@ -890,7 +893,7 @@ class GraphEditor(SequencerEditor):
 
     def build_context_menu(self) -> QtWidgets.QMenu:
         """The right-click menu: tangents, weighting, infinity, keys, view."""
-        menu = MenuUtils._styled_menu()
+        menu = MenuUtils.styled_menu()
         has_sel = bool(self._sel)
         if self._tangent_types:
             sub = menu.addMenu("Tangents")
@@ -918,7 +921,7 @@ class GraphEditor(SequencerEditor):
         # The host's rows for the selection, above the view rows.
         self.key_menu_requested.emit(menu, self.selected_keys())
         menu.addSeparator()
-        menu.addAction("Frame Shot", self.sequencer.frame_shot)
+        menu.addAction("Frame Range", self.sequencer.frame_range)
         menu.addAction("Frame Selection", self.frame_selection).setEnabled(has_sel)
         menu.addAction("Frame All", self.frame_all)
         for row in self.options():  # the Options menu's rows, one source
@@ -1522,7 +1525,7 @@ class _GraphCanvas(HeldGeometryMixin, QtWidgets.QGraphicsObject):
     GRID_ZERO = QtGui.QColor("#4E4E4E")
     LABEL = QtGui.QColor("#8A8A8A")
     KEY = QtGui.QColor("#D6D6D6")
-    #: Over the time outside the shots on screen (``GraphEditor.dim_outside``).
+    #: Over the time outside the host's working span (``GraphEditor.dim_outside``).
     VEIL = QtGui.QColor(43, 43, 43, 150)
     KEY_SELECTED = QtGui.QColor("#FFD84A")
     KEY_BREAKDOWN = QtGui.QColor("#5FD35F")
@@ -1911,7 +1914,7 @@ class _GraphPage(QtWidgets.QWidget):
         self._hidden: Set[str] = set()
         self.setMinimumWidth(0)
         layout = QtWidgets.QVBoxLayout(self)
-        # Below the Options band (level with the ruler and the shot lane).
+        # Below the Options band (level with the ruler and its lanes).
         layout.setContentsMargins(2, int(editor.sequencer._content_top) + 1, 2, 2)
         layout.setSpacing(2)
 
@@ -1929,6 +1932,16 @@ class _GraphPage(QtWidgets.QWidget):
         self.tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_menu)
         layout.addWidget(self.tree, 1)
+
+    def follow_header(self) -> None:
+        """Keep the page under the Options band as the header's lanes come
+        and go (``SequencerWidget.add_layer``): the editor may be built
+        before a host adds its layer."""
+        layout = self.layout()
+        m = layout.contentsMargins()
+        top = int(self._editor.sequencer._content_top) + 1
+        if m.top() != top:
+            layout.setContentsMargins(m.left(), top, m.right(), m.bottom())
 
     # -- outline -----------------------------------------------------------------
 
@@ -2070,7 +2083,7 @@ class _GraphPage(QtWidgets.QWidget):
         their outline ``id``); a curve row's hides curves, with the host's
         track rows (``track_menu_requested``) for the curves' objects.
         """
-        menu = MenuUtils._styled_menu(self)
+        menu = MenuUtils.styled_menu(self)
         header = self._editor.sequencer._header
         if item is None:
             self._add_show_hidden(menu)

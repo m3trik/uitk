@@ -239,7 +239,7 @@ class ParamRegistry(object):
             FORMATTER = Formatters.lua_literal  # optional: python_literal by default
             SUPERSESSIONS = SUPERSESSIONS  # optional
 
-    The subclass IS what :class:`~uitk.bridge.slots.BridgeSlotsBase` expects as
+    The subclass IS what :class:`~uitk.bridge.slots.ParamPanelSlots` expects as
     its ``params_module`` (``PARAMS`` / ``referenced_keys`` / ``SUPERSESSIONS``)
     and the namespace a headless engine calls (``Parameters.defaults()``,
     ``Parameters.render_context(values)``). A registry whose rule differs

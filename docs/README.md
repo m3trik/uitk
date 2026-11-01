@@ -2,15 +2,15 @@
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide6%20via%20qtpy-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/Tests-5600%20passed-brightgreen.svg)](../test/)
+[![Tests](https://img.shields.io/badge/Tests-5826%20passed-brightgreen.svg)](../test/)
 
 # uitk
 
 <!-- short_description_start -->
-**Name it, and it connects.** UITK is a convention-driven Qt framework that eliminates boilerplate. Design in Qt Designer, name your widgets, write matching Python methods — UITK discovers the files, auto-wires signals, persists state, and applies themes. Every convention is overridable when you need control.
+**Name it, and it connects.** UITK is a convention-driven Qt framework that eliminates boilerplate. Build the UI in Qt Designer or in code (`sb.register_ui`), name your widgets, write matching Python methods — UITK discovers the files, auto-wires signals, persists state, and applies themes. Every convention is overridable when you need control.
 <!-- short_description_end -->
 
-Built on `qtpy` over PySide6. Runs standalone or hosted inside DCCs (Maya, Blender, 3ds Max) through a pluggable handler ecosystem, and ships a marking-menu subsystem for radial-menu tool shells.
+Built on `qtpy` over PySide6. Runs standalone or hosted inside DCCs (Maya, Blender) through a pluggable handler ecosystem, and ships a marking-menu subsystem for radial-menu tool shells that any application hosts through a small adapter (`MarkingMenu(host=...)`).
 
 ## Why
 
@@ -238,7 +238,7 @@ sb.handlers.ui.show(ui, pos="cursor")
 sb.configurable.ui.default_position.set("cursor")  # handler DEFAULTS merged here
 ```
 
-The built-in `UiHandler` applies default styling and positions windows. `MarkingMenu` registers itself as `sb.handlers.marking_menu`. Consumers like tentacle ship subclassed handlers (`MayaUiHandler`) for DCC-specific behavior.
+The built-in `UiHandler` applies default styling and positions windows. `MarkingMenu` registers itself as `sb.handlers.marking_menu`. The host libraries ship subclassed handlers for DCC-specific behavior (mayatk's `MayaUiHandler`, blendertk's `BlenderUiHandler`), handed to the marking menu by their `*MarkingMenuHost` adapters (`ui_handler`).
 
 ---
 
@@ -262,20 +262,26 @@ def launch(sb=None):
     return ui
 ```
 
-### Marking-menu DCC shell (tentacle pattern)
+### Marking-menu shell hosted by an application (tentacle pattern)
 ```python
-from uitk import MarkingMenu
+from uitk import MarkingMenu, PureMarkingMenuHost
 
-class TclMaya(MarkingMenu):
-    def __init__(self, parent=None, **kwargs):
-        bindings = {
-            "Key_F12": "main#startmenu",
-            "Key_F12|LeftButton": "cameras#startmenu",
-            "Key_F12|RightButton": "scene#startmenu",
-        }
-        super().__init__(parent, ui_source="ui", slot_source="slots",
-                         bindings=bindings, **kwargs)
+class MyAppHost(PureMarkingMenuHost):     # override only what the app answers differently
+    def main_window(self):
+        return my_app.main_window()
+
+menu = MarkingMenu(
+    host=MyAppHost(),
+    ui_source="ui",
+    slot_source="slots",
+    bindings={
+        "Key_F12": "main#startmenu",
+        "Key_F12|LeftButton": "cameras#startmenu",
+        "Key_F12|RightButton": "scene#startmenu",
+    },
+)
 ```
+The host protocol: [Marking Menu — Hosting it in an application](https://github.com/m3trik/uitk/blob/main/docs/MARKING_MENU.md#hosting-it-in-an-application-markingmenuhost).
 
 ---
 
@@ -283,7 +289,7 @@ class TclMaya(MarkingMenu):
 
 One line each — the deep docs are linked below:
 
-- **Timeline sequencer** — `SequencerWidget`, an NLE-style timeline: tracks, draggable clips and keyframes, markers, shot lanes, range/gap overlays, undo/redo, transport controls, audio scrubbing. Powers mayatk's Shot Sequencer.
+- **Timeline sequencer** — `SequencerWidget`, an NLE-style timeline: tracks, draggable clips and keyframes, markers, range overlays, host layers (a lane under the ruler, items over the rows: `add_layer`), undo/redo, transport controls, audio scrubbing. Powers tentacle's Shot Sequencer, whose shots are a layer.
 - **Compiled UI loading** — `.ui` files compile to hash-stamped `_ui.py` modules (`python -m uitk.compile`, `--check` for CI); stale output recompiles automatically, `precompile_async()` warms a fleet in the background, and compilation uses the running binding's own `uic` so output stays loadable across mixed PySide versions (a venv's PySide6 vs. Maya's bundled one).
 - **Shortcut registry & editor** — slot hotkeys, app-global shortcuts (`GlobalShortcut`), and named commands share one registry; `sb.editors.show("shortcut_editor")` opens a table editor with in-cell key capture, collision checking, and preset import/export.
 - **Named presets** — `ui.presets` (`PresetManager`) snapshots widget values into named presets backed by pythontk's `PresetStore`; `make_preset_combo()` returns a ready-wired picker.
@@ -300,7 +306,7 @@ Rendered from the GitHub repository:
 - [Slots Contract](https://github.com/m3trik/uitk/blob/main/docs/SLOTS.md) — naming, signals, parameter injection, debounce, timeout, refresh
 - [Widgets](https://github.com/m3trik/uitk/blob/main/docs/WIDGETS.md) — per-widget reference with the sequencer and editors subpackages
 - [Marking Menu](https://github.com/m3trik/uitk/blob/main/docs/MARKING_MENU.md) — radial menu subsystem
-- [Architecture](https://github.com/m3trik/uitk/blob/main/docs/ARCHITECTURE.md) — Switchboard mixins, registries, lifecycle
+- [Architecture](https://github.com/m3trik/uitk/blob/main/docs/ARCHITECTURE.md) — the Switchboard and its collaborators, registries, lifecycle
 - [Cookbook](https://github.com/m3trik/uitk/blob/main/docs/COOKBOOK.md) — recipes from real consumers
 - [Tutorial](https://github.com/m3trik/uitk/blob/main/docs/EXAMPLES.md) — step-by-step walkthrough
 - [API Reference](https://github.com/m3trik/uitk/blob/main/docs/API_REFERENCE.md) — public signatures

@@ -78,6 +78,65 @@ class TestSwitchboardSources(QtBaseTestCase):
         )
         self.assertTrue(len(sb.registry.ui_registry) >= 1)
 
+    def test_a_relative_source_resolves_beside_the_calling_file(self):
+        """Regression: the deprecation wrapper on ``Switchboard.__init__``
+        (``ptk.Deprecation.parameter``) added pythontk's ``deprecation.py`` to
+        the frame chain the default ``base_dir`` counts, so a relative
+        ``ui_source`` -- every quickstart's ``"editor.ui"`` -- resolved under
+        ``pythontk/core_utils`` and the app found no UI. Fixed: 2026-10-31."""
+        import importlib.util
+
+        caller = os.path.join(self.test_dir, "caller_app.py")
+        with open(caller, "w") as f:
+            f.write(
+                "from uitk.switchboard import Switchboard\n\n"
+                "def build():\n"
+                "    return Switchboard(ui_source='test.ui')\n"
+            )
+        spec = importlib.util.spec_from_file_location("caller_app", caller)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        sb = module.build()
+
+        paths = [os.path.normcase(e.filepath) for e in sb.registry.ui_registry]
+        self.assertIn(
+            os.path.normcase(os.path.join(self.test_dir, "test.ui")), paths
+        )
+
+    def test_a_slots_class_passed_in_is_registered_without_importing_its_file(self):
+        """Regression: a class handed to ``slot_source`` was found again by
+        scanning its file, which imported that file a second time (a loose one
+        as ``<stem>_ptk_loader_<id>``): the registry held a copy that was not the
+        class given, and the README quickstart (no ``__main__`` guard) re-ran
+        itself, nested, until it crashed. Fixed: 2026-10-31."""
+        import importlib.util
+
+        runs = os.path.join(self.test_dir, "runs.txt")
+        app = os.path.join(self.test_dir, "loose_app.py")
+        with open(app, "w") as f:
+            f.write(
+                f"with open({runs!r}, 'a') as log:\n"
+                "    log.write('run\\n')\n\n"
+                "class LooseSlots:\n"
+                "    def __init__(self, switchboard):\n"
+                "        self.sb = switchboard\n"
+            )
+        spec = importlib.util.spec_from_file_location("loose_app", app)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["loose_app"] = module  # imported, as a script's __main__ is
+        self.addCleanup(sys.modules.pop, "loose_app", None)
+        spec.loader.exec_module(module)
+
+        sb = Switchboard(slot_source=module.LooseSlots, base_dir=None)
+
+        registered = sb.registry.slot_registry.get(
+            classname="LooseSlots", return_field="classobj"
+        )
+        self.assertIs(registered, module.LooseSlots)
+        with open(runs) as log:
+            self.assertEqual(log.read().count("run"), 1, "the file was imported again")
+
     def test_tuple_of_paths(self):
         """Test sources as tuple of paths."""
         sb = Switchboard(ui_source=(self.test_dir,), base_dir=None)
@@ -139,6 +198,39 @@ class TestSwitchboardSources(QtBaseTestCase):
         )
         self.assertIn("test", [f.filename for f in sb.registry.ui_registry])
 
+    def test_register_leaves_out_the_excluded_files(self):
+        """``exclude`` drops a file from every location the call registers: the
+        .ui from ui_location, the module from slot_location."""
+        for name in ("kept", "dropped"):
+            with open(os.path.join(self.test_dir, f"{name}.ui"), "w") as f:
+                f.write("<?xml version='1.0'?><ui version='4.0'></ui>")
+            with open(os.path.join(self.test_dir, f"{name}.py"), "w") as f:
+                f.write(f"class {name.title()}Slots: pass")
+        sb = Switchboard(ui_source=None)
+
+        sb.register(
+            ui_location=self.test_dir, slot_location=self.test_dir, exclude=["dropped.*"]
+        )
+
+        uis = [f.filename for f in sb.registry.ui_registry]
+        self.assertIn("kept", uis)
+        self.assertNotIn("dropped", uis)
+        classes = [row.classname for row in sb.registry.slot_registry]
+        self.assertIn("KeptSlots", classes)
+        self.assertNotIn("DroppedSlots", classes)
+
+    def test_register_exclude_keeps_the_registrys_own_exclusions(self):
+        """A slot scan still skips a compiled ``*_ui.py`` when ``exclude`` is given."""
+        with open(os.path.join(self.test_dir, "panel_ui.py"), "w") as f:
+            f.write("class Ui_Panel: pass")
+        sb = Switchboard(ui_source=None)
+
+        sb.register(slot_location=self.test_dir, exclude="nothing.*")
+
+        classes = [row.classname for row in sb.registry.slot_registry]
+        self.assertIn("TestSlots", classes)
+        self.assertNotIn("Ui_Panel", classes)
+
     def test_register_icons(self):
         """Test registering icon locations."""
         sb = Switchboard(ui_source=None)
@@ -153,6 +245,129 @@ class TestSwitchboardSources(QtBaseTestCase):
         self.assertTrue(len(sb.registry.icon_registry) > 0)
         filenames = [icon.filename for icon in sb.registry.icon_registry]
         self.assertIn("test_icon", filenames)
+
+
+class TestCodeBuiltUi(QtBaseTestCase):
+    """``Switchboard.register_ui``: a UI built in code resolves, wraps and binds
+    as a ``.ui`` file does (2026-10-31)."""
+
+    def setUp(self):
+        super().setUp()
+        import tempfile
+
+        self.test_dir = tempfile.mkdtemp(prefix="uitk_code_built_")
+        with open(os.path.join(self.test_dir, "tool_slots.py"), "w") as f:
+            f.write(
+                "class ToolSlots:\n"
+                "    def __init__(self, switchboard):\n"
+                "        self.sb = switchboard\n"
+                "        self.calls = []\n\n"
+                "    def b000(self, *args):\n"
+                "        self.calls.append('b000')\n"
+            )
+        self.built = []
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+        super().tearDown()
+
+    def _build(self):
+        from qtpy import QtWidgets
+
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        button = QtWidgets.QPushButton("Go")
+        button.setObjectName("b000")
+        layout.addWidget(button)
+        self.built.append(widget)
+        return widget
+
+    def test_a_registered_ui_builds_once_on_first_ask_and_binds_by_object_name(self):
+        from qtpy import QtWidgets
+
+        sb = Switchboard(slot_source=self.test_dir, base_dir=None)
+        sb.register_ui("tool", self._build)
+        self.assertTrue(sb.is_registered_ui("tool"))
+        self.assertTrue(sb.ui_name_resolves("tool"))
+        self.assertEqual(self.built, [], "built before anything asked for it")
+
+        ui = sb.loaded_ui.tool
+        self.assertIsInstance(ui, sb.registered_widgets.MainWindow)
+        self.assertIs(sb.get_ui("tool"), ui)
+        self.assertEqual(len(self.built), 1)
+
+        ui.show()
+        for _ in range(5):
+            QtWidgets.QApplication.processEvents()
+        ui.findChild(QtWidgets.QPushButton, "b000").click()
+        self.assertEqual(sb.get_slots_instance(ui).calls, ["b000"])
+        ui.close()
+
+    def test_a_builder_that_returns_no_widget_is_named(self):
+        sb = Switchboard(slot_source=self.test_dir, base_dir=None)
+        sb.register_ui("broken", lambda: "not a widget")
+        with self.assertRaises(Exception) as raised:
+            sb.get_ui("broken")
+        self.assertIn("broken", str(raised.exception))
+
+    def test_register_ui_refuses_a_non_callable(self):
+        sb = Switchboard(base_dir=None)
+        with self.assertRaises(TypeError):
+            sb.register_ui("tool", "tool.ui")
+
+    def test_a_ui_file_of_the_same_name_wins(self):
+        with open(os.path.join(self.test_dir, "tool.ui"), "w") as f:
+            f.write(
+                '<?xml version="1.0" encoding="UTF-8"?>\n<ui version="4.0">\n'
+                ' <class>tool</class>\n <widget class="QWidget" name="tool"/>\n'
+                " <resources/>\n <connections/>\n</ui>\n"
+            )
+        sb = Switchboard(ui_source=self.test_dir, slot_source=self.test_dir, base_dir=None)
+        sb.register_ui("tool", self._build)
+        self.assertEqual(sb.loaded_ui.tool.path and os.path.normcase(sb.loaded_ui.tool.path),
+                         os.path.normcase(self.test_dir))
+        self.assertEqual(self.built, [])
+        self.assertEqual(sb.ui_names(), ["tool"], "a name in both is listed once")
+
+    # Every name enumeration reads one list, files and builders alike (2026-11-01):
+    # each used to read the file registry alone, so a UI built in code had no
+    # relatives, no legal-name lookup, no browser row and no shortcut-editor entry.
+
+    def _write_ui(self, name):
+        with open(os.path.join(self.test_dir, f"{name}.ui"), "w") as f:
+            f.write(
+                '<?xml version="1.0" encoding="UTF-8"?>\n<ui version="4.0">\n'
+                f' <class>{name}</class>\n <widget class="QWidget" name="{name}"/>\n'
+                " <resources/>\n <connections/>\n</ui>\n"
+            )
+
+    def test_ui_names_lists_the_files_then_the_uis_built_in_code(self):
+        self._write_ui("alpha")
+        sb = Switchboard(ui_source=self.test_dir, base_dir=None)
+        sb.register_ui("beta#submenu", self._build)
+        self.assertEqual(sb.ui_names(), ["alpha", "beta#submenu"])
+        self.assertEqual(self.built, [], "listing never builds")
+
+    def test_find_ui_filename_matches_a_ui_built_in_code(self):
+        sb = Switchboard(base_dir=None)
+        sb.register_ui("editor#submenu", self._build)
+        self.assertEqual(
+            sb.find_ui_filename("editor_submenu", unique_match=True), "editor#submenu"
+        )
+        self.assertEqual(sb.find_ui_filename("editor_submenu"), ["editor#submenu"])
+
+    def test_a_ui_built_in_code_has_relatives(self):
+        self._write_ui("main#startmenu")
+        sb = Switchboard(ui_source=self.test_dir, base_dir=None)
+        sb.register_ui("main#submenu", self._build)
+        sb.register_ui("main#submenu#deep", self._build)
+        self.assertEqual(
+            sb.get_ui_relatives("main#submenu", upstream=True, exact=True, downstream=True),
+            ["main#startmenu", "main#submenu#deep"],
+        )
+        self.assertEqual(self.built, [], "a name answer never builds")
 
 
 if __name__ == "__main__":

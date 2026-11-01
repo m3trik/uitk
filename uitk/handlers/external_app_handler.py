@@ -10,31 +10,95 @@ so a host normally registers nothing — :meth:`ExternalAppHandler.discover`
 from its distribution automatically. A host only needs to point at the
 *provider* package when it might not be installed yet::
 
-    sb.handlers.external_app.add_provider("extapps")   # install-on-demand
-    sb.handlers.external_app.launch("compositor")      # installs + launches
+    sb.handlers.external_app.add_provider("mypkg-dist", probe_module="mypkg")
+    sb.handlers.external_app.launch("my_app")          # installs + launches
 
 Direct registration is still available for ad-hoc / out-of-band apps::
 
     sb.handlers.external_app.register(
-        "compositor",
-        module="extapps.texture_maps.compositor",
-        entry="CompositorUI",
-        install_spec="extapps",
+        "my_app",
+        module="mypkg.apps",
+        entry="MyAppUI",
+        install_spec="mypkg-dist",
     )
+
+**Version ranges (optional).** A host that opens another product's apps pins
+the range it was released against by giving the provider's spec one::
+
+    sb.handlers.external_app.add_provider("mypkg-dist>=0.8.0,<0.9", probe_module="mypkg")
+
+Every app of that distribution then installs inside the range, and one
+installed outside it is offered an update (:attr:`ExternalAppHandler.prompt`)
+instead of launching. A spec without specifiers is not checked at all.
 """
 
+import html
 import os
 import re
 import shutil
 import subprocess
 import sys
-from typing import Dict, Iterable, Optional, Set
+from typing import Callable, Dict, Iterable, Optional, Set
 
 import pythontk as ptk
 
 from uitk.switchboard import Switchboard
 from uitk.handlers.base_handler import BaseHandler
 from uitk.handlers.handler_entry import HandlerEntry
+from uitk.handlers._version_gate import _VersionGate
+from uitk._facade import _Part
+
+
+class _InstallOffer:
+    """The question before installing or updating a package on demand, and the
+    notice an update to an already-imported package needs.
+
+    One wording for both install-on-demand paths -- :meth:`ExternalAppHandler.launch`
+    and ``OptionalPackageManager.ensure`` -- kept here because handlers sit
+    below managers. *prompt* is ``(message, *buttons) -> chosen_button``
+    (``Switchboard.message_box``); messages are HTML, so every value is escaped
+    (a cap's ``<`` would otherwise open a tag).
+    """
+
+    @staticmethod
+    def ask(prompt, spec: str, *, label: str, installed: Optional[str] = None) -> bool:
+        """Ask to install *spec* (*installed* None) or update the installed one.
+
+        Parameters:
+            prompt: The Yes/No prompt.
+            spec: The requirement offered, e.g. ``"extapps>=0.8.0,<0.9"``.
+            label: What needs it ("This panel", an app's name).
+            installed: The version present: None when absent, ``""`` when present
+                but unreadable.
+
+        Returns:
+            True only on "Yes".
+        """
+        verb = "install" if installed is None else "update"
+        if installed is None:
+            detail = ""
+        elif installed:
+            detail = f" ({html.escape(installed)} is installed)"
+        else:
+            detail = " (the installed one does not satisfy it)"
+        answer = prompt(
+            f"<b>{html.escape(label)} needs the package "
+            f"<i>{html.escape(spec)}</i>{detail}.</b><br><br>"
+            f"{verb.capitalize()} it now?",
+            "Yes",
+            "No",
+        )
+        return answer == "Yes"
+
+    @staticmethod
+    def restart(prompt, name: str) -> None:
+        """Say an update of *name* was written but this session still holds the old import."""
+        prompt(
+            f"<b>Updated {html.escape(name)} on disk.</b><br><br>"
+            f"Restart this session to pick it up — a package already imported "
+            f"cannot be swapped in place.",
+            "Ok",
+        )
 
 
 class ExternalAppHandler(BaseHandler):
@@ -87,7 +151,7 @@ class ExternalAppHandler(BaseHandler):
 
     # Entry-point group hosts use to advertise *provider packages* — a
     # package that ships discoverable apps but may not be installed yet.
-    # ``name = install_spec`` (e.g. ``extapps = "extapps"``). Read by
+    # ``name = install_spec`` (e.g. ``mypkg = "mypkg-dist"``). Read by
     # :meth:`discover`; absent providers self-install on first launch
     # of any of their apps (see :meth:`_bootstrap_providers`).
     PROVIDER_GROUP: str = "uitk.external_app_providers"
@@ -122,6 +186,11 @@ class ExternalAppHandler(BaseHandler):
         self._subprocesses: Dict[str, "subprocess.Popen"] = {}
         # module -> its docstring's summary: an app's fallback description.
         self._summaries: Dict[str, str] = {}
+        #: ``(message, *buttons) -> chosen_button`` asking whether to update an
+        #: app installed outside its version range -- the Yes/No contract
+        #: ``OptionalPackageManager.ensure`` takes. None asks through the
+        #: Switchboard's ``message_box``. Only a ranged spec ever reaches it.
+        self.prompt: Optional[Callable[..., str]] = None
         if auto_discover:
             self._discover_providers()
             self.discover()
@@ -141,7 +210,7 @@ class ExternalAppHandler(BaseHandler):
         Example (in an app's ``pyproject.toml``)::
 
             [project.entry-points."uitk.external_apps.in_process"]
-            metashape_workflow = "metashape_workflow:MetashapeWorkflowUI [photogrammetry,materials]"
+            my_app = "mypkg.apps:MyAppUI [photogrammetry,materials]"
 
         ``name = module:Class [tag1,tag2,...]`` — name becomes the
         registration key, ``module:Class`` becomes module + entry,
@@ -447,7 +516,13 @@ class ExternalAppHandler(BaseHandler):
 
         Parameters:
             install_spec: ``pip install`` target (PyPI name, ``name[extra]``,
-                ``git+https://...`` URL, ...).
+                ``git+https://...`` URL, ...). A version range here
+                (``"extapps>=0.8.0,<0.9"``) is the host's statement of the
+                releases it works with: every app of the distribution installs
+                inside it, and one installed outside it is offered an update
+                rather than launched (see :meth:`launch`). This is the one place
+                to state it -- discovery registers each app under the bare
+                distribution name, and an entry-point value cannot carry a range.
             probe_module: Import name used to check whether the provider is
                 already present (avoids a needless reinstall). Defaults to
                 the spec's base package name.
@@ -468,7 +543,7 @@ class ExternalAppHandler(BaseHandler):
         """Register providers advertised under :attr:`PROVIDER_GROUP`.
 
         Lets a host declare its providers declaratively in its own
-        ``pyproject.toml`` (``extapps = "extapps"``) instead of in code.
+        ``pyproject.toml`` (``mypkg = "mypkg-dist"``) instead of in code.
         The entry-point name is the probe/import name; its value is the
         install spec. Returns the count registered.
         """
@@ -482,7 +557,9 @@ class ExternalAppHandler(BaseHandler):
             count += 1
         return count
 
-    def _bootstrap_providers(self, python: Optional[str] = None) -> bool:
+    def _bootstrap_providers(
+        self, python: Optional[str] = None, label: Optional[str] = None
+    ) -> bool:
         """Make untried providers' apps resolvable, then re-discover.
 
         Called on a launch miss. Each provider is attempted at most once
@@ -490,6 +567,13 @@ class ExternalAppHandler(BaseHandler):
         name doesn't reinstall on every click. A provider that's already
         importable is left alone (no install) but discovery still re-runs,
         in case its apps weren't registered when the handler was built.
+
+        A provider with a version range installs inside it, and one present
+        outside it goes through the version gate first: an app only the
+        newer release ships is not registered at all, so the miss is where
+        that update has to be offered. *label* names the app asked for. A
+        declined or unfinished update raises, and the provider stays untried
+        so the next launch asks again.
 
         Returns True if any provider was attempted this call (so the
         caller should re-resolve the app); False if there was nothing
@@ -512,6 +596,21 @@ class ExternalAppHandler(BaseHandler):
                     else ExternalAppHandler._default_python()
                 )
             )
+            # A range another registration states for this distribution covers
+            # a bare spec too, so a bare provider never installs past the cap.
+            requirement = self._versions.requirement(spec, prov["probe_module"])
+            if requirement is not None:
+                try:
+                    self._versions.gate(
+                        requirement,
+                        prov["probe_module"],
+                        py,
+                        label=label or prov["probe_module"],
+                        in_process=mode == "in_process",
+                    )
+                except RuntimeError:
+                    self._bootstrapped.discard(spec)
+                    raise
             if self._is_importable(prov["probe_module"], py):
                 continue  # already present — re-discovery below surfaces it
             # A DCC host binary can't be pip'd directly (the install would hang),
@@ -526,13 +625,16 @@ class ExternalAppHandler(BaseHandler):
                     f"(provision it into the host env)."
                 )
                 continue
-            self.logger.info(f"[provider] installing {spec!r} into {pip_py}")
+            install = str(requirement) if requirement is not None else spec
+            self.logger.info(f"[provider] installing {install!r} into {pip_py}")
             try:
-                ptk.PackageManager(python_path=pip_py).install(spec)
+                ptk.PackageManager(python_path=pip_py).install(install)
             except Exception:
                 self.logger.warning(
-                    f"[provider] install of {spec!r} failed", exc_info=True
+                    f"[provider] install of {install!r} failed", exc_info=True
                 )
+            finally:
+                self._versions.forget()
         try:
             self.discover()
         except Exception:
@@ -540,6 +642,19 @@ class ExternalAppHandler(BaseHandler):
                 "[provider] post-bootstrap discover failed", exc_info=True
             )
         return True
+
+    # ── Version ranges (optional) ────────────────────────────────────────
+
+    #: The version ranges an app or provider states: which applies, the
+    #: version an interpreter would import, and the gate a launch passes
+    #: (:mod:`uitk.handlers._version_gate`).
+    _versions = _Part(_VersionGate)
+
+    def _requirement_for(self, cfg: dict) -> Optional["ptk.PackageRequirement"]:
+        """The version range app *cfg* must satisfy; None means no check at all
+        (its ``install_spec``'s own, else its provider's)."""
+        module = cfg.get("module") or ""
+        return self._versions.requirement(cfg.get("install_spec"), module.split(".")[0])
 
     def register(
         self,
@@ -559,7 +674,7 @@ class ExternalAppHandler(BaseHandler):
 
         Parameters:
             name: Unique identifier used with :meth:`launch`.
-            module: Importable module name (e.g. ``"extapps.texture_maps.compositor"``).
+            module: Importable module name (e.g. ``"mypkg.apps"``).
             entry: Class/callable inside *module* that returns a uitk
                 MainWindow when invoked. Required for ``mode="in_process"``.
                 In ``mode="subprocess"`` it's optional — if omitted the
@@ -880,10 +995,13 @@ class ExternalAppHandler(BaseHandler):
         own_import = self._import_code(type(self))
         if not (cfg and cfg.get("module") and sb_import and own_import):
             return None
+        # The range a provider states rides in the spec, so the snippet keeps it.
+        requirement = self._requirement_for(cfg)
+        spelled = dict(cfg, install_spec=str(requirement)) if requirement else cfg
         kwargs = [f"module={cfg['module']!r}"]
         for key in ("entry", "install_spec", "python", "show_kwargs"):
-            if cfg.get(key):
-                kwargs.append(f"{key}={cfg[key]!r}")
+            if spelled.get(key):
+                kwargs.append(f"{key}={spelled[key]!r}")
         in_process = cfg.get("mode") == "in_process"
         if in_process:
             kwargs.append("mode='in_process'")
@@ -1046,12 +1164,25 @@ class ExternalAppHandler(BaseHandler):
         positioning). Ignored in subprocess mode — the launch always
         starts the process.
 
+        When the app's ``install_spec`` -- or its provider's, see
+        :meth:`add_provider` -- states a version range, a missing package
+        installs inside it, and one installed outside it is never launched
+        silently: :attr:`prompt` offers the update, which pip makes with the
+        range. Without a range nothing about the version is read.
+
         Returns:
             ``subprocess.Popen`` in ``mode="subprocess"``, or the UI
             widget in ``mode="in_process"`` (already parented under
             the Switchboard's parent — typically the host DCC's main
             window — and shown/raised/activated when ``show=True``).
             Caller may re-parent or re-show but no longer has to.
+
+        Raises:
+            RuntimeError: The app is unavailable: an install failed, or the
+                installed version is outside its range and was not updated
+                (declined, or updated on disk for an in-process app whose
+                package this session already imported -- a restart picks it
+                up). The message says which.
         """
         overrides = (
             ("module", module),
@@ -1075,7 +1206,7 @@ class ExternalAppHandler(BaseHandler):
         # provider package isn't installed yet). Install the provider(s)
         # and re-discover, then re-resolve before giving up.
         if name and not cfg.get("module") and self._providers:
-            if self._bootstrap_providers():
+            if self._bootstrap_providers(label=name):
                 cfg = _resolve()
 
         if not cfg.get("module"):
@@ -1087,6 +1218,19 @@ class ExternalAppHandler(BaseHandler):
             if run_mode == "in_process"
             else (cfg.get("python") or ExternalAppHandler._default_python())
         )
+
+        # Checked BEFORE the importability probe, which imports a dotted
+        # module's parent packages here: read first, a package already in
+        # sys.modules is one this session loaded, the case that needs a restart.
+        requirement = self._requirement_for(cfg)
+        if requirement is not None:
+            self._versions.gate(
+                requirement,
+                cfg["module"],
+                py,
+                label=name or cfg["module"],
+                in_process=run_mode == "in_process",
+            )
 
         importable = self._is_importable(cfg["module"], py)
         if not importable and name and module is None:
@@ -1125,11 +1269,16 @@ class ExternalAppHandler(BaseHandler):
                 importable = self._is_importable(cfg["module"], py)
 
         if not importable:
-            spec = cfg.get("install_spec")
+            # A range installs inside itself, not at the index's latest.
+            spec = (
+                str(requirement) if requirement is not None else cfg.get("install_spec")
+            )
             if not spec:
                 # No per-app spec — a registered provider may still own this
                 # module. Install providers and retry once before failing.
-                if self._providers and self._bootstrap_providers(python=py):
+                if self._providers and self._bootstrap_providers(
+                    python=py, label=name or cfg["module"]
+                ):
                     importable = self._is_importable(cfg["module"], py)
                 if not importable:
                     raise RuntimeError(
@@ -1158,6 +1307,8 @@ class ExternalAppHandler(BaseHandler):
                     raise RuntimeError(
                         f"Failed to install {spec!r} into {pip_py}: {e}"
                     ) from e
+                finally:
+                    self._versions.forget()
                 if not self._is_importable(cfg["module"], py):
                     raise RuntimeError(
                         f"Install of {spec!r} completed but {cfg['module']!r} "
@@ -1279,7 +1430,7 @@ class ExternalAppHandler(BaseHandler):
         method on a dead wrapper raises ``RuntimeError``.
 
         ``AttributeError`` is caught for the same reason
-        ``SwitchboardWidgetMixin._widget_is_alive`` catches it: some shiboken
+        ``Switchboard._widget_is_alive`` catches it: some shiboken
         builds raise that instead for a PARTIALLY-disposed wrapper, and this
         copy used to let it escape -- so the one case a liveness probe exists
         for could still propagate out of the cache lookup at :meth:`_cached`.

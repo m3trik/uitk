@@ -339,7 +339,7 @@ class ExampleSlots(ptk.LoggingMixin):
         *text* is optional because a slot is not only driven by its signal: a
         keyboard shortcut (this one is bindable — see the shortcut editor) and
         a bare ``widget.call_slot()`` both dispatch with **no** arguments.
-        ``Switchboard._adapt_shortcut_callback`` injects only ``widget``, so a
+        ``_Shortcuts._adapt_shortcut_callback`` injects only ``widget``, so a
         required payload positional would raise ``TypeError`` inside Qt's
         activated handler — a bare traceback, attributable to nothing. Reading
         the field is also what a manual invoke should mean.

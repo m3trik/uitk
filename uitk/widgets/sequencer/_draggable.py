@@ -87,7 +87,7 @@ class HeldGeometryMixin:
     dereferences it (a pure-virtual call in
     ``QGraphicsItemPrivate::effectiveBoundingRect``).  Reproduced 2026-10-07:
     a rebuild clears the track rows before retiring the range highlight, and
-    the shot sequencer's first new shot, undone, crashed on the repaint.
+    a host layer's first new range, undone, crashed on the repaint.
 
     So the geometry is computed once and held: :meth:`sync` announces the
     change while the held geometry -- the indexed one -- is still what the
@@ -175,6 +175,19 @@ class DraggableItemMixin:
         """Host SequencerWidget — override where the timeline lives elsewhere."""
         tl = getattr(self, "_timeline", None)
         return tl.parent_sequencer if tl is not None else None
+
+    def _capture_drag_undo(self) -> None:
+        """Push the widget's undo snapshot on the drag's first real move, once.
+
+        The other half of the cancel paths below: a gesture that captured
+        sets ``_undo_captured``, and a cancel pops exactly that snapshot.
+        """
+        if self._undo_captured:
+            return
+        self._undo_captured = True
+        sq = self._drag_sequencer()
+        if sq is not None:
+            sq._capture_undo()
 
     def sceneEvent(self, event):
         """Cancel the drag when the mouse grab is stolen mid-gesture.

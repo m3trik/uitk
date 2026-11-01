@@ -32,8 +32,9 @@ class HandlerEntry:
             Should also be unique across handlers in the same
             Switchboard; collisions are tolerated (last-write wins
             in the browser model) but the browser warns.
-        kind: Short categorical label (e.g. ``"ui_file"``,
-            ``"external_subprocess"``, ``"external_in_process"``).
+        kind: Short categorical label (e.g. ``"ui_file"``, ``"ui_built"``
+            for a UI built in code, ``"external_subprocess"``,
+            ``"external_in_process"``).
             Rendered as a chip in the browser so users can tell
             launchables apart at a glance.
         handler: The handler that owns this entry. Browser dispatches

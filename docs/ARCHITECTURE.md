@@ -9,7 +9,7 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
 ## 1. Design principles
 
 1. **Convention over configuration.** Names carry meaning. UI filenames map to slot classes; `objectName`s map to methods; `#`-tags map to UI hierarchy. Every convention is overridable.
-2. **Composition over inheritance.** Widgets gain capabilities through narrow mixins (`MenuMixin`, `OptionBoxMixin`, `AttributesMixin`, `RichText`), not deep class trees. The Switchboard itself is split into private partials co-located in [uitk/switchboard/](../uitk/switchboard/) and glued together by `Switchboard` in `_core.py`.
+2. **Composition over inheritance.** Widgets gain capabilities through narrow mixins (`MenuMixin`, `OptionBoxMixin`, `AttributesMixin`, `RichText`), not deep class trees. The Switchboard itself is a facade (`_core.py`) over private collaborators in [uitk/switchboard/](../uitk/switchboard/), each owning one subsystem's state; every public method stays on `Switchboard`.
 3. **Lazy everything.** Widgets register on first access. UIs load on first attribute access (`sb.loaded_ui.editor`). Menus and option boxes create themselves only when touched. Slot signatures are introspected once, then cached.
 4. **Dependency injection, not global state.** Slot classes receive the `Switchboard` via constructor kwargs. Handlers are registered with the Switchboard. No singletons in the hot paths (`SingletonMixin` appears only where one-per-host *is* the semantics: `MarkingMenu`, and `BaseHandler` for handler instances).
 5. **Extend via registries and handlers.** New widgets, slots, icons, and UIs get added to typed registries. New behaviors (window positioning, styling, DCC integration) get added as handlers on `sb.handlers.*`.
@@ -53,36 +53,39 @@ How UITK is built internally, and why. Read this after the [User Guide](USER_GUI
 ## 3. Switchboard — the orchestrator
 
 [uitk/switchboard/_core.py](../uitk/switchboard/_core.py). The Switchboard
-class composes private partials co-located in the
-[uitk/switchboard/](../uitk/switchboard/) package:
+is a facade: each public method delegates in one line to a private
+collaborator co-located in the [uitk/switchboard/](../uitk/switchboard/)
+package, which owns that subsystem's behavior and state:
 
 ```python
-class Switchboard(
-    QtCore.QObject,
-    ptk.HelpMixin,                 # introspection helpers
-    ptk.LoggingMixin,              # named logger, log_prefix
-    SwitchboardSlotsMixin,         # slot resolution, Signals, SlotWrapper
-    SwitchboardShortcutMixin,      # keyboard shortcut registration
-    SwitchboardWidgetMixin,        # widget resolution + registration
-    SwitchboardRulesMixin,         # enable_when / show_when / text_from / value_from
-    SwitchboardWidgetValuesMixin,  # what a control's value means (read / write / change signal)
-    SwitchboardControlGroupsMixin, # button groups, toggle_multi, linked spin boxes, reset buttons
-    SwitchboardDialogsMixin,       # message/input/file/form dialogs, progress, busy cursor
-    SwitchboardPlacementMixin,     # center_widget, cursor offset
-    SwitchboardEventLoopMixin,     # defer_with_timer, simulate_key_press, gc_protect
-    SwitchboardNameMixin,          # tag/base name parsing, legal names, name patterns (unpack_names)
-    SwitchboardEditorsMixin,       # sb.editors registry (style/hotkey/browser)
-    SwitchboardStyleMixin,         # sb.style — lazy StyleSheet accessor
-    SwitchboardNamespaceMixin,     # last: __getattr__ fallback to uitk symbols
-): ...
+class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
+    # collaborators, built in __init__:
+    _slots       # _Slots:         slot resolution, deferred init, connect_slot, repeat_last
+    _shortcuts   # _Shortcuts:     slot shortcuts, commands, cold-start standins
+    _widgets     # _Widgets:       widget resolution + registration, visibility policy
+    _gates       # _Gates:         gate / recheck_gates / unmet_policy
+    _rules       # _Rules:         enable_when / show_when / text_from / value_from
+    _values      # _WidgetValues:  what a control's value means (read / write / change signal)
+    _groups      # _ControlGroups: button groups, toggle_multi, linked spin boxes, reset buttons
+    _dialogs     # _Dialogs:       message/input/file/form dialogs, progress, busy cursor
+    _event_loop  # _EventLoop:     defer_with_timer, simulate_key_press, gc_protect
+    _names       # _Names:         tag/base name parsing, legal names, name patterns
+    # plus _Placement (center_widget), _UitkNamespace (the __getattr__ fallback to
+    # uitk symbols) and the sb.editors registry (_EditorRegistry); sb.style is the
+    # facade's own lazy StyleSheet accessor.
 ```
 
-Each partial lives in `uitk/switchboard/<name>.py`, one concept each (e.g.
-`slots.py`, `shortcuts.py`, `widgets.py`, `widget_values.py`, `rules.py`,
+Each collaborator lives in `uitk/switchboard/<name>.py`, one concept each
+(`slots.py`, `shortcuts.py`, `widgets.py`, `widget_values.py`, `rules.py`,
 `control_groups.py`, `dialogs.py`, `placement.py`, `event_loop.py`,
-`names.py`, `editors.py`, `style.py`, `namespace.py`). These are implementation pieces, not standalone mixins —
-the `switchboard` subpackage is the encapsulation boundary, not the
-individual partials.
+`names.py`, `editors.py`, `namespace.py`). Each is handed what it needs: the
+Switchboard where it reads state a host changes after construction
+(`context_tags`, settings, the name vocabulary), else getters for the
+Switchboard's logger and tables plus the other collaborators it uses -- never
+a captured value. One holding the Switchboard calls the public methods through
+it, so an override or patch of `sb.<method>` reaches every caller. They are implementation pieces, never
+imported outside the package — the `switchboard` subpackage is the
+encapsulation boundary.
 
 The companion module [uitk/managers/shortcut_manager.py](../uitk/managers/shortcut_manager.py)
 holds the *generic* shortcut primitives (``GlobalShortcut``,
@@ -327,7 +330,7 @@ Handlers extend UITK without subclassing `Switchboard`. Three touchpoints:
 - `apply_styles(ui)` — merges DEFAULT_STYLE with tag overrides (stacked menus get `translucentBgNoBorder`), applies to widget.
 - `show(ui, pos, force)` — positions window (`cursor`/`screen`/QPoint/tuple) with layout activation for accurate sizing.
 - `setup_lifecycle(ui, hide_signal)` — wires a hide signal (typically `marking_menu.key_show_release`) to `ui.request_hide()` for pin-aware auto-hide.
-- **Window persistence** — sole owner of pin-vs-hide chrome, for every init path (marking menu, launcher, already-open). `default_persistence(ui)` is the subclass hook for a per-window default (mayatk / blendertk declare their tool panels sticky there); `window_persistence` + `persistence_override(name)` are the persisted user choices the UI Browser edits. See [API_REFERENCE.md](API_REFERENCE.md#window-persistence).
+- **Window persistence** — sole owner of pin-vs-hide chrome, for every init path (marking menu, launcher, already-open). `default_persistence(ui)` is the per-window default (a UI registered under `UiHandler.PANEL_TAG`, a tool panel, is sticky; anything else transient; a subclass may override it); `window_persistence` + `persistence_override(name)` are the persisted user choices the UI Browser edits. See [API_REFERENCE.md](API_REFERENCE.md#window-persistence).
 
 `EditorHandler` ([handlers/editor_handler.py](../uitk/handlers/editor_handler.py)) — registered on every Switchboard as `sb.handlers.editor` (opt out with `handlers={"editor": None}`): lists the `sb.editors` windows as launcher rows, so the UI Browser finds itself.
 
@@ -576,7 +579,7 @@ uitk/
 │   ├── mainWindow.py          # MainWindow (UI wrapper)
 │   ├── menu.py                # Menu facade (frozen path): construction, show/hide lifecycle,
 │   │                          #   placement (MenuPositioner), MenuConfig
-│   ├── menu_parts/            # Menu's parts, one mixin per concept: _layout, _items,
+│   ├── menu_parts/            # Menu's collaborators, one per concept, each owning its state: _layout, _items,
 │   │                          #   _triggers, _leave, _popup_window, _actions, _persistent_mode,
 │   │                          #   _registration
 │   ├── popup/                 # popup kit Menu / ExpandableList / MainWindow share:
@@ -605,7 +608,7 @@ uitk/
 │       ├── attributes.py      # set_attributes / set_flags
 │       ├── menu_mixin.py      # .menu descriptor
 │       ├── option_box_mixin.py # .option_box descriptor
-│       ├── text.py            # RichText, TextOverlay, TextTruncation
+│       ├── text.py            # RichTextFormatter, RichText, TextOverlay
 │       ├── tooltip_mixin.py   # TooltipPresenter + widget.tooltip / sb.tooltip (the DSL is pythontk.TooltipFormat)
 │       ├── item_format.py     # ItemFormatMixin: the table/tree format mixins' shared core
 │       ├── convert.py, size_grip.py, feedback.py,

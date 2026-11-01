@@ -3,15 +3,13 @@
 """The "Menu Actions" section: Apply, Restore Defaults and the presets selector.
 
 :class:`ActionButtonManager` owns the collapsible container the section lives
-in; the mixin decides, on first show, which of its entries the menu gets -- an
-Apply button that re-emits the anchor's ``clicked``, a Restore Defaults button
-driven by :class:`~uitk.managers.reset_gesture.ResetGesture` (mirrored onto
-other instances of the same menu), and a preset combo wired by the menu's
-:class:`~uitk.managers.preset_manager.PresetManager`.
+in; :class:`_MenuActions` decides, on first show, which of its entries the
+menu gets -- an Apply button that re-emits the anchor's ``clicked``, a Restore
+Defaults button driven by :class:`~uitk.managers.reset_gesture.ResetGesture`
+(mirrored onto other instances of the same menu), and a preset combo wired by
+the menu's :class:`~uitk.managers.preset_manager.PresetManager`.
 
-One part of :class:`~uitk.widgets.menu.Menu`, which inherits it; it holds no
-state of its own (``Menu.__init__`` declares every attribute used here) and
-is never instantiated alone.
+One part of :class:`~uitk.widgets.menu.Menu` (see ``menu_parts``).
 """
 
 from dataclasses import dataclass
@@ -25,6 +23,7 @@ from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 
 if TYPE_CHECKING:
     from uitk.widgets.collapsableGroup import CollapsableGroup
+    from uitk.widgets.menu import Menu
 
 
 @dataclass
@@ -220,65 +219,61 @@ class ActionButtonManager:
             self._container.hide()
 
 
-class _MenuActionsMixin:
-    """The "Menu Actions" section: Apply, Restore Defaults and the presets selector."""
+class _MenuActions:
+    """A :class:`Menu`'s "Menu Actions" section: Apply, Restore Defaults, presets.
 
-    @property
+    Owns the :class:`ActionButtonManager`, the two section switches behind
+    ``add_defaults_button`` / ``add_presets``, the Restore Defaults gesture and
+    the menu's :class:`~uitk.managers.preset_manager.PresetManager` (built on
+    first use). ``add_apply_button`` stays a public attribute of the menu.
+    """
+
+    def __init__(self, menu: "Menu", add_defaults_button: bool) -> None:
+        self._menu = menu
+        self.button_manager = ActionButtonManager(menu)
+        self.add_defaults_button = add_defaults_button
+        self.add_presets = False
+        self.defaults_gesture: Optional[ResetGesture] = None
+        self.preset_manager = None
+
     def presets(self):
-        """Lazy-initialized PresetManager namespace for saving/loading named presets.
-
-        The simplest way to enable presets is via :attr:`add_presets`::
-
-            widget.menu.add_presets = True
-            widget.menu.presets.preset_dir = "~/.myapp/presets"  # optional
-
-        For advanced use, call ``setup()`` directly::
-
-            widget.menu.presets.setup(preset_dir="~/.myapp/presets")
-
-        Returns:
-            PresetManager: The preset manager bound to this menu.
-        """
-        if not hasattr(self, "_preset_manager"):
+        """The menu's PresetManager, built on first use."""
+        if self.preset_manager is None:
             from uitk.managers.preset_manager import PresetManager
 
-            self._preset_manager = PresetManager(parent=self)
-        return self._preset_manager
+            self.preset_manager = PresetManager(parent=self._menu)
+        return self.preset_manager
 
-    @presets.setter
-    def presets(self, _):
-        """No-op setter so the switchboard can harmlessly reassign."""
-        pass
-
-    def _setup_apply_button(self):
+    def setup_apply_button(self):
         """Set up the apply button with proper configuration.
 
         This method creates an apply button that emits the parent's 'clicked' signal
         if available. The button is only created if the clicked signal has connections.
         """
-        if not self.parent():
-            self.logger.debug(
+        menu = self._menu
+        if not menu.parent():
+            menu.logger.debug(
                 "_setup_apply_button: No parent, skipping apply button setup"
             )
             return
 
-        if not hasattr(self.parent(), "clicked"):
-            self.logger.debug(
+        if not hasattr(menu.parent(), "clicked"):
+            menu.logger.debug(
                 "_setup_apply_button: Parent has no 'clicked' signal, skipping"
             )
             return
 
         # Check if the clicked signal has any receivers (connections)
         try:
-            receiver_count = self.parent().receivers(QtCore.SIGNAL("clicked()"))
+            receiver_count = menu.parent().receivers(QtCore.SIGNAL("clicked()"))
             if receiver_count == 0:
-                self.logger.debug(
+                menu.logger.debug(
                     "_setup_apply_button: Parent's 'clicked' signal has no connections, skipping"
                 )
                 return
         except (AttributeError, TypeError) as e:
             # If we can't check receivers, proceed anyway (fail-safe)
-            self.logger.debug(
+            menu.logger.debug(
                 f"_setup_apply_button: Could not check signal receivers ({e}), proceeding anyway"
             )
 
@@ -286,121 +281,125 @@ class _MenuActionsMixin:
         # Button should be visible if menu has items
         config = _ActionButtonConfig(
             text="Apply",
-            callback=lambda: self.parent().clicked.emit(),
+            callback=lambda: menu.parent().clicked.emit(),
             tooltip="Execute the command",
-            visible=self.contains_items,  # Visible if menu already has items
+            visible=menu.contains_items,  # Visible if menu already has items
             fixed_height=26,
         )
 
         # Add the apply button using the button manager
-        self._button_manager.add_button("apply", config)
+        self.button_manager.add_button("apply", config)
 
         # Add the action button container to the central widget layout
         # (it goes in the central area, after the grid layout)
-        self.centralWidgetLayout.addWidget(self._button_manager.container)
+        menu.centralWidgetLayout.addWidget(self.button_manager.container)
 
-        self.logger.debug(
+        menu.logger.debug(
             "_setup_apply_button: Apply button created and added to layout"
         )
 
-    def _update_apply_button_visibility(self):
+    def update_apply_button_visibility(self):
         """Update apply button visibility based on menu state.
 
         The apply button should be visible whenever the menu contains items.
         """
-        if not self.add_apply_button:
+        menu = self._menu
+        if not menu.add_apply_button:
             return
 
-        apply_button = self._button_manager.get_button("apply")
+        apply_button = self.button_manager.get_button("apply")
         if not apply_button:
             return
 
-        should_show = self.contains_items
+        should_show = menu.contains_items
 
         if should_show:
-            self._button_manager.show_button("apply")
-            self.logger.debug("_update_apply_button_visibility: Showing apply button")
+            self.button_manager.show_button("apply")
+            menu.logger.debug("_update_apply_button_visibility: Showing apply button")
         else:
-            self._button_manager.hide_button("apply")
-            self.logger.debug("_update_apply_button_visibility: Hiding apply button")
+            self.button_manager.hide_button("apply")
+            menu.logger.debug("_update_apply_button_visibility: Hiding apply button")
 
-    def _setup_defaults_button(self):
+    def setup_defaults_button(self):
         """Set up the restore defaults button."""
+        menu = self._menu
         config = _ActionButtonConfig(
             text="Restore Defaults",
-            visible=self.contains_items,
+            visible=menu.contains_items,
             fixed_height=18,
         )
-        btn = self._button_manager.add_button("defaults", config, index=0)
+        btn = self.button_manager.add_button("defaults", config, index=0)
         # Click resets, Shift+Click makes the current values the defaults,
         # Ctrl+Shift+Click returns to factory. The gesture teaches that in the
         # tooltip and previews it on the button while a modifier is held.
         # ``released`` matches the menu's other action buttons.
-        self._defaults_gesture = ResetGesture(
+        self.defaults_gesture = ResetGesture(
             btn,
-            state=lambda: StateManager.for_widget(self),
-            widgets=self._defaults_scope,
+            state=lambda: StateManager.for_widget(menu),
+            widgets=menu._defaults_scope,
             signal="released",
-            on_performed=self._sync_restore_defaults,
+            on_performed=menu._sync_restore_defaults,
         )
 
         # Rename button to allow finding it from other instances for synchronization
-        if self.objectName():
+        if menu.objectName():
             try:
                 # Handle switchboard suffixes if present
-                clean_name = self.objectName().split("#")[0]
+                clean_name = menu.objectName().split("#")[0]
                 btn.setObjectName(f"actionButton_defaults_{clean_name}")
             except Exception:
                 pass
 
-        if not self._button_manager.container.parent():
-            self.centralWidgetLayout.addWidget(self._button_manager.container)
+        if not self.button_manager.container.parent():
+            menu.centralWidgetLayout.addWidget(self.button_manager.container)
 
-    def _restore_menu_defaults(
+    def restore_menu_defaults(
         self, from_sync: bool = False, action: str = ResetGesture.RESET
     ):
         """Apply a defaults *action* (:class:`ResetGesture`) to this menu's fields.
 
         Runs through the window ``StateManager`` scoped to
-        :meth:`_defaults_scope`, so a menu resets FIELDS like a panel does:
+        :meth:`defaults_scope`, so a menu resets FIELDS like a panel does:
         option locks clear first and ``exclude_from_reset`` is honored. The
         Restore Defaults button reaches the same place through its gesture.
         """
-        state = StateManager.for_widget(self)
+        menu = self._menu
+        state = StateManager.for_widget(menu)
         if state is None:
-            self.logger.debug("_restore_menu_defaults: No state manager found")
+            menu.logger.debug("_restore_menu_defaults: No state manager found")
             return
-        ResetGesture.perform(state, action, self._defaults_scope())
-        self.logger.debug(f"_restore_menu_defaults: {action} complete")
+        ResetGesture.perform(state, action, menu._defaults_scope())
+        menu.logger.debug(f"_restore_menu_defaults: {action} complete")
 
         if not from_sync:
-            self._sync_restore_defaults(action)
+            menu._sync_restore_defaults(action)
 
-    def _defaults_scope(self) -> list:
+    def defaults_scope(self) -> list:
         """This menu's fields: each item and its descendants.
 
         An option-box wrap replaces the item in the grid with its container (see
-        :meth:`_is_wrapped_item`), so the fields that carry reset buttons and
+        ``Menu._is_wrapped_item``), so the fields that carry reset buttons and
         locks are never grid items themselves.
         """
         return [
             widget
-            for item in self.get_items()
+            for item in self._menu.get_items()
             for widget in (item, *item.findChildren(QtWidgets.QWidget))
         ]
 
-    def _sync_restore_defaults(self, action: str = ResetGesture.RESET):
+    def sync_restore_defaults(self, action: str = ResetGesture.RESET):
         """Mirror a defaults *action* onto other instances of this menu.
 
         A reset or factory reset is mirrored; a save is not. Saved defaults are
         keyed by field name, which the instances share, so a mirrored save made
         each one save ITS current values over the ones the user just saved.
         """
-        if action == ResetGesture.SAVE or not self.objectName():
+        menu = self._menu
+        if action == ResetGesture.SAVE or not menu.objectName():
             return
 
         try:
-            clean_name = self.objectName().split("#")[0]
+            clean_name = menu.objectName().split("#")[0]
             target_btn_name = f"actionButton_defaults_{clean_name}"
         except Exception:
             return
@@ -409,7 +408,7 @@ class _MenuActionsMixin:
         if not app:
             return
 
-        current_btn = self._button_manager.get_button("defaults")
+        current_btn = self.button_manager.get_button("defaults")
 
         # Find match buttons in other menus
         for widget in app.allWidgets():
@@ -424,60 +423,31 @@ class _MenuActionsMixin:
                         break
                     parent = parent.parent()
 
-    @property
-    def add_defaults_button(self) -> bool:
-        """Whether the 'Restore Defaults' button is enabled.
-
-        Setting to ``False`` at runtime removes the button and hides
-        the action-button container if no other buttons remain.
-        """
-        return self._add_defaults_button
-
-    @add_defaults_button.setter
-    def add_defaults_button(self, value: bool) -> None:
-        self._add_defaults_button = value
+    def set_add_defaults_button(self, value: bool) -> None:
+        self.add_defaults_button = value
         if not value:
-            self._button_manager.remove_button("defaults")
+            self.button_manager.remove_button("defaults")
 
     # ------------------------------------------------------------------
     # Presets
     # ------------------------------------------------------------------
 
-    @property
-    def add_presets(self) -> bool:
-        """Whether the presets combo is enabled.
-
-        When ``True``, a ``ComboBox`` preset selector is placed
-        in the *Menu Actions* container at the bottom of the menu
-        (alongside the *Restore Defaults* and *Apply* buttons).  The
-        actual setup is deferred to the first ``showEvent``.
-
-        Set the preset directory separately::
-
-            widget.menu.add_presets = True
-            widget.menu.presets.preset_dir = "~/.myapp/presets"
-
-        Setting to ``False`` at runtime removes the combo and hides
-        the action container if no other items remain.
-        """
-        return self._add_presets
-
-    @add_presets.setter
-    def add_presets(self, value: bool) -> None:
-        self._add_presets = value
+    def set_add_presets(self, value: bool) -> None:
+        self.add_presets = value
         if not value:
-            self._button_manager.remove_widget("presets")
+            self.button_manager.remove_widget("presets")
 
-    def _setup_presets(self):
+    def setup_presets(self):
         """Create the preset combo inside the menu-actions container.
 
         Called lazily from ``showEvent`` the first time the menu is
-        shown while :attr:`add_presets` is ``True``.
+        shown while ``add_presets`` is ``True``.
         """
         from uitk.widgets.comboBox import ComboBox
 
+        menu = self._menu
         # Ensure layout exists (may not if add_presets is set before add())
-        self._ensure_layout_created()
+        menu._ensure_layout_created()
 
         # Create combo directly and place it into the action container
         combo = ComboBox()
@@ -487,30 +457,31 @@ class _MenuActionsMixin:
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
         )
 
-        self._button_manager.add_widget("presets", combo)
+        self.button_manager.add_widget("presets", combo)
 
         # Ensure the container is parented into the central layout
-        if not self._button_manager.container.parent():
-            self.centralWidgetLayout.addWidget(self._button_manager.container)
+        if not self.button_manager.container.parent():
+            menu.centralWidgetLayout.addWidget(self.button_manager.container)
 
         # Wire the combo with the Refresh / Save / ⋯-menu option-box toolbar.
         # wire_combo wraps the combo in its option-box container; since the
         # combo is already in the action-container layout, the wrap replaces it
         # in place (the button_manager still tracks the combo, nested inside).
-        self.presets.wire_combo(combo)
+        menu.presets.wire_combo(combo)
 
-        # Make the combo accessible as self.cmb_presets (mirrors self.add() behaviour)
-        setattr(self, "cmb_presets", combo)
+        # Make the combo accessible as menu.cmb_presets (mirrors menu.add() behaviour)
+        setattr(menu, "cmb_presets", combo)
 
         # Show the container
-        self._button_manager.container.show()
+        self.button_manager.container.show()
 
-    def _update_defaults_button_visibility(self):
+    def update_defaults_button_visibility(self):
         """Update defaults button visibility based on menu state."""
-        if not self.add_defaults_button:
+        menu = self._menu
+        if not menu.add_defaults_button:
             return
 
-        defaults_button = self._button_manager.get_button("defaults")
+        defaults_button = self.button_manager.get_button("defaults")
         if not defaults_button:
             return
 
@@ -532,12 +503,12 @@ class _MenuActionsMixin:
         )
 
         has_options = False
-        for widget in self.get_items():
+        for widget in menu.get_items():
             if widget and isinstance(widget, option_types):
                 has_options = True
                 break
 
         if has_options:
-            self._button_manager.show_button("defaults")
+            self.button_manager.show_button("defaults")
         else:
-            self._button_manager.hide_button("defaults")
+            self.button_manager.hide_button("defaults")

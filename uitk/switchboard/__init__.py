@@ -2,16 +2,19 @@
 # coding=utf-8
 """Switchboard package — dynamic UI loader and event handler.
 
-The Switchboard class composes partials co-located in this package, one
-concept each: ``slots.py``, ``shortcuts.py``, ``widgets.py`` (registration +
-gating), ``widget_values.py`` (what a control's value means), ``rules.py``
-(``enable_when`` / ``show_when`` / ``text_from`` / ``value_from``),
-``control_groups.py`` (button groups, multi-toggles, linked spin boxes, ...),
-``dialogs.py`` (dialogs, progress, busy cursor), ``placement.py``,
-``event_loop.py``, ``names.py`` (names, tags, name patterns), ``editors.py``,
-``style.py``, ``namespace.py``. They are implementation pieces, not standalone
-mixins to be reused outside this package — the enclosing ``switchboard``
-subpackage is the encapsulation boundary.
+The Switchboard class (``_core.py``) is a facade: its public methods delegate
+to private collaborators co-located in this package, one concept each and each
+owning its own state: ``slots.py`` (``_Slots``), ``shortcuts.py``
+(``_Shortcuts``), ``widgets.py`` (``_Widgets`` registration, ``_Gates``
+gating), ``widget_values.py`` (``_WidgetValues``: what a control's value
+means), ``rules.py`` (``_Rules``: ``enable_when`` / ``show_when`` /
+``text_from`` / ``value_from``), ``control_groups.py`` (``_ControlGroups``:
+button groups, multi-toggles, linked spin boxes, ...), ``dialogs.py``
+(``_Dialogs``: dialogs, progress, busy cursor), ``placement.py``,
+``event_loop.py``, ``names.py`` (``_Names``: names, tags, name patterns),
+``editors.py`` (``_EditorRegistry``) and ``namespace.py``. They are
+implementation pieces, never imported outside this package — the enclosing
+``switchboard`` subpackage is the encapsulation boundary.
 
 Public surface (resolved lazily via ``pythontk``'s ``lazy_exports`` so that e.g.
 ``from uitk.switchboard import Signals`` does not pull in the

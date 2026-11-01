@@ -2,7 +2,8 @@
 # coding=utf-8
 """UITK - User Interface Toolkit for Qt/PySide applications.
 
-A comprehensive UI framework that extends Qt Designer workflows with:
+A Qt UI framework for Designer ``.ui`` files or widget trees built in code
+(``sb.register_ui``), with:
 - Dynamic UI loading via Switchboard
 - Custom widget classes with enhanced functionality
 - Automatic signal-slot connection management
@@ -48,7 +49,7 @@ from pythontk.core_utils.module_resolver import (
 )
 
 __package__ = "uitk"
-__version__ = "1.8.2"
+__version__ = "1.9.0"
 
 
 DEFAULT_INCLUDE = {
@@ -77,6 +78,13 @@ DEFAULT_INCLUDE = {
     # Qt Designer widget-box registrar (`python -m uitk.designer`).
     "designer._designer": ["DesignerPlugin", "DesignerWidget"],
     "widgets.marking_menu._marking_menu": "MarkingMenu",
+    # What a marking menu asks of the application hosting it, and the plain-Qt
+    # answers a host adapter subclasses (mtk/btk ``*MarkingMenuHost``).
+    "widgets.marking_menu.marking_menu_host": [
+        "MarkingMenuHost",
+        "MarkingMenuLaunchHost",
+        "PureMarkingMenuHost",
+    ],
     "widgets.marking_menu._resolver": "MenuResolver",
     # Widgets
     "widgets.attribute_window": "AttributeWindow",
@@ -96,7 +104,8 @@ DEFAULT_INCLUDE = {
     # .TestSlotImportDiscipline) -- it reaches uitk through ``self.sb``, which
     # resolves exactly this namespace.
     "bridge.parameters": ["Parameters", "ParamRegistry"],
-    "bridge.slots": "BridgeSlotsBase",
+    "bridge.slots": "ParamPanelSlots",
+    "bridge.tooltip": "Tooltip",
     "widgets.checkBox": "CheckBox",
     "widgets.collapsableGroup": "CollapsableGroup",
     "widgets.colorSwatch": "ColorSwatch",
@@ -134,7 +143,7 @@ DEFAULT_INCLUDE = {
     # Per-row colour tags, a strip down a view's left edge (TableWidget / TreeWidget option).
     "widgets.row_tags": "RowTags",
     "widgets.header": "Header",
-    "widgets.footer": ["Footer", "FooterStatusController"],
+    "widgets.footer": ["Footer", "FooterStatusController", "FooterApply"],
     "widgets.formPanel": "FormPanel",
     "widgets.label": "Label",
     "widgets.lineEdit": "LineEdit",
@@ -207,6 +216,16 @@ DEFAULT_INCLUDE = {
     "widgets.sequencer._editor": ["SequencerEditor", "TrackEditor"],
     "widgets.sequencer._graph_editor": ["GraphEditor"],
     "widgets.sequencer._keyframe": ["KeyframeItem"],
+    # The parts a host's timeline layer builds its items from
+    # (``SequencerWidget.add_layer``) -- the widget's own items are made of
+    # them -- reached from a slots layer as ``self.sb.<Name>``.
+    "widgets.sequencer._clip": ["ClipItem"],
+    "widgets.sequencer._draggable": ["HeldGeometryMixin", "DraggableItemMixin"],
+    "widgets.sequencer._drag_tooltip": ["FrameTooltip"],
+    "widgets.sequencer._data": ["MenuUtils", "PatternRegistry"],
+    # The transport row (play / step / range) a host panel docks on its footer
+    # -- the Shot Sequencer's, reached as ``self.sb.TransportControls``.
+    "widgets.sequencer._transport_controls": ["TransportControls"],
     # Widget mixins
     "widgets.mixins.attributes": "AttributesMixin",
     "widgets.mixins.convert": "ConvertMixin",
@@ -214,7 +233,6 @@ DEFAULT_INCLUDE = {
     "widgets.mixins.option_box_mixin": "OptionBoxMixin",
     "widgets.mixins.text": [
         "RichTextFormatter",
-        "TextTruncation",
         "RichText",
         "TextOverlay",
     ],
@@ -229,6 +247,7 @@ DEFAULT_INCLUDE = {
     "managers.window_auto_hide": "WindowAutoHide",
     "managers.icon_manager": "IconManager",
     "managers.optional_package_manager": "OptionalPackageManager",
+    "managers.panel_renames": "PanelRenames",
     "managers.preset_manager": "PresetManager",
     "managers.recent_values_store": "RecentValuesStore",
     "managers.registry_manager": ["FileRegistry", "RegistryManager"],
@@ -238,6 +257,9 @@ DEFAULT_INCLUDE = {
     "managers.reset_gesture": "ResetGesture",
     "managers.value_manager": "ValueManager",
     "managers.model_binding": "ModelBinding",
+    # A preview panel's widgets bound over a host's scene session (Qt-free:
+    # each host library's ``Preview`` binds its own session to it).
+    "managers.preview_controller": ["PreviewController", "PreviewSession"],
     "themes.style_sheet": "StyleSheet",
 }
 
@@ -270,8 +292,89 @@ def _uitk_getattr(name: str):
 
 #: Public names that left this package (CODE_STANDARD section 5): no alias, so a
 #: read raises MovedNameError naming the new home. ``{name: (new home, version)}``;
-#: a move adds its names here in the same change set.
-MOVED_NAMES = {}
+#: a move adds its names here in the same change set. A ``Class.member`` key
+#: accounts for a member's move at release (``generate_api_registry.py``); only
+#: a root name answers at runtime.
+MOVED_NAMES = {
+    # A host says its event loop is native through its MarkingMenuHost (2026-10-31).
+    "MarkingMenu.PRELOAD_ONLY_FROM_HOST_LOOP": (
+        "uitk.MarkingMenuHost.preload_only_from_host_loop",
+        "1.9.0",
+    ),
+    # A parameter panel, not only a DCC bridge's (2026-10-31).
+    "BridgeSlotsBase": ("uitk.ParamPanelSlots", "1.9.0"),
+    # A generic timeline frames a range, not a shot (2026-10-31).
+    "SequencerWidget.frame_shot": ("uitk.SequencerWidget.frame_range", "1.9.0"),
+    # The sequencer's shot layer -- the shot lane under the ruler and the gaps
+    # between shots -- is the Shot Sequencer's, and plugs back in through
+    # ``SequencerWidget.add_layer``.
+    "SequencerWidget.set_shot_blocks": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_shot_blocks",
+        "1.9.0",
+    ),
+    "SequencerWidget.selected_shot": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.selected_shot",
+        "1.9.0",
+    ),
+    "SequencerWidget.clear_shot_blocks": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_shot_blocks",
+        "1.9.0",
+    ),
+    "SequencerWidget.add_gap_overlay": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.add_gap_overlay",
+        "1.9.0",
+    ),
+    "SequencerWidget.clear_gap_overlays": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_gap_overlays",
+        "1.9.0",
+    ),
+    "SequencerWidget.set_all_gap_overlays_locked": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_all_gap_overlays_locked",
+        "1.9.0",
+    ),
+    "SequencerWidget.show_gap_overlays": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.show_gap_overlays",
+        "1.9.0",
+    ),
+    "RulerItem.set_shot_blocks": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.set_shot_blocks",
+        "1.9.0",
+    ),
+    "RulerItem.clear_shot_blocks": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.clear_shot_blocks",
+        "1.9.0",
+    ),
+    "RulerItem.selected_block": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.selected_shot",
+        "1.9.0",
+    ),
+    "RulerItem.shot_block_at": (
+        "tentacle.slots.tools._shot_sequencer.shot_layer.ShotLayer.shot_block_at",
+        "1.9.0",
+    ),
+    # The Switchboard's single-use mixins became private collaborators behind the
+    # class itself: every method one carried is a ``Switchboard`` method now.
+    "SwitchboardSlotsMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardShortcutMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardWidgetMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardRulesMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardWidgetValuesMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardControlGroupsMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardDialogsMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardPlacementMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardEventLoopMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardNameMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardEditorsMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardStyleMixin": ("uitk.Switchboard", "1.9.0"),
+    "SwitchboardNamespaceMixin": ("uitk.Switchboard", "1.9.0"),
+    # TableWidget's single-use mixins: its header sorting is the class's own,
+    # its cell formatting a private collaborator; every method is TableWidget's.
+    "HeaderMixin": ("uitk.TableWidget", "1.9.0"),
+    "CellFormatMixin": ("uitk.TableWidget", "1.9.0"),
+    # An elision mixin nothing inherited: characters elide through
+    # ``pythontk.StrUtils.truncate``, pixels through ``QFontMetrics.elidedText``.
+    "TextTruncation": ("pythontk.StrUtils.truncate", "1.9.0"),
+}
 
 bootstrap_package(
     globals(),

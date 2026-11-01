@@ -772,6 +772,46 @@ class TestHeaderMenuButtonAutoVisibility(QtBaseTestCase):
         self.assertFalse(header.buttons["menu"].isVisible())
         header.menu.setVisible(False)
 
+    def test_a_menu_whose_items_are_all_hidden_is_empty(self):
+        """Bug: Audio Clips on Blender hides every header item (the host cannot
+        serve them), yet the menu button stayed and opened a blank popup --
+        ``contains_items`` counted the hidden rows. Fixed: 2026-10-31"""
+        from uitk.managers.field_visibility import FieldVisibility
+
+        container = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(container)
+        header = Header(config_buttons=["menu", "hide"], auto_hide_with_os_frame=False)
+        layout.addWidget(header)
+        menu = header.menu
+        items = [
+            menu.add("Separator", setTitle="Import"),
+            menu.add("QCheckBox", setText="Convert", setObjectName="chk_convert"),
+        ]
+        gated = menu.add("QPushButton", setText="Export", setObjectName="btn_export")
+        for item in items:
+            FieldVisibility.set_widget_visible(item, False)  # a host exclusion
+        gated.setVisible(False)  # a gate's hide
+        container.show()  # the header's show re-syncs the button
+        QtWidgets.QApplication.processEvents()
+        self.assertFalse(menu.contains_items)
+        self.assertFalse(header.buttons["menu"].isVisible())
+        menu.setVisible(True)  # opened anyway: the "No options" placeholder
+        QtWidgets.QApplication.processEvents()
+        self.assertIsNotNone(menu._items.empty_placeholder)
+        menu.setVisible(False)
+        FieldVisibility.set_widget_visible(items[1], True)
+        self.assertTrue(menu.contains_items)
+
+    def test_an_item_the_shortcut_filter_hid_still_counts(self):
+        """The bound-items filter restores its rows on the next show, so a row
+        it hid is content, not absence."""
+        header = self._shown_header()
+        menu = header.menu
+        item = menu.add("QPushButton", setText="Bound", setObjectName="btn_bound")
+        item.setVisible(False)
+        menu._items.shortcut_hidden_items.append(item)
+        self.assertTrue(menu.contains_items)
+
     def test_never_accessing_menu_keeps_button_hidden(self):
         """No menu created (never accessed) => nothing to offer => hidden."""
         header = self._shown_header()

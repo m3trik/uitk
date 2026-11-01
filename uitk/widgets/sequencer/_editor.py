@@ -3,9 +3,9 @@
 """Editors: what the sequencer's content area shows -- the seam a view plugs into.
 
 :class:`~uitk.widgets.sequencer._sequencer.SequencerWidget` is the kernel:
-the time axis, the ruler and shot lane, the playhead and markers, the
-shortcut table and its legend.  An *editor* owns the content area below the
-shot lane: its scene items (under one :attr:`SequencerEditor.content_root`,
+the time axis, the ruler and the layers' lanes under it, the playhead and
+markers, the shortcut table and its legend.  An *editor* owns the content
+area below the header: its scene items (under one :attr:`SequencerEditor.content_root`,
 so a single switch shows or hides them), the left pane's page, the content's
 vertical extent and background, the mouse and keys it answers there, and the
 verbs the window drives (frame, frame all...).
@@ -17,9 +17,12 @@ graph editor, ``_graph_editor.py``) takes the area over by answering what it
 changes.  Each hook's default here is "not handled".
 """
 
-from typing import Callable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
-from qtpy import QtCore, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
+
+if TYPE_CHECKING:
+    from uitk.widgets.sequencer._sequencer import SequencerWidget
 
 #: ``(group, keys, what it does)`` -- a gesture legend row.
 Gesture = Tuple[str, str, str]
@@ -167,7 +170,7 @@ class SequencerEditor(QtCore.QObject):
 
     def time_bounds(self) -> Optional[Tuple[float, float]]:
         """``(t0, t1)`` this editor's content spans beyond the kernel's own
-        (clips, shots, markers), or ``None``: the timeline's scroll extent
+        (clips, markers, ranges, the layers'), or ``None``: the timeline's scroll extent
         takes it in, so framing and panning reach it."""
         return None
 
@@ -180,11 +183,11 @@ class SequencerEditor(QtCore.QObject):
 
     def frame_values(self) -> None:
         """Fit the vertical axis to what the framed time range shows (the
-        kernel has just framed time: a shot, the content, a range)."""
+        kernel has just framed time: the active range, the content, a span)."""
 
 
 class TrackEditor(SequencerEditor):
-    """The track rows: clips, expanded attribute rows, keys and shot overlays.
+    """The track rows: clips, expanded attribute rows, keys and range overlays.
 
     The kernel's own content handling is this editor's behaviour; what lives
     here is what makes the rows one editor among others -- their content root
@@ -193,44 +196,92 @@ class TrackEditor(SequencerEditor):
 
     name = "tracks"
     label = "Tracks"
-    #: The mouse grammar, as the consumers implement it and the shortcut overlay
-    #: shows it: ``(group, keys, what it does)``.  A shot's own bound (its edges,
-    #: the ruler band's edges) never moves the shot's keys: a plain drag moves
-    #: the bound and the neighbouring shots ripple with their keys to keep the
-    #: gaps; Ctrl moves the bound and nothing else (the shot grows into the gap
-    #: over the keys there, or shrinks and leaves keys for the next shot); Shift
-    #: retimes the keys into the new span.  The ruler band's body moves the shot.
-    #: A gap's edge belongs to the shot beyond it: a plain drag slides that shot.
-    #: A tangent handle reads the same three modifiers on the key selection it is
-    #: part of (:class:`~uitk.widgets.sequencer._keyframe.TangentHandleItem`).
+    #: The mouse grammar, as the shortcut overlay shows it: ``(group, keys,
+    #: what it does)``.  A host's layer edits it for its own gestures and
+    #: wording (``SequencerLayer.legend``).  A tangent handle reads the same
+    #: three modifiers on the key selection it is part of
+    #: (:class:`~uitk.widgets.sequencer._keyframe.TangentHandleItem`).
     gestures = (
-        ("Shot bounds", "Drag", "Move the bound; neighbours ripple (keys stay)"),
-        ("Shot bounds", "Ctrl+Drag", "Move the bound only; a neighbour's gives way"),
-        ("Shot bounds", "Shift+Drag", "Retime keys into the new span"),
-        ("Shot bounds", "Alt+Drag", "Resize about the shot's centre"),
-        ("Shot bounds", "Drag band", "Move the shot (keys ride)"),
-        ("Gaps", "Drag edge", "Slide the shot beyond it (gap changes)"),
-        ("Gaps", "Ctrl+Drag edge", "Move that bound only (keys stay)"),
-        ("Gaps", "Shift+Drag edge", "Retime that shot into the new span"),
-        ("Gaps", "Drag body", "Slide the gap (active shot's edge follows)"),
-        ("Gaps", "Right-click", "Lock / unlock the gap"),
         ("Clips & keys", "Drag", "Move keys (ripple)"),
         ("Clips & keys", "Drag edge", "Scale the clip's keys"),
         ("Clips & keys", "Drag edge (multi)", "Scale the whole selection as one"),
         ("Clips & keys", "Shift (keys selected)", "Scale box: drag an end to retime"),
         ("Clips & keys", "Alt+Drag a scale end", "Scale about the playhead instead"),
-        ("Clips & keys", "Shift+Drag", "Cross shot bounds, bounds stay"),
         ("Clips & keys", "Ctrl", "Snap to whole frames"),
-        ("Clips & keys", "Right-click", "Tangents, lock, Move to Shot"),
+        ("Clips & keys", "Right-click", "Lock, rename"),
         ("Tangents", "Drag a handle", "Reshape every selected key's tangent"),
         ("Tangents", "Ctrl+Drag", "Reshape the grabbed key only"),
         ("Tangents", "Shift+Drag", "Give every selected key this exact tangent"),
         ("Tangents", "Alt+Drag", "Break the tangent (dotted while held)"),
         ("Timeline", "Drag", "Marquee select (Space moves it)"),
-        ("Timeline", "Ctrl+Shift+Click", "Switch to the shot under the cursor"),
         ("Timeline", "Wheel / Middle-drag", "Zoom / pan"),
     )
 
     def __init__(self, sequencer):
         super().__init__(sequencer)
         sequencer.add_flat_spans_option(self)  # the clips' and rows' curves
+
+
+class _EditorRegistry:
+    """The editors the content area can show (the classes above): each built on
+    first use from the factory registered for it, and the one shown now."""
+
+    def __init__(self, sequencer: "SequencerWidget"):
+        self._sequencer = sequencer
+        #: name -> editor instance, or the factory that builds it on first use
+        #: (the graph editor's module loads only when it is first shown).
+        self.editors: Dict[str, object] = {}
+        self.active_name = TrackEditor.name
+
+    @staticmethod
+    def graph_editor_factory(sequencer) -> SequencerEditor:
+        """Build the graph editor; its module loads on first use only."""
+        from uitk.widgets.sequencer._graph_editor import GraphEditor
+
+        return GraphEditor(sequencer)
+
+    def register(self, name: str, factory) -> None:
+        if isinstance(self.editors.get(name), SequencerEditor):
+            raise ValueError(f"The {name!r} editor is already built.")
+        self.editors[name] = factory
+
+    def get(self, name: str) -> SequencerEditor:
+        sq = self._sequencer
+        entry = self.editors[name]
+        if not isinstance(entry, SequencerEditor):
+            entry = self.editors[name] = entry(sq)
+            # Its page is the pane's from the start: a page first parented
+            # when the editor is shown was a top-level the editor's Python
+            # side alone held, destroyed by whichever garbage collection
+            # reached it after the sequencer was gone -- mid-way through
+            # another widget's events.
+            page = entry.header_widget()
+            if page is not None and sq._header_stack.indexOf(page) < 0:
+                sq._header_stack.addWidget(page)
+        return entry
+
+    def show(self, name: str) -> None:
+        sq = self._sequencer
+        if name == self.active_name:
+            return
+        new = sq.editor(name)
+        old = sq.active_editor
+        sq._selection_suppressed += 1
+        try:
+            old.deactivate()
+            self.active_name = name
+            new.activate()
+            sq._apply_legend(new)
+        finally:
+            sq._selection_suppressed -= 1
+        page = new.header_widget() or sq._header_scroll
+        if sq._header_stack.indexOf(page) < 0:
+            sq._header_stack.addWidget(page)
+        sq._header_stack.setCurrentWidget(page)
+        sq._editor_keys = {
+            QtGui.QKeySequence(key).toString(): {"action": fn, "description": desc}
+            for key, fn, desc in new.key_bindings()
+        }
+        sq._sync_shortcut_sequences()
+        sq._timeline._refresh_all()
+        sq.editor_changed.emit(name)
