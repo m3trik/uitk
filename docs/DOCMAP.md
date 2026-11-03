@@ -19,14 +19,14 @@ Legend — **Status**: `current` (verified against code on the Verified date, ze
 | [ARCHITECTURE.md](ARCHITECTURE.md) | reference | current | 2026-08-14 | `uitk/switchboard/_core.py` · `handlers/` · `loaders/` · `compile.py` · `widgets/mainWindow.py` |
 | [COOKBOOK.md](COOKBOOK.md) | guide | current | 2026-08-14 | consumer repos (mayatk, tentacle) · each recipe must run offscreen where possible |
 | [EXAMPLES.md](EXAMPLES.md) | guide | current | 2026-08-14 | the tutorial project it walks through · `uitk/examples/example.py` |
-| [API_REFERENCE.md](API_REFERENCE.md) | reference | current | 2026-08-14 | `API_INDEX.md` (grep `API_REGISTRY.md` for full signatures) |
+| [API_REFERENCE.md](API_REFERENCE.md) | reference | current | 2026-08-14 | the public modules (`api.search` / `api.describe` for full signatures) |
 | [BRIDGE.md](BRIDGE.md) | reference | current | 2026-10-31 | `uitk/bridge/slots.py` (+ its `_output_dir` / `_param_rows` / `_presets` / `_template_combo` / `_log_panel` / `_header_menu` parts) · `spec.py` · `formatters.py` · `parameters.py` · `tooltip.py` |
 | [DOCMAP.md](DOCMAP.md) | meta | current | 2026-07-04 | this file — ledger, coverage map, backlog |
 | [MAINTAINING.md](MAINTAINING.md) | meta | current | 2026-07-04 | the maintenance contract and conventions |
 
 ## Coverage — module → primary doc home
 
-Every module in `API_INDEX.md` must match exactly one home via longest-prefix match (a prefix ending in `/` matches everything under it). `—` means "deliberately undocumented" and requires a reason. A new module that matches no rule fails the sweep — triage it: assign a home, or opt it out with a reason.
+Every public module (as `api.search` names it, read from source) must match exactly one home via longest-prefix match (a prefix ending in `/` matches everything under it). `—` means "deliberately undocumented" and requires a reason. A new module that matches no rule fails the sweep — triage it: assign a home, or opt it out with a reason.
 
 | Prefix | Primary doc | Note |
 |:--|:--|:--|

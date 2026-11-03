@@ -23,8 +23,10 @@ Example with customization:
             self.option_box.menu.add("Copy")
             self.option_box.menu.add("Paste")
 """
+
 from qtpy import QtWidgets
 from typing import Optional, TYPE_CHECKING, Callable, Iterable, Tuple
+import pythontk as ptk
 
 if TYPE_CHECKING:
     from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
@@ -100,20 +102,19 @@ class OptionBoxMixin:
                 mgr.enable_clear()
             return self
 
+        @ptk.Deprecation.parameter(
+            "double_click_to_edit", drop=True, remove_in="1.11.0", since="2026-11-03"
+        )
+        @ptk.Deprecation.parameter(
+            "single_click_restore", drop=True, remove_in="1.11.0", since="2026-11-03"
+        )
         def pin(
-            self,
-            settings_key: Optional[str] = None,
-            *,
-            double_click_to_edit: bool = False,
-            single_click_restore: bool = False,
+            self, settings_key: Optional[str] = None, **kwargs
         ) -> "OptionBoxMixin._OptionsWrapper":
+            """Add the pin values option (see ``OptionBoxManager.pin``)."""
             mgr = self._mgr
             if mgr is not None:
-                mgr.pin(
-                    settings_key=settings_key,
-                    double_click_to_edit=double_click_to_edit,
-                    single_click_restore=single_click_restore,
-                )
+                mgr.pin(settings_key=settings_key, **kwargs)
             return self
 
         def recent(

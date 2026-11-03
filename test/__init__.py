@@ -10,7 +10,6 @@ Use run_all_tests.py to execute the complete test suite.
 __all__ = [
     "test_events",
     "test_menu",
-    "test_pin_values",
     "test_signals",
     "test_switchboard",
     "test_widgets",

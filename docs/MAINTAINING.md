@@ -8,7 +8,7 @@ The contract for anyone — human or agent — finishing or maintaining uitk's d
 
 1. **Docs describe verified behavior.** Every claim must be traceable to a source module (the ledger row's *Sources of truth* column tells you where to look) or to a snippet you actually ran. Never document what the code *should* do, and never invent features.
 2. **If you can't verify it, mark it.** Leave a `DOC-TODO` marker (format below) rather than a confident guess. An honest gap is maintainable; a plausible fiction is poison.
-3. **Generated files are off-limits.** `API_INDEX.md`, `API_REGISTRY.md`, `API_CHANGES.md` are emitted by `m3trik/scripts/generate_api_registry.py`. Never hand-edit them; the sweep ignores them.
+3. **The API is read, never written down.** Signatures come from the source (`api.search` / `api.describe`, or `python -m pythontk uitk.<Name>`); no generated API file exists to copy from.
 4. **Docs state the present.** No changelog prose, no "as of version X", no history of how a feature evolved — that lives in [CHANGELOG.md](../CHANGELOG.md).
 5. **Front doors stay small.** `../README.md` (GitHub) and `README.md` (PyPI) are pitches with pointers. Depth goes in the topic docs; don't grow the landings.
 6. **Verify snippets offscreen.** `QT_QPA_PLATFORM=offscreen` lets most uitk code run headless. Recipes that genuinely need a DCC are labeled as such, never silently assumed to work.
@@ -81,17 +81,16 @@ Edit every copy in the same change, or the sweep will remind you.
 ### Ledger and coverage hygiene
 
 - **New doc file** → add a Ledger row (the sweep fails on unledgered files).
-- **New module** in `API_INDEX.md` with no coverage match → the sweep fails; triage it: map it to a doc (and write/mark the content), or opt out with `—` and a reason.
+- **New public module** with no coverage match → the sweep fails; triage it: map it to a doc (and write/mark the content), or opt out with `—` and a reason.
 - **Deleted/renamed module** → the sweep warns about stale rules; prune them.
 
 ## When code changes (ongoing maintenance)
 
 After any public-API change (a symbol added, renamed, removed, or behavior changed):
 
-1. Regenerate the registry if not already done: `python m3trik/scripts/generate_api_registry.py uitk`.
-2. Run the docs sweep — coverage failures point at brand-new modules.
-3. `grep` the changed symbol's name across `docs/*.md`: every mention must still be true.
-4. If a `current` doc is now stale and you can't fix it immediately, demote its row to `needs-verify` and add a `DOC-TODO` at the stale spot. **A wrong ledger is worse than a wrong doc.**
+1. Run the docs sweep — coverage failures point at brand-new modules.
+2. `grep` the changed symbol's name across `docs/*.md`: every mention must still be true.
+3. If a `current` doc is now stale and you can't fix it immediately, demote its row to `needs-verify` and add a `DOC-TODO` at the stale spot. **A wrong ledger is worse than a wrong doc.**
 
 ## What NOT to do
 
@@ -103,4 +102,4 @@ After any public-API change (a symbol added, renamed, removed, or behavior chang
 ## See also
 
 - [DOCMAP.md](DOCMAP.md) — the ledger this contract governs
-- [../CLAUDE.md](../CLAUDE.md) — repo-wide agent instructions (uitk)
+- [../AGENTS.md](../AGENTS.md) — repo-wide agent instructions (uitk)

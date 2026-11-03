@@ -20,7 +20,7 @@ from conftest import QtBaseTestCase, setup_qt_application
 # Ensure QApplication exists before importing Qt widgets
 app = setup_qt_application()
 
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 from pathlib import Path
 
 from uitk.widgets.optionBox._optionBox import OptionBox, OptionBoxContainer
@@ -830,6 +830,55 @@ class TestPinValuesOptionSignals(QtBaseTestCase):
         self.assertTrue(hasattr(self.pin_option, "value_restored"))
 
 
+class TestPinRetiredKeywords(QtBaseTestCase):
+    """``double_click_to_edit`` / ``single_click_restore`` had no reader, but
+    a released caller passes them (tentacle's Reference Manager:
+    ``option_box.pin(settings_key=..., single_click_restore=True)``): both
+    ``pin()``s and the option take them with a warning until 1.11.0, and the
+    option's positional order is its 1.9.0 one."""
+
+    RETIRED = {"double_click_to_edit": True, "single_click_restore": True}
+
+    def _field(self):
+        from uitk.widgets.lineEdit import LineEdit
+
+        return self.track_widget(LineEdit())
+
+    def test_the_manager_pin_takes_them(self):
+        field = self._field()
+        for name, value in self.RETIRED.items():
+            with self.subTest(name), self.assertWarns(DeprecationWarning):
+                field.option_box.pin(settings_key=None, **{name: value})
+        self.assertIsNotNone(field.option_box.find_option(PinValuesOption))
+
+    def test_the_chainable_pin_takes_them(self):
+        field = self._field()
+        with self.assertWarns(DeprecationWarning):
+            field.options.pin(None, **self.RETIRED)
+        self.assertIsNotNone(field.option_box.find_option(PinValuesOption))
+
+    def test_the_option_takes_them(self):
+        with self.assertWarns(DeprecationWarning):
+            option = PinValuesOption(self._field(), **self.RETIRED)
+        self.assertEqual(option._popup_align, "right")
+
+    def test_the_released_positional_order_binds(self):
+        option = PinValuesOption(self._field(), None, 3, True, True, "left")
+        self.assertEqual(option._popup_align, "left")
+        self.assertEqual(option.store._max_pinned, 3)
+
+
+class TestPinnedValueEntryHome(unittest.TestCase):
+    """The pin record moved to the store's module; the option's module still
+    answers its name (the CHANGELOG promises it)."""
+
+    def test_the_old_import_path_resolves_to_the_store_class(self):
+        from uitk.managers.recent_values_store import PinnedValueEntry
+        from uitk.widgets.optionBox.options import pin_values
+
+        self.assertIs(pin_values.PinnedValueEntry, PinnedValueEntry)
+
+
 class TestRecentValuesDisplayHelpers(QtBaseTestCase):
     """Tests for display-format helper functions."""
 
@@ -1216,19 +1265,395 @@ class TestPinnedValuesRowPadding(QtBaseTestCase):
 
     def test_pinned_row_has_right_padding(self):
         """Pinned value rows must have >=8px right margin for button clearance."""
-        from uitk.widgets.optionBox.options.pin_values import PinnedValuesPopup
-
         parent = self.track_widget(QtWidgets.QWidget())
-        popup = PinnedValuesPopup(parent=parent)
+        popup = RecentValuesPopup(parent=parent, pinning=True)
         self.track_widget(popup.menu)
-        popup.add_current_value("test_value", is_pinned=False)
+        popup.add_pinned_value("test_value")
 
-        rows = popup.menu.findChildren(QtWidgets.QWidget, "pinnedValueRow_current")
+        rows = popup.menu.findChildren(QtWidgets.QWidget, "pinnedValueRow")
         self.assertTrue(len(rows) > 0, "Should have at least one row")
         layout = rows[0].layout()
         margins = layout.contentsMargins()
         self.assertGreaterEqual(margins.right(), 8, "Right margin must be >= 8px")
         self.assertGreaterEqual(layout.spacing(), 4, "Spacing must be >= 4px")
+
+
+def _drain():
+    """Run queued events, the deferred popup refresh and pending deletes."""
+    for _ in range(3):
+        QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 20)
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+
+
+class TestValuePopupPinning(QtBaseTestCase):
+    """The value popup, driven as a user drives it: open it from its button,
+    click a row's pin, its ✎ or the footer, type a name, press Enter or Escape
+    -- then assert what the gesture DID to the field and the store.
+
+    Feature 2026-10-31: the pin and recent-value plugins share one popup and
+    the history can pin values, so the Scene Exporter's name field keeps its
+    regex naming rules there, each under a plain name.
+    """
+
+    RULE = r"{scene:_bar.*->}_v{n:03d}"
+
+    def _option(self, text="", cls=RecentValuesOption, **kwargs):
+        window = self.track_widget(QtWidgets.QWidget())
+        window.resize(460, 80)
+        layout = QtWidgets.QVBoxLayout(window)
+        field = QtWidgets.QLineEdit(text, window)
+        layout.addWidget(field)
+        option = cls(wrapped_widget=field, **kwargs)
+        box = OptionBox(options=[option])
+        box.wrap(field)
+        window.show()
+        _drain()
+        return option, field
+
+    def _open(self, option):
+        option.widget.click()
+        _drain()
+        menu = option._popup.menu
+        self.track_widget(menu)
+        self.assertTrue(menu.isVisible(), "the button opens the popup")
+        return menu
+
+    @staticmethod
+    def _rows(menu, kind):
+        """``{row text: row}`` for one section's rows."""
+        rows = {}
+        for row in menu.findChildren(QtWidgets.QWidget, f"{kind}ValueRow"):
+            face = row.findChild(QtWidgets.QPushButton, f"{kind}ValueButton")
+            rows[face.text()] = row
+        return rows
+
+    @staticmethod
+    def _captions(menu):
+        from uitk.widgets.separator import Separator
+
+        return [s.getTitle() for s in menu.findChildren(Separator) if s.getTitle()]
+
+    @staticmethod
+    def _shown(menu) -> bool:
+        """Whether *menu* is on screen; a closed popup is freed, so gone is
+        not shown."""
+        import shiboken6
+
+        return shiboken6.isValid(menu) and menu.isVisible()
+
+    def test_pinning_a_recent_row_moves_it_to_the_pinned_section(self):
+        option, _ = self._option("current")
+        option.record("b")
+        option.record("a")
+        menu = self._open(option)
+        self.assertEqual(self._captions(menu), [], "one section needs no caption")
+
+        pin = self._rows(menu, "recent")["b"].findChild(
+            QtWidgets.QPushButton, "valuePinButton"
+        )
+        pin.click()
+        _drain()
+
+        self.assertEqual(option.pinned_values, ["b"])
+        self.assertEqual(list(self._rows(menu, "pinned")), ["b"])
+        self.assertEqual(list(self._rows(menu, "recent")), ["a"])
+        self.assertEqual(self._captions(menu), ["Pinned", "Recent"])
+        self.assertTrue(menu.isVisible(), "pinning keeps the popup open")
+
+    def test_unpinning_returns_the_value_to_the_history(self):
+        option, _ = self._option()
+        option.add_pinned_value("keep")
+        option.record("other")
+        menu = self._open(option)
+
+        self._rows(menu, "pinned")["keep"].findChild(
+            QtWidgets.QPushButton, "valuePinButton"
+        ).click()
+        _drain()
+
+        self.assertEqual(option.pinned_values, [])
+        self.assertIn("keep", self._rows(menu, "recent"), "one click from undo")
+
+    def test_a_named_pin_shows_its_name_and_restores_its_rule(self):
+        option, field = self._option("asset")
+        option.add_pinned_value(self.RULE, alias="Strip _bar, versioned")
+        menu = self._open(option)
+
+        face = self._rows(menu, "pinned")["Strip _bar, versioned"].findChild(
+            QtWidgets.QPushButton, "pinnedValueButton"
+        )
+        self.assertEqual(face.detail(), self.RULE, "the rule shows beside its name")
+        self.assertEqual(face.toolTip(), self.RULE)
+
+        face.click()
+        _drain()
+        self.assertEqual(field.text(), self.RULE, "the name restores the rule")
+        self.assertFalse(self._shown(menu))
+
+    def test_naming_a_pin_inline(self):
+        from qtpy.QtTest import QTest
+
+        option, _ = self._option()
+        option.add_pinned_value(self.RULE)
+        menu = self._open(option)
+        row = self._rows(menu, "pinned")[self.RULE]
+
+        row.findChild(QtWidgets.QPushButton, "pinnedValueRenameButton").click()
+        editor = row.findChild(QtWidgets.QLineEdit, "pinnedValueAliasEdit")
+        self.assertTrue(editor.isVisible())
+        self.assertEqual(editor.selectedText(), self.RULE, "typing replaces it")
+
+        QTest.keyClicks(editor, "Strip _bar")
+        QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        _drain()
+
+        self.assertEqual(option.pinned_entries[0].alias, "Strip _bar")
+        self.assertEqual(option.pinned_values, [self.RULE], "the value is kept")
+        self.assertIn("Strip _bar", self._rows(menu, "pinned"))
+        self.assertTrue(menu.isVisible())
+
+    # --- hide on leave: the pointer is parked over the menu, then moved off ---
+
+    def _park_cursor_home(self):
+        home = QtGui.QCursor.pos()
+        self.addCleanup(QtGui.QCursor.setPos, home)
+
+    @staticmethod
+    def _wait_until(predicate, timeout_ms=1500):
+        timer = QtCore.QElapsedTimer()
+        timer.start()
+        while not predicate() and timer.elapsed() < timeout_ms:
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 20)
+        return predicate()
+
+    def _enter_then_leave(self, menu):
+        QtGui.QCursor.setPos(menu.mapToGlobal(menu.rect().center()))
+        self._wait_until(lambda: menu._leave.mouse_has_entered, 800)
+        corner = menu.mapToGlobal(menu.rect().bottomRight())
+        QtGui.QCursor.setPos(corner + QtCore.QPoint(300, 300))
+
+    def _named_pin_popup(self):
+        from qtpy.QtTest import QTest
+
+        self._park_cursor_home()
+        option, _ = self._option()
+        option.add_pinned_value(self.RULE)
+        menu = self._open(option)
+        # A user renames after the popup settles: past the show grace, with
+        # the leave poll running (a rename inside the grace hides the bug, as
+        # the grace's own timer re-arms the poll).
+        self._wait_until(
+            lambda: bool(
+                menu._leave.leave_timer and menu._leave.leave_timer.isActive()
+            ),
+            800,
+        )
+        row = self._rows(menu, "pinned")[self.RULE]
+        row.findChild(QtWidgets.QPushButton, "pinnedValueRenameButton").click()
+        editor = row.findChild(QtWidgets.QLineEdit, "pinnedValueAliasEdit")
+        QTest.keyClicks(editor, "Named")
+        return option, menu, editor
+
+    def test_the_popup_holds_while_a_name_is_typed(self):
+        _option, menu, editor = self._named_pin_popup()
+        editor.setFocus()
+        self._enter_then_leave(menu)
+        self.assertFalse(
+            self._wait_until(lambda: not menu.isVisible(), 800),
+            "a pointer drifting off mid-name must not close the popup",
+        )
+
+    def test_the_popup_still_hides_on_leave_after_a_rename(self):
+        """Bug: pausing hide-on-leave for the editor and switching it back on
+        left the leave poll stopped, so after any rename the popup stayed up
+        until clicked away."""
+        from qtpy.QtTest import QTest
+
+        option, menu, editor = self._named_pin_popup()
+        QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        _drain()
+        self.assertEqual(option.pinned_entries[0].alias, "Named")
+        self._enter_then_leave(menu)
+        self.assertTrue(self._wait_until(lambda: not self._shown(menu)))
+
+    def test_opening_a_second_rename_keeps_its_editor(self):
+        """Bug: the first editor's commit (on losing focus to the second)
+        rebuilt the rows on the next tick, deleting the editor just opened."""
+        from qtpy.QtTest import QTest
+
+        option, _ = self._option()
+        option.add_pinned_value("a")
+        option.add_pinned_value("b")
+        menu = self._open(option)
+        rows = self._rows(menu, "pinned")
+        for name in ("a", "b"):
+            rows[name].findChild(
+                QtWidgets.QPushButton, "pinnedValueRenameButton"
+            ).click()
+        editor_b = rows["b"].findChild(QtWidgets.QLineEdit, "pinnedValueAliasEdit")
+        _drain()
+        self.assertTrue(editor_b.isVisible(), "the second editor survives")
+
+        QTest.keyClicks(editor_b, "Bee")
+        QTest.keyClick(editor_b, QtCore.Qt.Key_Return)
+        _drain()
+        self.assertEqual(option.store.pinned_entry("b").alias, "Bee")
+        self.assertIn("Bee", self._rows(menu, "pinned"), "the rows refresh after")
+
+    def test_escape_cancels_naming_and_keeps_the_popup(self):
+        from qtpy.QtTest import QTest
+
+        option, _ = self._option()
+        option.add_pinned_value(self.RULE)
+        menu = self._open(option)
+        row = self._rows(menu, "pinned")[self.RULE]
+        row.findChild(QtWidgets.QPushButton, "pinnedValueRenameButton").click()
+        editor = row.findChild(QtWidgets.QLineEdit, "pinnedValueAliasEdit")
+
+        QTest.keyClicks(editor, "Nope")
+        QTest.keyClick(editor, QtCore.Qt.Key_Escape)
+        _drain()
+
+        self.assertIsNone(option.pinned_entries[0].alias)
+        self.assertFalse(
+            any(
+                e.isVisible()
+                for e in menu.findChildren(QtWidgets.QLineEdit, "pinnedValueAliasEdit")
+            ),
+            "the editor closed",
+        )
+        self.assertIn(self.RULE, self._rows(menu, "pinned"), "the row is unnamed")
+        self.assertTrue(menu.isVisible(), "Escape closes the editor, not the popup")
+
+    def test_a_click_on_a_value_while_naming_restores_it(self):
+        """Bug: the value's face took focus on press, so the editor's
+        focus-out committed the name, and the refresh that commit asks for
+        rebuilt the rows before the release: the click was lost. A user's
+        click lets the event loop run between press and release; ``click()``
+        never does."""
+        import shiboken6
+        from qtpy.QtTest import QTest
+
+        option, field = self._option()
+        option.add_pinned_value("a")
+        option.add_pinned_value("b")
+        menu = self._open(option)
+        rows = self._rows(menu, "pinned")
+        rows["a"].findChild(QtWidgets.QPushButton, "pinnedValueRenameButton").click()
+        editor = rows["a"].findChild(QtWidgets.QLineEdit, "pinnedValueAliasEdit")
+        QTest.keyClicks(editor, "Ay")
+        face = rows["b"].findChild(QtWidgets.QPushButton, "pinnedValueButton")
+
+        QTest.mousePress(face, QtCore.Qt.LeftButton)
+        _drain()  # the hand between press and release
+        self.assertTrue(shiboken6.isValid(face), "the pressed row survives")
+        QTest.mouseRelease(face, QtCore.Qt.LeftButton)
+        _drain()
+        self.assertFalse(self._shown(menu), "a restore closes the popup")
+
+        self.assertEqual(field.text(), "b", "the click restores the value")
+        self.assertEqual(option.store.pinned_entry("a").alias, "Ay", "name kept")
+
+    def test_closing_the_popup_frees_it(self):
+        """Bug: each open parented a new popup and its menu to the field and
+        a close only dropped the reference: 44 more child widgets per open."""
+        option, field = self._option("current")
+        option.record("a")
+        option.add_pinned_value("p")
+        before = len(field.findChildren(QtCore.QObject))
+
+        for cycle in range(3):
+            self._open(option).hide()  # hide on leave, Escape, a dismissal
+            option._clear_click_block()  # no 200 ms wait for the next open
+            _drain()
+            self.assertEqual(
+                len(field.findChildren(QtCore.QObject)), before, f"open {cycle + 1}"
+            )
+
+    def test_the_footer_pins_the_typed_value(self):
+        option, _ = self._option(self.RULE)
+        menu = self._open(option)
+
+        footer = menu.findChild(QtWidgets.QPushButton, "pinCurrentValueButton")
+        self.assertEqual(footer.detail(), self.RULE)
+        footer.click()
+        _drain()
+
+        self.assertEqual(option.pinned_values, [self.RULE])
+        self.assertIsNone(
+            menu.findChild(QtWidgets.QPushButton, "pinCurrentValueButton"),
+            "a pinned value offers no footer",
+        )
+        face = self._rows(menu, "pinned")[self.RULE].findChild(
+            QtWidgets.QPushButton, "pinnedValueButton"
+        )
+        self.assertIn("bold", face.styleSheet(), "the field's value reads as current")
+
+    def test_without_pinning_the_history_is_plain(self):
+        option, _ = self._option("cur", pinning=False)
+        option.record("a")
+        menu = self._open(option)
+        self.assertEqual(menu.findChildren(QtWidgets.QPushButton, "valuePinButton"), [])
+        self.assertIsNone(
+            menu.findChild(QtWidgets.QPushButton, "pinCurrentValueButton")
+        )
+
+    def test_a_rule_reads_whole_under_basename_display(self):
+        """The Scene Exporter's name history uses ``basename``; a rule with a
+        backslash was cut at it, and its case twin evicted it."""
+        option, _ = self._option(display_format="basename")
+        digits, non_digits = r"{scene:\d+->}", r"{scene:\D+->}"
+        option.record(digits)
+        option.record(non_digits)
+        menu = self._open(option)
+        self.assertEqual(set(self._rows(menu, "recent")), {digits, non_digits})
+
+    def test_the_pin_face_lists_pins_only(self):
+        from uitk.managers.icon_manager import IconManager
+
+        option, _ = self._option("C:/proj/a", cls=PinValuesOption)
+        option.add_pinned_value("C:/proj/b")
+        option.record("C:/proj/x")  # a pins-only face keeps no history
+        menu = self._open(option)
+        self.assertEqual(list(self._rows(menu, "pinned")), ["C:/proj/b"])
+        self.assertEqual(self._rows(menu, "recent"), {})
+
+        menu.findChild(QtWidgets.QPushButton, "pinCurrentValueButton").click()
+        _drain()
+        self.assertEqual(option.pinned_values, ["C:/proj/a", "C:/proj/b"])
+        self.assertEqual(IconManager.registered_info(option.widget)["name"], "pin")
+
+    def test_the_chainable_wrappers_add_both_faces(self):
+        """Regression guard: ``widget.options.pin()`` is a second copy of the
+        manager's ``pin()`` and must take the same keywords (it named the two
+        retired ones explicitly)."""
+        from uitk.widgets.lineEdit import LineEdit
+
+        field = self.track_widget(LineEdit())
+        field.options.pin("chain_pins", max_pinned=3).recent(
+            "chain_recent", pinning=False
+        )
+        pin = field.option_box.find_option(PinValuesOption)
+        self.assertIsNotNone(pin)
+        self.assertEqual(pin.store._max_pinned, 3)
+        recent = [
+            o
+            for o in field.option_box._pending_options
+            if type(o) is RecentValuesOption
+        ]
+        self.assertEqual(len(recent), 1)
+        self.assertFalse(recent[0]._pinning)
+
+    def test_restoring_from_the_pin_face_emits_value_restored(self):
+        option, _ = self._option(cls=PinValuesOption)
+        option.add_pinned_value("v")
+        restored = []
+        option.value_restored.connect(restored.append)
+        menu = self._open(option)
+        self._rows(menu, "pinned")["v"].findChild(
+            QtWidgets.QPushButton, "pinnedValueButton"
+        ).click()
+        self.assertEqual(restored, ["v"])
 
 
 class TestOptionBoxDisabledState(QtBaseTestCase):
@@ -1587,7 +2012,7 @@ class TestOptionBoxManagerWrapRetryTeardown(QtBaseTestCase):
 class TestOptionBoxManagerPartialsArePrivate(QtBaseTestCase):
     """``OptionBoxManager`` composes its menu binding and its deferred wrap
     from two partials. They are internals -- a ``_`` class in a ``_`` module
-    -- so the API registry never publishes them: ``widget.option_box`` /
+    -- so the public surface (api.search) never lists them: ``widget.option_box`` /
     ``from uitk import OptionBoxManager`` is the surface."""
 
     def test_the_partials_are_private(self):
@@ -3667,17 +4092,17 @@ class TestPluginStateIconVisuals(QtBaseTestCase):
 
         info = IconManager.registered_info(button)
         self.assertIsNotNone(info, "pin button icon must be registered")
-        self.assertEqual(info["name"], "radio_empty")
+        self.assertEqual(info["name"], "pin_empty")
         self.assertIsNone(info.get("color"), "pin never tints — glyph carries state")
 
         option.add_pinned_value("hello")
         info = IconManager.registered_info(button)
-        self.assertEqual(info["name"], "radio", "current pinned value fills the glyph")
+        self.assertEqual(info["name"], "pin", "current pinned value fills the glyph")
         self.assertIsNone(info.get("color"), "pinned state is glyph-only, no tint")
 
         line_edit.setText("other")
         info = IconManager.registered_info(button)
-        self.assertEqual(info["name"], "radio_empty")
+        self.assertEqual(info["name"], "pin_empty")
         self.assertIsNone(info.get("color"))
 
     def test_recent_icon_dimmed_while_history_empty(self):
@@ -3792,7 +4217,7 @@ class TestHostNamespacedOptionPersistence(QtBaseTestCase):
         their recent-directory list SHOULD stay shared across every session that
         opens them, and their existing keys must not move."""
         opt = self._pin(None, key="host_ns_standalone")
-        self.assertEqual(opt._settings.namespace, "host_ns_standalone")
+        self.assertEqual(opt.store._settings.namespace, "host_ns_standalone")
 
     def test_host_suffix_comes_from_the_shared_ssot(self):
         """Formatted by ``ShortcutManager.host_namespace_suffix``, not a private

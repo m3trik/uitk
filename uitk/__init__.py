@@ -293,7 +293,7 @@ def _uitk_getattr(name: str):
 #: Public names that left this package (CODE_STANDARD section 5): no alias, so a
 #: read raises MovedNameError naming the new home. ``{name: (new home, version)}``;
 #: a move adds its names here in the same change set. A ``Class.member`` key
-#: accounts for a member's move at release (``generate_api_registry.py``); only
+#: accounts for a member's move at release (``check_api_surface.py``); only
 #: a root name answers at runtime.
 MOVED_NAMES = {
     # A host says its event loop is native through its MarkingMenuHost (2026-10-31).
@@ -374,6 +374,16 @@ MOVED_NAMES = {
     # An elision mixin nothing inherited: characters elide through
     # ``pythontk.StrUtils.truncate``, pixels through ``QFontMetrics.elidedText``.
     "TextTruncation": ("pythontk.StrUtils.truncate", "1.9.0"),
+    # The pin and recent-value plugins share one popup; pins are a section of it.
+    "PinnedValuesPopup": (
+        "uitk.widgets.optionBox.options.recent_values.RecentValuesPopup",
+        "1.10.0",
+    ),
+    # The pin record lives with the model both value-list options share.
+    "PinnedValueEntry": (
+        "uitk.managers.recent_values_store.PinnedValueEntry",
+        "1.10.0",
+    ),
 }
 
 bootstrap_package(

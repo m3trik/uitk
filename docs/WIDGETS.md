@@ -818,8 +818,8 @@ Each option is a class extending `BaseOption` or `ButtonOption`. Multiple option
 |:---|:---|
 | `ClearOption` | Clear button for text input |
 | `BrowseOption` | Opens a file / dir dialog, sets result on widget |
-| `PinValuesOption` | Pin / unpin values for quick re-selection |
-| `RecentValuesOption` | Keeps last-N values in a dropdown |
+| `RecentValuesOption` | The field's last-N values with pins on top; a pin can be named, so a rule reads as a plain name ([details](../uitk/widgets/optionBox/README.md#recentvaluesoption--pinvaluesoption)) |
+| `PinValuesOption` | The same popup with pins only (no history) |
 | `OptionMenuOption` | Static dropdown of (label, callback) pairs |
 | `ContextMenuOption` | Dynamic menu — provider callable returns items based on widget state |
 | `ActionOption` | Generic icon button triggering any callback |

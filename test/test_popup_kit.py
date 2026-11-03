@@ -3,10 +3,11 @@
 """Popup mechanics, pinned by ACTING on the widgets that share them.
 
 ``Menu``, ``ExpandableList``, ``MainWindow`` and the option-box value popups
-(``RecentValuesPopup`` / ``PinnedValuesPopup``) each carried their own copy of
-three popup mechanics: the screen clamp, the promotion of a widget to a
-frameless top-level popup window, and the watchers that dismiss a popup when
-its host moves, hides, or the user clicks elsewhere. They now share
+(``RecentValuesPopup`` and ``PinnedValuesPopup``, since merged into it) each
+carried their own copy of three popup mechanics: the screen clamp, the
+promotion of a widget to a frameless top-level popup window, and the watchers
+that dismiss a popup when its host moves, hides, or the user clicks elsewhere.
+They now share
 ``uitk.widgets.popup``.
 
 The consumer tests below show the real widget, click it, press Escape, move or
@@ -29,7 +30,6 @@ from uitk.widgets.menu import Menu
 from uitk.widgets.expandableList import ExpandableList
 from uitk.widgets.mainWindow import MainWindow
 from uitk.widgets.optionBox.options.recent_values import RecentValuesPopup
-from uitk.widgets.optionBox.options.pin_values import PinnedValuesPopup
 
 
 def _process(passes=3):
@@ -404,9 +404,9 @@ class TestAncestorDismissal(_PopupCase):
 
     def test_pinned_values_popup_closes_when_an_ancestor_hides(self):
         _host, container, line = self._value_popup_host()
-        popup = PinnedValuesPopup(parent=line)
+        popup = RecentValuesPopup(parent=line, pinning=True)
         self.track_widget(popup.menu)
-        popup.add_current_value("cur", is_pinned=False)
+        popup.add_pinned_value("cur")
         popup.show()
         _process()
         self.assertTrue(popup.menu.isVisible())

@@ -196,7 +196,7 @@ class TestChromeInitialStateFinal(QtBaseTestCase):
         from uitk.widgets.optionBox.options.pin_values import PinValuesOption
 
         calls = []
-        orig = PinValuesOption._update_button_icon
+        orig = PinValuesOption._update_button_visuals
 
         def probe(self_o, *a):
             calls.append(a)
@@ -204,7 +204,7 @@ class TestChromeInitialStateFinal(QtBaseTestCase):
 
         # Patch BEFORE the wrap: the deferred create-time update captures the
         # bound method at schedule time, so a later patch would miss it.
-        PinValuesOption._update_button_icon = probe
+        PinValuesOption._update_button_visuals = probe
         try:
             field = QtWidgets.QSpinBox(self.window)
             self.layout.addWidget(field)
@@ -218,7 +218,7 @@ class TestChromeInitialStateFinal(QtBaseTestCase):
             self._drain_qt_events()
             post_show = len(calls) - at_show
         finally:
-            PinValuesOption._update_button_icon = orig
+            PinValuesOption._update_button_visuals = orig
         self.assertEqual(
             post_show,
             0,

@@ -7,7 +7,7 @@ Covers:
 - A pinned Menu does NOT hide on ancestor move.
 - Moves of intermediate (non-window) child widgets do NOT dismiss.
 - RecentValuesPopup closes on window-ancestor move.
-- PinnedValuesPopup closes on window-ancestor move.
+- The same popup showing pins closes on window-ancestor move.
 - Filter detaches on hide so subsequent host moves don't act on stale targets.
 """
 
@@ -22,7 +22,6 @@ from qtpy import QtCore, QtWidgets
 from uitk.widgets.menu import Menu
 from uitk.widgets.popup.dismissal import AncestorDismissal
 from uitk.widgets.optionBox.options.recent_values import RecentValuesPopup
-from uitk.widgets.optionBox.options.pin_values import PinnedValuesPopup
 
 
 def _process():
@@ -184,8 +183,8 @@ class TestRecentValuesPopupDismissOnMove(QtBaseTestCase):
         self.assertTrue(popup.menu.isVisible())
 
 
-class TestPinnedValuesPopupDismissOnMove(QtBaseTestCase):
-    """PinnedValuesPopup closes when a window-ancestor moves."""
+class TestPinnedRowsPopupDismissOnMove(QtBaseTestCase):
+    """The value popup showing pins closes when a window-ancestor moves."""
 
     def test_window_move_closes_popup(self):
         host = self.track_widget(QtWidgets.QWidget())
@@ -194,9 +193,9 @@ class TestPinnedValuesPopupDismissOnMove(QtBaseTestCase):
         host.show()
         _process()
 
-        popup = PinnedValuesPopup(parent=line)
+        popup = RecentValuesPopup(parent=line, pinning=True)
         self.track_widget(popup.menu)
-        popup.add_current_value("cur", is_pinned=False)
+        popup.add_pinned_value("cur")
         popup.show()
         _process()
         self.assertTrue(popup.menu.isVisible())

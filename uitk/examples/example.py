@@ -294,8 +294,7 @@ class ExampleSlots(ptk.LoggingMixin):
             title="Select a package directory",
             tooltip="Browse for a package folder",
         )
-        widget.option_box.recent(max_recent=8)
-        widget.option_box.pin()
+        widget.option_box.recent(max_recent=8)  # history + pins in one popup
         widget.option_box.enable_clear()
 
         # Lazy tooltip — reflects the live inherited-members state on hover.
@@ -312,8 +311,7 @@ class ExampleSlots(ptk.LoggingMixin):
             rows=[
                 ("eye", f"inherited members: {tt.hl(state)}"),
                 ("folder", "browse for a package folder"),
-                ("recent", "recall one of the last 8 paths"),
-                ("pin", "pin the current path for one-click restore"),
+                ("recent", "recall one of the last 8 paths, or pin one to keep"),
                 ("clear", "clear the field"),
             ],
             notes=[
