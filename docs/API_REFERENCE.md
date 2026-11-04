@@ -4,7 +4,7 @@ Public signatures for the core UITK classes. For prose explanations, see the [Us
 
 **Nav**: [← README](README.md) · [User Guide](USER_GUIDE.md) · [Slots](SLOTS.md) · [Widgets](WIDGETS.md) · [Marking Menu](MARKING_MENU.md) · [Architecture](ARCHITECTURE.md) · [Cookbook](COOKBOOK.md)
 
-Signatures below are verified against the generated registry ([API_INDEX.md](../API_INDEX.md) / `API_REGISTRY.md`); source links go to the owning module.
+Signatures below are verified against the source (`api.search` / `api.describe`); source links go to the owning module.
 
 ---
 
@@ -841,7 +841,7 @@ The remaining public top-level symbols (`uitk/__init__.py` → `DEFAULT_INCLUDE`
 | `ValueManager` | Static get/set for most Qt widget values, routed by type or signal name ([managers/value_manager.py](../uitk/managers/value_manager.py)); `StateManager.apply` builds on it. A widget's own `state_value()` / `set_state_value()` answer first |
 | `FormRows`, `ModelBinding`, `WindowHeight`, `ColumnConfig`, `RowTags` | [Widgets](WIDGETS.md) — § WindowPanel (form rows; widgets bound to an external model), § Universal enhancements (a window following its content), § TableWidget (column config, row tags) |
 | `OptionalPackageManager` | Probe for / offer to install an optional package importable in this session — `available(spec)`, `ensure(spec, feature=...)` ([managers/optional_package_manager.py](../uitk/managers/optional_package_manager.py)); bridge panels expose it via `ensure_optional_package` ([Bridge](BRIDGE.md)) |
-| `RecentValuesStore` | Widget-free most-recent-first value history — `record`, `values`, `subscribe`, `prune_invalid` ([managers/recent_values_store.py](../uitk/managers/recent_values_store.py)); backs the `RecentValuesOption` in [Widgets](WIDGETS.md) |
+| `RecentValuesStore` | Widget-free most-recent-first value history with named pins — `record`, `values`, `pin` / `unpin` / `set_alias`, `pinned_entries`, `subscribe`, `prune_invalid` ([managers/recent_values_store.py](../uitk/managers/recent_values_store.py)); backs `RecentValuesOption` and `PinValuesOption` in [Widgets](WIDGETS.md) |
 
 ---
 

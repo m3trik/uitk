@@ -20,7 +20,8 @@ optionBox/
     ├── _options.py          # Base option classes
     ├── clear.py             # Clear button option
     ├── action.py            # Action/menu options
-    ├── pin_values.py        # Pin values option
+    ├── recent_values.py     # Value-list popup: history + pins
+    ├── pin_values.py        # Its pins-only face
     ├── choice.py            # Filter facet: pick one value from a popup
     └── option_menu.py       # Dropdown menu options
 ```
@@ -258,15 +259,32 @@ widget.option_box.clear_option_defaults()     # -> how many were forgotten
 option.sibling_options()                      # the other options on the box
 ```
 
-### PinValuesOption
-Allows pinning/saving and restoring widget values.
+### RecentValuesOption / PinValuesOption
+One value-list popup, one model (`RecentValuesStore`), two faces:
+
+- `RecentValuesOption` (clock): the field's history with pins on top.
+- `PinValuesOption` (pin): pins only, no history (`max_recent=0`). Its glyph
+  fills while the field's value is pinned.
+
+The popup lists **Pinned** values (alphabetical by name), then **Recent** ones
+(most recent first, minus the pins and the field's current value), then a
+**Pin current value** footer while the field holds a value not pinned yet.
+Captions appear only when both sections have rows. Click a row to restore it;
+its pin pins or unpins it, ✕ forgets a recent value, ✎ names a pin (Enter
+keeps the name, Escape cancels). A name is a label only: the row shows it with
+the raw value dimmed beside it, and a click restores the raw value. That lets
+a field holding rules, such as a naming template `{scene:_bar.*->}_v{n:03d}`,
+offer them as plain names. A pin never ages out of the history and takes none
+of its slots. Unpinning returns the value to the history.
 
 ```python
-from uitk import PinValuesOption
+line_edit.option_box.recent("my_history")                 # history + pins
+line_edit.option_box.recent("my_history", pinning=False)  # history only
+line_edit.option_box.pin("my_pins")                       # pins only
 
-pin_opt = PinValuesOption(line_edit, auto_restore=True)
-option_box = OptionBox(options=[pin_opt])
-option_box.wrap(line_edit)
+recent = line_edit.option_box.find_option(RecentValuesOption)
+recent.record()                                            # after a commit
+recent.add_pinned_value("{scene}_v{n:03d}", alias="Versioned")
 ```
 
 ### OptionMenuOption

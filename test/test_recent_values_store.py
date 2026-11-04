@@ -22,6 +22,7 @@ import conftest  # noqa: F401 — inserts the package root on sys.path
 from qtpy import QtCore
 from uitk.managers.settings_manager import SettingsManager
 from uitk.managers.recent_values_store import (
+    PinnedValueEntry,
     RecentValuesStore,
     RecentValueEntry,
 )
@@ -126,6 +127,200 @@ class TestNormalize(unittest.TestCase):
         )
         # Non-path strings are only stripped, not lowercased.
         self.assertEqual(normalize_value("  Hello "), "Hello")
+
+
+class TestRegexValues(unittest.TestCase):
+    """A naming rule is not a path: ``\\d`` and ``\\D`` are different patterns.
+
+    Bug: any string holding a ``/`` or ``\\`` was normalized as a path
+    (separators unified, case folded on Windows), so ``{scene:\\d+->}`` and
+    ``{scene:\\D+->}`` compared equal -- recording one evicted the other -- and
+    ``basename`` display split the rule at its backslash. Found 2026-10-31 on
+    the Scene Exporter's name field, whose history holds such rules.
+    """
+
+    DIGITS = r"{scene:\d+->}_v{n:03d}"
+    NON_DIGITS = r"{scene:\D+->}_v{n:03d}"
+
+    def test_rules_differing_only_by_case_stay_distinct(self):
+        s = RecentValuesStore()
+        s.record(self.DIGITS)
+        s.record(self.NON_DIGITS)
+        self.assertEqual(s.values, [self.NON_DIGITS, self.DIGITS])
+
+    def test_a_rule_is_kept_verbatim(self):
+        self.assertEqual(normalize_value(self.DIGITS), self.DIGITS)
+
+    def test_basename_leaves_a_rule_whole(self):
+        s = RecentValuesStore(display_format="basename")
+        self.assertEqual(s.display_map([self.DIGITS])[self.DIGITS], self.DIGITS)
+
+    def test_a_colon_after_one_letter_is_not_a_drive(self):
+        self.assertFalse(_is_filesystem_path("v:{n}"))
+        self.assertTrue(_is_filesystem_path("D:\\Projects"))
+        self.assertTrue(_is_filesystem_path("C:"))
+
+
+class TestPins(unittest.TestCase):
+    """Pinned values: chosen, named, kept apart from the history's churn."""
+
+    RULE = r"{scene:_bar.*->}_v{n:03d}"
+
+    def test_pin_is_newest_first_and_dedups(self):
+        s = RecentValuesStore()
+        self.assertTrue(s.pin("a"))
+        self.assertTrue(s.pin("b"))
+        self.assertFalse(s.pin(" a "), "the same value pinned twice")
+        self.assertEqual(s.pinned, ["b", "a"])
+        self.assertTrue(s.is_pinned("a"))
+
+    def test_blank_is_never_pinned(self):
+        s = RecentValuesStore()
+        self.assertFalse(s.pin("   "))
+        self.assertFalse(s.pin(None))
+        self.assertEqual(s.pinned, [])
+
+    def test_a_pinned_value_holds_no_history_slot(self):
+        s = RecentValuesStore(max_recent=2)
+        s.record("a")
+        s.pin("a")
+        s.record("b")
+        s.record("c")
+        # "a" shows in the pinned section, so the history still shows two.
+        self.assertEqual(s.values, ["c", "b", "a"])
+        s.record("d")
+        self.assertEqual(s.values, ["d", "c", "a"])
+
+    def test_unpin_falls_back_into_history(self):
+        s = RecentValuesStore()
+        s.pin(self.RULE)
+        self.assertTrue(s.unpin(self.RULE))
+        self.assertEqual(s.pinned, [])
+        self.assertEqual(s.values, [self.RULE], "an unpin is one click to undo")
+
+    def test_unpin_of_an_aged_out_value_returns_it_to_the_front(self):
+        """Bug: a pin past ``max_recent`` sat at the history's tail, so the
+        trim after unpinning dropped it -- one click lost the value."""
+        s = RecentValuesStore(max_recent=2)
+        s.record("a")
+        s.pin("a")
+        for v in ("b", "c", "d"):
+            s.record(v)
+        s.unpin("a")
+        self.assertEqual(s.values, ["a", "d"])
+
+    def test_max_pinned_zero_pins_nothing_and_says_so(self):
+        s = RecentValuesStore(max_pinned=0)
+        self.assertFalse(s.pin("z"))
+        self.assertEqual(s.pinned, [])
+
+    def test_dropping_the_oldest_pin_keeps_the_history_in_bounds(self):
+        s = RecentValuesStore(max_recent=1, max_pinned=1)
+        s.record("a")
+        s.pin("a")
+        s.record("b")
+        s.pin("c")  # drops "a" from the pins: it now counts as history
+        self.assertEqual(s.values, ["b"])
+
+    def test_unpin_without_history_drops_the_value(self):
+        s = RecentValuesStore(max_recent=0)
+        s.pin("x")
+        s.unpin("x")
+        self.assertEqual((s.pinned, s.values), ([], []))
+
+    def test_alias_names_a_pin(self):
+        s = RecentValuesStore()
+        s.pin(self.RULE)
+        self.assertTrue(s.set_alias(self.RULE, "  Strip _bar, versioned "))
+        entry = s.pinned_entry(self.RULE)
+        self.assertEqual(entry.alias, "Strip _bar, versioned")
+        self.assertEqual(entry.display_text, "Strip _bar, versioned")
+        self.assertEqual(entry.value, self.RULE, "the alias never replaces the value")
+
+    def test_a_blank_or_verbatim_alias_clears_it(self):
+        s = RecentValuesStore()
+        s.pin(self.RULE, alias="Named")
+        s.set_alias(self.RULE, "")
+        self.assertIsNone(s.pinned_entry(self.RULE).alias)
+        s.set_alias(self.RULE, self.RULE)
+        self.assertIsNone(s.pinned_entry(self.RULE).alias)
+
+    def test_alias_on_an_unpinned_value_is_refused(self):
+        s = RecentValuesStore()
+        s.record("a")
+        self.assertFalse(s.set_alias("a", "Named"))
+
+    def test_max_pinned_drops_the_oldest_pin(self):
+        s = RecentValuesStore(max_pinned=2)
+        for v in ("a", "b", "c"):
+            s.pin(v)
+        self.assertEqual(s.pinned, ["c", "b"])
+
+    def test_clear_keeps_pins(self):
+        s = RecentValuesStore()
+        s.record("a")
+        s.pin("p")
+        s.clear()
+        self.assertEqual((s.values, s.pinned), ([], ["p"]))
+        s.clear_pinned()
+        self.assertEqual(s.pinned, [])
+
+    def test_pin_ops_notify(self):
+        s = RecentValuesStore()
+        calls = []
+        s.subscribe(lambda: calls.append(1))
+        s.pin("a")
+        s.set_alias("a", "A")
+        s.unpin("a")
+        self.assertEqual(len(calls), 3)
+
+    def test_entry_equals_its_plain_value(self):
+        self.assertEqual(PinnedValueEntry("C:/Dir", alias="x"), "C:\\Dir")
+        self.assertEqual(
+            PinnedValueEntry(RecentValueEntry("data", display="shown")), "data"
+        )
+
+
+class TestPinPersistence(unittest.TestCase):
+    def test_pins_and_aliases_survive_a_new_store(self):
+        sm, path = _ini_settings()
+        try:
+            s1 = RecentValuesStore(settings=sm)
+            s1.record("a")
+            s1.pin(TestPins.RULE, alias="Strip _bar")
+            s1.pin(RecentValueEntry("C:/a/Rock_Normal.png", display="Rock"))
+            s2 = RecentValuesStore(settings=sm)
+            self.assertEqual(s2.values, ["a"])
+            self.assertEqual(len(s2.pinned), 2)
+            self.assertIsInstance(s2.pinned[0], RecentValueEntry)
+            self.assertEqual(s2.pinned_entry(TestPins.RULE).alias, "Strip _bar")
+        finally:
+            os.unlink(path)
+
+    def test_legacy_pin_records_load_as_pins(self):
+        """``PinValuesOption`` stored ``{"value", "alias"}`` dicts under
+        ``entries`` -- the key the history uses. They load as pins."""
+        sm, path = _ini_settings()
+        try:
+            sm.setValue(
+                "entries",
+                [
+                    {"value": "C:/proj/a", "alias": "A"},
+                    {"value": "C:/proj/b", "alias": None},
+                ],
+            )
+            s = RecentValuesStore(settings=sm, max_recent=0)
+            self.assertEqual(s.pinned, ["C:/proj/a", "C:/proj/b"])
+            self.assertEqual(s.pinned_entry("C:/proj/a").alias, "A")
+            self.assertEqual(s.values, [])
+            # Saved back in the current schema: still pins on the next load.
+            s.pin("C:/proj/c")
+            self.assertEqual(
+                RecentValuesStore(settings=sm, max_recent=0).pinned,
+                ["C:/proj/c", "C:/proj/a", "C:/proj/b"],
+            )
+        finally:
+            os.unlink(path)
 
 
 class TestValidator(unittest.TestCase):

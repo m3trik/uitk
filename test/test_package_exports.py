@@ -5,7 +5,7 @@
 Every symbol registered in ``uitk.DEFAULT_INCLUDE`` must resolve through the
 lazy package ``__getattr__``. A stale entry (a module that no longer exists, a
 class that was renamed/removed) resolves to AttributeError only on first touch,
-so it ships silently and pollutes the auto-generated API registry.
+so it ships silently and pollutes the public surface a search reads.
 
 Run standalone: python -m test.test_package_exports
 """

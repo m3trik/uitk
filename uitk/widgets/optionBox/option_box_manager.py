@@ -81,28 +81,28 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
         if self._option_box:
             self._option_box.set_option_order(self._option_order)
 
-    def pin(
-        self,
-        settings_key: Optional[str] = None,
-        *,
-        double_click_to_edit: bool = False,
-        single_click_restore: bool = False,
-    ):
-        """Enable pin values option (fluent interface).
+    @ptk.Deprecation.parameter(
+        "double_click_to_edit", drop=True, remove_in="1.11.0", since="2026-11-03"
+    )
+    @ptk.Deprecation.parameter(
+        "single_click_restore", drop=True, remove_in="1.11.0", since="2026-11-03"
+    )
+    def pin(self, settings_key: Optional[str] = None, **kwargs):
+        """Enable the pin values option: pins only, no history (fluent interface).
+
+        For a history with pins on top, use :meth:`recent`.
 
         Args:
-            settings_key: Key for persistent settings (not yet implemented)
-            double_click_to_edit: Require double click to edit pinned value
-            single_click_restore: Restore value on single click
+            settings_key: Key for persistent settings.
+            **kwargs: Forwarded to ``PinValuesOption``
+                (e.g. ``max_pinned``, ``text_align``). ``double_click_to_edit``
+                and ``single_click_restore`` are deprecated, removed in
+                1.11.0: nothing reads them, so they warn and are ignored.
         """
         from ..optionBox.options.pin_values import PinValuesOption
 
-        # Create pin option
         pin_option = PinValuesOption(
-            wrapped_widget=self._widget,
-            settings_key=settings_key,
-            double_click_to_edit=double_click_to_edit,
-            single_click_restore=single_click_restore,
+            wrapped_widget=self._widget, settings_key=settings_key, **kwargs
         )
         self.add_option(pin_option)
         return self
@@ -114,13 +114,13 @@ class OptionBoxManager(_OptionBoxMenuMixin, _OptionBoxWrapMixin, ptk.LoggingMixi
         max_recent: int = 10,
         **kwargs,
     ):
-        """Enable recent values option (fluent interface).
+        """Enable recent values option: a history with pins (fluent interface).
 
         Args:
             settings_key: Key for persistent settings.
             max_recent: Maximum number of recent values to keep.
             **kwargs: Forwarded to ``RecentValuesOption``
-                (e.g. ``display_format``).
+                (e.g. ``display_format``, ``pinning=False``).
         """
         from ..optionBox.options.recent_values import RecentValuesOption
 

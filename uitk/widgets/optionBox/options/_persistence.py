@@ -8,10 +8,11 @@ all maintained near-duplicate ``settings_key`` resolution + lazy
 SettingsManager construction.
 :class:`PersistedOption` is both the mixin a plugin opts into (declare
 ``SETTINGS_APP``, call ``_init_persistence``) and the namespace holding the
-construction helpers, so a plugin whose key resolution differs — PinValuesOption
-does not auto-derive from ``objectName``, and RecentValuesOption hands its store
-in — still builds its settings through the same one place. Each keeps full
-control over what is actually saved/loaded (the schemas differ: int, list, deque).
+construction helpers, so a plugin whose key resolution differs — the value-list
+options (RecentValuesOption and its PinValuesOption face) do not auto-derive
+from ``objectName`` and hand the settings to their store — still builds its
+settings through the same one place. Each keeps full control over what is
+actually saved/loaded (the schemas differ: int, list, deque).
 
 **Every namespace built here is host-namespaced** — see
 :meth:`PersistedOption.settings_for`. QSettings is keyed by ``(org, app)`` and
