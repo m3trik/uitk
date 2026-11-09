@@ -2114,6 +2114,40 @@ class TestHeaderPinOnTap(QtBaseTestCase):
         self.assertFalse(header.claim_hide_as_tap(0))
         self.assertEqual(emitted, [])
 
+    # ── A tap switches the opening to hide behavior ────────────────────────
+
+    def _icon_name(self, header):
+        from uitk.managers.icon_manager import IconManager
+
+        info = IconManager.registered_info(header.buttons["pin"])
+        return info.get("name") if info else None
+
+    def test_a_tap_turns_the_pin_button_into_a_hide_button(self):
+        """Tapped open, the window is a standard window: the dismiss button is
+        the normal hide (close) icon, not a filled pin, under either click mode."""
+        for drag_only in (True, False):
+            with self.subTest(pin_on_drag_only=drag_only):
+                _, header = self._pin_header(pin_on_tap=True, pin_on_drag_only=drag_only)
+                self.assertEqual(self._icon_name(header), "radio_empty")
+                self.assertTrue(header.claim_hide_as_tap(0))
+                self.assertEqual(self._icon_name(header), "close")
+                self.assertEqual(header.buttons["pin"].toolTip(), "Hide the window.")
+
+    def test_the_hide_button_hides_and_the_next_opening_is_transient_again(self):
+        window, header = self._pin_header(pin_on_tap=True, pin_on_drag_only=False)
+        window.show()
+        header.claim_hide_as_tap(0)
+        header.buttons["pin"].click()  # classic toggle mode: still just hides
+        self.assertFalse(window.isVisible())
+        self.assertFalse(header.pinned)
+        self.assertEqual(self._icon_name(header), "radio_empty", "pin chrome again")
+
+    def test_a_drag_pin_after_a_tap_is_a_real_pin(self):
+        _, header = self._pin_header(pin_on_tap=True)
+        header.claim_hide_as_tap(0)
+        header._set_pin_state(True)  # what a header drag does
+        self.assertEqual(self._icon_name(header), "radio")
+
     def test_claim_syncs_the_window(self):
         """The claim must land on the window too — that's what makes the
         follow-up request (both auto-hide paths fire) a no-op."""

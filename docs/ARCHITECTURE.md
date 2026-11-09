@@ -376,7 +376,7 @@ themes = {
         "WIDGET_BACKGROUND": "rgb(60,60,60)",
         "BUTTON_HOVER":      "rgba(100,130,150,225)",
         "TEXT_COLOR":        "rgb(220,220,220)",
-        "ACTION_VALID_FG":   "rgb(168,213,162)",
+        "ACTION_VALID_FG":   "#9CC69B",  # ptk.Palette.status("dark")["success"]
         ...
     },
     "light": { ... }

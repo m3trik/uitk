@@ -206,6 +206,23 @@ class _ParamRows(object):
         self.rows_shown = None  # the next refresh applies, the new rows with it
         return added
 
+    def drop_rows(self, keys: List[str]) -> None:
+        """Remove *keys*' rows (or inline cells) and forget them, so
+        :meth:`add_rows` builds each again from the registry's spec now."""
+        for key in keys:
+            widget = self.widgets.pop(key, None)
+            row = self.rows.pop(key, None)
+            self.labels.pop(key, None)
+            self.section.pop(key, None)
+            if self.fields is not None:
+                self.fields.unregister(key)
+            for gone in (row, widget):
+                if gone is not None:
+                    gone.setParent(None)
+                    gone.deleteLater()
+                    break
+        self.rows_shown = None
+
     def _insertion_anchor(
         self, key: str, order: List[str], section: str
     ) -> Optional[QtWidgets.QWidget]:
@@ -569,7 +586,7 @@ class _ParamRows(object):
         if not pair:
             return None
         template, _mode = pair
-        path = panel.template_dir / f"{template}{panel.TEMPLATE_EXTENSION}"
+        path = panel.template_path(template)
         if not path.is_file():
             return None
         return panel.params_module.referenced_keys(path.read_text(encoding="utf-8"))

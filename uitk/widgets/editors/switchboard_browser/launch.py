@@ -101,7 +101,7 @@ class _LaunchMixin:
 
     def _pin_on_tap(self) -> bool:
         """Whether tapping the activation key currently pins a window open."""
-        return bool(getattr(self._ui_handler(), "pin_on_tap", False))
+        return bool(getattr(self._ui_handler(), "pin_on_tap", True))  # uitk's default
 
     def _on_pin_on_tap_toggled(self, checked: bool) -> None:
         """Persist + live-apply the tap-to-pin behavior via the UI handler."""

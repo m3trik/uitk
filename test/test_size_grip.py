@@ -184,6 +184,67 @@ class TestContentMaxSpacersAndContainers(QtBaseTestCase):
         )
         self.assertEqual(max_w, QWIDGETSIZE_MAX, "width stays free")
 
+    def test_a_collapsed_group_never_caps_the_width(self):
+        """Regression: a collapsed group (every row hidden) capped the window's
+        width at its layout's margins, locking horizontal resize on any panel
+        that opened with a group collapsed (the Calculator). An empty layout
+        holds no content to cap with -- Qt's own rule leaves the box unbounded."""
+        win = self.track_widget(QtWidgets.QWidget())
+        lay = QtWidgets.QVBoxLayout(win)
+        lay.addWidget(QtWidgets.QLineEdit())  # growable width
+        for layout_cls in (QtWidgets.QHBoxLayout, QtWidgets.QGridLayout):
+            group = QtWidgets.QGroupBox("grp")
+            g_lay = layout_cls(group)
+            g_lay.addWidget(QtWidgets.QPushButton("row"))
+            group.setMaximumHeight(12)  # collapsed: title bar only
+            lay.addWidget(group)
+        row = QtWidgets.QHBoxLayout()  # a nested row whose widgets all hide
+        row.addWidget(QtWidgets.QPushButton("row"))
+        lay.addLayout(row)
+        win.show()
+        for button in win.findChildren(QtWidgets.QPushButton):
+            button.hide()  # the collapse hides the rows
+        _flush()
+        max_w, max_h = SizeGripMixin.content_max_size(win)
+        self.assertEqual(max_w, QWIDGETSIZE_MAX, "width stays free")
+        self.assertLess(max_h, QWIDGETSIZE_MAX, "the collapsed height still caps")
+
+    def test_a_box_of_hidden_rows_still_caps_the_height(self):
+        """Only the WIDTH is freed for an all-hidden container: a plain group
+        whose rows a visibility rule hid (no explicit max) must still keep the
+        window from stretching into dead space below it."""
+        win = self.track_widget(QtWidgets.QWidget())
+        lay = QtWidgets.QVBoxLayout(win)
+        lay.addWidget(_fixed_label(19))
+        group = QtWidgets.QGroupBox("grp")
+        g_lay = QtWidgets.QVBoxLayout(group)
+        row = _fixed_label(19)
+        g_lay.addWidget(row)
+        lay.addWidget(group)
+        win.show()
+        row.hide()
+        _flush()
+        _max_w, max_h = SizeGripMixin.content_max_size(win)
+        self.assertLess(max_h, QWIDGETSIZE_MAX)
+
+    def test_a_spacer_only_sub_layout_still_absorbs(self):
+        """A spacer reports empty, but a sub-layout holding one is the
+        designer's surplus absorber, not a hidden row to skip."""
+        win = self.track_widget(QtWidgets.QWidget())
+        lay = QtWidgets.QVBoxLayout(win)
+        lay.addWidget(_fixed_label(19))
+        sub = QtWidgets.QVBoxLayout()
+        sub.addSpacerItem(
+            QtWidgets.QSpacerItem(
+                0, 10, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding
+            )
+        )
+        lay.addLayout(sub)
+        win.show()
+        _flush()
+        _max_w, max_h = SizeGripMixin.content_max_size(win)
+        self.assertEqual(max_h, QWIDGETSIZE_MAX)
+
     def test_fixed_spacer_keeps_cap_finite(self):
         win = self.track_widget(
             self._panel_window(spacer_policy=QtWidgets.QSizePolicy.Fixed)

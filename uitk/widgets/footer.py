@@ -7,7 +7,6 @@ from typing import Any, Callable, Mapping, Optional
 import pythontk as ptk
 from qtpy import QtWidgets, QtCore, QtGui
 from uitk.widgets.mixins.attributes import AttributesMixin
-from uitk.widgets.mixins.text import RichTextFormatter
 from uitk.widgets.mixins.size_grip import SizeGripMixin
 from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
 from uitk.widgets.progressBar import ProgressBar
@@ -67,15 +66,15 @@ class Footer(QtWidgets.QWidget, AttributesMixin, SizeGripMixin):
     BUSY_FRAME_MS = 80
     BUSY_FRAMES = 12
 
-    # Foreground colour per status severity, sourced from pythontk's
-    # ``LOG_COLORS`` (via ``RichTextFormatter``) so the footer, message boxes,
-    # and console logs share one palette. ``info`` (``None``) leaves the theme
+    # Foreground colour per status severity, from ``ptk.Palette.status()`` --
+    # the scheme pythontk's ``LOG_COLORS`` reads too -- so the footer, message
+    # boxes, fields and console logs share one palette. ``info`` (``None``) leaves the theme
     # default text colour in place. Used by ``setStatusText(..., level=...)``.
     LEVEL_COLORS = {
         "info": None,
-        "success": RichTextFormatter.LOG_COLORS.get("SUCCESS", "#7ec77e"),
-        "warning": RichTextFormatter.LOG_COLORS.get("WARNING", "#e0b341"),
-        "error": RichTextFormatter.LOG_COLORS.get("ERROR", "#e06c6c"),
+        "success": str(ptk.Palette.status()["success"][0]),
+        "warning": str(ptk.Palette.status()["warn"][0]),
+        "error": str(ptk.Palette.status()["error"][0]),
     }
 
     def __init__(

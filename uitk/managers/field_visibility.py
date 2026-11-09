@@ -104,6 +104,16 @@ class FieldVisibility:
             self._sections[key] = section
         return self
 
+    def unregister(self, key: Hashable) -> "FieldVisibility":
+        """Forget *key* (its widget rebuilt or gone): it no longer counts toward
+        its section's divider, the groups or any mode. Unknown keys are ignored."""
+        self._widgets.pop(key, None)
+        self._sections.pop(key, None)
+        self._visible.discard(key)
+        for fields in self._modes.values():
+            fields.discard(key)
+        return self
+
     def divider(self, section: str, widget) -> "FieldVisibility":
         """A separator that stands only while its section has something on screen.
 

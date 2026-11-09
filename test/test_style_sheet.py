@@ -384,6 +384,25 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
             StyleSheet._widget_configs = saved_configs
 
 
+class TestActionTokensReadThePalette(unittest.TestCase):
+    """Each theme's ``ACTION_*`` field-feedback tokens are its
+    ``ptk.Palette.status(theme)`` tiers."""
+
+    def test_every_theme_reads_its_palette_tiers(self):
+        import pythontk as ptk
+
+        tiers = {"VALID": "success", "INVALID": "error", "WARNING": "warn", "INFO": "info"}
+        for theme in ("light", "dark", "high-contrast"):
+            status = ptk.Palette.status(theme)
+            tokens = StyleSheet.themes[theme]
+            for stem, tier in tiers.items():
+                with self.subTest(theme=theme, token=stem):
+                    fg, bg = status[tier]
+                    self.assertEqual(tokens[f"ACTION_{stem}_FG"], str(fg))
+                    self.assertEqual(tokens[f"ACTION_{stem}_BG"], str(bg))
+            self.assertEqual(tokens["ACTION_INACTIVE_FG"], str(status["locked"][0]))
+
+
 class TestStyleSheetSignals(QtBaseTestCase):
     """Tests for StyleSheet signals."""
 

@@ -554,8 +554,8 @@ window showing and the request arriving is exactly how long the key was held
 
 | `pin_on_tap` | Released within `Header.PIN_ON_TAP_MS` (500ms) | Held longer |
 |:---|:---|:---|
-| `False` (widget default) | window hides | window hides |
-| `True` | window **pins open** like a standard window | window hides (peek) |
+| `True` (default) | window **stays open** as a standard window: the pin button becomes its hide button until it hides | window hides (peek) |
+| `False` (a window's opt-out) | window hides | window hides |
 
 One key, both intents: hold it to glance at a tool and let it go, or let go
 right away to keep the tool up. The header can't read the key itself — the
@@ -565,10 +565,11 @@ decision is made from `MainWindow.visible_duration_ms()`, which
 instead of hiding and returns `False` (not hidden).
 
 Like `pin_on_drag_only`, the constructor default is `None` = *follow the
-process-wide default* (`Header.set_default_pin_on_tap`, initially `False`),
-owned by the **`UiHandler.pin_on_tap`** preference (default `False`) and
+process-wide default* (`Header.set_default_pin_on_tap`, initially `True`),
+owned by the **`UiHandler.pin_on_tap`** preference (default `True`) and
 resolved at hide-request time, so a flip reaches open windows immediately.
-An explicit per-header assignment always wins. The user-facing switch is the
+An explicit per-header assignment always wins: a window that must dismiss on
+every release opts out with `header.pin_on_tap = False`. The user-facing switch is the
 **UI Browser → Browser Options → "Tap opens, hold peeks"** checkbox. The two
 pin preferences are orthogonal: `pin_on_drag_only` is what a *click* does,
 `pin_on_tap` is what an *auto-hide request* means.

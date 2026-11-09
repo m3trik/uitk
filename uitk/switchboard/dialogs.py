@@ -357,7 +357,9 @@ class _Dialogs:
         layout.addWidget(line)
 
         err_lbl = QtWidgets.QLabel("")
-        err_lbl.setStyleSheet("color: #e05555; font-size: 11px;")
+        err_lbl.setStyleSheet(
+            f"color: {ptk.Palette.status()['error'][0]}; font-size: 11px;"
+        )
         err_lbl.setVisible(False)
         layout.addWidget(err_lbl)
 

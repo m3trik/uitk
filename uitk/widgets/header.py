@@ -191,8 +191,9 @@ class Header(
       the background turns red, and while unpinned the icon swaps to the close
       glyph, so the button reads as the hide button it acts as.
 
-    A separate opt-in, :attr:`pin_on_tap`, decides what an *auto-hide* request
-    means for a window that just appeared — see :meth:`claim_hide_as_tap`.
+    A separate switch, :attr:`pin_on_tap` (on by default; a window opts out
+    with ``False``), decides what an *auto-hide* request means for a window
+    that just appeared — see :meth:`claim_hide_as_tap`.
 
     Signals:
         toggled(bool): Emitted when the pin state is toggled.
@@ -236,11 +237,12 @@ class Header(
     # visuals on next show (see ``showEvent``).
     _pin_on_drag_only_default = False
 
-    # Process-wide default for tap-to-pin (see ``pin_on_tap``). Off by default:
-    # the shipped behavior is that a transient window dismisses on every
-    # auto-hide request. ``UiHandler.pin_on_tap`` owns this the same way
-    # ``pin_click_hides`` owns the mode default above.
-    _pin_on_tap_default = False
+    # Process-wide default for tap-to-pin (see ``pin_on_tap``). On by default:
+    # a tap of the activation key keeps the window it opened, a hold still
+    # peeks. ``UiHandler.pin_on_tap`` owns this the same way
+    # ``pin_click_hides`` owns the mode default above; a header opts out by
+    # assigning ``pin_on_tap = False``.
+    _pin_on_tap_default = True
 
     # Tap-to-pin window, in milliseconds. An auto-hide request that lands
     # within this long of the window becoming visible reads as a *tap* of the
@@ -308,6 +310,9 @@ class Header(
         )
         # None = follow the class-level default (see _pin_on_tap_default)
         self._pin_on_tap = None if pin_on_tap is None else bool(pin_on_tap)
+        # This opening was kept by a tap (claim_hide_as_tap): the window is a
+        # standard one until hidden -- the pin button reads and acts as hide.
+        self._tap_held = False
         self._pin_hovered = False
         self._auto_hide_with_os_frame = auto_hide_with_os_frame
         self._auto_hide_checked = False
@@ -415,8 +420,8 @@ class Header(
         """Whether a just-shown window pins itself instead of auto-hiding.
 
         The user-facing choice between the two ways an activation key can
-        behave (see :meth:`claim_hide_as_tap`): hold-to-peek only (``False``,
-        the shipped behavior) or hold-to-peek *and* tap-to-keep (``True``).
+        behave (see :meth:`claim_hide_as_tap`): hold-to-peek only (``False``)
+        or hold-to-peek *and* tap-to-keep (``True``, the default).
         Resolves to the process-wide default while unset — the common case,
         so ``UiHandler.pin_on_tap`` governs every generic header through
         :meth:`set_default_pin_on_tap`. Assigning a bool pins THIS header to a
@@ -453,11 +458,13 @@ class Header(
         the key was held after the window came up.
 
         * Released almost immediately (< :attr:`PIN_ON_TAP_MS`) — the user
-          opened the tool to use it. Pin it open like a standard window.
+          opened the tool to use it. It stays open as a standard window: the
+          pin button becomes the normal hide button until the window hides,
+          and the next opening is transient again.
         * Held longer — the user was peeking. Let the hide through.
 
-        Off unless :attr:`pin_on_tap` is set, so the default behavior is
-        unchanged: every auto-hide request dismisses. A header with no pin
+        Only while :attr:`pin_on_tap` resolves true (the default); a header
+        that opts out lets every auto-hide request dismiss. A header with no pin
         button never claims either: it has no way to show the pinned state or
         to let the user undo it, and a pinned window refuses ``hide()``
         outright (``MainWindow.setVisible``) — so pinning one would strand it
@@ -475,7 +482,7 @@ class Header(
             return False
         if elapsed_ms is None or elapsed_ms < 0 or elapsed_ms >= self.PIN_ON_TAP_MS:
             return False
-        self._set_pin_state(True)
+        self._set_pin_state(True, tap=True)
         return True
 
     @property
@@ -1389,7 +1396,7 @@ class Header(
                 In :attr:`pin_on_drag_only` mode only these calls toggle the pin
                 state; a click hides the window outright.
         """
-        if self.pin_on_drag_only and not from_drag:
+        if (self.pin_on_drag_only or self._tap_held) and not from_drag:
             # One-click dismissal — the button acts as the hide button its
             # hover visuals advertise. Pinning is reached by dragging.
             self.hide_window()
@@ -1406,13 +1413,18 @@ class Header(
         if self.pinned != pinned:
             self._set_pin_state(pinned)
 
-    def _set_pin_state(self, pinned: bool):
+    def _set_pin_state(self, pinned: bool, tap: bool = False):
         """Internal method to update pin state and sync with window.
 
         Parameters:
             pinned: The new pin state
+            tap: The pin is a tap's (:meth:`claim_hide_as_tap`): the window is
+                kept as a standard window, so the pin button shows and acts as
+                its hide button. Any other pin change (an unpin, a drag pin)
+                ends that.
         """
         self.pinned = pinned
+        self._tap_held = bool(pinned and tap)
 
         # Notify the window of pin state change (if it supports set_pinned)
         window = self.window()
@@ -1472,12 +1484,15 @@ class Header(
         # first), so re-syncing a live header can't stack filters.
         button.installEventFilter(self)
 
-        if button.property(self._PIN_HIDES_PROPERTY) != hides_on_click:
-            button.setProperty(self._PIN_HIDES_PROPERTY, hides_on_click)
+        # A tap-held window's button is its hide button: the red hover too.
+        hide_styled = hides_on_click or self._tap_held
+        if button.property(self._PIN_HIDES_PROPERTY) != hide_styled:
+            button.setProperty(self._PIN_HIDES_PROPERTY, hide_styled)
             self._refresh_button_style(button)
 
-        # Hover only reads as "will hide" while the affordance is active.
-        if hides_on_click and self._pin_hovered and not self.pinned:
+        # Hover only reads as "will hide" while the affordance is active; a
+        # tap-held window's button IS its hide button.
+        if self._tap_held or (hides_on_click and self._pin_hovered and not self.pinned):
             icon_name = "close"
         else:
             icon_name = "radio" if self.pinned else "radio_empty"
@@ -1487,7 +1502,9 @@ class Header(
         if info is None or info.get("name") != icon_name:
             self._set_button_icon(button, icon_name)
 
-        if self.pinned:
+        if self._tap_held:
+            button.setToolTip("Hide the window.")
+        elif self.pinned:
             button.setToolTip("Unpin and hide the window.")
         elif hides_on_click:
             button.setToolTip("Hide the window.\nDrag the header to pin it open.")

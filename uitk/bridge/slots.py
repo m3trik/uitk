@@ -67,6 +67,11 @@ from uitk.bridge._log_panel import _LogPane
 from uitk.bridge._header_menu import _HeaderMenu
 
 
+class _ScriptRowSpec(AttributeSpec):
+    """A row a script's header declared (``# Row:``), not one of the registry's own:
+    :meth:`ParamPanelSlots.add_script_rows` rebuilds it when the line changes."""
+
+
 class _ParamPanelSlotsInternal(object):
     """Private side of :class:`ParamPanelSlots`: its parts and protected hooks.
 
@@ -492,6 +497,34 @@ class ParamPanelSlots(_ParamPanelSlotsInternal):
     def template_dir(self) -> Path:  # pragma: no cover - subclass contract
         raise NotImplementedError
 
+    @property
+    def template_dirs(self) -> Tuple[Path, ...]:
+        """The folders a template name resolves in, first match winning: a
+        person's own scripts, then the shipped ones (``ptk.ScriptTemplate
+        .search_dirs``). Default: :attr:`template_dir` alone. A panel over an
+        engine with a user tier returns the engine's own ``template_dirs()``, so
+        the panel reads the very file the engine runs."""
+        return (Path(self.template_dir),)
+
+    @property
+    def user_scripts_dir(self) -> Optional[Path]:
+        """The person's own scripts folder (the first of :attr:`template_dirs`
+        when there is more than one), or ``None`` for a panel without one."""
+        dirs = self.template_dirs
+        return Path(dirs[0]) if len(dirs) > 1 else None
+
+    def template_path(self, template: str) -> Path:
+        """The file *template* resolves to (:attr:`template_dirs`, first match);
+        a name found nowhere names the shipped folder's path, so a caller's
+        ``is_file`` check says it is missing."""
+        found = ptk.ScriptTemplate.find(self.template_dirs, template, self.TEMPLATE_EXTENSION)
+        return found or Path(self.template_dirs[-1]) / f"{template}{self.TEMPLATE_EXTENSION}"
+
+    def template_tier(self, template: str) -> Optional[str]:
+        """``"user"`` or ``"builtin"``: where *template* resolves from, else ``None``."""
+        found = ptk.ScriptTemplate.find(self.template_dirs, template, self.TEMPLATE_EXTENSION)
+        return ptk.ScriptTemplate.tier(found, self.template_dirs) if found else None
+
     def make_bridge(self):  # pragma: no cover - subclass contract
         """Return a fresh bridge instance. Called once, lazily."""
         raise NotImplementedError
@@ -900,6 +933,49 @@ class ParamPanelSlots(_ParamPanelSlotsInternal):
         self._refresh_param_enablement()
         return added
 
+    #: The section a script's own rows sit under when its line names none.
+    SCRIPT_ROWS_SECTION = "Script"
+
+    def add_script_rows(self) -> List[str]:
+        """Add the rows the selected script declares for itself; the keys added.
+
+        A registry knows the built-in rows only, so a person's own script
+        declares its settings in its header (``# Row: __KEY__ int 4 "Label"``,
+        :meth:`pythontk.ScriptTemplate.declared_rows`): each key the registry
+        lacks joins it as an :class:`AttributeSpec` (in :attr:`SCRIPT_ROWS_SECTION`
+        unless the line names a section) and gets its row, value and presets as
+        a built-in row does (:meth:`add_param_rows`). A key the registry has is
+        the built-in row, whatever the script says. The script's ``__KEY__``
+        token is in its own line, so the visibility shows the row with it.
+
+        The header is read again on every template change: a row whose line the
+        person edited since (its default, kind, label or section) is rebuilt to
+        it, in a long session too.
+        """
+        pair = self._selected_template_mode()
+        if not pair:
+            return []
+        params = self.params_module.PARAMS
+        declared = ptk.ScriptTemplate.declared_rows(self.template_path(pair[0]))
+        changed, grown = [], False
+        for row in declared:
+            key = row["key"]
+            # A registry is module-global, so its script rows are told from its
+            # own by their class, in a panel opened later too.
+            if key in params and not isinstance(params[key], _ScriptRowSpec):
+                continue  # the built-in row
+            row = dict(row)
+            row.setdefault("section", self.SCRIPT_ROWS_SECTION)
+            spec = _ScriptRowSpec(**row)
+            if params.get(key) == spec and key in self._param_widgets:
+                continue
+            if key in self._param_widgets:
+                changed.append(key)
+            params[key], grown = spec, True
+        if changed:
+            self._params_part.drop_rows(changed)
+        return self.add_param_rows() if grown else []
+
     def collect_param_values(self) -> Dict[str, Any]:
         """Snapshot every widget's current value, regardless of visibility.
 
@@ -956,8 +1032,38 @@ class ParamPanelSlots(_ParamPanelSlotsInternal):
         self._on_template_changed()
 
     def open_templates_folder(self) -> None:
-        """Reveal :attr:`template_dir` in the OS file manager."""
-        self.reveal_folder(self.template_dir)
+        """Reveal the person's own scripts folder (created, so there is somewhere
+        to drop a script) or, for a panel without one, :attr:`template_dir`."""
+        user = self.user_scripts_dir
+        if user is None:
+            self.reveal_folder(self.template_dir)
+            return
+        user.mkdir(parents=True, exist_ok=True)
+        self.reveal_folder(user)
+
+    def copy_to_my_scripts(self) -> Optional[Path]:
+        """Copy the selected script into the person's own folder, to edit: the
+        copy then runs in its place (a user script shadows the built-in of its
+        name). An existing copy is never overwritten. Returns the copy's path, or
+        ``None`` on a panel without a user folder or with nothing selected."""
+        user, pair = self.user_scripts_dir, self._selected_template_mode()
+        if user is None or not pair:
+            return None
+        template = pair[0]
+        target = user / f"{template}{self.TEMPLATE_EXTENSION}"
+        if target.is_file():
+            self.bridge.logger.info(f"'{template}' is already in your scripts: {target}")
+        else:
+            import shutil
+
+            user.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.template_path(template), target)
+            self.bridge.logger.info(
+                f"Copied '{template}' to your scripts; your copy now runs in its place: {target}"
+            )
+            self.refresh_templates()
+        self.reveal_folder(user)
+        return target
 
     # ------------------ Log pane (_LogPane) ----------------------------
 
@@ -987,8 +1093,60 @@ class ParamPanelSlots(_ParamPanelSlotsInternal):
     # ------------------ Header menu -----------------------------------
 
     def header_menu_items(self) -> Tuple[Tuple[str, str, str, str], ...]:
-        """Hook: the header-menu items. Default = :attr:`HEADER_MENU_ITEMS`."""
-        return self.HEADER_MENU_ITEMS
+        """Hook: the header-menu items. Default = :attr:`HEADER_MENU_ITEMS`,
+        then :meth:`rpc_plugin_items` (an override that wants them adds them)."""
+        return tuple(self.HEADER_MENU_ITEMS) + self.rpc_plugin_items()
+
+    # ------------------ The bridge's app plugin ------------------------
+
+    def rpc_plugin(self):
+        """Hook: the app plugin the bridge class declares (its ``RPC_PLUGIN``,
+        a ``pythontk.RpcPluginSpec``), or ``None``. Read off the class: the
+        header is built before the bridge is."""
+        try:
+            bridge_class = getattr(self, "bridge_class", None)
+        except Exception:  # noqa: BLE001 -- a class that cannot be named offers no plugin
+            return None
+        return getattr(bridge_class, "RPC_PLUGIN", None)
+
+    def rpc_plugin_items(self) -> Tuple[Tuple[str, str, str, str], ...]:
+        """*Install in <app>* / *Uninstall from <app>* for :meth:`rpc_plugin`'s
+        plugin, run by the one shared installer (``pythontk.PluginInstaller``);
+        none without one."""
+        spec = self.rpc_plugin()
+        if spec is None:
+            return ()
+        return (
+            (
+                f"Install in {spec.app}",
+                "btn_install_rpc_plugin",
+                f"Install (or update) the {spec.name} plugin in {spec.app}'s plugins folder, "
+                f"so the {spec.app} you open serves this panel. {spec.after_install}".rstrip(),
+                "install_rpc_plugin",
+            ),
+            (
+                f"Uninstall from {spec.app}",
+                "btn_uninstall_rpc_plugin",
+                f"Remove the {spec.name} plugin from {spec.app}'s plugins folder: the "
+                f"{spec.app} you open no longer serves it (one this panel launches still does).",
+                "uninstall_rpc_plugin",
+            ),
+        )
+
+    def _run_rpc_plugin(self, verb: str) -> None:
+        logger = self.bridge.logger
+        try:
+            getattr(ptk.PluginInstaller, verb)(self.rpc_plugin(), logger=logger)
+        except Exception as e:  # noqa: BLE001 -- said; the panel stays up
+            logger.error(f"The plugin {verb} failed: {e}")
+
+    def install_rpc_plugin(self) -> None:
+        """Install the bridge's app plugin (the person's act): :meth:`rpc_plugin_items`."""
+        self._run_rpc_plugin("install")
+
+    def uninstall_rpc_plugin(self) -> None:
+        """Remove the bridge's app plugin from its app's plugins folder."""
+        self._run_rpc_plugin("uninstall")
 
     def help_spec(self) -> Optional[Dict[str, Any]]:
         """Hook: the ``fmt()`` keyword dict for the header help, or ``None``.

@@ -714,7 +714,7 @@ class SwitchboardBrowser(_LaunchMixin, EditorPanel):
         self._cb_pin_on_tap.toggled.connect(self._on_pin_on_tap_toggled)
         self.state.capture(
             self._cb_pin_on_tap,
-            bool(getattr(self._ui_handler(), "PIN_ON_TAP_DEFAULT", False)),
+            bool(getattr(self._ui_handler(), "PIN_ON_TAP_DEFAULT", True)),
         )
 
         # Theme: pulled through the switchboard's ``style`` proxy so any

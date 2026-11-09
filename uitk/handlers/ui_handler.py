@@ -60,15 +60,16 @@ class UiHandler(BaseHandler):
     PIN_CLICK_HIDES_DEFAULT = True
 
     # Tap-to-pin for every transient window this handler styles:
-    #   True  → releasing the activation key right after the window appears
-    #           pins it open (``Header.claim_hide_as_tap``); keep holding and
-    #           the release still dismisses it, so ONE key covers both
-    #           "peek at this" and "open this".
-    #   False → every auto-hide request dismisses (the shipped behavior).
+    #   True  → (default) releasing the activation key right after the
+    #           window appears pins it open (``Header.claim_hide_as_tap``);
+    #           keep holding and the release still dismisses it, so ONE key
+    #           covers both "peek at this" and "open this".
+    #   False → every auto-hide request dismisses.
     # Persisted alongside PIN_CLICK_HIDES_KEY; the UI Browser's "Tap opens,
-    # hold peeks" checkbox is the user-facing switch.
+    # hold peeks" checkbox is the user-facing switch. A window opts out with
+    # ``header.pin_on_tap = False`` (an assigned bool outranks this default).
     PIN_ON_TAP_KEY = "pin_on_tap"
-    PIN_ON_TAP_DEFAULT = False
+    PIN_ON_TAP_DEFAULT = True
 
     # :meth:`launch` option defaults. One table, so :meth:`launch_code` can
     # spell out only the options a launch overrides.

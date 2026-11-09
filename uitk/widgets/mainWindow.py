@@ -330,7 +330,7 @@ class MainWindow(
         and will refuse auto-hide requests. Only the user clicking the
         explicit hide/close button should dismiss them.
 
-        A header opted into ``pin_on_tap`` gets first refusal: a request that
+        A header with ``pin_on_tap`` on (the default) gets first refusal: a request that
         arrives on the heels of the show means the activation key was tapped,
         not held, so the window pins open instead of being dismissed (see
         ``Header.claim_hide_as_tap``).

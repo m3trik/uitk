@@ -660,9 +660,11 @@ class TestUiHandlerPinOnTap(unittest.TestCase):
         QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
         self.tmp.cleanup()
 
-    def test_default_is_off(self):
-        """Opt-in: the shipped auto-hide behavior is unchanged until asked."""
-        self.assertFalse(self.handler.pin_on_tap)
+    def test_default_is_on(self):
+        """On unless the user turns it off: a tap keeps the window it opened."""
+        self.handler.config.remove(UiHandler.PIN_ON_TAP_KEY)  # nothing stored
+        self.assertTrue(UiHandler.PIN_ON_TAP_DEFAULT)
+        self.assertTrue(self.handler.pin_on_tap)
 
     def test_setter_persists_to_config(self):
         self.handler.pin_on_tap = True
@@ -687,7 +689,7 @@ class TestUiHandlerPinOnTap(unittest.TestCase):
         preference is a default, not a mandate."""
         from uitk.widgets.header import Header
 
-        header = Header(config_buttons=["pin"], pin_on_tap=False)
+        header = Header(config_buttons=["pin"], pin_on_tap=False)  # an opt-out
         try:
             self.handler.pin_on_tap = True
             self.assertFalse(header.pin_on_tap)

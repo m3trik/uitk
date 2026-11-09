@@ -271,6 +271,26 @@ class TestPanelRenames(unittest.TestCase):
         self.assertEqual(
             key("shortcuts_maya.Other.b000", {}, classes), "shortcuts_maya.Other.b000"
         )
+        # A widget renamed to None is not carried, whatever the key's kind.
+        for dropped in (
+            "cmb000/currentIndexChanged",
+            "defaults/cmb000/currentIndexChanged",
+            "shortcuts_maya.Old.cmb000",
+        ):
+            with self.subTest(key=dropped):
+                self.assertIsNone(key(dropped, {"cmb000": None}, classes))
+
+    def test_a_widget_renamed_to_none_is_not_carried(self):
+        """A value whose meaning the new panel changed -- an index into a list
+        it orders otherwise -- stays behind; the rest carries."""
+        self._seed(
+            "old_tool_maya",
+            {"cmb000/currentIndexChanged": 1, "chk000/toggled": True},
+        )
+        PanelRenames.carry(
+            self._switchboard("maya"), {"new_tool": {"old_tool": {"cmb000": None}}}
+        )
+        self.assertEqual(self._values("new_tool_maya"), {"chk000/toggled": True})
 
 
 class TestPanelRenamesOverASwitchboard(unittest.TestCase):

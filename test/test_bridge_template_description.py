@@ -102,5 +102,28 @@ class LuaTemplateDescriptionTest(unittest.TestCase):
         self.assertIsNone(Tooltip.template_description(path))
 
 
+class CSharpTemplateDescriptionTest(unittest.TestCase):
+    """The ``.cs`` branch (Unity Scripts): the leading ``//`` summary, its
+    declaration lines and row tokens dropped."""
+
+    def test_the_summary_reads_without_its_directives(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "SendToUnity.cs"
+            path.write_text(
+                "// Send to Unity: import the delivered model and place it in the open scene.\n"
+                '// BRIDGE_MODES = ("send_to",)\n'
+                '// SOURCES = ("scene", "file")\n'
+                "// Rows: __ASSETS_SUBDIR__ __PLACE_IN_SCENE__\n"
+                "//\n"
+                "// Maintainer note: instances update themselves on reimport.\n"
+                "using UnityEditor;\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                Tooltip.template_description(path),
+                "Send to Unity: import the delivered model and place it in the open scene.",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,8 @@ from pythontk import TooltipFormat
 # tell a machine directive from a sentence -- see
 # :meth:`_TooltipInternal._lua_leading_comment_block`.
 _PLACEHOLDER_RE = re.compile(r"__[A-Z0-9_]+__")
+#: A header declaration (``FIELD = (...)``): a directive, never prose.
+_DECLARATION_RE = re.compile(r"^\s*[A-Z][A-Z0-9_]*\s*=\s*\(")
 
 
 class _TooltipInternal(object):
@@ -38,7 +40,12 @@ class _TooltipInternal(object):
 
     @staticmethod
     def _lua_leading_comment_block(template_path: Path) -> Optional[str]:
-        """Return the leading ``--`` SUMMARY paragraph of *template_path*.
+        """The leading ``--`` summary paragraph (:meth:`_leading_comment_block`)."""
+        return _TooltipInternal._leading_comment_block(template_path, "--")
+
+    @staticmethod
+    def _leading_comment_block(template_path: Path, marker: str) -> Optional[str]:
+        """Return the leading *marker* (``--``, ``//``) SUMMARY paragraph of *template_path*.
 
         The first paragraph only, not the whole comment block. These headers
         are read by two audiences at once: the artist picking a preset in the
@@ -57,7 +64,9 @@ class _TooltipInternal(object):
         Lines carrying a ``__TOKEN__`` placeholder are dropped wherever they
         appear: those are machine directives aimed at
         ``Parameters.referenced_keys`` -- the ``scope=__SCOPE__`` echo that
-        makes the panel show its Scope row -- never prose.
+        makes the panel show its Scope row -- never prose -- and so are the
+        header's declarations (``BRIDGE_MODES = (...)``, ``SOURCES = (...)``,
+        read by ``ptk.ScriptTemplate.declared_values``).
         """
         try:
             text = template_path.read_text(encoding="utf-8-sig")
@@ -68,9 +77,9 @@ class _TooltipInternal(object):
             stripped = line.lstrip()
             if not stripped:
                 break  # blank line ends the leading block
-            if not stripped.startswith("--"):
+            if not stripped.startswith(marker):
                 break  # first non-comment ends the block
-            body = stripped[2:]
+            body = stripped[len(marker):]
             # Allow at most one separator space after ``--`` so callers control
             # indentation in the source without introducing leading whitespace.
             if body.startswith(" "):
@@ -79,7 +88,7 @@ class _TooltipInternal(object):
                 if out:
                     break  # paragraph break: the summary is complete
                 continue  # leading separator: the summary hasn't started
-            if _PLACEHOLDER_RE.search(body):
+            if _PLACEHOLDER_RE.search(body) or _DECLARATION_RE.match(body):
                 continue  # machine directive, not prose
             out.append(body)
         return "\n".join(out) if out else None
@@ -172,6 +181,7 @@ class Tooltip(_TooltipInternal):
         * ``.lua`` -- the contiguous leading ``--`` comment block, with the
           ``--`` markers stripped and lines joined by newline. Stops at the
           first blank line or non-comment line.
+        * ``.cs`` -- the same, for ``//`` (Unity Scripts' C# templates).
         * anything else -- *None* (silent no-op).
         """
         suffix = template_path.suffix.lower()
@@ -179,4 +189,6 @@ class Tooltip(_TooltipInternal):
             return _TooltipInternal._python_module_docstring(template_path)
         if suffix == ".lua":
             return _TooltipInternal._lua_leading_comment_block(template_path)
+        if suffix == ".cs":
+            return _TooltipInternal._leading_comment_block(template_path, "//")
         return None

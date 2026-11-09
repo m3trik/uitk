@@ -171,7 +171,7 @@ class TestFooterStatusText(QtBaseTestCase):
         self.assertTrue(footer.text().startswith("Sta"), footer.text())
 
     def test_level_colors_come_from_pythontk_log_colors(self):
-        """Severity colours are sourced from pythontk's LOG_COLORS SSoT."""
+        """Severity colours are ``ptk.Palette.status()``'s, as the logs' are."""
         from pythontk.core_utils.logging_mixin import LoggingMixin
 
         log_colors = LoggingMixin.LOG_COLORS

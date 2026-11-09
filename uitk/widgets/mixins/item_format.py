@@ -17,6 +17,8 @@ import logging
 from contextlib import contextmanager
 from typing import Callable, Tuple
 
+import pythontk as ptk
+
 from uitk.widgets.mixins.convert import ConvertMixin
 
 logger = logging.getLogger(__name__)
@@ -26,15 +28,19 @@ class ItemFormatMixin(ConvertMixin):
     """Formatter store + semantic colours shared by the table and the tree."""
 
     #: Semantic key -> (foreground, background). ``None`` leaves that role alone.
+    #: The severity keys are ``ptk.Palette.status()`` tiers (the shared scheme);
+    #: ``current`` (the active row's gold) is the widgets' own.
     ACTION_COLOR_MAP = {
-        "valid": ("#3C8D3C", "#E6F4EA"),
-        "invalid": ("#B97A7A", "#FBEAEA"),
-        "warning": ("#B49B5C", "#FFF6DC"),
-        "info": ("#6D9BAA", "#E2F3F9"),
-        "inactive": ("#AAAAAA", None),
-        "current": ("#C4A44A", None),
-        "reset": (None, None),
+        key: tuple(None if c is None else str(c) for c in ptk.Palette.status()[tier])
+        for key, tier in (
+            ("valid", "success"),
+            ("invalid", "error"),
+            ("warning", "warn"),
+            ("info", "info"),
+            ("inactive", "locked"),
+        )
     }
+    ACTION_COLOR_MAP.update({"current": ("#C4A44A", None), "reset": (None, None)})
 
     @staticmethod
     def _set_formatter(store: dict, key, formatter, append: bool) -> None:

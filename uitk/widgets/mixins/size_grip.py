@@ -272,25 +272,48 @@ class SizeGripMixin:
         grow-policy CONTAINER defers to its own layout's recursive cap
         instead of being declared unbounded outright — that's what lets a
         default-policy group box of fixed rows stay capped. Grow-policy
-        leaves (no layout) remain unbounded, matching Qt semantics.
+        leaves (no layout) remain unbounded, matching Qt semantics. A
+        container whose layout holds only hidden widgets (a collapsed group)
+        is unbounded in WIDTH: it has no content to cap with, and deferring
+        would cap the window at that layout's bare margins. Its height still
+        defers, so a box of hidden rows keeps the window from stretching into
+        dead space.
         """
         max_w, max_h = widget.maximumWidth(), widget.maximumHeight()
         policy = widget.sizePolicy()
+        layout = widget.layout()
+        has_layout = layout is not None and layout.count() > 0
         inner = None  # lazily computed inner-layout cap
         if max_w >= QWIDGETSIZE_MAX:
             if not SizeGripMixin._policy_grows(policy.horizontalPolicy()):
                 max_w = widget.sizeHint().width()
-            elif widget.layout() is not None and widget.layout().count():
-                inner = SizeGripMixin._layout_content_max(widget.layout())
+            elif has_layout and not SizeGripMixin._only_hidden_widgets(layout):
+                inner = SizeGripMixin._layout_content_max(layout)
                 max_w = inner[0]
         if max_h >= QWIDGETSIZE_MAX:
             if not SizeGripMixin._policy_grows(policy.verticalPolicy()):
                 max_h = widget.sizeHint().height()
-            elif widget.layout() is not None and widget.layout().count():
+            elif has_layout:
                 if inner is None:
-                    inner = SizeGripMixin._layout_content_max(widget.layout())
+                    inner = SizeGripMixin._layout_content_max(layout)
                 max_h = inner[1]
         return max_w, max_h
+
+    @staticmethod
+    def _only_hidden_widgets(layout: QtWidgets.QLayout) -> bool:
+        """True when *layout* holds widgets and sub-layouts that are all empty
+        and NO spacer: nothing to lay out and no surplus absorber. A spacer
+        reports empty too, but it is a designer's "surplus goes here"."""
+        for entry in _LayoutItems.entries(layout):
+            if isinstance(entry, QtWidgets.QWidget):
+                if not _LayoutItems.is_empty(entry):
+                    return False
+            elif isinstance(entry, QtWidgets.QLayout):
+                if not SizeGripMixin._only_hidden_widgets(entry):
+                    return False
+            else:  # a spacer, or an item kind the walk doesn't model
+                return False
+        return True
 
     @staticmethod
     def _layout_content_max(layout: QtWidgets.QLayout) -> Tuple[int, int]:
@@ -327,10 +350,15 @@ class SizeGripMixin:
         prev_empty = True  # nothing precedes the first item
         for entry in _LayoutItems.entries(layout):
             item_empty = _LayoutItems.is_empty(entry)
+            if (isinstance(entry, QtWidgets.QWidget) and item_empty) or (
+                isinstance(entry, QtWidgets.QLayout)
+                and SizeGripMixin._only_hidden_widgets(entry)
+            ):
+                # A hidden widget, or a sub-layout of hidden widgets: no space
+                # and no constraint, along or across.
+                prev_empty = True
+                continue
             if isinstance(entry, QtWidgets.QWidget):
-                if item_empty:  # hidden (and not retaining size)
-                    prev_empty = True
-                    continue
                 iw, ih = SizeGripMixin._widget_content_max(entry)
                 a, b = (iw, ih) if horiz else (ih, iw)
             elif isinstance(entry, QtWidgets.QLayout):

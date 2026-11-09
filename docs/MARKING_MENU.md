@@ -211,7 +211,7 @@ mm.show("texture_editor", pos="screen", force=True)
 - If the target UI has `#startmenu` / `#submenu` tags → `_show_marking_menu` (stacked).
 - Otherwise → `_show_window` (standalone, reparented, styled via `UiHandler`).
 
-On activation-key release, every visible standalone window gets a `request_hide()`. Per `MainWindow.request_hide`, a window auto-hides only when it **has a pin button** (`ui.header`) and is currently **unpinned** — pinned windows and windows without a pin button refuse the request and stay open until dismissed explicitly. With tap-to-pin on (`UiHandler.pin_on_tap`, off by default; per header `Header.pin_on_tap`), a request that lands within `Header.PIN_ON_TAP_MS` of the show means the key was tapped, not held, so the window pins open instead (`Header.claim_hide_as_tap`).
+On activation-key release, every visible standalone window gets a `request_hide()`. Per `MainWindow.request_hide`, a window auto-hides only when it **has a pin button** (`ui.header`) and is currently **unpinned** — pinned windows and windows without a pin button refuse the request and stay open until dismissed explicitly. With tap-to-pin on (`UiHandler.pin_on_tap`, on by default; a window opts out with `Header.pin_on_tap = False`), a request that lands within `Header.PIN_ON_TAP_MS` of the show means the key was tapped, not held, so the window pins open instead (`Header.claim_hide_as_tap`).
 
 ### From slot classes
 

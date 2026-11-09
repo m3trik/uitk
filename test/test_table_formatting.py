@@ -93,6 +93,27 @@ class TestColorMapFormatterNoneEntries(QtBaseTestCase):
         )
 
 
+class TestActionColorMapReadsThePalette(unittest.TestCase):
+    """The severity keys are ``ptk.Palette.status()`` tiers -- the one scheme
+    logs, fields and footers read -- never a table of their own."""
+
+    def test_each_severity_key_is_its_palette_tier(self):
+        import pythontk as ptk
+        from uitk.widgets.mixins.item_format import ItemFormatMixin
+
+        status = ptk.Palette.status()
+        for key, tier in (
+            ("valid", "success"),
+            ("invalid", "error"),
+            ("warning", "warn"),
+            ("info", "info"),
+            ("inactive", "locked"),
+        ):
+            with self.subTest(key=key):
+                want = tuple(None if c is None else str(c) for c in status[tier])
+                self.assertEqual(ItemFormatMixin.ACTION_COLOR_MAP[key], want)
+
+
 class TestActionColorMapParity(unittest.TestCase):
     """The two forked maps must at least agree on which keys exist.
 
