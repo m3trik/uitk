@@ -246,6 +246,39 @@ class TestColorSwatchClickBehavior(QtBaseTestCase):
 # =============================================================================
 
 
+class TestColorSwatchSelectedState(QtBaseTestCase):
+    """The checked swatch in a palette must read as selected at a glance."""
+
+    def _pixel_at_ring(self, color, checked):
+        from uitk.widgets.colorSwatch import ColorSwatch
+
+        swatch = self.track_widget(
+            ColorSwatch(color=QtGui.QColor(color), setCheckable=True)
+        )
+        swatch.setFixedSize(32, 32)
+        swatch.setChecked(checked)
+        swatch.updateBackgroundColor()
+        swatch.show()
+        app.processEvents()
+        image = swatch.grab().toImage()
+        ring = ColorSwatch.SELECTED_RING_INSET + 1  # inside the ring's stroke
+        return QtGui.QColor(image.pixel(ring, image.height() // 2))
+
+    def test_a_checked_swatch_draws_a_contrast_ring(self):
+        """Regression: the checked style only re-colored the border to the fill,
+        so the selected swatch looked like every other one (minus an outline)."""
+        for fill, ring in (("#203040", QtGui.QColor("white")), ("#E0E8D0", QtGui.QColor("black"))):
+            with self.subTest(fill=fill):
+                plain = self._pixel_at_ring(fill, checked=False)
+                selected = self._pixel_at_ring(fill, checked=True)
+                self.assertEqual(plain.name(), QtGui.QColor(fill).name())
+                self.assertLess(
+                    abs(selected.lightness() - ring.lightness()),
+                    40,
+                    f"the ring on {fill} is {selected.name()}, not {ring.name()}",
+                )
+
+
 class TestColorSwatchKeepSquare(QtBaseTestCase):
     """Tests for the opt-in keep_square aspect lock."""
 

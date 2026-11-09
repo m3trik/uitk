@@ -31,6 +31,7 @@ import pythontk as ptk  # noqa: E402
 from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from uitk.switchboard import Switchboard  # noqa: E402
 from uitk.bridge.slots import ParamPanelSlots  # noqa: E402
+from uitk.bridge._template_combo import _TemplateCombo  # noqa: E402
 from uitk.bridge.spec import (  # noqa: E402
     AttributeSpec,
     KindFactory,
@@ -1910,7 +1911,7 @@ class TestCheckListKind(BaseTestCase):
     The plural counterpart to ``choice``: a checkable row per entry, reading
     back the list of checked VALUES. Entries can arrive at build time or be
     pushed in later via ``set_choices`` (the dynamic-parameter path a panel
-    uses for runtime-discovered sets, e.g. unitytk's deployable scripts).
+    uses for runtime-discovered sets, e.g. scripts found in a target project).
     """
 
     CHOICES = [("Audio Event", "audio_event"), ("Shot Metadata", "shot_metadata")]
@@ -2994,6 +2995,189 @@ class TestModeComboHidesWithNothingToChoose(BaseTestCase):
     def test_a_template_combo_with_one_entry_keeps_its_menu_on_screen(self):
         _slot, combo = self._populate([("bake", "")], template_menu=True)
         self.assertFalse(combo.isHidden())
+
+
+class TestScriptTiers(BaseTestCase):
+    """Built-in scripts plus a person's own (``template_dirs``: theirs first):
+    the file a name resolves to is the one every read uses, and the combo's
+    menu copies a built-in into their folder to edit."""
+
+    def setUp(self):
+        super().setUp()
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        self.builtin, self.user = tmp / "builtin", tmp / "user"
+        self.builtin.mkdir()
+        (self.builtin / "import.py").write_text("X = __BUILTIN_KEY__\n", encoding="utf-8")
+        (self.builtin / "lookdev.py").write_text("", encoding="utf-8")
+
+    def _slot(self, tiered=True):
+        keys = {"MY_KEY": None, "BUILTIN_KEY": None}
+        registry = types.SimpleNamespace(PARAMS=keys, referenced_keys=lambda text: Parameters.referenced_keys(text, keys))
+        slot = _bare_slot(registry)
+        dirs = (self.user, self.builtin) if tiered else (self.builtin,)
+        type(slot).template_dir = self.builtin
+        type(slot).template_dirs = property(lambda _self: dirs)
+        slot._bridge = types.SimpleNamespace(logger=mock.Mock())
+        slot._selected_template_mode = lambda: ("import", "send_to")
+        return slot
+
+    def test_a_users_script_is_the_one_every_read_uses(self):
+        self.user.mkdir()
+        (self.user / "import.py").write_text("X = __MY_KEY__\n", encoding="utf-8")
+        slot = self._slot()
+        self.assertEqual(slot.template_path("import"), self.user / "import.py")
+        self.assertEqual(slot.template_path("lookdev"), self.builtin / "lookdev.py")
+        self.assertEqual(slot._params_part.relevant_keys(), {"MY_KEY"})
+
+    def test_untiered_panels_read_their_one_folder(self):
+        slot = self._slot(tiered=False)
+        self.assertIsNone(slot.user_scripts_dir)
+        self.assertEqual(slot.template_path("import"), self.builtin / "import.py")
+
+    def test_copy_to_my_scripts_duplicates_the_selected_script_to_edit(self):
+        slot = self._slot()
+        slot.refresh_templates = mock.Mock()
+        slot.reveal_folder = mock.Mock(return_value=True)
+        slot.copy_to_my_scripts()
+        copy = self.user / "import.py"
+        self.assertEqual(copy.read_text(encoding="utf-8"), "X = __BUILTIN_KEY__\n")
+        slot.refresh_templates.assert_called_once()
+        slot.reveal_folder.assert_called_once_with(self.user)
+        # A second copy never overwrites the person's edits.
+        copy.write_text("edited\n", encoding="utf-8")
+        slot.copy_to_my_scripts()
+        self.assertEqual(copy.read_text(encoding="utf-8"), "edited\n")
+
+    def test_open_folder_reveals_the_persons_own_folder(self):
+        slot = self._slot()
+        slot.reveal_folder = mock.Mock(return_value=True)
+        slot.open_templates_folder()
+        self.assertTrue(self.user.is_dir(), "created so there is somewhere to drop a script")
+        slot.reveal_folder.assert_called_once_with(self.user)
+
+    def test_the_combo_marks_a_persons_own_scripts(self):
+        self.user.mkdir()
+        (self.user / "mine.py").write_text("", encoding="utf-8")
+        slot = self._slot()
+        slot.TEMPLATE_MENU = True
+        slot.list_template_modes = lambda: [("import", "send_to"), ("mine", "send_to")]
+        panel = QtWidgets.QWidget()
+        self.addCleanup(panel.deleteLater)
+        combo = QtWidgets.QComboBox(panel)
+        slot._populate_template_combo(combo)
+        # Marked beside the label, never in it: the selection persists by label.
+        self.assertEqual([combo.itemText(i) for i in range(2)], ["import (send_to)", "mine (send_to)"])
+        self.assertFalse(combo.itemData(0, QtCore.Qt.FontRole))
+        self.assertTrue(combo.itemData(1, QtCore.Qt.FontRole).italic())
+        self.assertIn(str(self.user / "mine.py"), combo.itemData(1, QtCore.Qt.ToolTipRole))
+
+    def _combo(self, slot):
+        panel = QtWidgets.QWidget()
+        self.addCleanup(panel.deleteLater)
+        return QtWidgets.QComboBox(panel)
+
+    def test_a_refresh_keeps_the_script_the_person_picked(self):
+        """Refresh and Copy to My Scripts repopulate the combo; the selection
+        must survive it, or the next Run runs the default script."""
+        slot = self._slot()
+        slot.TEMPLATE_MENU = True
+        slot.list_template_modes = lambda: [("import", "send_to"), ("lookdev", "send_to")]
+        combo = self._combo(slot)
+        slot._populate_template_combo(combo)
+        combo.setCurrentIndex(1)
+        slot.list_template_modes = lambda: [("a_new", "send_to"), ("import", "send_to"), ("lookdev", "send_to")]
+        slot._populate_template_combo(combo)
+        self.assertEqual(_TemplateCombo.pair_of(combo), ("lookdev", "send_to"))
+        # A script no longer listed falls back to the panel's initial entry.
+        slot.list_template_modes = lambda: [("a_new", "send_to"), ("import", "send_to")]
+        slot._populate_template_combo(combo)
+        self.assertEqual(combo.currentIndex(), 0)
+
+    def test_copy_to_my_scripts_keeps_the_copied_script_selected(self):
+        """Driven for real: the copy refreshes the combo, which then lists the
+        person's copy under the same name, still selected."""
+        slot = self._slot()
+        slot.TEMPLATE_MENU = True
+        slot.reveal_folder = mock.Mock(return_value=True)
+        slot._on_template_changed = lambda: None
+        slot.list_template_modes = lambda: [("import", "send_to"), ("lookdev", "send_to")]
+        slot.ui = types.SimpleNamespace(cmb000=self._combo(slot))
+        combo = slot.ui.cmb000
+        slot._populate_template_combo(combo)
+        combo.setCurrentIndex(1)
+        del slot._selected_template_mode  # read the real combo
+        slot.copy_to_my_scripts()
+        self.assertTrue((self.user / "lookdev.py").is_file())
+        self.assertEqual(_TemplateCombo.pair_of(combo), ("lookdev", "send_to"))
+        self.assertTrue(combo.itemData(1, QtCore.Qt.FontRole).italic())
+
+    def test_an_edited_row_line_takes_effect_without_a_restart(self):
+        """A registry is module-global: a script row added once must still
+        follow the person's edits to its line (default, kind), in this panel
+        and in one opened later."""
+        self.user.mkdir()
+        script = self.user / "import.py"
+        script.write_text('# Row: __ITERATIONS__ int 4 "Iterations"\n', encoding="utf-8")
+        params = {"BUILTIN_KEY": AttributeSpec(key="BUILTIN_KEY", kind="int", default=1)}
+
+        def panel():
+            slot = _built_rows(params)
+            type(slot).template_dirs = property(lambda _self: (self.user, self.builtin))
+            slot._selected_template_mode = lambda: ("import", "send_to")
+            slot._relevant_param_keys = lambda: set(params)
+            return slot
+
+        slot = panel()
+        self.assertEqual(slot.add_script_rows(), ["ITERATIONS"])
+        script.write_text('# Row: __ITERATIONS__ float 8.5 "Iterations"\n', encoding="utf-8")
+        self.assertEqual(slot.add_script_rows(), ["ITERATIONS"])
+        self.assertEqual((params["ITERATIONS"].kind, params["ITERATIONS"].default), ("float", 8.5))
+        self.assertEqual(slot.collect_param_values()["ITERATIONS"], 8.5)
+        self.assertEqual(list(slot._param_widgets), ["BUILTIN_KEY", "ITERATIONS"])
+        # A panel opened later builds the registry's script row, then follows the line.
+        script.write_text('# Row: __ITERATIONS__ int 2 "Iterations"\n', encoding="utf-8")
+        later = panel()
+        self.assertEqual(later.add_script_rows(), ["ITERATIONS"])
+        self.assertEqual(later.collect_param_values()["ITERATIONS"], 2)
+
+    def test_a_persons_script_shows_the_rows_it_declares(self):
+        """A registry knows only the built-in rows; a script's ``Row:`` lines
+        add its own, which the panel then shows and sends like any other. A
+        declaration of a key the registry has leaves the built-in row alone."""
+        self.user.mkdir()
+        (self.user / "import.py").write_text(
+            '# Row: __ITERATIONS__ int 4 "Iterations" min=1 max=64\n'
+            '# Row: __BUILTIN_KEY__ str "a script\'s guess"\n'
+            "N = args['ITERATIONS']\n",
+            encoding="utf-8",
+        )
+        builtin = AttributeSpec(key="BUILTIN_KEY", kind="int", default=1)
+        params = {"BUILTIN_KEY": builtin}
+        slot = _built_rows(params)
+        type(slot).template_dirs = property(lambda _self: (self.user, self.builtin))
+        slot._selected_template_mode = lambda: ("import", "send_to")
+        slot._relevant_param_keys = lambda: set(params)
+        self.assertEqual(slot.add_script_rows(), ["ITERATIONS"])
+        self.assertIs(params["BUILTIN_KEY"], builtin)
+        spec = params["ITERATIONS"]
+        self.assertEqual((spec.kind, spec.default, spec.label, spec.maximum), ("int", 4, "Iterations", 64))
+        self.assertEqual(spec.section, "Script")
+        self.assertEqual(slot.collect_param_values(), {"BUILTIN_KEY": 1, "ITERATIONS": 4})
+        self.assertEqual(slot.add_script_rows(), [], "a second pass adds nothing")
+
+    def test_the_combo_persists_its_script_by_name_not_row(self):
+        """The list is the person's scripts beside the bundled ones, sorted: a
+        saved row would land on another script once one is added."""
+        slot = self._slot()
+        slot.TEMPLATE_MENU = False
+        slot.list_template_modes = lambda: [("import", "send_to")]
+        slot._on_template_changed = lambda: None
+        panel = QtWidgets.QWidget()
+        self.addCleanup(panel.deleteLater)
+        combo = QtWidgets.QComboBox(panel)
+        slot.cmb000_init(combo)
+        self.assertEqual(combo.restore_by, "text")
 
 
 class TestBridgeSlotsFacade(BaseTestCase):

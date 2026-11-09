@@ -80,7 +80,9 @@ class StateManager(ptk.LoggingMixin):
         return self.qsettings
 
     @classmethod
-    def rename_widget_key(cls, key: str, renames: Mapping[str, str]) -> str:
+    def rename_widget_key(
+        cls, key: str, renames: Mapping[str, Optional[str]]
+    ) -> Optional[str]:
         """*key*, one this manager stores, with its widget renamed per *renames*.
 
         The one reader of this manager's key format outside it: a panel renamed
@@ -92,10 +94,12 @@ class StateManager(ptk.LoggingMixin):
 
         Parameters:
             key: A key of the panel's store.
-            renames: ``{former objectName: its name now}``.
+            renames: ``{former objectName: its name now}``; ``None`` for a
+                widget whose values are not carried.
 
         Returns:
-            str: The key the renamed widget's value is stored under.
+            str: The key the renamed widget's value is stored under, or ``None``
+            when its widget is renamed to ``None``.
         """
         if key.startswith(cls._CUSTOM_PREFIX):
             return key
@@ -105,7 +109,8 @@ class StateManager(ptk.LoggingMixin):
         name, sep, rest = key[len(prefix) :].partition("/")
         if not sep:
             return key
-        return f"{prefix}{renames.get(name, name)}/{rest}"
+        now = renames.get(name, name)
+        return None if now is None else f"{prefix}{now}/{rest}"
 
     def _get_state_key(
         self, widget: QtWidgets.QWidget, prefix: str = ""
@@ -266,6 +271,18 @@ class StateManager(ptk.LoggingMixin):
             index = int(str(value).strip())
         except (TypeError, ValueError):
             return -1
+        # A combo whose list changed in the same release it left index mode
+        # names the list it saved against (``widget.legacy_items``, in order,
+        # ``None`` for an item with no successor): the index names its OLD
+        # item, found by text (or data) in the new list.
+        legacy = getattr(widget, "legacy_items", None)
+        if legacy is not None:
+            if not 0 <= index < len(legacy) or legacy[index] is None:
+                return -1
+            found = widget.findText(str(legacy[index]))
+            if found < 0 and hasattr(widget, "findData"):
+                found = widget.findData(legacy[index])
+            return found if found is not None and found >= 0 else -1
         return index if 0 <= index < widget.count() else -1
 
     @staticmethod

@@ -454,6 +454,31 @@ class TestLegacyIndexMigration(_ComboPersistBase):
         self.sm.load(c2)
         self.assertEqual(c2.currentText(), "presetB")
 
+    def test_a_combo_whose_list_changed_with_its_mode_reads_its_old_index_by_its_old_list(self):
+        """A combo that went to text mode in the same change its list did
+        declares the list it saved its index against (``legacy_items``, None
+        for an item with no successor): the old index names its old item, never
+        the new list's item at that row."""
+        old = {"bake_lighting": None, "import": None, "reimport": None, "render": None}
+        c1 = self.make_combo(old)  # index mode
+        new = {"bake_lighting": None, "bake_mesh_maps": None, "new_project": None, "update_mesh": None}
+        for index, expected in ((1, "new_project"), (2, "update_mesh"), (0, "bake_lighting")):
+            with self.subTest(index=index):
+                c1.setCurrentIndex(index)
+                self.sm.save(c1)
+                c2 = self.make_combo(new, restore_by="text")
+                c2.legacy_items = ("bake_lighting", "new_project", "update_mesh", None)
+                c2.setCurrentIndex(3)
+                self.sm.load(c2)
+                self.assertEqual(c2.currentText(), expected)
+        c1.setCurrentIndex(3)  # render: no successor, so nothing is restored
+        self.sm.save(c1)
+        c2 = self.make_combo(new, restore_by="text")
+        c2.legacy_items = ("bake_lighting", "new_project", "update_mesh", None)
+        c2.setCurrentIndex(3)
+        self.sm.load(c2)
+        self.assertEqual(c2.currentText(), "update_mesh", "kept its own selection")
+
     def test_an_out_of_range_legacy_index_is_ignored(self):
         """A shrunk list must not resolve to a neighbour by accident."""
         c1 = self.make_combo(LIST_ORIG)

@@ -17,7 +17,7 @@ from uitk.managers.shortcut_manager import ShortcutManager
 from uitk.managers.state_manager import StateManager
 
 #: ``{panel: {former panel: {former widget name: its name now}}}``.
-RenamedFrom = Mapping[str, Mapping[str, Mapping[str, str]]]
+RenamedFrom = Mapping[str, Mapping[str, Mapping[str, Optional[str]]]]
 
 
 class PanelRenames(object):
@@ -57,7 +57,9 @@ class PanelRenames(object):
                 ``handlers.ui`` (``persistence_override`` /
                 ``set_persistence_override``).
             renamed_from: ``{panel: {former panel: {former widget name: its
-                name now}}}``; a widget kept by name needs no entry.
+                name now}}}``; a widget kept by name needs no entry, and one
+                named ``None`` is not carried (a value whose meaning the new
+                panel changed: an index into a list it now orders otherwise).
             slot_class_names: ``(panel) -> [Slots class names]``, the panel's
                 class first (older spellings after it, carried too). Default:
                 ``switchboard.get_slot_class_names``.
@@ -109,7 +111,7 @@ class PanelRenames(object):
         # current spelling: copied last, it finds the slot held already.
         for key in sorted(source.keys(), key=lambda k: cls._class_of(k) in older):
             new_key = cls.renamed_key(key, widgets, classes)
-            if target.value(new_key) is None:
+            if new_key is not None and target.value(new_key) is None:
                 target.setValue(new_key, source.value(key))
         handlers = getattr(switchboard, "handlers", None)
         handler = getattr(handlers, "ui", None)
@@ -126,13 +128,13 @@ class PanelRenames(object):
 
     @staticmethod
     def renamed_key(
-        key: str, widgets: Mapping[str, str], classes: Dict[str, str]
-    ) -> str:
+        key: str, widgets: Mapping[str, Optional[str]], classes: Dict[str, str]
+    ) -> Optional[str]:
         """*key* as the new panel stores it.
 
         Parameters:
             key: A key of the former panel's branch.
-            widgets: ``{former widget name: its name now}``.
+            widgets: ``{former widget name: its name now}`` (``None``: not carried).
             classes: ``{former Slots class name: the new panel's}``.
 
         Returns:
@@ -140,7 +142,8 @@ class PanelRenames(object):
             ``defaults/...``) under the widget's name now
             (``StateManager.rename_widget_key``); a shortcut override
             ``shortcuts<ns>.<class>.<slot>[.<twin>]`` under the new class and the
-            slot's widget name now; any other key as it is.
+            slot's widget name now; any other key as it is. ``None`` for a key of
+            a widget named ``None`` (not carried).
         """
         if "/" in key:
             return StateManager.rename_widget_key(key, widgets)
@@ -148,6 +151,8 @@ class PanelRenames(object):
         if len(parts) >= 3 and parts[0].startswith("shortcuts") and parts[1] in classes:
             parts[1] = classes[parts[1]]
             parts[2] = widgets.get(parts[2], parts[2])
+            if parts[2] is None:
+                return None
             return ".".join(parts)
         return key
 

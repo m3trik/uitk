@@ -1000,6 +1000,23 @@ class TestCarryPresets(BaseTestCase):
         self.assertEqual(PresetManager.carry_presets(self.src, self.dst), [])
         self.assertFalse(self.dst.exists())
 
+    def test_renamed_templates_carry_under_their_names_now(self):
+        """The app's templates renamed too (Unity Scripts: ``copy_to_assets`` is
+        Send to Unity's; ``manage_scripts`` has no successor and stays behind)."""
+        self._write(self.src / "copy_to_assets" / "hero.json", {"param_a": 1})
+        self._write(self.src / "manage_scripts" / "all.json", {"param_b": 2})
+        self._write(self.src / "kept" / "k.json", {"param_c": 3})
+        copied = PresetManager.carry_presets(
+            self.src,
+            self.dst,
+            templates={"copy_to_assets": "SendToUnity", "manage_scripts": None},
+        )
+        self.assertEqual(
+            sorted(p.relative_to(self.dst).as_posix() for p in copied),
+            ["SendToUnity/hero.json", "kept/k.json"],
+        )
+        self.assertFalse((self.dst / "manage_scripts").exists())
+
 
 class TestSetupComboIdempotent(QtBaseTestCase):
     """Repeat ``setup()`` on a Menu parent wires ONE preset combo.

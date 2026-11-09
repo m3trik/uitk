@@ -1146,7 +1146,10 @@ class PresetManager(_PresetWidgetScope, _PresetRootMigration, ptk.LoggingMixin):
 
     @classmethod
     def carry_presets(
-        cls, source: Union[str, Path], target: Union[str, Path]
+        cls,
+        source: Union[str, Path],
+        target: Union[str, Path],
+        templates: Optional[Dict[str, Optional[str]]] = None,
     ) -> List[Path]:
         """Copy the presets saved under *source* into *target*, never over one there.
 
@@ -1161,6 +1164,9 @@ class PresetManager(_PresetWidgetScope, _PresetRootMigration, ptk.LoggingMixin):
         Parameters:
             source: The folder the presets were saved under.
             target: The folder the panel now reads them from.
+            templates: ``{former template subfolder: its name now}``, for a panel
+                whose templates were renamed too; ``None`` leaves that
+                subfolder's presets behind (a template with no successor).
 
         Returns:
             list: The copied files' paths under *target*.
@@ -1172,10 +1178,16 @@ class PresetManager(_PresetWidgetScope, _PresetRootMigration, ptk.LoggingMixin):
         copied: List[Path] = []
         if not src.is_dir():
             return copied
+        templates = templates or {}
         for path in sorted(src.rglob("*")):
             rel = path.relative_to(src)
             if not path.is_file() or any(part.startswith(".") for part in rel.parts):
                 continue
+            if len(rel.parts) > 1 and rel.parts[0] in templates:
+                now = templates[rel.parts[0]]
+                if now is None:
+                    continue
+                rel = Path(now, *rel.parts[1:])
             out = dst / rel
             if out.exists():
                 continue

@@ -12,6 +12,27 @@ from uitk.managers.settings_manager import SettingsManager
 _logger = logging.getLogger(__name__)
 
 
+class _ActionTokens:
+    """A theme's input-feedback tokens (``ACTION_*``, the ``actionState`` QSS)
+    read from ``ptk.Palette.status`` -- the ecosystem's one severity scheme --
+    so a field marked invalid wears the same error colours as a log or a
+    footer. The theme names are Palette's ``STATUS_THEMES`` keys."""
+
+    #: Token stem -> Palette tier.
+    TIERS = {"VALID": "success", "INVALID": "error", "WARNING": "warn", "INFO": "info"}
+
+    @classmethod
+    def for_theme(cls, theme: str) -> dict:
+        status = ptk.Palette.status(theme)
+        tokens = {}
+        for stem, tier in cls.TIERS.items():
+            fg, bg = status[tier]
+            tokens[f"ACTION_{stem}_FG"] = str(fg)
+            tokens[f"ACTION_{stem}_BG"] = str(bg)
+        tokens["ACTION_INACTIVE_FG"] = str(status["locked"][0])
+        return tokens
+
+
 class _ThemeSignalBus(QtCore.QObject):
     """Process-wide emitter backing :attr:`StyleSheet.theme_changed`.
 
@@ -123,15 +144,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "SELECTION_BG": "rgba(70,70,70,100)",
             "SELECTION_FG": "rgb(255,255,190)",
             # Status (input feedback)
-            "ACTION_VALID_FG": "rgb(60,141,60)",
-            "ACTION_VALID_BG": "rgb(230,244,234)",
-            "ACTION_INVALID_FG": "rgb(185,122,122)",
-            "ACTION_INVALID_BG": "rgb(251,234,234)",
-            "ACTION_WARNING_FG": "rgb(180,155,92)",
-            "ACTION_WARNING_BG": "rgb(255,246,220)",
-            "ACTION_INFO_FG": "rgb(109,155,170)",
-            "ACTION_INFO_BG": "rgb(226,243,249)",
-            "ACTION_INACTIVE_FG": "rgb(170,170,170)",
+            **_ActionTokens.for_theme("light"),
             # Misc (Python-consumed)
             "ICON_COLOR": "rgb(220,220,220)",
             "LINK_COLOR": "rgb(130,170,210)",
@@ -191,15 +204,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "SELECTION_BG": "rgba(80,80,80,100)",
             "SELECTION_FG": "rgb(255,255,190)",
             # Status (input feedback)
-            "ACTION_VALID_FG": "rgb(168,213,162)",
-            "ACTION_VALID_BG": "rgb(30,46,30)",
-            "ACTION_INVALID_FG": "rgb(232,165,163)",
-            "ACTION_INVALID_BG": "rgb(51,32,31)",
-            "ACTION_WARNING_FG": "rgb(224,201,127)",
-            "ACTION_WARNING_BG": "rgb(51,46,32)",
-            "ACTION_INFO_FG": "rgb(163,203,224)",
-            "ACTION_INFO_BG": "rgb(30,46,51)",
-            "ACTION_INACTIVE_FG": "rgb(119,119,119)",
+            **_ActionTokens.for_theme("dark"),
             # Misc (Python-consumed)
             "ICON_COLOR": "rgb(220,220,220)",
             "LINK_COLOR": "rgb(130,170,210)",
@@ -252,15 +257,7 @@ class StyleSheet(QtCore.QObject, ptk.LoggingMixin):
             "SELECTION_BG": "rgb(255,255,0)",
             "SELECTION_FG": "rgb(0,0,0)",
             # Status (input feedback)
-            "ACTION_VALID_FG": "rgb(0,230,118)",
-            "ACTION_VALID_BG": "rgb(0,40,20)",
-            "ACTION_INVALID_FG": "rgb(255,105,97)",
-            "ACTION_INVALID_BG": "rgb(64,0,0)",
-            "ACTION_WARNING_FG": "rgb(255,214,0)",
-            "ACTION_WARNING_BG": "rgb(51,43,0)",
-            "ACTION_INFO_FG": "rgb(64,196,255)",
-            "ACTION_INFO_BG": "rgb(0,37,64)",
-            "ACTION_INACTIVE_FG": "rgb(200,200,200)",
+            **_ActionTokens.for_theme("high-contrast"),
             # Misc (Python-consumed)
             "ICON_COLOR": "rgb(255,255,255)",
             "LINK_COLOR": "rgb(77,166,255)",

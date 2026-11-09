@@ -156,6 +156,14 @@ class ExternalAppHandler(BaseHandler):
     # of any of their apps (see :meth:`_bootstrap_providers`).
     PROVIDER_GROUP: str = "uitk.external_app_providers"
 
+    # Entry-point group of an app's FORMER names: ``former = "module:Class"``,
+    # the very object its current entry point names. Read by :meth:`discover`
+    # without importing anything; a former name resolves to the app it became
+    # (:meth:`resolve_name`) and is never listed, so a renamed app keeps
+    # answering a desktop shortcut, ``python -m <pkg> <former>`` or a host's
+    # call by the old name.
+    RENAMED_GROUP: str = "uitk.external_apps.renamed"
+
     # Entry-point extras beginning with this prefix are host-visibility
     # gates (``hide_maya`` -> hidden in the ``maya`` context) rather than
     # semantic browser tags. See :meth:`_partition_extras`.
@@ -170,6 +178,8 @@ class ExternalAppHandler(BaseHandler):
     ):
         super().__init__(switchboard=switchboard, log_level=log_level)
         self._apps: Dict[str, dict] = {}
+        # ``{former name: the app it became}`` (:attr:`RENAMED_GROUP`).
+        self._renamed: Dict[str, str] = {}
         # Provider packages that ship discoverable apps but may not be
         # installed yet. Keyed by install_spec; consulted on a launch miss.
         self._providers: Dict[str, dict] = {}
@@ -236,6 +246,7 @@ class ExternalAppHandler(BaseHandler):
                 spec = getattr(getattr(ep, "dist", None), "name", None)
                 count += int(self._register_entry_point(ep, mode, install_spec=spec))
         count += self._discover_source_providers(scan)
+        self._discover_renamed()
         if count:
             self.logger.debug(
                 f"[discover] registered {count} app(s) from groups {list(scan)}"
@@ -729,7 +740,29 @@ class ExternalAppHandler(BaseHandler):
         self._notify_entries_changed()
 
     def is_registered(self, name: str) -> bool:
-        return name in self._apps
+        return self.resolve_name(name) in self._apps
+
+    def resolve_name(self, name: str) -> str:
+        """*name* as the app is registered now: a former name
+        (:attr:`RENAMED_GROUP`) gives the app it became, any other name itself."""
+        if not name or name in self._apps:
+            return name
+        return self._renamed.get(name, name)
+
+    def _discover_renamed(self) -> None:
+        """Map each declared former name to the registered app whose entry
+        point names the same ``module:Class``; one naming no registered app
+        is dropped (its app is not installed)."""
+        by_target = {
+            (cfg.get("module"), cfg.get("entry")): name for name, cfg in self._apps.items()
+        }
+        for ep in self._entry_points(self.RENAMED_GROUP):
+            try:
+                target = by_target.get((ep.module, ep.attr))
+            except Exception:  # noqa: BLE001 - a malformed declaration is skipped
+                continue
+            if target and ep.name != target:
+                self._renamed[ep.name] = target
 
     def unregister(self, name: str) -> None:
         """Remove an app. No-op if not registered."""
@@ -990,7 +1023,7 @@ class ExternalAppHandler(BaseHandler):
         Returns:
             None when *name* is not registered.
         """
-        cfg = self._apps.get(name)
+        cfg = self._apps.get(self.resolve_name(name))
         sb_import = self._import_code(Switchboard)
         own_import = self._import_code(type(self))
         if not (cfg and cfg.get("module") and sb_import and own_import):
@@ -1034,7 +1067,7 @@ class ExternalAppHandler(BaseHandler):
         Its provider's: the top-level package of the app's module, when that
         package declares a hub in its ``__main__`` (``python -m <package>``).
         """
-        cfg = self._apps.get(name)
+        cfg = self._apps.get(self.resolve_name(name))
         if not cfg or not cfg.get("module"):
             return None
         return self._hub_of(cfg["module"].split(".")[0])
@@ -1184,6 +1217,7 @@ class ExternalAppHandler(BaseHandler):
                 package this session already imported -- a restart picks it
                 up). The message says which.
         """
+        name = self.resolve_name(name)
         overrides = (
             ("module", module),
             ("entry", entry),

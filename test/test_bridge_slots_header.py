@@ -203,5 +203,60 @@ class CustomHeaderMenuTest(unittest.TestCase):
             slot.header_init(_FakeHeader())
 
 
+class RpcPluginItemsTest(unittest.TestCase):
+    """A bridge class that declares its app plugin (``RPC_PLUGIN``, a
+    ``pythontk.RpcPluginSpec``) gets *Install in <app>* / *Uninstall from
+    <app>*, run by the one shared installer: no panel writes its own."""
+
+    def _panel(self):
+        from pathlib import Path
+
+        import pythontk as ptk
+
+        spec = ptk.RpcPluginSpec(name="demo_rpc", app="Demo", source=Path("."), user_dir=lambda: None)
+
+        class _Bridge:
+            RPC_PLUGIN = spec
+
+        class _Panel(ParamPanelSlots):
+            bridge_class = _Bridge
+
+        return _Panel.__new__(_Panel), spec
+
+    def test_a_bridge_with_a_plugin_gets_its_install_and_uninstall(self):
+        slot, _spec = self._panel()
+        header = _FakeHeader()
+        slot.header_init(header)
+        self.assertEqual(_labels(header), ["Clear Log", "Install in Demo", "Uninstall from Demo"])
+
+    def test_the_actions_run_the_shared_installer_on_the_bridges_spec(self):
+        import types
+        from unittest import mock
+
+        from pythontk.net_utils.rpc.installer import PluginInstaller
+
+        slot, spec = self._panel()
+        logger = mock.MagicMock()
+        slot._bridge = types.SimpleNamespace(logger=logger)
+        with mock.patch.object(PluginInstaller, "install") as install, mock.patch.object(PluginInstaller, "uninstall") as uninstall:
+            slot.install_rpc_plugin()
+            slot.uninstall_rpc_plugin()
+        install.assert_called_once_with(spec, logger=logger)
+        uninstall.assert_called_once_with(spec, logger=logger)
+
+    def test_a_failed_install_lands_in_the_log(self):
+        import types
+        from unittest import mock
+
+        from pythontk.net_utils.rpc.installer import PluginInstaller
+
+        slot, _spec = self._panel()
+        logger = mock.MagicMock()
+        slot._bridge = types.SimpleNamespace(logger=logger)
+        with mock.patch.object(PluginInstaller, "install", side_effect=PermissionError("denied")):
+            slot.install_rpc_plugin()
+        self.assertIn("denied", logger.error.call_args.args[0])
+
+
 if __name__ == "__main__":
     unittest.main()

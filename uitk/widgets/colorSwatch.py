@@ -201,21 +201,47 @@ class ColorSwatch(QtWidgets.QPushButton, AttributesMixin, ConvertMixin):
         # Update UI without emitting signal
         self.updateBackgroundColor()
 
+    def _contrast_color(self) -> QtGui.QColor:
+        """Black on a light fill, white on a dark one: the text and ring color."""
+        return QtGui.QColor(
+            QtCore.Qt.black if self._color.lightness() > 127 else QtCore.Qt.white
+        )
+
     def updateBackgroundColor(self):
         """Updates the widget's background color based on the check state."""
-        textColor = "black" if self._color.lightness() > 127 else "white"
-        # Fixed black outline so light fills don't blend into the panel.
+        # Fixed black outline so light fills don't blend into the panel. The
+        # checked state is painted (paintEvent), not styled: a style can only
+        # re-color the one border, which never reads as "selected".
         self.setStyleSheet(
             f"QPushButton {{"
             f"background-color: {self._color.name()};"
-            f"color: {textColor};"
+            f"color: {self._contrast_color().name()};"
             f"border-radius: 5px;"
             f"border: 1px solid black;"
             f"}}"
-            f"QPushButton:checked {{"
-            f"border-color: {self._color.name()};"
-            f"}}"
         )
+
+    #: The selected ring: its distance in from the swatch's edge and its width.
+    SELECTED_RING_INSET = 3
+    SELECTED_RING_WIDTH = 2
+
+    def paintEvent(self, event):
+        """Paint the swatch, then -- when checked -- a ring in the fill's
+        contrast color just inside the outline, so the selected swatch of a
+        palette stands out whatever its color."""
+        super().paintEvent(event)
+        if not self.isChecked():
+            return
+        painter = QtGui.QPainter(self)
+        try:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            painter.setPen(QtGui.QPen(self._contrast_color(), self.SELECTED_RING_WIDTH))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            inset = self.SELECTED_RING_INSET + self.SELECTED_RING_WIDTH / 2
+            rect = QtCore.QRectF(self.rect()).adjusted(inset, inset, -inset, -inset)
+            painter.drawRoundedRect(rect, 3, 3)
+        finally:
+            painter.end()
 
     def mouseDoubleClickEvent(self, event):
         """Open the colour editor on double click.

@@ -289,7 +289,7 @@ DEFAULTS = {
     "remember_size":      True,
     "style":              DEFAULT_STYLE,
     "pin_click_hides":    True,       # pin-button click dismisses
-    "pin_on_tap":         False,      # tap the activation key to pin open
+    "pin_on_tap":         True,       # tap the activation key to pin open
     "window_persistence": "context",  # "context" | "sticky" | "transient"
 }
 

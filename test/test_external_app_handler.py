@@ -537,6 +537,43 @@ class TestExternalAppDiscovery(unittest.TestCase):
         self.assertEqual(names, {"alpha", "beta"})
 
 
+class TestRenamedAppsStillResolve(unittest.TestCase):
+    """An app renamed keeps answering to its former name: a desktop shortcut,
+    ``python -m <pkg> <former>`` or a host's call by the old name opens the app
+    now under the new one. The former name is declared in its own group
+    (``uitk.external_apps.renamed``: ``former = "module:Class"`` of the app it
+    became), read without importing anything, and never listed."""
+
+    def _patched(self, inproc, renamed):
+        def _fn(group=None):
+            if group == "uitk.external_apps.in_process":
+                return list(inproc)
+            if group == ExternalAppHandler.RENAMED_GROUP:
+                return list(renamed)
+            return []
+
+        return patch("importlib.metadata.entry_points", side_effect=_fn)
+
+    def test_a_former_name_resolves_to_the_app_it_became(self):
+        app = _FakeEP("unity_scripts", "extapps.unity_scripts.launcher", "UnityScriptsUI")
+        former = _FakeEP("unity_workflow", "extapps.unity_scripts.launcher", "UnityScriptsUI")
+        with self._patched([app], [former]):
+            sb = _make_sb()
+        h = sb.handlers.external_app
+        self.assertEqual(h.resolve_name("unity_workflow"), "unity_scripts")
+        self.assertEqual(h.resolve_name("unity_scripts"), "unity_scripts")
+        self.assertEqual(h.resolve_name("nope"), "nope")
+        self.assertTrue(h.is_registered("unity_workflow"))
+        names = {e.name for e in sb.iter_handler_entries() if e.kind.startswith("external")}
+        self.assertEqual(names, {"unity_scripts"}, "a former name is never listed")
+
+    def test_a_former_name_of_no_installed_app_resolves_to_nothing_new(self):
+        former = _FakeEP("gone_workflow", "pkg.gone", "GoneUI")
+        with self._patched([], [former]):
+            sb = _make_sb()
+        self.assertEqual(sb.handlers.external_app.resolve_name("gone_workflow"), "gone_workflow")
+
+
 class TestDiscoveryDerivesInstallSpecAndGates(unittest.TestCase):
     """discover() should need zero host bookkeeping: the install spec comes
     from the entry point's distribution, and ``hide_<host>`` extras become

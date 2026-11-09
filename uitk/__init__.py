@@ -49,7 +49,7 @@ from pythontk.core_utils.module_resolver import (
 )
 
 __package__ = "uitk"
-__version__ = "1.10.0"
+__version__ = "1.11.0"
 
 
 DEFAULT_INCLUDE = {
@@ -256,6 +256,9 @@ DEFAULT_INCLUDE = {
     "managers.state_manager": "StateManager",
     "managers.reset_gesture": "ResetGesture",
     "managers.value_manager": "ValueManager",
+    # A setter-kwargs row spec read without Qt (a headless run with a fresh
+    # panel's values).
+    "managers.widget_spec": "WidgetSpec",
     "managers.model_binding": "ModelBinding",
     # A preview panel's widgets bound over a host's scene session (Qt-free:
     # each host library's ``Preview`` binds its own session to it).
