@@ -40,7 +40,7 @@ DEFAULT_APP_NAME = "shared"
 #     ``SettingsManager.__init__``
 #   - The ``_INTERNAL_KEYS`` exclusion inside ``SettingsManager.keys``
 #     (the surrounding logic stays; only the filter goes away)
-#   - Test class ``TestRegistryMigration`` in ``test/test_settings_manager.py``
+#   - Test class ``TestRegistryMigration`` in ``tests/test_settings_manager.py``
 #
 # Removal criteria (any one is sufficient):
 #

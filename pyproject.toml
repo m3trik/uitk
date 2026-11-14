@@ -27,7 +27,7 @@ classifiers = [
 dependencies = [
     # 0.9.25 is the floor for ptk.StatusBadge's module-coverage badge gate
     # (discover_module_names / module_of / is_import_standin / gate) that
-    # test/run_tests.py stamps through -- 0.9.24 ships the class without them.
+    # tests/run_tests.py stamps through -- 0.9.24 ships the class without them.
     "pythontk>=0.24.0",
     "qtpy>=2.0",  # PySide6 support landed in 2.0
     # Reading a provider's pyproject.toml is how external apps are
@@ -55,9 +55,9 @@ include = ["uitk*"]
 "*" = ["*.ui", "*.json", "*.txt", "*.md"]
 
 [tool.pytest.ini_options]
-testpaths = ["test"]
-pythonpath = [".", "test"]
-addopts = "--ignore=test/temp_tests"
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+addopts = "--ignore=tests/temp_tests"
 
 [tool.ruff]
 # House formatter/linter - rule set, exemptions and gate status: m3trik/docs/CODE_STANDARD.md section 1.

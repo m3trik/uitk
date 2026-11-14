@@ -27,8 +27,8 @@ Hand-written docs are ledgered in [`docs/DOCMAP.md`](docs/DOCMAP.md) (status, mo
 ## Test
 
 ```powershell
-& python uitk\test\run_tests.py --modules menu -k popup   # pointed: modules, -k
-& python uitk\test\run_tests.py                           # full suite: review / release
+& python uitk\tests\run_tests.py --modules menu -k popup   # pointed: modules, -k
+& python uitk\tests\run_tests.py                           # full suite: review / release
 ```
 
 What a change reaches: `python m3trik/scripts/affected_tests.py <files> --run` (root Testing).

@@ -1,0 +1,3492 @@
+# !/usr/bin/python
+# coding=utf-8
+"""Unit tests for Menu widget.
+
+This module tests the Menu widget functionality including:
+- Menu creation and configuration
+- MenuConfig dataclass
+- Menu positioning
+- Item addition and management
+- Trigger button handling
+- Hide on leave behavior
+- Persistent mode
+- Event filter management
+- Apply button functionality
+
+Run standalone: python -m tests.test_menu
+"""
+
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
+
+# Ensure QApplication exists before importing Qt widgets
+app = setup_qt_application()
+
+from qtpy import QtWidgets, QtCore
+
+from uitk.managers.shortcut_manager import ShortcutManager
+from uitk.widgets._layout_items import _LayoutItems
+from uitk.widgets.menu import Menu, MenuConfig, MenuPositioner, ActionButtonManager
+
+
+class TestMenuConfigCreation(unittest.TestCase):
+    """Tests for MenuConfig dataclass creation."""
+
+    def test_creates_config_with_defaults(self):
+        """Should create config with default values."""
+        config = MenuConfig()
+        self.assertIsNone(config.parent)
+        self.assertIsNone(config.name)
+        self.assertIsNone(config.trigger_button)
+        self.assertEqual(config.position, "cursorPos")
+        self.assertTrue(config.add_header)
+        self.assertTrue(config.add_footer)
+        self.assertFalse(config.add_apply_button)
+        self.assertTrue(config.match_parent_width)
+
+    def test_creates_context_menu_config(self):
+        """Should create context menu config with appropriate defaults."""
+        config = MenuConfig.for_context_menu()
+        self.assertEqual(config.trigger_button, "right")
+        self.assertEqual(config.position, "cursorPos")
+        self.assertEqual(config.fixed_item_height, 20)
+
+    def test_creates_dropdown_menu_config(self):
+        """Should create dropdown menu config with appropriate defaults."""
+        config = MenuConfig.for_dropdown_menu()
+        self.assertEqual(config.trigger_button, "none")
+        self.assertEqual(config.position, "bottom")
+        self.assertTrue(config.hide_on_leave)
+        self.assertTrue(config.add_apply_button)
+
+    def test_creates_popup_menu_config(self):
+        """Should create popup menu config with appropriate defaults."""
+        config = MenuConfig.for_popup_menu()
+        self.assertEqual(config.trigger_button, "none")
+        self.assertEqual(config.position, "cursorPos")
+
+    def test_config_allows_overrides(self):
+        """Should allow overriding default values."""
+        config = MenuConfig.for_context_menu(
+            name="custom_menu", add_header=False, fixed_item_height=30
+        )
+        self.assertEqual(config.name, "custom_menu")
+        self.assertFalse(config.add_header)
+        self.assertEqual(config.fixed_item_height, 30)
+
+    def test_config_extra_attrs_default_empty(self):
+        """Should have empty extra_attrs by default."""
+        config = MenuConfig()
+        self.assertEqual(config.extra_attrs, {})
+
+
+class TestMenuCreation(QtBaseTestCase):
+    """Tests for Menu widget creation."""
+
+    def test_creates_menu_with_defaults(self):
+        """Should create menu with default settings."""
+        menu = self.track_widget(Menu())
+        self.assertIsNotNone(menu)
+        self.assertTrue(menu.add_header)
+        self.assertTrue(menu.add_footer)
+        self.assertFalse(menu.add_apply_button)
+
+    def test_creates_menu_with_name(self):
+        """Should create menu with specified name."""
+        menu = self.track_widget(Menu(name="TestMenu"))
+        self.assertEqual(menu.objectName(), "TestMenu")
+
+    def test_creates_menu_with_parent(self):
+        """Should create menu with parent widget."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=parent))
+        self.assertEqual(menu.parent(), parent)
+
+    def test_raises_type_error_for_invalid_name_type(self):
+        """Should raise TypeError if name is not a string."""
+        with self.assertRaises(TypeError) as context:
+            Menu(name=123)
+        self.assertIn("string", str(context.exception))
+
+    def test_creates_menu_from_config(self):
+        """Should create menu from MenuConfig object."""
+        config = MenuConfig(name="FromConfig", add_header=False)
+        menu = self.track_widget(Menu.from_config(config))
+        self.assertEqual(menu.objectName(), "FromConfig")
+        self.assertFalse(menu.add_header)
+
+
+class TestMenuTriggerButton(QtBaseTestCase):
+    """Tests for Menu trigger button configuration."""
+
+    def test_sets_trigger_button_string(self):
+        """Should accept string trigger button name and convert to Qt constant."""
+        menu = self.track_widget(Menu(trigger_button="right"))
+        # Menu converts string to Qt constant
+        self.assertEqual(menu.trigger_button, QtCore.Qt.RightButton)
+
+    def test_sets_trigger_button_none(self):
+        """Should accept None for no auto-trigger (converts to False)."""
+        menu = self.track_widget(Menu(trigger_button=None))
+        # Menu converts None to False
+        self.assertFalse(menu.trigger_button)
+
+    def test_sets_trigger_button_tuple(self):
+        """Should accept tuple of trigger buttons and convert to Qt constants."""
+        menu = self.track_widget(Menu(trigger_button=("left", "right")))
+        # Menu converts strings to Qt constants
+        self.assertEqual(
+            menu.trigger_button, (QtCore.Qt.LeftButton, QtCore.Qt.RightButton)
+        )
+
+
+class TestMenuPosition(QtBaseTestCase):
+    """Tests for Menu position configuration."""
+
+    def test_default_position_is_cursor(self):
+        """Should default to cursor position."""
+        menu = self.track_widget(Menu())
+        self.assertEqual(menu.position, "cursorPos")
+
+    def test_sets_position_bottom(self):
+        """Should accept 'bottom' position."""
+        menu = self.track_widget(Menu(position="bottom"))
+        self.assertEqual(menu.position, "bottom")
+
+    def test_sets_position_point(self):
+        """Should accept QPoint position."""
+        point = QtCore.QPoint(100, 200)
+        menu = self.track_widget(Menu(position=point))
+        self.assertEqual(menu.position, point)
+
+
+class TestMenuPositioner(QtBaseTestCase):
+    """Tests for MenuPositioner helper class."""
+
+    def test_positions_at_coordinate_with_point(self):
+        """Should position widget at QPoint coordinates."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+
+        position = QtCore.QPoint(50, 50)
+        MenuPositioner.position_at_coordinate(widget, position)
+        self.assertEqual(widget.pos(), position)
+
+    def test_positions_at_coordinate_with_tuple(self):
+        """Should position widget at tuple coordinates."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+
+        MenuPositioner.position_at_coordinate(widget, (75, 75))
+        self.assertEqual(widget.pos(), QtCore.QPoint(75, 75))
+
+    def test_positions_at_coordinate_with_list(self):
+        """Should position widget at list coordinates."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+
+        MenuPositioner.position_at_coordinate(widget, [25, 35])
+        self.assertEqual(widget.pos(), QtCore.QPoint(25, 35))
+
+
+class TestActionButtonManager(QtBaseTestCase):
+    """Tests for ActionButtonManager helper class."""
+
+    def setUp(self):
+        super().setUp()
+        self.menu = self.track_widget(Menu())
+        self.manager = ActionButtonManager(self.menu)
+
+    def test_creates_container_on_demand(self):
+        """Should create container when first accessed."""
+        container = self.manager.container
+        self.assertIsNotNone(container)
+        self.assertEqual(container.objectName(), "actionButtonContainer")
+
+    def test_creates_button(self):
+        """Should create a button with config."""
+        from uitk.widgets.menu import _ActionButtonConfig
+
+        config = _ActionButtonConfig(text="Apply", tooltip="Apply changes")
+        button = self.manager.create_button("apply", config)
+        self.assertEqual(button.text(), "Apply")
+        self.assertEqual(button.toolTip(), "Apply changes")
+
+    def test_get_button_returns_none_for_unknown(self):
+        """Should return None for unknown button ID."""
+        result = self.manager.get_button("nonexistent")
+        self.assertIsNone(result)
+
+    def test_has_visible_buttons_returns_false_when_empty(self):
+        """Should return False when no buttons exist."""
+        self.assertFalse(self.manager.has_visible_buttons())
+
+
+class TestMenuItemAddition(QtBaseTestCase):
+    """Tests for adding items to Menu."""
+
+    def setUp(self):
+        super().setUp()
+        self.menu = self.track_widget(Menu())
+
+    def test_adds_label_item(self):
+        """Should add QLabel item to menu."""
+        label = self.menu.add("QLabel", setText="Test Label")
+        self.assertIsInstance(label, QtWidgets.QLabel)
+        self.assertEqual(label.text(), "Test Label")
+
+    def test_adds_button_item(self):
+        """Should add QPushButton item to menu."""
+        button = self.menu.add("QPushButton", setText="Test Button")
+        self.assertIsInstance(button, QtWidgets.QPushButton)
+        self.assertEqual(button.text(), "Test Button")
+
+    def test_adds_checkbox_item(self):
+        """Should add QCheckBox item to menu."""
+        checkbox = self.menu.add("QCheckBox", setText="Check Me")
+        self.assertIsInstance(checkbox, QtWidgets.QCheckBox)
+        self.assertEqual(checkbox.text(), "Check Me")
+
+    def test_has_on_item_added_signal(self):
+        """Should have on_item_added signal."""
+        self.assertTrue(hasattr(self.menu, "on_item_added"))
+
+
+class TestMenuItemHeight(QtBaseTestCase):
+    """Tests for Menu item height constraints."""
+
+    def test_applies_fixed_item_height(self):
+        """Should apply fixed height to items."""
+        menu = self.track_widget(Menu(fixed_item_height=30))
+        label = menu.add("QLabel", setText="Fixed Height")
+        self.assertEqual(label.height(), 30)
+
+    def test_applies_min_item_height(self):
+        """Should apply minimum height to items."""
+        menu = self.track_widget(Menu(min_item_height=25))
+        label = menu.add("QLabel", setText="Min Height")
+        self.assertGreaterEqual(label.minimumHeight(), 25)
+
+    def test_applies_max_item_height(self):
+        """Should apply maximum height to items."""
+        menu = self.track_widget(Menu(max_item_height=40))
+        label = menu.add("QLabel", setText="Max Height")
+        self.assertLessEqual(label.maximumHeight(), 40)
+
+
+class TestMenuHideOnLeave(QtBaseTestCase):
+    """Tests for Menu hide on leave behavior."""
+
+    def test_default_hide_on_leave_is_false(self):
+        """Should default to hide_on_leave=False."""
+        menu = self.track_widget(Menu())
+        self.assertFalse(menu.hide_on_leave)
+
+    def test_sets_hide_on_leave_true(self):
+        """Should accept hide_on_leave=True."""
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        self.assertTrue(menu.hide_on_leave)
+
+    def _outside_point(self, menu):
+        """A global point well outside *menu*'s rect (so the rect test fails)."""
+        from qtpy import QtGui
+
+        return QtGui.QCursor, QtCore.QPoint(
+            menu.x() + menu.width() + 500, menu.y() + menu.height() + 500
+        )
+
+    def test_hide_on_leave_keeps_open_over_nested_popup(self):
+        """A separate top-level popup whose QObject parent chain leads back into
+        the menu (a ComboBox dropdown, an option-box ⋯ menu) must NOT trigger
+        hide_on_leave when the cursor moves onto it. ``isAncestorOf`` is
+        same-window-only and misses such popups; the parent-chain walk catches
+        them."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        # A separate top-level popup parented (in the QObject tree) under the menu.
+        inner = QtWidgets.QWidget(menu)
+        popup = QtWidgets.QWidget(inner)
+        popup.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.FramelessWindowHint)
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=popup),
+        ):
+            menu._check_cursor_position()
+        self.assertTrue(
+            menu.isVisible(), "menu hid despite the cursor being over a nested popup"
+        )
+
+    def test_hide_on_leave_hides_when_cursor_truly_outside(self):
+        """Sanity counterpart: an unrelated widget (no parent chain to the menu)
+        still lets hide_on_leave close the menu."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+        ):
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(), "menu should hide when the cursor is truly outside"
+        )
+
+    def test_hide_on_leave_keeps_open_while_child_widget_focused(self):
+        """A stray mouse-leave must NOT hide the menu while keyboard focus is on
+        one of its widgets (an in-progress edit).
+
+        Reproduces the preset-template overwrite: the unpinned popup hosts the
+        preset combo whose inline Save line edit is focused and pre-filled with
+        the active preset's name. Hiding mid-edit ended the edit prematurely and
+        re-saved over that template. The focus guard keeps the popup open."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        # A descendant being edited (parent chain leads back to the menu).
+        editing = QtWidgets.QLineEdit(menu)
+        unrelated = self.track_widget(QtWidgets.QWidget())  # cursor genuinely off
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+            patch.object(QtWidgets.QApplication, "focusWidget", return_value=editing),
+        ):
+            menu._check_cursor_position()
+        self.assertTrue(
+            menu.isVisible(),
+            "menu hid while one of its widgets had focus (mid-edit)",
+        )
+
+    def test_hide_on_leave_still_hides_when_focus_outside_subtree(self):
+        """Counterpart: focus on a widget *outside* the menu doesn't keep it open
+        — the focus guard only suppresses hides during genuine interaction."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        outside_focus = self.track_widget(QtWidgets.QLineEdit())
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+            patch.object(
+                QtWidgets.QApplication, "focusWidget", return_value=outside_focus
+            ),
+        ):
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(),
+            "menu should still hide when focus is outside its subtree",
+        )
+
+    def test_hide_on_leave_still_hides_when_focused_child_is_not_text(self):
+        """The guard is scoped to text entry: a click that merely parks focus on
+        a non-text child (button, plain combo) must NOT keep the popup open —
+        the fast hide-on-leave UX is preserved for everything but live edits."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        button = QtWidgets.QPushButton(menu)  # focused, in subtree, but not text
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+            patch.object(QtWidgets.QApplication, "focusWidget", return_value=button),
+        ):
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(),
+            "menu should still hide when the focused child isn't a text editor",
+        )
+
+    def test_unentered_menu_auto_dismisses_after_grace(self):
+        """A menu that opened away from the cursor and was never entered must
+        still auto-dismiss after the longer 'unentered' grace.
+
+        Reproduces the field bug: an option menu opens anchored to the button
+        the user clicked, so the cursor is on the button, not the menu body. If
+        the user never mouses over the menu, ``_mouse_has_entered`` stays False
+        and the old hard guard kept the menu open forever despite the cursor
+        being far outside. The menu now dismisses after ``unentered_grace_samples``
+        outside samples — preserving 'don't yank it before the user can reach
+        it' (the grace) while guaranteeing it never lingers."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = False  # never entered
+        menu._outside_samples = 0
+        menu.unentered_grace_samples = 3  # shrink for the test
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+        ):
+            for _ in range(menu.unentered_grace_samples - 1):
+                menu._check_cursor_position()
+                self.assertTrue(
+                    menu.isVisible(),
+                    "un-entered menu hid before its grace elapsed (too eager)",
+                )
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(),
+            "un-entered menu must auto-dismiss after its grace, not linger forever",
+        )
+
+    def test_editor_item_demoted_so_menu_hides_on_leave(self):
+        """A spin box / line edit in a hide_on_leave menu must not passively
+        auto-grab focus and wedge the menu open.
+
+        The field bug: the Merge option menu (contains a QDoubleSpinBox) never
+        hid on leave, while Separate (checkboxes only) always did. The spin box
+        auto-grabbed focus on show, so ``_text_edit_in_progress`` read True even
+        though the user never engaged it. Editor items are now demoted to
+        ClickFocus in hide_on_leave menus."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.add("QDoubleSpinBox", setObjectName="s002")
+        menu.show()
+        self.assertEqual(
+            menu.get_items()[0].focusPolicy(),
+            QtCore.Qt.ClickFocus,
+            "editor item should be demoted to ClickFocus in a hide_on_leave menu",
+        )
+        menu._mouse_has_entered = True
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+        ):
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(),
+            "spin-box option menu must hide on leave (passive editor focus must not block it)",
+        )
+
+    def test_actively_focused_editor_still_blocks_hide_on_leave(self):
+        """The demotion drops only *passive* auto-focus: once the user clicks
+        into an editor (active editing), hide_on_leave is still suppressed so the
+        in-progress edit isn't torn down by a stray mouse-leave."""
+        from qtpy import QtGui
+
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        spin = menu.add("QDoubleSpinBox")
+        menu.show()
+        menu._mouse_has_entered = True
+        spin.setFocus(QtCore.Qt.MouseFocusReason)  # user clicked into it
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+            patch.object(QtWidgets.QApplication, "focusWidget", return_value=spin),
+        ):
+            menu._check_cursor_position()
+        self.assertTrue(
+            menu.isVisible(),
+            "menu must stay open while an editor is actively focused (edit in progress)",
+        )
+
+    def test_deferred_leave_timer_arm_survives_menu_destruction(self):
+        """showEvent defers arming the leave-poll timer by 200ms. If the menu
+        (and its child _leave_timer) is destroyed before that fires, the
+        deferred callback must be a no-op — not a dangling call into an
+        already-deleted QTimer. Regression: a bare QTimer.singleShot has no
+        owner to cancel it when the widget dies; only a QTimer parented to the
+        menu is destroyed along with it."""
+        import sys
+
+        from qtpy.QtTest import QTest
+
+        menu = Menu(hide_on_leave=True)
+        menu.show()
+
+        menu.deleteLater()
+        self._drain_qt_events()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+
+        captured = []
+        original_hook = sys.excepthook
+        sys.excepthook = lambda *exc_info: captured.append(exc_info)
+        try:
+            QTest.qWait(260)  # past the 200ms grace period
+        finally:
+            sys.excepthook = original_hook
+
+        self.assertFalse(
+            captured,
+            f"deferred leave-timer arm raised into a deleted menu: {captured}",
+        )
+
+
+class TestMenuTransientFamily(QtBaseTestCase):
+    """Tests for the transient popup family (hover-coordinated child popups).
+
+    A child popup opened from within a menu (an option-menu dropdown, a
+    context menu, a value popup) is frequently parented to the *wrapped
+    widget* — a sibling of the menu — so it falls outside the menu's QObject
+    subtree. ``adopt_transient`` re-establishes the relationship logically so
+    ``hide_on_leave`` keeps the menu open while the pointer is over the child,
+    and hiding the menu cascades to the child.
+    """
+
+    def _outside_point(self, menu):
+        from qtpy import QtGui
+
+        return QtGui.QCursor, QtCore.QPoint(
+            menu.x() + menu.width() + 500, menu.y() + menu.height() + 500
+        )
+
+    def test_sibling_popup_is_outside_family_until_adopted(self):
+        """Reproduces the bug: a sibling popup (parented to a separate widget,
+        not under the menu) is NOT seen as 'inside', so hide_on_leave would
+        close the menu when the cursor moves onto it — until it is adopted."""
+        from qtpy import QtGui
+
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        menu.show()
+        # A SIBLING popup: parented to host, NOT into the menu's subtree.
+        sibling = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        sibling.show()
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=sibling),
+        ):
+            self.assertFalse(
+                menu._pointer_in_family(far),
+                "sibling popup must read as outside the family before adoption",
+            )
+            menu.adopt_transient(sibling)
+            self.assertTrue(
+                menu._pointer_in_family(far),
+                "after adoption the sibling popup must read as inside the family",
+            )
+
+    def test_adopt_transient_keeps_menu_open_on_leave_to_child(self):
+        """With the child adopted, a leave-check while the cursor is over the
+        child must NOT hide the menu."""
+        from qtpy import QtGui
+
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        child = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        child.show()
+        menu.adopt_transient(child)
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=child),
+        ):
+            menu._check_cursor_position()
+        self.assertTrue(
+            menu.isVisible(),
+            "menu hid despite the cursor being over an adopted child popup",
+        )
+
+    def test_adoption_raises_leave_grace(self):
+        """A plain menu hides on the first outside sample (grace=1); adopting a
+        child raises the grace so a brief gap-crossing can't dismiss it."""
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        self.assertEqual(menu.leave_grace_samples, 1)
+        child = self.track_widget(Menu(parent=host))
+        menu.adopt_transient(child)
+        self.assertGreaterEqual(menu.leave_grace_samples, 3)
+
+    def test_leave_grace_requires_sustained_outside(self):
+        """Once a child is adopted (grace>=3), the menu only hides after the
+        cursor stays outside the whole family for several consecutive samples."""
+        from qtpy import QtGui
+
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        menu.show()
+        menu._mouse_has_entered = True
+        child = self.track_widget(Menu(parent=host))
+        child.setGeometry(0, 0, 40, 40)
+        child.show()
+        menu.adopt_transient(child)
+        unrelated = self.track_widget(QtWidgets.QWidget())
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=unrelated),
+        ):
+            for _ in range(menu.leave_grace_samples - 1):
+                menu._check_cursor_position()
+                self.assertTrue(
+                    menu.isVisible(), "menu hid before the leave grace elapsed"
+                )
+            menu._check_cursor_position()
+        self.assertFalse(
+            menu.isVisible(), "menu should hide after sustained leave of the family"
+        )
+
+    def test_hide_cascades_to_adopted_children(self):
+        """Hiding the menu must hide its adopted children (no orphan popups)."""
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        menu.show()
+        child = self.track_widget(Menu(parent=host))
+        child.show()
+        menu.adopt_transient(child)
+        self.assertTrue(child.isVisible())
+        menu.hide(force=True)
+        self.assertFalse(child.isVisible(), "adopted child was orphaned on parent hide")
+
+    def test_pointer_in_family_survives_destroyed_child(self):
+        """A child destroyed without notice must be pruned, not crash the check."""
+        from qtpy import QtGui
+
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host, hide_on_leave=True))
+        menu.show()
+        child = Menu(parent=host)
+        child.show()
+        menu.adopt_transient(child)
+        child.deleteLater()
+        self._drain_qt_events()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        _, far = self._outside_point(menu)
+        with (
+            patch.object(QtGui.QCursor, "pos", staticmethod(lambda: far)),
+            patch.object(QtWidgets.QApplication, "widgetAt", return_value=None),
+        ):
+            # Must not raise on the deleted child, and must report no family hit.
+            self.assertFalse(menu._pointer_in_family(far))
+        self.assertEqual(list(menu._living_transients()), [])
+
+    def test_adopt_transient_is_idempotent_and_ignores_bad_input(self):
+        host = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=host))
+        child = self.track_widget(Menu(parent=host))
+        menu.adopt_transient(child)
+        menu.adopt_transient(child)  # duplicate
+        menu.adopt_transient(menu)  # self
+        menu.adopt_transient("not-a-widget")  # wrong type
+        menu.adopt_transient(None)
+        self.assertEqual([c for c in menu._living_transients()], [child])
+
+    def test_nearest_enclosing_menu(self):
+        menu = self.track_widget(Menu())
+        button = menu.add("QPushButton", setText="x")
+        self.assertIs(Menu.nearest_enclosing(button), menu)
+        stray = self.track_widget(QtWidgets.QPushButton())
+        self.assertIsNone(Menu.nearest_enclosing(stray))
+        self.assertIsNone(Menu.nearest_enclosing(None))
+
+
+class TestMenuFactoryMethods(QtBaseTestCase):
+    """Tests for Menu factory methods."""
+
+    def test_create_context_menu(self):
+        """Should create context menu with factory method."""
+        menu = self.track_widget(Menu.create_context_menu())
+        # Factory method sets trigger_button="right" which converts to Qt constant
+        self.assertEqual(menu.trigger_button, QtCore.Qt.RightButton)
+        self.assertEqual(menu.position, "cursorPos")
+
+    def test_create_dropdown_menu(self):
+        """Should create dropdown menu with factory method."""
+        menu = self.track_widget(Menu.create_dropdown_menu())
+        # Factory method sets trigger_button="none" which converts to False
+        self.assertFalse(menu.trigger_button)
+        self.assertEqual(menu.position, "bottom")
+        self.assertTrue(menu.hide_on_leave)
+
+
+class TestMenuContainsItems(QtBaseTestCase):
+    """Tests for Menu contains_items property."""
+
+    def test_contains_items_false_when_empty(self):
+        """Should return False when menu has no items."""
+        menu = self.track_widget(Menu())
+        self.assertFalse(menu.contains_items)
+
+    def test_contains_items_true_after_add(self):
+        """Should return True after adding an item."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="Test")
+        self.assertTrue(menu.contains_items)
+
+
+class TestMenuEmptyState(QtBaseTestCase):
+    """Tests for empty-state placeholder + auto-hide.
+
+    Feature: an empty menu briefly shows a "No options" label, then
+    hides itself, so the user sees feedback that the click registered.
+    Added: 2026-05-16
+    """
+
+    def test_empty_placeholder_appears_on_show(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.show()
+        self.assertIsNotNone(menu._empty_placeholder)
+        # Real-item count must stay 0 even with placeholder present.
+        self.assertFalse(menu.contains_items)
+        menu.hide()
+
+    def test_placeholder_removed_on_hide(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.show()
+        menu.hide()
+        self.assertIsNone(menu._empty_placeholder)
+
+    def test_placeholder_uses_configured_message(self):
+        menu = self.track_widget(Menu(empty_message="Nothing here", empty_timeout_ms=0))
+        menu.show()
+        self.assertEqual(menu._empty_placeholder.text(), "Nothing here")
+        menu.hide()
+
+    def test_no_placeholder_when_message_is_none(self):
+        menu = self.track_widget(Menu(empty_message=None, empty_timeout_ms=0))
+        menu.show()
+        self.assertIsNone(menu._empty_placeholder)
+        menu.hide()
+
+    def test_no_placeholder_when_items_present(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.add("QLabel", setText="Real Item")
+        menu.show()
+        self.assertIsNone(menu._empty_placeholder)
+        menu.hide()
+
+    def test_add_clears_existing_placeholder(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.show()
+        self.assertIsNotNone(menu._empty_placeholder)
+        menu.add("QLabel", setText="Late arrival")
+        self.assertIsNone(menu._empty_placeholder)
+        self.assertTrue(menu.contains_items)
+        menu.hide()
+
+    def test_timer_hides_menu_when_still_empty(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=30))
+        menu.show()
+        self.assertTrue(menu.isVisible())
+        # Spin the event loop until the singleshot fires (~30ms + slack).
+        QtWait.until(
+            lambda: not menu.isVisible(),
+            "empty-timeout timer never hid the menu",
+            timeout_ms=1000,
+        )
+
+
+class TestMenuTitle(QtBaseTestCase):
+    """Tests for Menu title methods."""
+
+    def test_title_empty_by_default(self):
+        """Should return empty string by default."""
+        menu = self.track_widget(Menu())
+        self.assertEqual(menu.title(), "")
+
+    def test_set_title_updates_header(self):
+        """Should update header text when title is set."""
+        menu = self.track_widget(Menu(add_header=True))
+        menu.setTitle("My Menu")
+        self.assertEqual(menu.title(), "My Menu")
+
+
+class TestMenuGetItems(QtBaseTestCase):
+    """Tests for Menu get_items method."""
+
+    def setUp(self):
+        super().setUp()
+        self.menu = self.track_widget(Menu())
+
+    def test_get_items_returns_empty_list_initially(self):
+        """Should return empty list when no items added."""
+        items = self.menu.get_items()
+        self.assertEqual(items, [])
+
+    def test_get_items_returns_all_items(self):
+        """Should return all items in menu."""
+        self.menu.add("QLabel", setText="Label 1")
+        self.menu.add("QPushButton", setText="Button 1")
+        items = self.menu.get_items()
+        self.assertEqual(len(items), 2)
+
+    def test_get_items_filters_by_type_string(self):
+        """Should filter items by type name string."""
+        self.menu.add("QLabel", setText="Label 1")
+        self.menu.add("QPushButton", setText="Button 1")
+        labels = self.menu.get_items(types="QLabel")
+        self.assertEqual(len(labels), 1)
+        self.assertIsInstance(labels[0], QtWidgets.QLabel)
+
+    def test_an_unresolvable_type_name_is_reported_not_silently_empty(self):
+        """A name is resolved against QtWidgets, so a uitk class name or a typo
+        matches nothing — and the empty result reads as "the menu holds none of
+        those". Field case: a state read from get_items("CheckBox") was False no
+        matter what the boxes said, so its button could never say ON."""
+        self.menu.add("QCheckBox", setText="A")
+        with self.assertLogs(self.menu.logger, level="WARNING") as caught:
+            items = self.menu.get_items(types="CheckBox")
+        self.assertEqual(items, [])
+        self.assertTrue(
+            any("not a QtWidgets class" in line for line in caught.output),
+            caught.output,
+        )
+
+    def test_a_resolvable_type_name_stays_quiet(self):
+        self.menu.add("QCheckBox", setText="A")
+        with self.assertNoLogs(self.menu.logger, level="WARNING"):
+            self.assertEqual(len(self.menu.get_items(types="QCheckBox")), 1)
+
+    def test_get_items_filters_by_type_class(self):
+        """Should filter items by type class."""
+        self.menu.add("QLabel", setText="Label 1")
+        self.menu.add("QPushButton", setText="Button 1")
+        buttons = self.menu.get_items(types=QtWidgets.QPushButton)
+        self.assertEqual(len(buttons), 1)
+
+    def test_get_items_filters_by_multiple_types(self):
+        """Should filter items by multiple types."""
+        self.menu.add("QLabel", setText="Label 1")
+        self.menu.add("QPushButton", setText="Button 1")
+        self.menu.add("QCheckBox", setText="Check 1")
+        items = self.menu.get_items(types=["QLabel", "QPushButton"])
+        self.assertEqual(len(items), 2)
+
+
+class TestMenuGetItem(QtBaseTestCase):
+    """Tests for Menu get_item method."""
+
+    def setUp(self):
+        super().setUp()
+        self.menu = self.track_widget(Menu())
+        self.menu.add("QLabel", setText="First")
+        self.menu.add("QLabel", setText="Second")
+
+    def test_get_item_by_index(self):
+        """Should get item by index."""
+        item = self.menu.get_item(0)
+        self.assertEqual(item.text(), "First")
+
+    def test_get_item_by_text(self):
+        """Should get item by text."""
+        item = self.menu.get_item("Second")
+        self.assertEqual(item.text(), "Second")
+
+    def test_get_item_raises_for_invalid_index(self):
+        """Should raise ValueError for out of range index."""
+        with self.assertRaises(ValueError):
+            self.menu.get_item(999)
+
+    def test_get_item_raises_for_invalid_text(self):
+        """Should raise ValueError for unknown text."""
+        with self.assertRaises(ValueError):
+            self.menu.get_item("Nonexistent")
+
+    def test_get_item_raises_for_invalid_type(self):
+        """Should raise ValueError for invalid identifier type."""
+        with self.assertRaises(ValueError):
+            self.menu.get_item(3.14)
+
+
+class TestMenuGetItemText(QtBaseTestCase):
+    """Tests for Menu get_item_text method."""
+
+    def setUp(self):
+        super().setUp()
+        self.menu = self.track_widget(Menu())
+
+    def test_get_item_text_from_label(self):
+        """Should get text from QLabel."""
+        label = self.menu.add("QLabel", setText="Label Text")
+        self.assertEqual(self.menu.get_item_text(label), "Label Text")
+
+    def test_get_item_text_from_button(self):
+        """Should get text from QPushButton."""
+        button = self.menu.add("QPushButton", setText="Button Text")
+        self.assertEqual(self.menu.get_item_text(button), "Button Text")
+
+    def test_get_item_text_returns_none_for_no_text(self):
+        """Should return None when widget has no text method."""
+        widget = QtWidgets.QWidget()
+        result = self.menu.get_item_text(widget)
+        self.assertIsNone(result)
+
+
+class TestMenuItemData(QtBaseTestCase):
+    """Tests for Menu item data methods."""
+
+    def setUp(self):
+        super().setUp()
+        self.menu = self.track_widget(Menu())
+
+    def test_set_and_get_item_data(self):
+        """Should set and get item data."""
+        label = self.menu.add("QLabel", setText="Test", data={"key": "value"})
+        data = self.menu.get_item_data(label)
+        self.assertEqual(data, {"key": "value"})
+
+    def test_get_item_data_returns_none_for_unknown(self):
+        """Should return None for widget not in menu."""
+        external_widget = QtWidgets.QLabel("External")
+        result = self.menu.get_item_data(external_widget)
+        self.assertIsNone(result)
+
+    def test_item_data_method_on_widget(self):
+        """Should add item_data method to widget."""
+        label = self.menu.add("QLabel", setText="Test", data="my_data")
+        self.assertEqual(label.item_data(), "my_data")
+
+
+class TestMenuClear(QtBaseTestCase):
+    """Tests for Menu clear method."""
+
+    def test_clear_removes_all_items(self):
+        """Should remove all items from menu."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="Item 1")
+        menu.add("QLabel", setText="Item 2")
+        menu.clear()
+        self.assertFalse(menu.contains_items)
+
+    def test_clear_resets_widget_data(self):
+        """Should reset widget_data dictionary."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="Item", data="some_data")
+        menu.clear()
+        self.assertEqual(menu.widget_data, {})
+
+
+class TestMenuItemFilterLifetime(QtBaseTestCase):
+    """The menu must stop filtering an item it deleted or handed back.
+
+    `Menu.add` installs the menu as an event filter on every item and nothing
+    took it off again. `_uninstall_event_filters()` -- which both `clear()`
+    and `remove_widget()` cited for this -- only drops the PARENT/trigger
+    hooks, so a cleared menu went on filtering items it had just
+    `deleteLater()`'d, and `remove_widget` left the menu answering events for
+    a widget whose lifetime it had given back to the caller.
+
+    Detection is by SUBCLASS, deliberately: PySide binds virtual overrides
+    when the C++ object is constructed, so patching `Menu.eventFilter` after
+    the menu exists is never called and every assertion below would pass
+    vacuously. The first test is the control that proves that.
+    """
+
+    class _SpyMenu(Menu):
+        def __init__(self, *args, **kwargs):
+            self.seen = []
+            super().__init__(*args, **kwargs)
+
+        def eventFilter(self, obj, event):
+            self.seen.append(obj)
+            return super().eventFilter(obj, event)
+
+    def _is_filtered(self, menu, widget) -> bool:
+        """Does an event delivered to *widget* reach *menu*'s filter?"""
+        menu.seen.clear()
+        QtWidgets.QApplication.sendEvent(widget, QtCore.QEvent(QtCore.QEvent.Type.User))
+        return any(o is widget for o in menu.seen)
+
+    def test_an_owned_item_is_filtered(self):
+        """Control: without this the other two could pass for the wrong reason."""
+        menu = self.track_widget(self._SpyMenu())
+        item = menu.add("QLabel", setText="Item")
+        self.assertTrue(self._is_filtered(menu, item))
+
+    def test_clear_stops_filtering_the_items_it_deletes(self):
+        """`deleteLater` only schedules the destruction.
+
+        The item keeps receiving events until the loop drains it, and the
+        menu was still filtering them -- reaching into `widget in items`,
+        `objectName()` and `_resolve_hide_on_trigger` on an object being
+        torn down.
+        """
+        menu = self.track_widget(self._SpyMenu())
+        item = menu.add("QLabel", setText="Item")
+        menu.clear()
+        self.assertFalse(self._is_filtered(menu, item))
+
+    def test_remove_widget_stops_filtering_the_item_it_gives_up(self):
+        menu = self.track_widget(self._SpyMenu())
+        item = menu.add("QLabel", setText="Item")
+        menu.remove_widget(item)
+        self.assertFalse(self._is_filtered(menu, item))
+        item.setParent(None)
+
+
+class TestMenuRemoveWidget(QtBaseTestCase):
+    """Tests for Menu remove_widget method."""
+
+    def test_remove_widget_removes_from_layout(self):
+        """Should remove widget from layout."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="To Remove")
+        self.assertEqual(len(menu.get_items()), 1)
+        menu.remove_widget(label)
+        self.assertEqual(len(menu.get_items()), 0)
+
+    def test_remove_widget_clears_data(self):
+        """Should remove widget data when removed."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="Item", data="my_data")
+        menu.remove_widget(label)
+        self.assertNotIn(label, menu.widget_data)
+
+
+class TestMenuAddMultipleItems(QtBaseTestCase):
+    """Tests for Menu add with collections."""
+
+    def setUp(self):
+        super().setUp()
+        self.menu = self.track_widget(Menu())
+
+    def test_add_list_of_strings(self):
+        """Should add multiple items from list."""
+        items = self.menu.add(["Item A", "Item B", "Item C"])
+        self.assertEqual(len(items), 3)
+
+    def test_add_tuple_of_strings(self):
+        """Should add multiple items from tuple."""
+        items = self.menu.add(("Tuple A", "Tuple B"))
+        self.assertEqual(len(items), 2)
+
+    def test_add_set_of_strings(self):
+        """Should add multiple items from set."""
+        items = self.menu.add({"Set A", "Set B"})
+        self.assertEqual(len(items), 2)
+
+    def test_add_dict_with_data(self):
+        """Should add items from dict with data."""
+        items = self.menu.add({"Key1": "Value1", "Key2": "Value2"})
+        self.assertEqual(len(items), 2)
+
+    def test_add_zip_with_data(self):
+        """Should add items from zip with data."""
+        labels = ["Label1", "Label2"]
+        data = ["Data1", "Data2"]
+        items = self.menu.add(zip(labels, data))
+        self.assertEqual(len(items), 2)
+        # Verify data was attached
+        self.assertEqual(items[0].item_data(), "Data1")
+
+
+class TestMenuAddWidgetInstance(QtBaseTestCase):
+    """Tests for Menu add with widget instances."""
+
+    def setUp(self):
+        super().setUp()
+        self.menu = self.track_widget(Menu())
+
+    def test_add_widget_instance(self):
+        """Should add existing widget instance."""
+        button = QtWidgets.QPushButton("My Button")
+        result = self.menu.add(button)
+        self.assertEqual(result, button)
+        self.assertIn(button, self.menu.get_items())
+
+    def test_add_widget_class(self):
+        """Should instantiate and add widget class."""
+        result = self.menu.add(QtWidgets.QLabel)
+        self.assertIsInstance(result, QtWidgets.QLabel)
+
+
+class TestMenuAddInvalidType(QtBaseTestCase):
+    """Tests for Menu add with invalid types."""
+
+    def test_add_raises_for_invalid_type(self):
+        """Should raise TypeError for unsupported type."""
+        menu = self.track_widget(Menu())
+        with self.assertRaises(TypeError):
+            menu.add(12345)  # int is not supported
+
+
+class TestMenuIsPinned(QtBaseTestCase):
+    """Tests for Menu is_pinned property."""
+
+    def test_is_pinned_default_false(self):
+        """Should default to not pinned."""
+        menu = self.track_widget(Menu())
+        self.assertFalse(menu.is_pinned)
+
+    def test_is_pinned_true_when_prevent_hide(self):
+        """Should be pinned when prevent_hide is True."""
+        menu = self.track_widget(Menu())
+        menu.prevent_hide = True
+        self.assertTrue(menu.is_pinned)
+
+
+class TestMenuPersistentMode(QtBaseTestCase):
+    """Tests for Menu persistent mode."""
+
+    def test_enable_persistent_mode(self):
+        """Should enable persistent mode."""
+        menu = self.track_widget(Menu(add_header=True))
+        menu.enable_persistent_mode()
+        self.assertTrue(menu.is_persistent_mode)
+        self.assertTrue(menu.prevent_hide)
+        self.assertFalse(menu.hide_on_leave)
+
+    def test_disable_persistent_mode(self):
+        """Should disable persistent mode and restore state."""
+        menu = self.track_widget(Menu(add_header=True))
+        menu.enable_persistent_mode()
+        menu.disable_persistent_mode()
+        self.assertFalse(menu.is_persistent_mode)
+
+    def test_is_persistent_mode_default_false(self):
+        """Should default to is_persistent_mode=False."""
+        menu = self.track_widget(Menu())
+        self.assertFalse(menu.is_persistent_mode)
+
+    def test_persistent_hide_button_has_a_real_glyph(self):
+        """Regression: the hide button was created from the literal
+        "hide.svg" — a name with no file in the icon set — so IconManager
+        resolved an empty QIcon and the button rendered glyph-less, silently.
+        It must resolve to a shipped icon (the header's own "hide" button key
+        maps to close.svg)."""
+        menu = self.track_widget(Menu(add_header=True))
+        menu.enable_persistent_mode()
+        btn = menu.header.buttons["persistent_hide_button"]
+        self.assertFalse(btn.icon().isNull())
+
+    def test_persistent_mode_on_deferred_header_menu_keeps_header(self):
+        """Regression (chrome deferral): an add_header=True menu that enters
+        persistent mode BEFORE its first show must build its permanent header
+        into the frame layout and keep it when persistent mode is disabled.
+
+        Without the fix, the had_header snapshot reads the (still-deferred,
+        None) header as False, the fallback injects a header into the
+        centralWidgetLayout, and disable_persistent_mode then deletes the
+        menu's permanent header.
+        """
+        menu = self.track_widget(Menu(add_header=True))
+        self.assertIsNone(menu.header, "precondition: header deferred until shown")
+
+        menu.enable_persistent_mode()
+        self.assertIsNotNone(menu.header, "persistent mode must build the header")
+        # The permanent header belongs in the frame layout (the normal
+        # first-show build site), not the add_header=False centralWidget fallback.
+        self.assertGreaterEqual(
+            menu._frame_layout.indexOf(menu.header),
+            0,
+            "header must live in the frame layout, not the headerless fallback",
+        )
+
+        menu.disable_persistent_mode()
+        self.assertIsNotNone(
+            menu.header,
+            "disabling persistent mode must not delete the permanent header",
+        )
+
+
+class TestMenuHideMethod(QtBaseTestCase):
+    """Tests for Menu hide method."""
+
+    def test_hide_returns_true_when_hidden(self):
+        """Should return True when successfully hidden."""
+        menu = self.track_widget(Menu())
+        menu.show()
+        result = menu.hide()
+        self.assertTrue(result)
+        self.assertFalse(menu.isVisible())
+
+    def test_hide_returns_false_when_pinned(self):
+        """Should return False when pinned without force."""
+        menu = self.track_widget(Menu())
+        menu.show()
+        menu.prevent_hide = True
+        result = menu.hide()
+        self.assertFalse(result)
+        self.assertTrue(menu.isVisible())
+
+    def test_hide_force_overrides_pinned(self):
+        """Should hide when force=True even if pinned."""
+        menu = self.track_widget(Menu())
+        menu.show()
+        menu.prevent_hide = True
+        result = menu.hide(force=True)
+        self.assertTrue(result)
+
+
+class TestMenuShouldTrigger(QtBaseTestCase):
+    """Tests for Menu _should_trigger method."""
+
+    def test_should_trigger_false_when_trigger_button_false(self):
+        """Should return False when trigger_button is False."""
+        menu = self.track_widget(Menu(trigger_button="none"))
+        self.assertFalse(menu._should_trigger(QtCore.Qt.LeftButton))
+
+    def test_should_trigger_true_when_button_matches(self):
+        """Should return True when button matches trigger_button."""
+        menu = self.track_widget(Menu(trigger_button="left"))
+        self.assertTrue(menu._should_trigger(QtCore.Qt.LeftButton))
+
+    def test_should_trigger_false_when_button_differs(self):
+        """Should return False when button doesn't match."""
+        menu = self.track_widget(Menu(trigger_button="right"))
+        self.assertFalse(menu._should_trigger(QtCore.Qt.LeftButton))
+
+
+class TestMenuShowAsPopup(QtBaseTestCase):
+    """Tests for Menu show_as_popup method."""
+
+    def test_show_as_popup_shows_menu(self):
+        """Should show the menu."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="Item")
+        menu.show_as_popup()
+        self.assertTrue(menu.isVisible())
+
+    def test_show_as_popup_with_anchor(self):
+        """Should show menu relative to anchor widget."""
+        parent = self.track_widget(QtWidgets.QPushButton("Anchor"))
+        parent.show()
+        menu = self.track_widget(Menu(parent=parent))
+        menu.add("QLabel", setText="Item")
+        # Just test that it shows without error
+        menu.show_as_popup(position="cursorPos")
+        self.assertTrue(menu.isVisible())
+
+
+class TestMenuCentralWidget(QtBaseTestCase):
+    """Tests for Menu central widget methods."""
+
+    def test_set_central_widget(self):
+        """Should set central widget."""
+        menu = self.track_widget(Menu())
+        widget = QtWidgets.QWidget()
+        menu.setCentralWidget(widget)
+        self.assertEqual(menu.centralWidget(), widget)
+
+    def test_central_widget_returns_none_before_init(self):
+        """Should return None before layout initialization."""
+        menu = self.track_widget(Menu())
+        # Force check before any items added
+        central = menu.centralWidget()
+        # Central widget is created during init_layout
+        self.assertIsNotNone(central)
+
+
+class TestMenuSignals(QtBaseTestCase):
+    """Tests for Menu signals."""
+
+    def test_has_on_item_added_signal(self):
+        """Should have on_item_added signal."""
+        menu = self.track_widget(Menu())
+        self.assertTrue(hasattr(menu, "on_item_added"))
+
+    def test_has_on_item_interacted_signal(self):
+        """Should have on_item_interacted signal."""
+        menu = self.track_widget(Menu())
+        self.assertTrue(hasattr(menu, "on_item_interacted"))
+
+    def test_on_item_added_is_signal_type(self):
+        """Should have on_item_added as a Qt Signal."""
+        menu = self.track_widget(Menu())
+        # Verify it's a signal by checking we can connect to it
+        connected = False
+        try:
+            menu.on_item_added.connect(lambda w: None)
+            connected = True
+        except Exception:
+            pass
+        self.assertTrue(connected)
+
+    def test_on_item_added_is_delivered(self):
+        """on_item_added must reach connected slots despite add()'s blockSignals.
+
+        Regression: add() blocks signals for the duration of the insert, so a
+        synchronous emit was swallowed and the documented signal never fired.
+        The added widget(s) are now flushed by the outermost add() once
+        blocking is lifted.
+        """
+        menu = self.track_widget(Menu())
+        received = []
+        menu.on_item_added.connect(received.append)
+        widget = menu.add("QPushButton", setText="A")
+        self.assertEqual(received, [widget])
+
+    def test_on_item_added_delivered_for_bulk_add(self):
+        """A collection add fires the signal once per item, in order."""
+        menu = self.track_widget(Menu())
+        received = []
+        menu.on_item_added.connect(received.append)
+        widgets = menu.add(["A", "B", "C"])
+        self.assertEqual(received, widgets)
+
+    def test_on_item_added_respects_external_block(self):
+        """An externally pre-blocked add() suppresses the signal entirely.
+
+        The notification must be dropped (not leaked into a later unblocked
+        add()), so the recursion-depth flush honors signalsBlocked().
+        """
+        menu = self.track_widget(Menu())
+        received = []
+        menu.on_item_added.connect(received.append)
+
+        menu.blockSignals(True)
+        menu.add("Hidden")
+        menu.blockSignals(False)
+        self.assertEqual(received, [])  # dropped while blocked
+
+        later = menu.add("Visible")
+        self.assertEqual(received, [later])  # no leak of the blocked item
+
+
+class TestMenuGridLayout(QtBaseTestCase):
+    """Tests for Menu grid layout positioning."""
+
+    def test_add_at_specific_row_col(self):
+        """Should add item at specific row and column."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="At 2,1", row=2, col=1)
+        # Verify item was added
+        self.assertIn(label, menu.get_items())
+
+    def test_add_with_row_span(self):
+        """Should add item with row span."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="Spanning", rowSpan=2)
+        self.assertIn(label, menu.get_items())
+
+    def test_add_with_col_span(self):
+        """Should add item with column span."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="Wide", colSpan=3)
+        self.assertIn(label, menu.get_items())
+
+
+# =============================================================================
+# Edge Case Tests
+# =============================================================================
+
+
+class TestMenuConfigEdgeCases(unittest.TestCase):
+    """Edge case tests for MenuConfig."""
+
+    def test_config_with_empty_name(self):
+        """Should handle empty name."""
+        config = MenuConfig(name="")
+        self.assertEqual(config.name, "")
+
+    def test_config_with_all_options(self):
+        """Should handle all options set."""
+        config = MenuConfig(
+            parent=None,
+            name="full_menu",
+            trigger_button="middle",
+            position="top",
+            add_header=False,
+            add_footer=False,
+            add_apply_button=True,
+            match_parent_width=False,
+            hide_on_leave=True,
+            fixed_item_height=50,
+            min_item_height=20,
+            max_item_height=100,
+        )
+        self.assertEqual(config.name, "full_menu")
+        self.assertFalse(config.add_header)
+        self.assertTrue(config.add_apply_button)
+
+    def test_config_extra_attrs(self):
+        """Should store extra attributes."""
+        config = MenuConfig(extra_attrs={"custom": "value"})
+        self.assertEqual(config.extra_attrs["custom"], "value")
+
+
+class TestMenuPositionerEdgeCases(QtBaseTestCase):
+    """Edge case tests for MenuPositioner."""
+
+    def test_position_at_negative_coordinates(self):
+        """Should handle negative coordinates."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+        MenuPositioner.position_at_coordinate(widget, (-10, -10))
+        self.assertEqual(widget.pos(), QtCore.QPoint(-10, -10))
+
+    def test_position_at_zero(self):
+        """Should handle zero coordinates."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+        MenuPositioner.position_at_coordinate(widget, (0, 0))
+        self.assertEqual(widget.pos(), QtCore.QPoint(0, 0))
+
+    def test_position_at_large_coordinates(self):
+        """Should handle very large coordinates."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+        MenuPositioner.position_at_coordinate(widget, (10000, 10000))
+        self.assertEqual(widget.pos(), QtCore.QPoint(10000, 10000))
+
+
+class TestMenuItemEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu item management."""
+
+    def test_add_empty_string_label(self):
+        """Should handle empty string label."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="")
+        self.assertEqual(label.text(), "")
+
+    def test_add_unicode_label(self):
+        """Should handle unicode text."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="Café ★ 🍣")
+        self.assertEqual(label.text(), "Café ★ 🍣")
+
+    def test_add_very_long_text(self):
+        """Should handle very long text."""
+        menu = self.track_widget(Menu())
+        long_text = "A" * 1000
+        label = menu.add("QLabel", setText=long_text)
+        self.assertEqual(label.text(), long_text)
+
+    def test_add_many_items(self):
+        """Should handle many items."""
+        menu = self.track_widget(Menu())
+        for i in range(100):
+            menu.add("QLabel", setText=f"Item {i}")
+        self.assertEqual(len(menu.get_items()), 100)
+
+    def test_get_item_with_zero_index(self):
+        """Should get first item with index 0."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="First")
+        menu.add("QLabel", setText="Second")
+        item = menu.get_item(0)
+        self.assertEqual(item.text(), "First")
+
+    def test_get_item_with_negative_index(self):
+        """Should raise ValueError for negative index."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="First")
+        menu.add("QLabel", setText="Last")
+        with self.assertRaises(ValueError):
+            menu.get_item(-1)
+
+
+class TestMenuTriggerEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu trigger handling."""
+
+    def test_trigger_button_middle(self):
+        """Should handle middle button trigger."""
+        menu = self.track_widget(Menu(trigger_button="middle"))
+        self.assertEqual(menu.trigger_button, QtCore.Qt.MiddleButton)
+
+    def test_trigger_button_multiple(self):
+        """Should handle multiple trigger buttons."""
+        menu = self.track_widget(Menu(trigger_button=("left", "middle", "right")))
+        self.assertEqual(
+            menu.trigger_button,
+            (QtCore.Qt.LeftButton, QtCore.Qt.MiddleButton, QtCore.Qt.RightButton),
+        )
+
+
+class TestMenuHideEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu hiding."""
+
+    def test_hide_already_hidden_menu(self):
+        """Should handle hiding already hidden menu."""
+        menu = self.track_widget(Menu())
+        menu.hide()  # First hide
+        result = menu.hide()  # Second hide
+        self.assertTrue(result)
+
+    def test_show_then_hide_rapidly(self):
+        """Should handle rapid show/hide cycles."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="Item")
+        for _ in range(10):
+            menu.show()
+            menu.hide()
+        self.assertFalse(menu.isVisible())
+
+
+class TestMenuDataEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu item data."""
+
+    def test_item_data_none(self):
+        """Should handle None data."""
+        menu = self.track_widget(Menu())
+        label = menu.add("QLabel", setText="Test", data=None)
+        self.assertIsNone(label.item_data())
+
+    def test_item_data_complex_object(self):
+        """Should handle complex object data."""
+        menu = self.track_widget(Menu())
+        data = {"nested": {"key": [1, 2, 3]}, "list": [{"a": 1}]}
+        label = menu.add("QLabel", setText="Test", data=data)
+        self.assertEqual(label.item_data(), data)
+
+    def test_item_data_callable(self):
+        """Should handle callable data."""
+        menu = self.track_widget(Menu())
+
+        def my_func():
+            return 42
+
+        label = menu.add("QLabel", setText="Test", data=my_func)
+        self.assertEqual(label.item_data()(), 42)
+
+
+class TestMenuClearEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu clear."""
+
+    def test_clear_empty_menu(self):
+        """Should handle clearing empty menu."""
+        menu = self.track_widget(Menu())
+        menu.clear()  # Should not raise
+        self.assertFalse(menu.contains_items)
+
+    def test_clear_then_add(self):
+        """Should allow adding items after clear."""
+        menu = self.track_widget(Menu())
+        menu.add("QLabel", setText="First")
+        menu.clear()
+        menu.add("QLabel", setText="Second")
+        self.assertEqual(len(menu.get_items()), 1)
+        self.assertEqual(menu.get_items()[0].text(), "Second")
+
+
+class TestMenuTitleEdgeCases(QtBaseTestCase):
+    """Edge case tests for menu title."""
+
+    def test_title_empty_string(self):
+        """Should handle empty string title."""
+        menu = self.track_widget(Menu(add_header=True))
+        menu.setTitle("")
+        self.assertEqual(menu.title(), "")
+
+    def test_title_unicode(self):
+        """Should handle unicode title."""
+        menu = self.track_widget(Menu(add_header=True))
+        menu.setTitle("Résumé ★ 🎨")
+        self.assertEqual(menu.title(), "Résumé ★ 🎨")
+
+    def test_title_without_header(self):
+        """Should handle title without header."""
+        menu = self.track_widget(Menu(add_header=False))
+        menu.setTitle("Test")
+        # Title may be stored even without header
+        self.assertIsNotNone(menu.title())
+
+
+class TestMenuInitializationVisibility(QtBaseTestCase):
+    """Regression tests for Menu show/hide flash during initialization.
+
+    Bug: Menus flash (show/hide rapidly) multiple times during init because
+    _setup_as_popup() triggers visibility events via setParent/setWindowFlags,
+    and showEvent() does expensive layout work while the menu is already visible.
+    Fixed: 2026-03-18
+    """
+
+    def test_menu_not_visible_after_construction(self):
+        """Menu must remain hidden after __init__ completes."""
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        self.assertFalse(
+            menu.isVisible(),
+            "Menu should not be visible immediately after construction",
+        )
+
+    def test_menu_not_visible_after_adding_items(self):
+        """Menu must remain hidden after items are added (before explicit show)."""
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu.add("QPushButton", setText="Button A")
+        menu.add("QLabel", setText="Label A")
+        menu.add("QCheckBox", setText="Check A")
+        self.assertFalse(
+            menu.isVisible(),
+            "Menu should not be visible after adding items",
+        )
+
+    def test_no_show_events_during_construction(self):
+        """Menu __init__ must not trigger any showEvent calls."""
+        show_count = []
+        original_showEvent = Menu.showEvent
+
+        def counting_showEvent(self_menu, event):
+            show_count.append(1)
+            original_showEvent(self_menu, event)
+
+        with patch.object(Menu, "showEvent", counting_showEvent):
+            self.track_widget(Menu(hide_on_leave=True))
+
+        self.assertEqual(
+            len(show_count),
+            0,
+            f"showEvent fired {len(show_count)} time(s) during construction",
+        )
+
+    def test_no_show_events_during_item_addition(self):
+        """Adding items must not trigger any showEvent calls."""
+        menu = self.track_widget(Menu(hide_on_leave=True))
+
+        show_count = []
+        original_showEvent = Menu.showEvent
+
+        def counting_showEvent(self_menu, event):
+            show_count.append(1)
+            original_showEvent(self_menu, event)
+
+        with patch.object(Menu, "showEvent", counting_showEvent):
+            menu.add("QPushButton", setText="Button A")
+            menu.add("QLabel", setText="Label A")
+
+        self.assertEqual(
+            len(show_count),
+            0,
+            f"showEvent fired {len(show_count)} time(s) during item addition",
+        )
+
+    def test_show_as_popup_shows_exactly_once(self):
+        """show_as_popup must result in exactly one show() call."""
+        parent = self.track_widget(QtWidgets.QPushButton("Anchor"))
+        parent.setGeometry(100, 100, 200, 30)
+        parent.show()
+
+        menu = self.track_widget(Menu(parent=parent, hide_on_leave=True))
+        menu.add("QPushButton", setText="Item")
+
+        show_count = []
+        original_show = Menu.show
+
+        def counting_show(self_menu):
+            show_count.append(1)
+            original_show(self_menu)
+
+        with patch.object(Menu, "show", counting_show):
+            menu.show_as_popup(anchor_widget=parent, position="bottom")
+
+        self.assertEqual(
+            len(show_count),
+            1,
+            f"show() called {len(show_count)} time(s) during show_as_popup",
+        )
+        menu.hide(force=True)
+
+    def test_showEvent_does_not_reposition_after_show_as_popup(self):
+        """showEvent must NOT call _apply_position when show_as_popup positioned already.
+
+        Bug: show_as_popup() positions menu correctly, but showEvent() calls
+        _apply_position() which overrides the anchor-based position with
+        self.position (e.g. "cursorPos"), causing the menu to jump visibly.
+        Fixed: 2026-03-18
+        """
+        parent = self.track_widget(QtWidgets.QPushButton("Anchor"))
+        parent.setGeometry(200, 200, 200, 30)
+        parent.show()
+
+        menu = self.track_widget(Menu(parent=parent, hide_on_leave=True))
+        menu.add("QPushButton", setText="Item")
+
+        reposition_calls = []
+        original_apply_position = Menu._apply_position
+
+        def tracking_apply_position(self_menu):
+            reposition_calls.append(1)
+            original_apply_position(self_menu)
+
+        with patch.object(Menu, "_apply_position", tracking_apply_position):
+            menu.show_as_popup(anchor_widget=parent, position="bottom")
+
+        self.assertEqual(
+            len(reposition_calls),
+            0,
+            f"_apply_position called {len(reposition_calls)} time(s) during "
+            f"show_as_popup (should be 0 - positioning handled by show_as_popup)",
+        )
+        menu.hide(force=True)
+
+    def test_no_show_events_during_option_box_wrapping(self):
+        """OptionBox wrapping must not trigger any Menu show events.
+
+        Bug: When OptionBoxManager wraps a PushButton that has been added
+        to a header menu, the lazy deferred wrapping could trigger show
+        events on the option_box menu during layout replacement.
+        Fixed: 2026-03-18
+        """
+        from uitk.widgets.header import Header
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
+
+        header = self.track_widget(Header())
+        header.setGeometry(100, 100, 300, 20)
+
+        # Add a button to the header menu (simulates tentacle header_init)
+        button = header.menu.add("QPushButton", setText="Tool Button")
+
+        # Track show events on ALL Menu instances
+        show_events = []
+        original_showEvent = Menu.showEvent
+
+        def counting_showEvent(self_menu, event):
+            show_events.append(self_menu.objectName() or id(self_menu))
+            original_showEvent(self_menu, event)
+
+        with patch.object(Menu, "showEvent", counting_showEvent):
+            # Access option_box.menu (simulates tb000_init)
+            mgr = OptionBoxManager(button)
+            mgr.enable_menu()
+            mgr.menu.add("QSpinBox", setObjectName="s000")
+            mgr.menu.add("QCheckBox", setText="Option A")
+
+            # Force wrapping synchronously (normally deferred via QTimer)
+            if mgr._pending_options and not mgr._is_wrapped:
+                mgr._perform_wrap()
+
+        self.assertEqual(
+            len(show_events),
+            0,
+            f"Menu showEvent fired {len(show_events)} time(s) during option box wrapping",
+        )
+
+    def test_register_with_main_window_deferred_not_synchronous(self):
+        """_register_with_main_window must NOT run synchronously inside add().
+
+        Bug: add() called _register_with_main_window synchronously which called
+        mainWindow.register_widget → init_slot → tb###_init, creating nested
+        option-box menus and wrapping layout while add() was still running.
+        This caused menus to flash on init and option menus to break.
+        Fixed: 2026-03-18
+
+        Contract: registration is deferred to a later event-loop tick.  This
+        test only checks "not during add()"; the order/coalescing properties
+        are covered in the dedicated tests below.
+        """
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        menu = self.track_widget(Menu(parent=parent))
+
+        # Track whether _register_with_main_window is called during add()
+        register_calls_during_add = []
+        original_register = menu._register_with_main_window
+
+        def tracking_register(widget, _orig=original_register):
+            register_calls_during_add.append(widget.objectName())
+            _orig(widget)
+
+        menu._register_with_main_window = tracking_register
+
+        menu.add("QPushButton", setText="Tool", setObjectName="tb018")
+
+        # Should NOT have been called synchronously during add()
+        self.assertEqual(
+            len(register_calls_during_add),
+            0,
+            f"_register_with_main_window called {len(register_calls_during_add)} "
+            f"time(s) synchronously during add() — should be deferred",
+        )
+
+
+class TestMenuRegistrationCoalescing(QtBaseTestCase):
+    """Locks down :meth:`Menu._schedule_registration` /
+    :meth:`Menu._drain_pending_registrations` semantics.
+
+    Background: ``Menu.add`` used to schedule one
+    ``QTimer.singleShot(0, _register_with_main_window)`` per item.  Bulk
+    adds inside ``tbXXX_init`` queued one timer wakeup per item, each
+    landing on its own event-loop tick.  The current implementation
+    coalesces every registration request from a given tick into a single
+    drain pass, but the *observable* contract — same FIFO order, no
+    synchronous call inside add(), re-entrant adds re-arm a fresh timer —
+    is preserved.  These tests guard the coalesced path against future
+    refactors that would re-introduce per-item timers or break ordering.
+    """
+
+    def test_bulk_add_schedules_single_drain_timer(self):
+        """N adds in one tick must schedule exactly one drain timer."""
+        from uitk.widgets import menu as menu_module
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+
+        scheduled = []
+        original_singleShot = QtCore.QTimer.singleShot
+
+        def counting_singleShot(interval, slot, *args, **kwargs):
+            scheduled.append((interval, getattr(slot, "__name__", repr(slot))))
+            return original_singleShot(interval, slot, *args, **kwargs)
+
+        with patch.object(menu_module.QtCore.QTimer, "singleShot", counting_singleShot):
+            for i in range(5):
+                m.add("QPushButton", setObjectName=f"b{i:03d}")
+
+        drain_schedules = [
+            s for s in scheduled if s[1] == "_drain_pending_registrations"
+        ]
+        self.assertEqual(
+            len(drain_schedules),
+            1,
+            f"Expected exactly 1 drain timer for 5 adds; got {len(drain_schedules)}: {scheduled}",
+        )
+        self.assertEqual(len(m._pending_registrations), 5)
+        self.assertTrue(m._registration_drain_scheduled)
+
+    def test_drain_processes_in_fifo_order(self):
+        """_drain_pending_registrations must call _register_with_main_window
+        in insertion order (the contract callers rely on for sibling lookups
+        in <name>_init bodies)."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+
+        order = []
+        m._register_with_main_window = lambda w: order.append(w.objectName())
+
+        names = ["b000", "b001", "b002", "b003"]
+        for n in names:
+            m.add("QPushButton", setObjectName=n)
+
+        m._drain_pending_registrations()
+        self.assertEqual(order, names)
+        self.assertEqual(m._pending_registrations, [])
+        self.assertFalse(m._registration_drain_scheduled)
+
+
+class _StubMainWindow(QtWidgets.QMainWindow):
+    """Minimal stand-in exposing the ``register_widget`` / ``widgets`` contract
+    that :meth:`Menu._resolve_registration_window` probes for.
+
+    ``register_widget`` mirrors the essential side effects of the real
+    ``MainWindow.register_widget``: it marks the widget for state persistence
+    (``restore_state``) and tracks it. That's all the registration path needs
+    to verify here.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.widgets = set()
+        self.registered = []
+
+    def register_widget(self, widget):
+        widget.restore_state = True
+        self.widgets.add(widget)
+        self.registered.append(widget.objectName())
+
+
+class TestMenuRegistrationSurvivesReparent(QtBaseTestCase):
+    """Deferred registration must reach the MainWindow even after the menu
+    reparents to a top-level popup on show.
+
+    Regression: a menu shows by reparenting itself to a top-level Tool/Popup
+    window, which severs the live parent chain back to the MainWindow. Because
+    dynamic-widget registration is *deferred* to a later event-loop tick, in a
+    live DCC session the show/reparent could race ahead of the drain — at which
+    point ``_register_with_main_window`` walked a broken chain, found no
+    MainWindow, and silently skipped registration. The widget never got
+    ``restore_state``, so its value was neither saved nor restored. Repro'd as
+    menu-hosted options resetting every session only in interactive Maya.
+
+    Fix: capture the owning MainWindow weakly while the chain is still intact
+    (at schedule time) and fall back to it at drain time.
+    """
+
+    def _build(self):
+        window = self.track_widget(_StubMainWindow())
+        central = self.track_widget(QtWidgets.QWidget())
+        window.setCentralWidget(central)
+        host = self.track_widget(QtWidgets.QPushButton("host", central))
+        menu = self.track_widget(Menu(parent=host))
+        return window, host, menu
+
+    def test_resolve_finds_window_via_live_chain(self):
+        """The cheap, common path: an intact parent chain resolves directly."""
+        window, _host, menu = self._build()
+        self.assertIs(menu._resolve_registration_window(), window)
+
+    def test_resolve_falls_back_to_cache_after_reparent(self):
+        """Once the live chain is broken, the cached window still resolves."""
+        window, _host, menu = self._build()
+        # Prime the cache via a successful live walk.
+        self.assertIs(menu._resolve_registration_window(), window)
+
+        rogue = self.track_widget(QtWidgets.QMainWindow())  # no register_widget
+        menu.setParent(rogue, QtCore.Qt.Window)
+        self.assertFalse(hasattr(menu.parent(), "register_widget"))
+
+        self.assertIs(menu._resolve_registration_window(), window)
+
+    def test_registration_survives_menu_reparent_before_drain(self):
+        """End-to-end: add → reparent (break chain) → drain still registers."""
+        window, _host, menu = self._build()
+        chk = menu.add("QCheckBox", setObjectName="chk_opt")
+
+        # Simulate the menu becoming a top-level popup on show.
+        rogue = self.track_widget(QtWidgets.QMainWindow())
+        menu.setParent(rogue, QtCore.Qt.Window)
+        self.assertFalse(hasattr(menu.parent(), "register_widget"))
+
+        menu._drain_pending_registrations()
+
+        self.assertIn("chk_opt", window.registered)
+        self.assertIn(chk, window.widgets)
+        self.assertTrue(getattr(chk, "restore_state", False))
+
+    def test_reentrant_add_during_drain_rearms_timer(self):
+        """If a registration handler triggers another add() while the drain
+        is running, the new item must land in a fresh queue with its own
+        scheduled drain — matching the per-item-timer behavior this replaced.
+        Without re-arming, items added during drain would never register."""
+        from uitk.widgets import menu as menu_module
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+
+        def registration_handler(widget):
+            # Simulate an init-slot that adds another item mid-drain.
+            if widget.objectName() == "b000":
+                m.add("QPushButton", setObjectName="b000_child")
+
+        m._register_with_main_window = registration_handler
+
+        m.add("QPushButton", setObjectName="b000")
+
+        scheduled_during_drain = []
+        original_singleShot = QtCore.QTimer.singleShot
+
+        def counting_singleShot(interval, slot, *args, **kwargs):
+            scheduled_during_drain.append(getattr(slot, "__name__", repr(slot)))
+            return original_singleShot(interval, slot, *args, **kwargs)
+
+        with patch.object(menu_module.QtCore.QTimer, "singleShot", counting_singleShot):
+            m._drain_pending_registrations()
+
+        # The reentrant add() should have queued a fresh drain
+        self.assertEqual(len(m._pending_registrations), 1)
+        self.assertEqual(m._pending_registrations[0].objectName(), "b000_child")
+        self.assertTrue(m._registration_drain_scheduled)
+        self.assertIn("_drain_pending_registrations", scheduled_during_drain)
+
+    def test_drain_swallows_runtime_error_for_deleted_widget(self):
+        """A widget can be deleted between schedule and drain; the drain
+        must skip it without aborting the rest of the queue."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+
+        registered = []
+
+        def patched_register(widget):
+            name = widget.objectName()
+            if name == "b001":
+                raise RuntimeError("Internal C++ object already deleted")
+            registered.append(name)
+
+        m._register_with_main_window = patched_register
+
+        for n in ("b000", "b001", "b002"):
+            m.add("QPushButton", setObjectName=n)
+
+        m._drain_pending_registrations()
+        self.assertEqual(registered, ["b000", "b002"])
+
+    def test_drain_isolates_non_runtime_exceptions(self):
+        """Per-item-timer behavior: a non-RuntimeError exception in one
+        registration must not abort the rest of the queue.  This guards
+        the parity between the coalesced drain and the prior per-item
+        QTimer mechanism, where each item's failure was naturally
+        independent."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+
+        registered = []
+
+        def patched_register(widget):
+            name = widget.objectName()
+            if name == "b001":
+                raise ValueError("intentional bug in slot init")
+            registered.append(name)
+
+        m._register_with_main_window = patched_register
+
+        for n in ("b000", "b001", "b002"):
+            m.add("QPushButton", setObjectName=n)
+
+        m._drain_pending_registrations()
+        # b001's ValueError is logged but doesn't drop b002.
+        self.assertEqual(registered, ["b000", "b002"])
+
+    def test_layout_activate_skipped_when_invisible(self):
+        """Bulk add() during slot init must not call _layout.activate() per
+        item.  The menu is invisible at that point and Qt re-activates layouts
+        before paint anyway; activating per-item is wasted work that shows
+        up under the bench's phase 04 (register_children_sync)."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+        # Menu.__init__ creates _layout eagerly via init_layout — verify.
+        self.assertIsNotNone(m._layout)
+        self.assertFalse(m.isVisible())
+
+        with patch.object(m._layout, "activate") as mock_activate:
+            for i in range(5):
+                m.add("QPushButton", setObjectName=f"b{i:03d}")
+
+        self.assertEqual(
+            mock_activate.call_count,
+            0,
+            f"_layout.activate() called {mock_activate.call_count} time(s) "
+            f"while menu invisible — should be skipped (Qt activates before paint)",
+        )
+
+    def test_layout_activate_runs_when_visible(self):
+        """Counterpart to the invisible-skip test: when the menu *is*
+        visible, add() still calls activate() so the on-screen layout
+        updates immediately."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.show()
+        m = self.track_widget(Menu(parent=parent))
+        m.show()
+        # A menu that never becomes visible is a broken menu, not a busy
+        # machine: wait on the real condition and FAIL when it is not met.
+        QtWait.until(lambda: m.isVisible(), "Menu.show() never made the menu visible")
+
+        with patch.object(m._layout, "activate") as mock_activate:
+            m.add("QPushButton", setObjectName="b_visible")
+
+        self.assertGreaterEqual(
+            mock_activate.call_count,
+            1,
+            "_layout.activate() must run on add() while menu is visible",
+        )
+
+
+class TestHeaderMenuPopup(QtBaseTestCase):
+    """Tests for Header menu display as proper popup.
+
+    Bug: Header.show_menu() used setVisible(True) instead of show_as_popup(),
+    causing the menu to appear at (0,0) or wrong position instead of anchored
+    to the header widget.
+    Fixed: 2026-03-18
+    """
+
+    def test_header_menu_uses_popup(self):
+        """Header.show_menu() must position the menu as a popup, not raw setVisible."""
+        from uitk.widgets.header import Header
+
+        header = self.track_widget(Header())
+        header.setGeometry(100, 100, 300, 20)
+        header.show()
+
+        # Populate the menu
+        header.menu.add("QPushButton", setText="Action 1")
+        header.menu.add("QPushButton", setText="Action 2")
+
+        # Show the menu
+        header.show_menu()
+
+        self.assertTrue(
+            header.menu.isVisible(),
+            "Menu should be visible after show_menu()",
+        )
+
+        # Verify the menu has popup window flags (Tool | FramelessWindowHint)
+        flags = header.menu.windowFlags()
+        self.assertTrue(
+            flags & QtCore.Qt.Tool,
+            "Menu must have Qt.Tool flag to display as popup",
+        )
+
+        header.menu.hide(force=True)
+
+    def test_header_menu_positioned_near_header(self):
+        """Header menu should appear near the header widget, not at (0,0)."""
+        from uitk.widgets.header import Header
+
+        header = self.track_widget(Header())
+        header.setGeometry(200, 200, 300, 20)
+        header.show()
+
+        header.menu.add("QPushButton", setText="Action 1")
+
+        header.show_menu()
+
+        # Menu position should be near the header, not at origin
+        menu_pos = header.menu.pos()
+        # It shouldn't be at (0,0), the default unpositioned location; allow a
+        # generous margin for positioning differences otherwise.
+        self.assertFalse(
+            menu_pos.x() == 0 and menu_pos.y() == 0,
+            "Menu should not be positioned at origin (0,0)",
+        )
+
+        header.menu.hide(force=True)
+
+
+class TestOptionBoxMenuPopupFlags(QtBaseTestCase):
+    """Tests for OptionBox menu popup flag lifecycle.
+
+    Original bug: ``MenuOption.set_wrapped_widget()`` called setParent(widget)
+    without preserving window flags, stripping ``Qt.Tool | Qt.FramelessWindowHint``
+    set by ``_setup_as_popup()``.  The menu then rendered as a clipped
+    child instead of a floating popup.
+    Fixed: 2026-03-18
+
+    Updated contract (Fix A): popup setup is deferred until the menu's
+    first show — running it during ``Menu.__init__`` creates a native
+    Tool window per Menu, which on Windows produces a brief WM-visible
+    artifact ("multiple menus initializing repeatedly") for every
+    option_box menu created during ``register_children``.  Tests below
+    were updated to reflect the deferred-setup contract.
+    """
+
+    def test_option_box_menu_acquires_popup_flags_on_first_show(self):
+        """Fix A contract: menu has *no* Tool flag pre-show; it's set
+        on the first ``show_as_popup`` (or ``showEvent``).  This eliminates
+        the Tool-window flash visible during ``register_children`` when
+        ``_setup_as_popup`` ran eagerly in ``Menu.__init__``."""
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        button = QtWidgets.QPushButton("Test")
+        layout.addWidget(button)
+        parent.show()
+
+        mgr = OptionBoxManager(button)
+        mgr.enable_menu()
+        menu = mgr.menu
+
+        # Pre-show: popup setup deferred — no Tool flag yet.
+        self.assertFalse(
+            menu._popup_configured,
+            "Menu must defer popup setup until first show",
+        )
+        flags_before = menu.windowFlags()
+        self.assertFalse(
+            flags_before & QtCore.Qt.Tool,
+            "Menu must NOT have Qt.Tool flag before first show (Fix A)",
+        )
+
+        # Wrap fires (Fix C: synchronous when parent exists).
+        container = mgr.container
+        self.track_widget(container)
+
+        # Wrap also doesn't set Tool flag — that waits for first show.
+        self.assertFalse(
+            menu.windowFlags() & QtCore.Qt.Tool,
+            "Wrap must not eagerly trigger popup setup",
+        )
+
+        # First show — popup setup runs synchronously inside show_as_popup
+        # before positioning, so the menu's geometry is in screen coords.
+        menu.show_as_popup(anchor_widget=button, position="bottom")
+
+        self.assertTrue(menu._popup_configured)
+        self.assertTrue(
+            menu.windowFlags() & QtCore.Qt.Tool,
+            "Menu must have Qt.Tool flag after first show_as_popup",
+        )
+        menu.hide(force=True)
+
+    def test_setvisible_true_directly_triggers_popup_setup(self):
+        """Direct ``menu.setVisible(True)`` (bypassing ``show()`` /
+        ``show_as_popup``) must still apply popup setup.  Without this,
+        callers that use the low-level visibility API would see a
+        non-popup menu, or worse, the ``setWindowFlags`` hide-during-show
+        race that bricked the show.
+        """
+        menu = self.track_widget(Menu())
+        self.assertFalse(menu._popup_configured)
+
+        menu.setVisible(True)
+
+        self.assertTrue(
+            menu._popup_configured,
+            "setVisible(True) must trigger _setup_as_popup",
+        )
+        self.assertTrue(
+            menu.windowFlags() & QtCore.Qt.Tool,
+            "Tool flag must be applied via setVisible(True) path",
+        )
+        self.assertTrue(menu.isVisible())
+        menu.hide(force=True)
+
+    def test_show_hide_show_cycle_keeps_popup_configured(self):
+        """Once popup setup runs, subsequent show/hide cycles must not
+        re-run it — the ``_popup_configured`` flag is sticky.  Without
+        idempotency, every show would call setWindowFlags again,
+        recreating the native window handle and producing exactly the
+        flicker Fix A is meant to eliminate."""
+        menu = self.track_widget(Menu())
+        self.assertFalse(menu._popup_configured)
+
+        menu.show()
+        self.assertTrue(menu._popup_configured)
+        flags_first_show = menu.windowFlags()
+
+        menu.hide(force=True)
+        menu.show()  # second show
+        flags_second_show = menu.windowFlags()
+
+        self.assertEqual(
+            flags_first_show,
+            flags_second_show,
+            "Window flags must be stable across show/hide cycles",
+        )
+        menu.hide(force=True)
+
+    def test_construction_does_not_create_tool_window(self):
+        """The user-facing flicker source: ``_setup_as_popup`` running
+        eagerly in ``Menu.__init__`` created an OS-level Tool window per
+        Menu, producing brief WM-visible artifacts during
+        register_children.  After Fix A, construction must leave the
+        menu as a hidden child widget — no popup setup, no Tool flag,
+        no native window created."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        menu = self.track_widget(Menu(parent=parent))
+
+        self.assertFalse(menu._popup_configured)
+        self.assertFalse(menu.windowFlags() & QtCore.Qt.Tool)
+        self.assertIs(menu.parent(), parent)
+        # Explicit hide marker prevents parent-cascade auto-show.
+        self.assertFalse(menu.isVisible())
+
+    def test_parent_cascade_does_not_auto_show_menu(self):
+        """The bug Fix A's ``super().hide()`` in __init__ guards: when
+        the Menu is parented to a button that gets reparented into an
+        ``OptionBoxContainer``, the container's ``show()`` cascades
+        through children.  Without explicit hide, the cascade reaches
+        the Menu and fires showEvent — running popup setup mid-wrap and
+        defeating the deferral.  Explicit hide flips
+        ``WA_WState_ExplicitShowHide`` so the cascade skips it."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        button = QtWidgets.QPushButton()
+        layout.addWidget(button)
+        menu = self.track_widget(Menu(parent=button))
+
+        # Show the parent — cascade would auto-show Menu without explicit hide.
+        parent.show()
+        QtWait.pump()
+
+        self.assertFalse(
+            menu.isVisible(),
+            "Menu must remain hidden through parent.show() cascade",
+        )
+        self.assertFalse(
+            menu._popup_configured,
+            "Popup setup must NOT run via parent cascade",
+        )
+        parent.hide()
+
+    def test_option_box_menu_retains_popup_flags_across_wrap(self):
+        """Once popup setup has run, subsequent operations on the
+        wrapped menu must not strip Tool flags (the original 2026-03-18
+        bug)."""
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(parent)
+        button = QtWidgets.QPushButton("Test")
+        layout.addWidget(button)
+        parent.show()
+
+        mgr = OptionBoxManager(button)
+        mgr.enable_menu()
+        menu = mgr.menu
+
+        # Force popup setup to happen now (simulate first show).
+        menu._setup_as_popup()
+        self.assertTrue(menu.windowFlags() & QtCore.Qt.Tool)
+
+        # Trigger wrap path which reparents via setParent(widget, windowFlags()).
+        container = mgr.container
+        self.track_widget(container)
+
+        # Tool flag must be preserved through the wrap reparent.
+        self.assertTrue(
+            menu.windowFlags() & QtCore.Qt.Tool,
+            "Menu must retain Qt.Tool flag after OptionBox wrapping",
+        )
+
+    def test_option_box_menu_shows_as_popup(self):
+        """OptionBox menu must display as a floating popup, not clipped child."""
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
+
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.setGeometry(100, 100, 300, 40)
+        layout = QtWidgets.QVBoxLayout(parent)
+        button = QtWidgets.QPushButton("Test")
+        layout.addWidget(button)
+        parent.show()
+
+        mgr = OptionBoxManager(button)
+        mgr.menu.add("QLabel", setText="Option 1")
+        mgr.menu.add("QCheckBox", setText="Option 2")
+
+        # Force wrap
+        container = mgr.container
+        self.track_widget(container)
+
+        # Show the menu
+        mgr.menu.show_as_popup(anchor_widget=button, position="bottom")
+
+        self.assertTrue(
+            mgr.menu.isVisible(),
+            "OptionBox menu should be visible after show_as_popup",
+        )
+
+        # Menu height should be greater than the button height (proves it's not clipped)
+        self.assertGreater(
+            mgr.menu.height(),
+            button.height(),
+            "Menu should be taller than button (not clipped as child widget)",
+        )
+
+        mgr.menu.hide(force=True)
+
+    def test_nested_option_menu_in_header_menu(self):
+        """Option box menus on buttons inside header.menu must open as popups.
+
+        This replicates the exact tentacle animation slots pattern:
+        header_init adds PushButton items to header.menu, then tb###_init
+        adds items to widget.option_box.menu for each tool button.
+        Fixed: 2026-03-18
+        """
+        from uitk.widgets.header import Header
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
+
+        # Setup: header with menu containing buttons (simulates header_init)
+        header = self.track_widget(Header())
+        header.setGeometry(100, 100, 300, 20)
+        header.show()
+
+        tool_button = header.menu.add("QPushButton", setText="Smart Bake")
+
+        # Setup option box on the tool button (simulates tb018_init)
+        mgr = OptionBoxManager(tool_button)
+        mgr.enable_menu()
+        mgr.menu.add("QCheckBox", setText="Bake Constraints")
+        mgr.menu.add("QCheckBox", setText="Bake Expressions")
+
+        # Force wrapping synchronously
+        if mgr._pending_options and not mgr._is_wrapped:
+            mgr._perform_wrap()
+
+        # Show the header menu first
+        header.show_menu()
+        self.assertTrue(header.menu.isVisible(), "Header menu should be visible")
+
+        # Now show the option box menu (simulates clicking the option_box button)
+        mgr.menu.show_as_popup(anchor_widget=tool_button, position="bottom")
+
+        self.assertTrue(
+            mgr.menu.isVisible(),
+            "Option box menu inside header menu must be visible after show_as_popup",
+        )
+
+        # Verify popup flags are intact
+        flags = mgr.menu.windowFlags()
+        self.assertTrue(
+            flags & QtCore.Qt.Tool,
+            "Nested option box menu must have Qt.Tool flag",
+        )
+
+        mgr.menu.hide(force=True)
+        header.menu.hide(force=True)
+
+
+class TestMenuHideEventFocusRestore(QtBaseTestCase):
+    """hideEvent must never restore focus to a HIDDEN window.
+
+    ``hideEvent`` re-activates ``_active_window_before_show`` when the menu closes (a Qt.Tool
+    popup takes activation with it). If that window has since hidden — the marking-menu overlay
+    after its gesture ended — ``activateWindow()`` on it strands the OS foreground on an
+    invisible window: on a non-Qt DCC host (Blender) the activation key then reaches neither
+    the DCC's native keymap nor Qt until the user clicks the viewport.
+    """
+
+    def _menu_with_prior_window(self, visible):
+        menu = self.track_widget(Menu())
+        menu.show()
+        prior = self.track_widget(QtWidgets.QWidget())
+        prior.setWindowFlag(QtCore.Qt.Window)
+        if visible:
+            prior.show()
+        menu._active_window_before_show = prior  # what showEvent captured
+        return menu, prior
+
+    def test_skips_hidden_previous_window(self):
+        menu, prior = self._menu_with_prior_window(visible=False)
+        with (
+            patch.object(prior, "raise_") as raise_spy,
+            patch.object(prior, "activateWindow") as activate_spy,
+        ):
+            menu.hide(force=True)
+        raise_spy.assert_not_called()
+        activate_spy.assert_not_called()
+
+    def test_restores_visible_previous_window(self):
+        menu, prior = self._menu_with_prior_window(visible=True)
+        with patch.object(prior, "activateWindow") as activate_spy:
+            menu.hide(force=True)
+        activate_spy.assert_called_once()
+
+
+class TestMenuGetItemByTextNonTextWidget(QtBaseTestCase):
+    """Regression: get_item(str) must not crash on items lacking a .text().
+
+    Bug: the by-text branch of get_item called i.text() directly. Many menu
+    item types have no text() method (QComboBox -> currentText(), QSlider,
+    QDial, QProgressBar, plain QWidget), so iterating past one raised
+    AttributeError before the intended label was ever reached. The fix routes
+    each item through the guarded get_item_text() helper instead.
+    """
+
+    def test_get_item_by_text_skips_non_text_widget(self):
+        menu = self.track_widget(Menu())
+        menu.add("QComboBox")  # has currentText(), NOT text()
+        label = menu.add("QLabel", setText="Foo")
+        # The combo is reached first; a bare i.text() would AttributeError here.
+        self.assertIs(menu.get_item("Foo"), label)
+
+    def test_get_item_by_text_still_raises_for_unknown(self):
+        menu = self.track_widget(Menu())
+        menu.add("QComboBox")
+        menu.add("QLabel", setText="Foo")
+        with self.assertRaises(ValueError):
+            menu.get_item("Nonexistent")
+
+
+class TestMenuClearEmptyPlaceholder(QtBaseTestCase):
+    """Regression: clear() must tear down the empty-state placeholder + timer.
+
+    Bug: clear()'s reverse-delete loop deleteLater()'d the placeholder label
+    but never reset self._empty_placeholder or stopped self._empty_timer.
+    Consequences: (1) the next empty show no-op'd because _add_empty_placeholder
+    early-returns on a non-None placeholder, and (2) _empty_timer later fired
+    _on_empty_timeout -> _remove_empty_placeholder() on an already-destroyed
+    C++ label, raising RuntimeError from the timer callback.
+    """
+
+    def test_clear_resets_empty_placeholder(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.show()
+        self.assertIsNotNone(menu._empty_placeholder)
+        menu.clear()
+        self.assertIsNone(menu._empty_placeholder)
+        menu.hide()
+
+    def test_clear_stops_empty_timer(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=5000))
+        menu.show()
+        self.assertIsNotNone(menu._empty_timer)
+        self.assertTrue(menu._empty_timer.isActive())
+        menu.clear()
+        self.assertFalse(menu._empty_timer.isActive())
+        menu.hide()
+
+    def test_empty_placeholder_reappears_after_clear(self):
+        menu = self.track_widget(Menu(empty_timeout_ms=0))
+        menu.show()
+        menu.clear()
+        menu.hide()
+        # A second empty show must produce a live placeholder in the grid; with
+        # the stale reference _add_empty_placeholder would early-return.
+        menu.show()
+        self.assertIsNotNone(menu._empty_placeholder)
+        self.assertIs(
+            _LayoutItems.widget_at(menu.gridLayout, 0), menu._empty_placeholder
+        )
+        menu.hide()
+
+
+class TestMenuAddRow(QtBaseTestCase):
+    """add_row places several controls side-by-side without reflowing the menu.
+
+    The menu's grid is single-column by construction; adding raw multi-column cells
+    would grow columnCount() and squeeze every other row into column 0. add_row nests
+    the row's widgets in a container added as ONE full-width cell instead, so the rest
+    of the menu is untouched while each child stays individually addressable.
+    """
+
+    def test_returns_one_widget_per_item_in_order(self):
+        menu = self.track_widget(Menu())
+        widgets = menu.add_row(
+            [
+                ("QCheckBox", {"setObjectName": "chk_a", "setText": "a"}),
+                ("QCheckBox", {"setObjectName": "chk_b", "setText": "b"}),
+            ]
+        )
+        self.assertEqual([w.objectName() for w in widgets], ["chk_a", "chk_b"])
+
+    def test_children_are_exposed_as_menu_attributes(self):
+        menu = self.track_widget(Menu())
+        menu.add_row([("QCheckBox", {"setObjectName": "chk_ma"})])
+        self.assertIs(menu.chk_ma, menu.findChild(QtWidgets.QCheckBox, "chk_ma"))
+
+    def test_per_item_kwargs_apply_and_beat_shared_kwargs(self):
+        menu = self.track_widget(Menu())
+        a, b = menu.add_row(
+            [
+                ("QCheckBox", {"setObjectName": "chk_on", "setChecked": True}),
+                ("QCheckBox", {"setObjectName": "chk_off"}),
+            ],
+            setToolTip="shared",
+        )
+        self.assertTrue(a.isChecked())
+        self.assertFalse(b.isChecked())
+        self.assertEqual(a.toolTip(), "shared")
+        self.assertEqual(b.toolTip(), "shared")
+
+    def test_does_not_reflow_the_single_column_grid(self):
+        """The regression this design exists to prevent: sibling rows must keep their
+        full width, so the grid must stay one column wide."""
+        menu = self.track_widget(Menu())
+        menu.add("QCheckBox", setObjectName="chk_before")
+        columns_before = menu.gridLayout.columnCount()
+        menu.add_row(
+            [
+                ("QCheckBox", {"setObjectName": f"chk_{t}"})
+                for t in ("ma", "mb", "fbx", "blend")
+            ]
+        )
+        menu.add("QCheckBox", setObjectName="chk_after")
+        self.assertEqual(menu.gridLayout.columnCount(), columns_before)
+
+    def test_title_adds_a_separator_above_the_row(self):
+        menu = self.track_widget(Menu())
+        # Seed one real row first — an EMPTY QGridLayout already reports rowCount() == 1,
+        # so a fresh menu's before-count would be off by one.
+        menu.add("QCheckBox", setObjectName="chk_before")
+        rows_before = menu.gridLayout.rowCount()
+        menu.add_row(
+            [("QCheckBox", {"setObjectName": "chk_t"})], title="Include Types:"
+        )
+        # One separator row + one container row.
+        self.assertEqual(menu.gridLayout.rowCount(), rows_before + 2)
+
+    def test_accepts_a_bare_type_string_and_a_widget_instance(self):
+        menu = self.track_widget(Menu())
+        existing = QtWidgets.QCheckBox()
+        existing.setObjectName("chk_existing")
+        made, passed = menu.add_row(["QCheckBox", existing])
+        self.assertIsInstance(made, QtWidgets.QCheckBox)
+        self.assertIs(passed, existing)
+
+    def test_rejects_an_unsupported_item_spec(self):
+        menu = self.track_widget(Menu())
+        with self.assertRaises(TypeError):
+            menu.add_row([object()])
+
+    @staticmethod
+    def _row_item_kinds(widgets):
+        """The row layout's items as 's' (stretch/spacer) or 'w' (widget), in order."""
+        layout = widgets[0].parent().layout()
+        return [
+            "w" if isinstance(e, QtWidgets.QWidget) or e.spacerItem() is None else "s"
+            for e in _LayoutItems.entries(layout)
+        ]
+
+    def test_legacy_stretch_true_left_packs(self):
+        """The default (justify=None, stretch=True) keeps the legacy trailing stretch."""
+        menu = self.track_widget(Menu())
+        widgets = menu.add_row(
+            [("QCheckBox", {"setObjectName": f"chk_{t}"}) for t in ("a", "b")]
+        )
+        self.assertEqual(self._row_item_kinds(widgets), ["w", "w", "s"])
+
+    def test_justify_between_spreads_widgets_edge_to_edge(self):
+        """justify='between' interleaves stretches so the widgets span the full width,
+        first/last flush to the container edges (no leading/trailing stretch)."""
+        menu = self.track_widget(Menu())
+        widgets = menu.add_row(
+            [
+                ("QCheckBox", {"setObjectName": f"chk_{t}"})
+                for t in ("ma", "mb", "fbx", "blend")
+            ],
+            justify="between",
+        )
+        self.assertEqual(
+            self._row_item_kinds(widgets), ["w", "s", "w", "s", "w", "s", "w"]
+        )
+
+    def test_justify_expand_gives_each_widget_equal_stretch(self):
+        """justify='expand' gives every widget an equal layout stretch factor (equal slots),
+        with no spacer items."""
+        menu = self.track_widget(Menu())
+        widgets = menu.add_row(
+            [("QCheckBox", {"setObjectName": f"chk_{t}"}) for t in ("ma", "mb", "fbx")],
+            justify="expand",
+        )
+        layout = widgets[0].parent().layout()
+        self.assertEqual(self._row_item_kinds(widgets), ["w", "w", "w"])
+        self.assertEqual([layout.stretch(i) for i in range(layout.count())], [1, 1, 1])
+
+    def test_justify_center_stretches_both_ends(self):
+        menu = self.track_widget(Menu())
+        widgets = menu.add_row(
+            [("QCheckBox", {"setObjectName": "chk_a"})], justify="center"
+        )
+        self.assertEqual(self._row_item_kinds(widgets), ["s", "w", "s"])
+
+
+class TestHideOnTrigger(QtBaseTestCase):
+    """``hide_on_trigger``: optionally hide the menu after one of its items is
+    interacted with (off by default). A per-item override — set via
+    ``set_hide_on_trigger(widget, hide)`` — includes/excludes specific widgets
+    from the menu-level setting.
+    """
+
+    def _shown_menu(self, **menu_kwargs):
+        menu = self.track_widget(
+            Menu(
+                trigger_button="none",
+                add_header=False,
+                add_footer=False,
+                **menu_kwargs,
+            )
+        )
+        item = menu.add("QPushButton", setText="Go", setObjectName="btn_go")
+        menu.show()
+        QtWait.until(lambda: menu.isVisible(), "menu never became visible")
+        return menu, item
+
+    def _release_on(self, widget):
+        from qtpy import QtGui
+
+        event = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonRelease,
+            QtCore.QPointF(5, 5),
+            QtCore.QPointF(5, 5),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoButton,
+            QtCore.Qt.NoModifier,
+        )
+        QtWidgets.QApplication.sendEvent(widget, event)
+
+    def _pump(self, ms=50):
+        from qtpy.QtTest import QTest
+
+        QTest.qWait(ms)
+
+    def test_off_by_default_menu_stays_visible(self):
+        menu, item = self._shown_menu()
+        self.assertFalse(menu.hide_on_trigger)
+        self._release_on(item)
+        self._pump()
+        self.assertTrue(menu.isVisible(), "default behavior must be unchanged")
+
+    def test_enabled_hides_menu_after_item_release(self):
+        menu, item = self._shown_menu(hide_on_trigger=True)
+        self._release_on(item)
+        # Deferred by one tick so the release finishes delivery to the item
+        # (a synchronous hide would swallow the widget's own clicked signal).
+        self.assertTrue(menu.isVisible(), "hide must be deferred, not synchronous")
+        self._pump()
+        self.assertFalse(menu.isVisible())
+
+    def test_per_item_exclude_overrides_enabled_menu(self):
+        menu, item = self._shown_menu(hide_on_trigger=True)
+        menu.set_hide_on_trigger(item, False)
+        self._release_on(item)
+        self._pump()
+        self.assertTrue(menu.isVisible(), "excluded item must not hide the menu")
+
+    def test_per_item_include_overrides_disabled_menu(self):
+        menu, item = self._shown_menu()  # hide_on_trigger off
+        menu.set_hide_on_trigger(item, True)
+        self._release_on(item)
+        self._pump()
+        self.assertFalse(menu.isVisible(), "included item must hide the menu")
+
+    def test_clearing_override_returns_item_to_menu_setting(self):
+        menu, item = self._shown_menu(hide_on_trigger=True)
+        menu.set_hide_on_trigger(item, False)
+        menu.set_hide_on_trigger(item, None)  # back to the menu-level setting
+        self._release_on(item)
+        self._pump()
+        self.assertFalse(menu.isVisible())
+
+    def test_menu_config_carries_hide_on_trigger(self):
+        config = MenuConfig(hide_on_trigger=True)
+        menu = self.track_widget(Menu.from_config(config))
+        self.assertTrue(menu.hide_on_trigger)
+        self.assertFalse(MenuConfig().hide_on_trigger, "must default off")
+
+    def test_toggling_at_runtime(self):
+        menu, item = self._shown_menu()
+        menu.hide_on_trigger = True
+        self._release_on(item)
+        self._pump()
+        self.assertFalse(menu.isVisible())
+
+    def test_separator_release_does_not_hide(self):
+        """Separators are non-interactive — a release on a titled section row
+        must not dismiss an enabled menu (an explicit include still can)."""
+        menu, item = self._shown_menu(hide_on_trigger=True)
+        sep = menu.add("Separator", setTitle="Edit")
+        self._release_on(sep)
+        self._pump()
+        self.assertTrue(menu.isVisible(), "separator release must not dismiss")
+        menu.set_hide_on_trigger(sep, True)  # explicit include wins
+        self._release_on(sep)
+        self._pump()
+        self.assertFalse(menu.isVisible())
+
+    def test_wrapped_item_still_hides_menu(self):
+        """An option-box wrap replaces the item with a container in the grid
+        layout; the dismissal must resolve through the wrap (the event filter
+        installed at add() time still reports the original widget)."""
+        menu, item = self._shown_menu(hide_on_trigger=True)
+        container = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(container)
+        lay.addWidget(item)  # reparent the item out of the grid, as wrap does
+        menu.add(container)
+        self.assertNotIn(item, menu.get_items())
+        self._release_on(item)
+        self._pump()
+        self.assertFalse(menu.isVisible())
+
+
+class TestMenuNestedContainerTrigger(QtBaseTestCase):
+    """hide_on_trigger for interactions nested inside a container item.
+
+    A container item (e.g. an ExpandableList menu row) drives its own
+    interaction and consumes its internal mouse releases, so the menu's
+    release-based hide-on-trigger never fires for it. ``add()`` bridges the
+    container's ``on_item_interacted`` instead: a LEAF activation dismisses
+    the menu; a row that merely opens a deeper level is navigation.
+    """
+
+    def _release_event(self):
+        from qtpy import QtGui
+
+        return QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonRelease,
+            QtCore.QPointF(5, 5),
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+        )
+
+    def _shown_menu_with_list(self, hide_on_trigger=True):
+        from uitk.widgets.expandableList import ExpandableList
+
+        menu = self.track_widget(
+            Menu(
+                trigger_button="none",
+                add_header=False,
+                add_footer=False,
+                hide_on_trigger=hide_on_trigger,
+            )
+        )
+        lw = menu.add(ExpandableList, setObjectName="list000")
+        lw.fixed_item_height = 18
+        lw.apply_preset("hover_menu")
+        root_item = lw.add("Menu")
+        root_item.sublist.add(["Leaf A", "Leaf B"])
+        menu.show()
+        QtWait.until(lambda: menu.isVisible(), "menu never became visible")
+        return menu, lw, root_item
+
+    def _pump(self, ms=50):
+        from qtpy.QtTest import QTest
+
+        QTest.qWait(ms)
+
+    def test_leaf_interaction_hides_menu(self):
+        menu, lw, root_item = self._shown_menu_with_list(hide_on_trigger=True)
+        leaf = root_item.sublist.get_items()[0]
+        consumed = root_item.sublist.eventFilter(leaf, self._release_event())
+        self.assertTrue(consumed, "the list must consume the leaf release")
+        self._pump()
+        self.assertFalse(
+            menu.isVisible(),
+            "a leaf activation inside the container must dismiss the menu",
+        )
+
+    def test_category_interaction_keeps_menu_open(self):
+        menu, lw, root_item = self._shown_menu_with_list(hide_on_trigger=True)
+        lw.eventFilter(root_item, self._release_event())
+        self._pump()
+        self.assertTrue(
+            menu.isVisible(),
+            "a row with a populated sublist is navigation, not a trigger",
+        )
+
+    def test_disabled_hide_on_trigger_keeps_menu_open(self):
+        menu, lw, root_item = self._shown_menu_with_list(hide_on_trigger=False)
+        leaf = root_item.sublist.get_items()[0]
+        root_item.sublist.eventFilter(leaf, self._release_event())
+        self._pump()
+        self.assertTrue(menu.isVisible())
+
+
+class TestMenuPopupGrabHandoff(QtBaseTestCase):
+    """A menu opened inside a foreign popup grab must declare ``Qt.Popup``.
+
+    While ``QApplication.activePopupWidget()`` is set, Qt routes every mouse
+    event to that popup — a ``Qt.Tool`` window shown on top receives nothing
+    and the pointer keeps interacting with whatever is underneath.  That is
+    what an option-box menu on a row embedded in a ``WidgetComboBox``
+    dropdown hits: the combo's native popup owns the grab.
+    """
+
+    def _menu(self):
+        return self.track_widget(
+            Menu(trigger_button="none", add_header=False, add_footer=False)
+        )
+
+    @staticmethod
+    def _window_type(widget):
+        return QtCore.Qt.WindowType(
+            int(widget.windowFlags()) & int(QtCore.Qt.WindowType_Mask)
+        )
+
+    def test_tool_window_when_no_popup_grab_is_active(self):
+        menu = self._menu()
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: None)
+        ):
+            self.assertEqual(menu._resolve_popup_window_type(), QtCore.Qt.Tool)
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Tool)
+
+    def test_popup_window_when_a_foreign_popup_holds_the_grab(self):
+        menu = self._menu()
+        foreign = self.track_widget(QtWidgets.QWidget(None, QtCore.Qt.Popup))
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: foreign)
+        ):
+            self.assertEqual(menu._resolve_popup_window_type(), QtCore.Qt.Popup)
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Popup)
+
+    def test_setup_reruns_when_the_window_type_changes(self):
+        """Tool first, then Popup on a later show inside a grab."""
+        menu = self._menu()
+        foreign = self.track_widget(QtWidgets.QWidget(None, QtCore.Qt.Popup))
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: None)
+        ):
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Tool)
+
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: foreign)
+        ):
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Popup)
+
+    def test_reverts_to_tool_once_the_grab_is_gone(self):
+        """Popup is a per-show accommodation, not a permanent state change."""
+        menu = self._menu()
+        foreign = self.track_widget(QtWidgets.QWidget(None, QtCore.Qt.Popup))
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: foreign)
+        ):
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Popup)
+
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: None)
+        ):
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Tool)
+
+    def test_being_the_active_popup_keeps_the_popup_type(self):
+        """A re-show inside our own grab must not drop back to Tool."""
+        menu = self._menu()
+        foreign = self.track_widget(QtWidgets.QWidget(None, QtCore.Qt.Popup))
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: foreign)
+        ):
+            menu._setup_as_popup()
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: menu)
+        ):
+            self.assertEqual(menu._resolve_popup_window_type(), QtCore.Qt.Popup)
+            menu._setup_as_popup()
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Popup)
+
+    def test_show_inside_a_widget_combobox_popup_takes_the_grab(self):
+        """End-to-end: the real grab, not a patched ``activePopupWidget``.
+
+        Pre-fix this left ``activePopupWidget()`` pointing at the combo's
+        own popup frame, so the menu rendered but was input-dead.
+        """
+        from uitk.widgets.widgetComboBox import WidgetComboBox
+        from uitk.widgets.comboBox import ComboBox
+
+        host = self.track_widget(QtWidgets.QWidget())
+        layout = QtWidgets.QVBoxLayout(host)
+        combo = WidgetComboBox(host)
+        layout.addWidget(combo)
+
+        row = ComboBox()
+        row.setObjectName("row000")
+        row.add(["None", "a"], clear=True)
+        row.option_box.menu.add("QPushButton", setText="Act", setObjectName="bAct")
+        combo.addWidgetItem(row, "row")
+
+        host.show()
+        QtWait.until(lambda: host.isVisible(), "host never became visible")
+
+        from uitk.widgets.optionBox.options.action import MenuOption
+
+        # The option-box wrap is deferred a tick past ``menu.add``.
+        QtWait.until(
+            lambda: row.option_box.find_option(MenuOption)._widget is not None,
+            "option-box wrap never produced its menu button",
+        )
+
+        combo.showPopup()
+        QtWait.until(
+            lambda: QtWidgets.QApplication.activePopupWidget() is not None,
+            "combo popup never took the grab",
+        )
+        container = QtWidgets.QApplication.activePopupWidget().window()
+
+        menu = row.option_box.menu
+        row.option_box.find_option(MenuOption)._widget.click()
+        QtWait.until(lambda: menu.isVisible(), "option menu never became visible")
+
+        self.assertEqual(self._window_type(menu), QtCore.Qt.Popup)
+        self.assertIs(
+            QtWidgets.QApplication.activePopupWidget(),
+            menu,
+            "the option menu must own the popup grab, else it gets no input",
+        )
+
+        # NATIVE grab handoff (Qt 6.8+ no longer remaps mouse events off the
+        # older popup): the menu must have stolen the window-level grab from
+        # the combo's popup frame — without it, presses at the menu's own
+        # buttons are delivered to the combo view beneath (measured live over
+        # Blender / PySide6 6.11).
+        stolen = menu._grab_stolen_from
+        self.assertIsNotNone(stolen, "menu did not record stealing the native grab")
+        self.assertIs(stolen(), container)
+
+        menu.hide()
+        self.assertIsNone(
+            menu._grab_stolen_from,
+            "hide must hand the native grab back to the popup underneath",
+        )
+        combo.hidePopup()
+
+    def test_show_as_popup_without_a_prior_popup_steals_no_grab(self):
+        """The native-grab handoff is scoped to the popup-over-popup case."""
+        menu = self._menu()
+        menu.add("QPushButton", setText="Act")
+        with patch.object(
+            QtWidgets.QApplication, "activePopupWidget", staticmethod(lambda: None)
+        ):
+            menu.show_as_popup()
+        self.assertIsNone(menu._grab_stolen_from)
+        menu.hide()
+
+
+class TestMenuRestoreDefaults(QtBaseTestCase):
+    """The menu's *Restore Defaults* resets FIELDS the way a panel-wide
+    ``StateManager.reset_all`` does, and a per-field reset inside a shown
+    (popup) menu still reaches the host window's StateManager."""
+
+    def setUp(self):
+        super().setUp()
+        from uitk.managers.state_manager import StateManager
+
+        self.host = self.track_widget(QtWidgets.QWidget())
+        settings = QtCore.QSettings("uitk_test", "menu_restore_defaults")
+        settings.clear()
+        self.host.state = StateManager(settings)
+        self.menu = Menu(parent=self.host, add_defaults_button=True)
+
+    def _field(self, name):
+        sb = self.menu.add("QDoubleSpinBox", setObjectName=name)
+        sb.derived_type = QtWidgets.QDoubleSpinBox
+        sb.default_signals = lambda: "valueChanged"
+        sb.restore_state = True
+        self.host.state.capture_default(sb)  # default = 0.0
+        sb.setValue(5.0)
+        return sb
+
+    @staticmethod
+    def _options(sb):
+        from uitk.widgets.optionBox.option_box_manager import OptionBoxManager
+
+        mgr = getattr(sb, "_option_box_manager", None)
+        if mgr is None:
+            mgr = sb._option_box_manager = OptionBoxManager(sb)
+        return mgr
+
+    def _locked(self, sb):
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        lock = ToggleOption(initial=False)
+        self._options(sb).add_option(lock)
+        lock.set_on(True)
+        return lock
+
+    def test_restore_defaults_clears_option_state_like_reset_all(self):
+        sb = self._field("s000")
+        lock = self._locked(sb)
+        self.menu._restore_menu_defaults()
+        self.assertEqual(sb.value(), 0.0)
+        self.assertFalse(lock.is_on, "a menu reset must clear the field's lock")
+
+    def test_restore_defaults_honors_exclude_from_reset(self):
+        kept = self._field("s000")
+        kept.exclude_from_reset = True
+        reset = self._field("s001")
+        self.menu._restore_menu_defaults()
+        self.assertEqual(kept.value(), 5.0)
+        self.assertEqual(reset.value(), 0.0)
+
+    def test_field_reset_inside_a_shown_menu_reaches_the_host_state(self):
+        from uitk.widgets.optionBox.options.reset import ResetOption
+
+        sb = self._field("s000")
+        options = self._options(sb).set_reset()
+        self.menu.show()
+        self.assertTrue(self.menu.isWindow(), "precondition: menu is a popup")
+        options.find_option(ResetOption).reset()
+        self.assertEqual(sb.value(), 0.0)
+        self.menu.hide()
+
+    def _defaults_button(self):
+        """The Restore Defaults button, built the way a user meets it: on show."""
+        if not self.menu.isVisible():
+            self.menu.show()  # torn down with the tracked host
+        return self.menu._button_manager.get_button("defaults")
+
+    def _click_defaults(self, modifier=QtCore.Qt.NoModifier):
+        button = self._defaults_button()
+        self.menu._defaults_gesture._modifiers = lambda: modifier
+        button.click()
+
+    def test_defaults_button_tooltip_teaches_the_modifiers(self):
+        self._field("s000")
+        tip = self._defaults_button().toolTip()
+        for text in ("Shift", "Ctrl", "factory defaults"):
+            self.assertIn(text, tip)
+
+    def test_shift_click_makes_the_current_values_the_defaults(self):
+        sb = self._field("s000")  # factory 0, value 5
+        self._click_defaults(QtCore.Qt.ShiftModifier)
+        self.assertEqual(sb.value(), 5.0, "saving leaves the value alone")
+        sb.setValue(9.0)
+        self._click_defaults()
+        self.assertEqual(sb.value(), 5.0, "Restore Defaults now restores the saved")
+
+    def test_ctrl_shift_click_restores_factory_defaults(self):
+        sb = self._field("s000")
+        self._click_defaults(QtCore.Qt.ShiftModifier)
+        sb.setValue(9.0)
+        self._click_defaults(QtCore.Qt.ControlModifier | QtCore.Qt.ShiftModifier)
+        self.assertEqual(sb.value(), 0.0)
+        self.assertFalse(self.host.state.has_saved_defaults([sb]))
+
+    def _twin(self, name="options_menu"):
+        """A second live instance of this menu -- same objectName, same field
+        -- the way one form shown in two hosts at once is."""
+        self.menu.setObjectName(name)
+        twin = Menu(parent=self.host, add_defaults_button=True)
+        twin.setObjectName(name)
+        field = twin.add("QDoubleSpinBox", setObjectName="s000")
+        field.derived_type = QtWidgets.QDoubleSpinBox
+        field.default_signals = lambda: "valueChanged"
+        field.restore_state = True
+        self.host.state.capture_default(field)
+        field.setValue(9.0)
+        twin.show()  # builds its defaults button, which is what a mirror finds
+        return twin, field
+
+    def test_shift_click_saves_only_the_menu_it_was_clicked_on(self):
+        """A save mirrored to a twin made the twin save ITS values -- over the
+        ones the user had just saved, since the two share saved-default keys."""
+        sb = self._field("s000")  # value 5
+        self._twin()  # value 9
+        self._click_defaults(QtCore.Qt.ShiftModifier)
+        self.assertEqual(self.host.state.default_for(sb), 5.0)
+
+    def test_a_reset_still_reaches_the_menus_twin(self):
+        self._field("s000")
+        _twin, field = self._twin()
+        self._click_defaults()
+        self.assertEqual(field.value(), 0.0)
+
+
+class TestHideItemsThatHaveShortcuts(QtBaseTestCase):
+    """The global "hide menu items that already have a shortcut" preference.
+
+    A menu exists to reach an action; once that action is on a key, the row is
+    clutter for the users who want it gone. Only items that can be matched to
+    a command are filtered — one whose objectName names a slot currently
+    holding a bound key. A plain label row carries no command identity, so it
+    always stays.
+    """
+
+    def setUp(self):
+        super().setUp()
+        ShortcutManager.set_hide_bound_menu_items(False)
+        self.addCleanup(ShortcutManager.set_hide_bound_menu_items, False)
+
+    def _menu(self, bound=("tb000",)):
+        """A menu of two slot-backed buttons (only *bound* ones hold a key)
+        plus a label row with no command identity."""
+        menu = self.track_widget(Menu())
+        self.items = {}
+        for name in ("tb000", "tb001"):
+            button = menu.add(
+                QtWidgets.QPushButton, setText=name.upper(), setObjectName=name
+            )
+            button.ui = SimpleNamespace(
+                sb=SimpleNamespace(
+                    widget_has_shortcut=lambda w, bound=bound: w.objectName() in bound
+                )
+            )
+            self.items[name] = button
+        self.items["label"] = menu.add(QtWidgets.QLabel, setText="plain row")
+        return menu
+
+    def test_a_bound_item_is_hidden_when_the_preference_is_on(self):
+        ShortcutManager.set_hide_bound_menu_items(True)
+        menu = self._menu()
+        menu.show()
+        QtWait.pump()
+        self.assertTrue(self.items["tb000"].isHidden(), "the bound row must go")
+        self.assertFalse(self.items["tb001"].isHidden(), "the unbound row stays")
+        self.assertFalse(self.items["label"].isHidden(), "a label has no command")
+
+    def test_nothing_is_hidden_while_the_preference_is_off(self):
+        menu = self._menu()
+        menu.show()
+        QtWait.pump()
+        self.assertFalse(any(w.isHidden() for w in self.items.values()))
+
+    def test_turning_the_preference_off_brings_the_item_back(self):
+        ShortcutManager.set_hide_bound_menu_items(True)
+        menu = self._menu()
+        menu.show()
+        QtWait.pump()
+        self.assertTrue(self.items["tb000"].isHidden())
+
+        menu.hide()
+        ShortcutManager.set_hide_bound_menu_items(False)
+        menu.show()
+        QtWait.pump()
+        self.assertFalse(self.items["tb000"].isHidden(), "the row must return")
+
+    def test_a_row_hidden_for_another_reason_is_not_revived(self):
+        """The filter restores only what IT hid — a row hidden by a visibility
+        rule must not reappear when the preference goes off."""
+        menu = self._menu()
+        self.items["tb001"].setVisible(False)
+        ShortcutManager.set_hide_bound_menu_items(True)
+        menu.show()
+        QtWait.pump()
+        menu.hide()
+        ShortcutManager.set_hide_bound_menu_items(False)
+        menu.show()
+        QtWait.pump()
+        self.assertTrue(self.items["tb001"].isHidden())
+
+
+class TestMenuActingPins(QtBaseTestCase):
+    """Real input on offscreen Qt: one end-to-end pin per concept part of ``Menu``.
+
+    The unit classes above call the parts directly (``_should_trigger``,
+    ``_setup_as_popup``...). These drive the same paths the way a user does --
+    a click on the anchor, a click on an item, typing a preset name -- so a
+    regrouping of the parts that still satisfies every unit test cannot quietly
+    break the wiring between them.
+    """
+
+    @staticmethod
+    def _click(widget, button=QtCore.Qt.LeftButton):
+        from qtpy.QtTest import QTest
+
+        QTest.mouseClick(widget, button, QtCore.Qt.NoModifier, widget.rect().center())
+        QtWait.pump()
+
+    def _anchor(self, cls=QtWidgets.QPushButton):
+        anchor = self.track_widget(cls("Anchor"))
+        anchor.resize(120, 24)
+        anchor.show()
+        QtWait.until(anchor.isVisible, "anchor never became visible")
+        return anchor
+
+    def test_a_click_on_the_anchor_button_opens_then_closes_the_menu(self):
+        anchor = self._anchor()
+        menu = Menu(parent=anchor, trigger_button="left", add_header=False)
+        menu.add("QLabel", setText="Item")
+
+        self._click(anchor)
+        self.assertTrue(menu.isVisible(), "a left click on the anchor must open it")
+        self._click(anchor)
+        self.assertFalse(menu.isVisible(), "a second click must close it again")
+
+    def test_a_right_trigger_menu_opens_on_a_right_press_only(self):
+        anchor = self._anchor(QtWidgets.QLabel)
+        menu = Menu(parent=anchor, trigger_button="right", add_header=False)
+        menu.add("QLabel", setText="Item")
+
+        self._click(anchor, QtCore.Qt.LeftButton)
+        self.assertFalse(menu.isVisible(), "a left press must not open it")
+        self._click(anchor, QtCore.Qt.RightButton)
+        self.assertTrue(menu.isVisible(), "a right press on the anchor must open it")
+
+    def test_clicking_an_item_fires_it_then_hides_the_menu(self):
+        menu = self.track_widget(
+            Menu(
+                trigger_button="none",
+                add_header=False,
+                add_footer=False,
+                hide_on_trigger=True,
+            )
+        )
+        fired = []
+        item = menu.add("QPushButton", setText="Go", setObjectName="btn_go")
+        item.clicked.connect(lambda *_: fired.append(True))
+        menu.show()
+        QtWait.until(menu.isVisible, "menu never became visible")
+
+        self._click(item)
+        QtWait.until(lambda: not menu.isVisible(), "hide_on_trigger never hid it")
+        self.assertEqual(fired, [True], "the item's own click must still fire")
+
+    def test_a_menu_opened_past_the_screen_corner_lands_on_screen(self):
+        menu = self.track_widget(
+            Menu(
+                trigger_button="none",
+                add_header=False,
+                add_footer=False,
+                match_parent_width=False,
+            )
+        )
+        for i in range(6):
+            menu.add("QPushButton", setText=f"Item {i}")
+        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        corner = QtCore.QPoint(screen.right() - 4, screen.bottom() - 4)
+
+        menu.show_as_popup(position=corner)
+        QtWait.until(menu.isVisible, "menu never became visible")
+        self.assertTrue(
+            screen.contains(menu.frameGeometry()),
+            f"{menu.frameGeometry()} spills off {screen}",
+        )
+
+    def test_the_persistent_hide_button_closes_a_pinned_menu(self):
+        menu = self.track_widget(Menu(trigger_button="none", add_footer=False))
+        menu.add("QLabel", setText="Item")
+        menu.enable_persistent_mode()
+        menu.show()
+        QtWait.until(menu.isVisible, "menu never became visible")
+
+        self.assertFalse(menu.hide(), "a persistent menu refuses a plain hide")
+        self.assertTrue(menu.isVisible())
+        self._click(menu._persistent_hide_button)
+        QtWait.until(lambda: not menu.isVisible(), "the hide button never hid it")
+        self.assertFalse(menu.is_persistent_mode)
+
+    def test_a_preset_menu_saves_the_name_the_user_types(self):
+        import os
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        import pythontk as ptk
+        from qtpy.QtTest import QTest
+
+        root = Path(tempfile.mkdtemp(prefix="menu_presets_"))
+        self.addCleanup(shutil.rmtree, root, True)
+        var = ptk.UserConfig.CONFIG_ROOT_ENV_VAR
+        env = patch.dict(os.environ, {var: str(root)})
+        env.start()
+        self.addCleanup(env.stop)
+
+        menu = self.track_widget(
+            Menu(trigger_button="none", add_header=False, add_footer=False)
+        )
+        chk = menu.add("QCheckBox", setObjectName="chk_opt", setText="Opt")
+        chk.setChecked(True)
+        menu.add_presets = True
+        menu.presets.preset_dir = "menu_acting/tool"
+        menu.show()
+        QtWait.until(menu.isVisible, "menu never became visible")
+
+        combo = menu.cmb_presets
+        layout = combo.option_box.container.layout()
+        save = _LayoutItems.widget_at(layout, 2)  # [combo][refresh][save][menu]
+        self.assertTrue(save.toolTip().startswith("Save"), save.toolTip())
+        self._click(save)
+        line = combo.lineEdit()
+        self.assertIsNotNone(line, "Save must open the inline name field")
+        QTest.keyClicks(line, "mine")
+        QTest.keyClick(line, QtCore.Qt.Key_Return)
+        QtWait.pump()
+
+        self.assertTrue((root / "menu_acting" / "tool" / "mine.json").is_file())
+        self.assertEqual(menu.presets.active_preset, "mine")
+        self.assertEqual(combo.currentText(), "mine")
+        self.assertTrue(menu.isVisible(), "saving must not close the menu")
+
+
+class TestMenuFacade(QtBaseTestCase):
+    """What a subclass, a sibling widget or a test reaches on a Menu, whatever
+    object behind it does the work: overrides of the hooks are the ones the
+    menu runs, the private state code outside reads stays on the menu's names,
+    and a connection the menu makes dies with the menu."""
+
+    def test_an_add_override_sees_every_member_of_a_collection_and_a_row(self):
+        seen = []
+
+        class _Spy(Menu):
+            def add(self, x, *args, **kwargs):
+                seen.append(x if isinstance(x, str) else type(x).__name__)
+                return super().add(x, *args, **kwargs)
+
+        menu = self.track_widget(_Spy())
+        menu.add(["QLabel", "QCheckBox"])
+        menu.add_row(["QCheckBox"], title="Row")
+        self.assertEqual(seen, ["list", "QLabel", "QCheckBox", "Separator", "QWidget"])
+
+    def test_the_shortcut_filter_hooks_are_the_subclasss(self):
+        calls = []
+
+        class _Body(Menu):
+            def _shortcut_filter_candidates(self):
+                calls.append("candidates")
+                return []
+
+        menu = self.track_widget(_Body())
+        menu.add("QLabel", setText="A")
+        ShortcutManager.set_hide_bound_menu_items(True)
+        self.addCleanup(ShortcutManager.set_hide_bound_menu_items, False)
+        menu._apply_shortcut_item_filter()
+        self.assertEqual(calls, ["candidates"])
+
+    def test_private_state_reads_and_writes_on_the_menus_names(self):
+        menu = self.track_widget(Menu(hide_on_leave=True))
+        menu._mouse_has_entered = True
+        self.assertTrue(menu._mouse_has_entered)
+        self.assertIsNotNone(menu._leave_timer)
+        self.assertIsInstance(menu._button_manager, ActionButtonManager)
+        self.assertIs(menu._layout, menu.layout())
+        self.assertEqual(menu._pending_registrations, [])
+        self.assertFalse(menu._popup_configured)
+        self.assertIsNone(menu._empty_placeholder)
+
+    def test_an_instance_patch_reaches_the_menus_own_callers(self):
+        """``menu._x = f`` is what tests (and tools) do; the menu's machinery
+        must call the patched one, as it did when the method was the menu's."""
+        menu = self.track_widget(Menu())
+        menu.setObjectName("probe_menu")
+        registered = []
+        menu._register_with_main_window = registered.append
+        label = menu.add("QLabel", setObjectName="lbl_probe")
+        menu._drain_pending_registrations()
+        self.assertEqual(registered, [label])
+
+    def test_the_anchor_hook_dies_with_the_menu(self):
+        """The anchor's ``clicked`` reaches the menu's own slot -- a QObject
+        receiver, so destroying the menu drops the connection."""
+        triggered = []
+
+        class _Spy(Menu):
+            def _on_parent_triggered(self, checked=False):
+                triggered.append(checked)
+
+        anchor = self.track_widget(QtWidgets.QPushButton())
+        menu = _Spy(anchor, trigger_button="left")
+        menu.add("QLabel", setText="A")
+        self.assertIsNotNone(menu._parent_signal_source)
+        anchor.click()
+        self.assertEqual(len(triggered), 1)
+
+        menu.deleteLater()
+        QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.DeferredDelete)
+        anchor.click()  # must neither raise nor reach the deleted menu
+        self.assertEqual(len(triggered), 1)
+
+    def test_kwargs_reach_the_parts_during_construction(self):
+        """``Menu(**kwargs)`` sets attributes before the scaffold is built;
+        every part the setters reach already exists."""
+        menu = self.track_widget(
+            Menu(setTitle="Early", add_presets=False, add_defaults_button=True)
+        )
+        self.assertEqual(menu.title(), "Early")
+        self.assertTrue(menu.add_defaults_button)
+        menu.ensure_chrome()
+        self.assertEqual(menu.header.text(), "Early")
+
+    def test_a_class_level_shim_calls_the_original_it_saved(self):
+        """A diagnostic shim saves ``Menu._setup_as_popup`` and calls it with
+        the menu (tentacle's ``scene_exporter_optionbox_check``): the saved
+        original must still be callable that way."""
+        original = Menu._setup_as_popup
+        seen = []
+
+        def shimmed(self_menu):
+            seen.append(self_menu._resolve_popup_window_type())
+            original(self_menu)
+
+        Menu._setup_as_popup = shimmed
+        self.addCleanup(setattr, Menu, "_setup_as_popup", original)
+        menu = self.track_widget(Menu(name="shim_probe"))
+        menu.add("QLabel", setText="A")
+        menu.show()
+        self.assertTrue(seen)
+        self.assertTrue(menu._popup_configured)
+
+    def test_the_override_points_are_real_methods(self):
+        """A subclass overrides these and the menu's machinery calls the
+        override; a forwarded private name is not one (see the class comment)."""
+        import inspect
+
+        for name in (
+            "add",
+            "add_row",
+            "eventFilter",
+            "showEvent",
+            "hideEvent",
+            "setVisible",
+            "sizeHint",
+            "_shortcut_filter_candidates",
+            "_shortcut_filter_emptied",
+            "_setup_apply_button",
+            "_setup_defaults_button",
+            "_prepare_for_show",
+            "_apply_position",
+            "_on_parent_triggered",
+            "_check_cursor_position",
+            "_drain_pending_registrations",
+            "_restore_menu_defaults",
+        ):
+            with self.subTest(name=name):
+                self.assertTrue(inspect.isfunction(inspect.getattr_static(Menu, name)))
+
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

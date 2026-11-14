@@ -181,10 +181,10 @@ uitk/slots/maya/shader_utils_maya/resources/hdr/industrial_pipe_and_valve_01_4k.
 uitk/slots/maya/shader_utils_maya/resources/hdr/aircraft_workshop_01_4k.exr
 
 
-test/temp_tests/
+tests/temp_tests/
 
 # Runtime API-surface dump (drift-gate build artifact — never committed)
 API_RUNTIME.json
 
 # Test runner output (regenerated each run)
-test/logs/
+tests/logs/

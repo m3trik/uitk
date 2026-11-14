@@ -603,7 +603,7 @@ _ECOSYSTEM_WRAPPER_NAME = ptk.UserConfig.ROOT_NAME
 #   - ``_maybe_migrate_legacy``
 #   - The ``_maybe_migrate_legacy(self._preset_dir)`` call inside the
 #     ``PresetManager.preset_dir`` property
-#   - Test class ``TestLegacyMigration`` in ``test/test_preset_manager.py``
+#   - Test class ``TestLegacyMigration`` in ``tests/test_preset_manager.py``
 #
 # Removal criteria (any one is sufficient):
 #

@@ -359,7 +359,7 @@ class _InputMixin:
         # press to the menu instead — where the sync below would read
         # buttons=LeftButton (while the key is held) as the chord and navigate away
         # before the leaf can fire (the "dead click", reproduced live in
-        # tentacle/test/blender/normals_multiclick_check.py). Skipping the re-grab +
+        # tentacle/tests/blender/normals_multiclick_check.py). Skipping the re-grab +
         # sync here lets the release reach _handle_widget_action. This must apply
         # even mid-chord: _is_menu_item_press already excludes a real chord (it
         # requires a lone button over an interactive item of the current menu, so a
