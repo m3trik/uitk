@@ -1,0 +1,778 @@
+# !/usr/bin/python
+# coding=utf-8
+"""Unit tests for Footer widget.
+
+This module tests the Footer widget functionality including:
+- Footer creation and configuration
+- Status text management
+- Size grip functionality
+- Font size updates
+- Attach to widget functionality
+- FooterStatusController
+
+Run standalone: python -m tests.test_footer
+"""
+
+import unittest
+
+from conftest import QtBaseTestCase, QtWait, setup_qt_application
+
+# Ensure QApplication exists before importing Qt widgets
+app = setup_qt_application()
+
+from qtpy import QtWidgets, QtCore, QtTest
+
+from uitk.widgets.footer import Footer, FooterApply, FooterStatusController
+
+
+class TestFooterCreation(QtBaseTestCase):
+    """Tests for Footer creation and initialization."""
+
+    def test_creates_footer_with_defaults(self):
+        """Should create footer with default settings."""
+        footer = self.track_widget(Footer())
+        self.assertIsNotNone(footer)
+
+    def test_creates_footer_with_parent(self):
+        """Should create footer with parent widget."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        footer = self.track_widget(Footer(parent=parent))
+        self.assertEqual(footer.parent(), parent)
+
+    def test_creates_footer_with_size_grip(self):
+        """Should create footer with size grip by default."""
+        footer = self.track_widget(Footer(add_size_grip=True))
+        self.assertIsNotNone(footer._size_grip)
+
+    def test_creates_footer_without_size_grip(self):
+        """Should create footer without size grip when disabled."""
+        footer = self.track_widget(Footer(add_size_grip=False))
+        self.assertIsNone(footer._size_grip)
+
+    def test_has_container_layout(self):
+        """Should have container layout."""
+        footer = self.track_widget(Footer())
+        self.assertIsNotNone(footer.container_layout)
+        self.assertIsInstance(footer.container_layout, QtWidgets.QHBoxLayout)
+
+    def test_has_fixed_height(self):
+        """Should have fixed height of 19 pixels."""
+        footer = self.track_widget(Footer())
+        self.assertEqual(footer.height(), 19)
+
+    def test_has_left_alignment(self):
+        """Should have left alignment for text."""
+        footer = self.track_widget(Footer())
+        alignment = footer.alignment()
+        self.assertTrue(alignment & QtCore.Qt.AlignLeft)
+
+    def test_has_vertical_center_alignment(self):
+        """Should have vertical center alignment."""
+        footer = self.track_widget(Footer())
+        alignment = footer.alignment()
+        self.assertTrue(alignment & QtCore.Qt.AlignVCenter)
+
+
+class TestFooterStatusText(QtBaseTestCase):
+    """Tests for Footer status text methods."""
+
+    def test_set_status_text_updates_text(self):
+        """Should update text when status text is set."""
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Ready")
+        self.assertEqual(footer.text(), "Ready")
+
+    def test_status_text_returns_current_status(self):
+        """Should return current status text."""
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Processing")
+        self.assertEqual(footer.statusText(), "Processing")
+
+    def test_set_status_text_with_none(self):
+        """Should handle None status text."""
+        footer = self.track_widget(Footer())
+        footer.setStatusText(None)
+        self.assertEqual(footer.statusText(), "")
+
+    def test_set_status_text_with_empty_string(self):
+        """Should handle empty string status text."""
+        footer = self.track_widget(Footer())
+        footer.setStatusText("")
+        self.assertEqual(footer.statusText(), "")
+
+    def test_level_colors_the_label(self):
+        """A severity level tints the status label's foreground."""
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Boom", level="error")
+        self.assertEqual(footer.statusText(), "Boom")
+        qss = footer.status_label.styleSheet()
+        self.assertIn(Footer.LEVEL_COLORS["error"], qss)
+        self.assertIn("background: transparent", qss)
+
+    def test_info_level_has_no_color_override(self):
+        """``info``/``None`` leaves the theme default colour (no color rule)."""
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Plain", level="info")
+        self.assertNotIn("color:", footer.status_label.styleSheet())
+
+    def test_level_resets_when_unset(self):
+        """Switching back to a level-less message drops the colour override."""
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Bad", level="error")
+        footer.setStatusText("Fine")
+        self.assertNotIn("color:", footer.status_label.styleSheet())
+
+    def test_an_explicit_color_tints_the_label_until_the_next_plain_text(self):
+        """A host's own colour (not a severity) through the public API: the
+        Shot panels styled the private label by hand, behind the level cache."""
+        footer = self.track_widget(Footer())
+        footer.setText("Moved 2 keys.", color="#E0A0A0")
+        self.assertIn("color: #E0A0A0", footer.status_label.styleSheet())
+        self.assertIn("background: transparent", footer.status_label.styleSheet())
+        footer.setText("Plain")
+        self.assertNotIn("color:", footer.status_label.styleSheet())
+
+    def test_an_explicit_color_outranks_the_level(self):
+        footer = self.track_widget(Footer())
+        footer.setStatusText("Boom", level="error", color="#123456")
+        qss = footer.status_label.styleSheet()
+        self.assertIn("#123456", qss)
+        self.assertNotIn(Footer.LEVEL_COLORS["error"], qss)
+
+    def _shown(self, width):
+        from qtpy import QtWidgets
+
+        footer = self.track_widget(Footer())
+        footer.resize(width, 25)
+        footer.show()
+        QtWidgets.QApplication.processEvents()
+        return footer
+
+    def test_rich_text_shows_formatted_while_it_fits(self):
+        from qtpy import QtCore
+
+        footer = self._shown(600)
+        footer.setStatusText("Keys a fade on <b>3</b> selected")
+        self.assertEqual(footer.status_label.textFormat(), QtCore.Qt.RichText)
+        self.assertEqual(footer.text(), "Keys a fade on <b>3</b> selected")
+
+    def test_rich_text_too_wide_elides_as_plain_text(self):
+        """Eliding the markup counted its tags as text and could leave half a
+        tag on screen."""
+        from qtpy import QtCore
+
+        footer = self._shown(140)
+        footer.setStatusText(
+            "<b>Start</b> and a middle long enough that it has to go <b>End</b>"
+        )
+        self.assertEqual(footer.status_label.textFormat(), QtCore.Qt.PlainText)
+        self.assertNotIn("<", footer.text())
+        self.assertIn("…", footer.text())
+        self.assertTrue(footer.text().startswith("Sta"), footer.text())
+
+    def test_level_colors_come_from_pythontk_log_colors(self):
+        """Severity colours are ``ptk.Palette.status()``'s, as the logs' are."""
+        from pythontk.core_utils.logging_mixin import LoggingMixin
+
+        log_colors = LoggingMixin.LOG_COLORS
+        self.assertEqual(Footer.LEVEL_COLORS["error"], log_colors["ERROR"])
+        self.assertEqual(Footer.LEVEL_COLORS["warning"], log_colors["WARNING"])
+        self.assertEqual(Footer.LEVEL_COLORS["success"], log_colors["SUCCESS"])
+
+
+class TestFooterStatusEdit(QtBaseTestCase):
+    """The status text edited in place (``edit_status``), and the double-click
+    that asks for it (``status_double_clicked``)."""
+
+    def _editing(self, text="cube"):
+        footer = self.track_widget(Footer())
+        footer.setStatusText(text)
+        footer.resize(300, 19)
+        footer.show()
+        committed, cancelled = [], []
+        editor = footer.edit_status(
+            text, on_commit=committed.append, on_cancel=lambda: cancelled.append(1)
+        )
+        QtWidgets.QApplication.processEvents()
+        return footer, editor, committed, cancelled
+
+    def test_editing_shows_a_field_holding_the_text_in_the_labels_place(self):
+        footer, editor, _, _ = self._editing()
+        self.assertTrue(footer.is_editing_status)
+        self.assertIsInstance(editor, QtWidgets.QLineEdit)
+        self.assertEqual(editor.text(), "cube")
+        self.assertTrue(editor.isVisible())
+        self.assertFalse(footer.status_label.isVisible())
+
+    def test_enter_commits_the_edit_once_and_shows_the_label(self):
+        footer, editor, committed, cancelled = self._editing()
+        editor.setText("box")
+        QtTest.QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        editor.clearFocus()  # the focus loss after Enter must not commit again
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(committed, ["box"])
+        self.assertEqual(cancelled, [])
+        self.assertFalse(footer.is_editing_status)
+        self.assertTrue(footer.status_label.isVisible())
+
+    def test_escape_cancels_without_committing(self):
+        footer, editor, committed, cancelled = self._editing()
+        editor.setText("box")
+        QtTest.QTest.keyClick(editor, QtCore.Qt.Key_Escape)
+        QtWidgets.QApplication.processEvents()
+        self.assertEqual(committed, [])
+        self.assertEqual(cancelled, [1])
+        self.assertFalse(footer.is_editing_status)
+
+    def test_a_new_edit_cancels_the_one_it_replaces(self):
+        """Its caller hears the end of every edit it started."""
+        footer, editor, committed, cancelled = self._editing("first")
+        second = []
+        footer.edit_status("second", on_commit=second.append)
+        self.assertEqual(cancelled, [1], "the superseded edit is cancelled")
+        QtTest.QTest.keyClick(editor, QtCore.Qt.Key_Return)
+        self.assertEqual(committed, [])
+        self.assertEqual(second, ["second"])
+
+    def test_a_double_click_on_the_status_is_announced(self):
+        footer = self.track_widget(Footer())
+        footer.resize(300, 19)
+        footer.show()
+        QtWidgets.QApplication.processEvents()
+        heard = []
+        footer.status_double_clicked.connect(lambda: heard.append(1))
+        QtTest.QTest.mouseDClick(footer.status_label, QtCore.Qt.LeftButton)
+        # QTest's double click ends on a press: release it as a real mouse
+        # does, or Qt believes the button is still held and the next test's
+        # hover dispatch is skipped (test_header's stale-hover heal failed
+        # after this one, 2026-11-01).
+        QtTest.QTest.mouseRelease(footer.status_label, QtCore.Qt.LeftButton)
+        self.assertEqual(heard, [1])
+        self.assertEqual(QtWidgets.QApplication.mouseButtons(), QtCore.Qt.NoButton)
+
+
+class TestFooterApply(QtBaseTestCase):
+    """``FooterApply``: the Apply button a dry run arms on a footer, holding the
+    call that would commit what the preview showed (2026-11-01: the naming and
+    material-updater panels and ``FormPanel`` each wrote it)."""
+
+    def _footer(self):
+        footer = self.track_widget(Footer())
+        footer.resize(300, 19)
+        footer.show()
+        QtWidgets.QApplication.processEvents()
+        return footer
+
+    def test_no_button_until_a_dry_run_arms_one(self):
+        footer = self._footer()
+        applied = []
+        apply = FooterApply(footer, applied.append)
+        self.assertIsNone(apply.button)
+        self.assertIsNone(apply.pending)
+        apply.apply()  # nothing armed: nothing happens
+        self.assertEqual(applied, [])
+
+    def test_arming_shows_the_button_and_the_note(self):
+        footer = self._footer()
+        apply = FooterApply(footer, lambda commit: commit())
+        commit = lambda: None  # noqa: E731
+        apply.arm(commit)
+        self.assertIs(apply.pending, commit)
+        self.assertTrue(apply.button.isVisible())
+        self.assertEqual(apply.button.text(), "Apply")
+        self.assertEqual(footer.statusText(), "Dry run — Apply to commit")
+        apply.arm(commit, note="Preview only — Apply to commit")
+        self.assertEqual(footer.statusText(), "Preview only — Apply to commit")
+
+    def test_a_click_hands_the_armed_call_over(self):
+        footer = self._footer()
+        applied = []
+        apply = FooterApply(footer, applied.append, text="Commit")
+        commit = lambda: None  # noqa: E731
+        apply.arm(commit)
+        apply.button.click()
+        self.assertEqual(applied, [commit])
+        self.assertEqual(footer.statusText(), "Dry run — Commit to commit")
+
+    def test_disarming_hides_it_and_clears_only_its_own_note(self):
+        footer = self._footer()
+        apply = FooterApply(footer, lambda commit: None)
+        footer.setText("someone else's line")
+        apply.disarm("a signal's payload")  # never armed: leaves the footer be
+        self.assertEqual(footer.statusText(), "someone else's line")
+        apply.arm(lambda: None)
+        apply.disarm()
+        self.assertIsNone(apply.pending)
+        self.assertFalse(apply.button.isVisible())
+        self.assertEqual(footer.statusText(), "")
+
+    def test_a_panel_with_no_footer_still_holds_the_call(self):
+        apply = FooterApply(None, lambda commit: None)
+        commit = lambda: None  # noqa: E731
+        apply.arm(commit)
+        self.assertIs(apply.pending, commit)
+        self.assertIsNone(apply.button)
+        apply.disarm()
+        self.assertIsNone(apply.pending)
+
+
+class TestFooterDefaultStatusText(QtBaseTestCase):
+    """Tests for Footer default status text."""
+
+    def test_set_default_status_text(self):
+        """Should set default status text."""
+        footer = self.track_widget(Footer())
+        footer.setDefaultStatusText("Default Text")
+        self.assertEqual(footer._default_status_text, "Default Text")
+
+    def test_default_status_shown_when_no_status(self):
+        """Should show default text when no status set."""
+        footer = self.track_widget(Footer())
+        footer.setDefaultStatusText("Default")
+        # When status text is empty, default should be shown
+        self.assertEqual(footer.text(), "Default")
+
+    def test_status_text_overrides_default(self):
+        """Should show status text over default."""
+        footer = self.track_widget(Footer())
+        footer.setDefaultStatusText("Default")
+        footer.setStatusText("Custom Status")
+        self.assertEqual(footer.text(), "Custom Status")
+
+
+class TestFooterKwargsInitialization(QtBaseTestCase):
+    """Tests for Footer initialization with kwargs."""
+
+    def test_accepts_set_status_text_kwarg(self):
+        """Should accept setStatusText as kwarg."""
+        footer = self.track_widget(Footer(setStatusText="Initial Status"))
+        self.assertEqual(footer.statusText(), "Initial Status")
+
+
+class TestFooterAttachTo(QtBaseTestCase):
+    """Tests for Footer attach_to method."""
+
+    def test_attach_to_widget_with_layout(self):
+        """Should attach footer to widget with layout."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        QtWidgets.QVBoxLayout(widget)
+        footer = self.track_widget(Footer())
+        footer.attach_to(widget)
+        self.assertEqual(widget.footer, footer)
+
+    def test_attach_to_widget_creates_layout(self):
+        """Should create layout if widget has none."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        footer = self.track_widget(Footer())
+        footer.attach_to(widget)
+        self.assertIsNotNone(widget.layout())
+
+    def test_attach_to_mainwindow_uses_central_widget(self):
+        """Should attach to central widget of QMainWindow."""
+        window = self.track_widget(QtWidgets.QMainWindow())
+        central = QtWidgets.QWidget()
+        QtWidgets.QVBoxLayout(central)
+        window.setCentralWidget(central)
+        footer = self.track_widget(Footer())
+        footer.attach_to(window)
+        self.assertEqual(central.footer, footer)
+
+    def test_attach_to_avoids_double_attachment(self):
+        """Should not attach twice to same widget."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        QtWidgets.QVBoxLayout(widget)
+        footer = self.track_widget(Footer())
+        footer.attach_to(widget)
+        footer.attach_to(widget)  # Second attach should be ignored
+        self.assertEqual(widget.footer, footer)
+
+
+class TestFooterSizeGrip(QtBaseTestCase):
+    """Tests for Footer size grip functionality."""
+
+    def test_size_grip_is_qsizegrip(self):
+        """Should have QSizeGrip widget."""
+        footer = self.track_widget(Footer(add_size_grip=True))
+        self.assertIsInstance(footer._size_grip, QtWidgets.QSizeGrip)
+
+    def test_size_grip_none_when_disabled(self):
+        """Should not have size grip when disabled."""
+        footer = self.track_widget(Footer(add_size_grip=False))
+        self.assertIsNone(footer._size_grip)
+
+
+class TestFooterFontSize(QtBaseTestCase):
+    """Tests for Footer font size updates."""
+
+    def test_update_font_size_method_exists(self):
+        """Should have update_font_size method."""
+        footer = self.track_widget(Footer())
+        self.assertTrue(hasattr(footer, "update_font_size"))
+        self.assertTrue(callable(footer.update_font_size))
+
+    def test_update_font_size_sets_font(self):
+        """Should update font when called."""
+        footer = self.track_widget(Footer())
+        footer.update_font_size()
+        # Font should be updated (may be same size if height unchanged)
+        self.assertIsNotNone(footer.font())
+
+
+class TestFooterResizeEvent(QtBaseTestCase):
+    """Tests for Footer resize event handling."""
+
+    def test_resize_event_updates_font(self):
+        """Should update font on resize event."""
+        footer = self.track_widget(Footer())
+        # Resize the footer
+        footer.resize(200, 30)
+        # Font size should be recalculated
+        font_size = footer.font().pointSizeF()
+        self.assertGreater(font_size, 0)
+
+
+class TestFooterBusyIndicator(QtBaseTestCase):
+    """The spinner beside the status text: ``start_progress(busy=...)`` /
+    ``set_busy``. Shown by default for indeterminate work (the 3px marquee is
+    the only other sign of life), opt-in on a determinate bar, and advanced by
+    every ``update()`` tick so it keeps moving while a synchronous slot holds
+    the event loop. Added: 2026-09-04.
+    """
+
+    def _footer(self):
+        footer = self.track_widget(Footer())
+        footer.show()
+        return footer
+
+    def test_hidden_when_idle(self):
+        footer = self._footer()
+        self.assertFalse(footer.is_busy)
+        self.assertTrue(footer.busy_indicator.isHidden())
+
+    def test_indeterminate_progress_shows_it_by_default(self):
+        footer = self._footer()
+        footer.start_progress(text="Working...")
+        self.assertTrue(footer.is_busy)
+        self.assertTrue(footer._busy_timer.isActive())
+        footer.finish_progress()
+        self.assertFalse(footer.is_busy)
+        self.assertFalse(footer._busy_timer.isActive())
+
+    def test_determinate_progress_hides_it_unless_asked(self):
+        footer = self._footer()
+        footer.start_progress(10)
+        self.assertFalse(footer.is_busy)
+        footer.finish_progress()
+        footer.start_progress(10, busy=True)
+        self.assertTrue(footer.is_busy)
+        footer.finish_progress()
+        self.assertFalse(footer.is_busy)
+
+    def test_busy_false_opts_out_of_the_indeterminate_default(self):
+        footer = self._footer()
+        footer.start_progress(busy=False)
+        self.assertFalse(footer.is_busy)
+        footer.finish_progress()
+
+    def test_frames_come_from_the_icon_set(self):
+        footer = self._footer()
+        footer.start_progress(text="x")
+        self.assertEqual(len(footer._busy_frames), Footer.BUSY_FRAMES)
+        self.assertFalse(footer._busy_frames[0].isNull())
+        self.assertFalse(footer.busy_indicator.pixmap().isNull())
+        footer.finish_progress()
+
+    def test_update_ticks_advance_the_frame_without_the_timer(self):
+        footer = self._footer()
+        footer.start_progress(text="x")
+        footer._busy_timer.stop()  # a blocked event loop never fires it
+        before = footer._busy_frame
+        footer.update_progress()
+        self.assertNotEqual(footer._busy_frame, before)
+        footer.finish_progress()
+
+    def test_cancel_stops_it(self):
+        footer = self._footer()
+        footer.start_progress(text="x")
+        footer.cancel_progress()
+        self.assertFalse(footer.is_busy)
+
+    def test_progress_context_scopes_it(self):
+        footer = self._footer()
+        with footer.progress(text="x", busy=True) as update:
+            self.assertTrue(footer.is_busy)
+            update()
+        self.assertFalse(footer.is_busy)
+
+    def test_finishing_releases_the_esc_shortcut(self):
+        """The footer never called ``finish_task``, so the app-wide Esc
+        shortcut ``start_task`` enables outlived the task: a later Esc-hold
+        anywhere in the host fired ``cancel()`` on a task that was long over.
+        """
+        footer = self._footer()
+        footer.start_progress(text="x")
+        shortcut = footer.progress_bar._cancel_shortcut
+        self.assertIsNotNone(shortcut)
+        self.assertTrue(shortcut.isEnabled())
+        footer.finish_progress(delay_ms=0)
+        QtWait.pump()
+        self.assertFalse(shortcut.isEnabled())
+
+    def test_a_text_only_tick_holds_a_determinate_bar(self):
+        """``update(None, text)`` narrates without moving the bar. It used to
+        hand the bar a 0, snapping a determinate bar back to empty on every
+        narration tick ("converting…") between real steps.
+        """
+        footer = self._footer()
+        footer.start_progress(10)
+        footer.update_progress(4)
+        footer.update_progress(None, "narrating…")
+        self.assertEqual(footer.progress_bar.value(), 4)
+        self.assertEqual(footer.statusText(), "narrating…")
+        footer.finish_progress()
+
+
+class TestFooterStatusController(QtBaseTestCase):
+    """Tests for FooterStatusController class."""
+
+    def test_creates_controller_with_footer(self):
+        """Should create controller with footer."""
+        footer = self.track_widget(Footer())
+        controller = FooterStatusController(footer)
+        self.assertIsNotNone(controller)
+
+    def test_controller_updates_footer(self):
+        """Should update footer when update is called."""
+        footer = self.track_widget(Footer())
+        controller = FooterStatusController(footer, resolver=lambda: "Updated")
+        controller.update()
+        self.assertEqual(footer.statusText(), "Updated")
+
+    def test_controller_with_resolver(self):
+        """Should use resolver function to get status."""
+        footer = self.track_widget(Footer())
+        FooterStatusController(footer, resolver=lambda: "From Resolver")
+        self.assertEqual(footer.statusText(), "From Resolver")
+
+    def test_controller_set_resolver(self):
+        """Should allow changing resolver."""
+        footer = self.track_widget(Footer())
+        controller = FooterStatusController(footer, resolver=lambda: "Initial")
+        controller.set_resolver(lambda: "Changed")
+        self.assertEqual(footer.statusText(), "Changed")
+
+    def test_controller_with_default_text(self):
+        """Should set default text on footer."""
+        footer = self.track_widget(Footer())
+        FooterStatusController(footer, default_text="Default")
+        self.assertEqual(footer._default_status_text, "Default")
+
+
+class TestFooterStatusControllerFactory(QtBaseTestCase):
+    """``Footer.status_controller`` — the form consumers should use.
+
+    A slot reaches its footer through the Switchboard (``self.ui.footer``), so it
+    builds the controller off the widget it already has instead of importing
+    ``FooterStatusController``. The factory must bind to the footer it was called
+    on and forward every argument the constructor takes.
+    """
+
+    def test_returns_controller_bound_to_this_footer(self):
+        footer = self.track_widget(Footer())
+        controller = footer.status_controller(resolver=lambda: "Bound")
+        self.assertIsInstance(controller, FooterStatusController)
+        self.assertEqual(footer.statusText(), "Bound")
+
+    def test_binds_the_calling_footer_not_another(self):
+        """Two footers must not share state — the factory passes ``self``."""
+        a = self.track_widget(Footer())
+        b = self.track_widget(Footer())
+        a.status_controller(resolver=lambda: "A")
+        b.status_controller(resolver=lambda: "B")
+        self.assertEqual(a.statusText(), "A")
+        self.assertEqual(b.statusText(), "B")
+
+    def test_forwards_default_text_and_truncation(self):
+        footer = self.track_widget(Footer())
+        controller = footer.status_controller(
+            resolver=lambda: "This is a very long status text",
+            default_text="Default",
+            truncate_kwargs={"length": 10, "mode": "end"},
+        )
+        self.assertEqual(footer._default_status_text, "Default")
+        self.assertLessEqual(len(footer.statusText()), 15)  # length + insert
+        controller.set_resolver(lambda: "Short")
+        self.assertEqual(footer.statusText(), "Short")
+
+    def test_no_resolver_is_valid(self):
+        """Matches the constructor's default — an empty resolver, not a crash."""
+        footer = self.track_widget(Footer())
+        self.assertIsInstance(footer.status_controller(), FooterStatusController)
+
+
+class TestFooterStatusControllerTruncation(QtBaseTestCase):
+    """Tests for FooterStatusController truncation functionality."""
+
+    def test_truncation_with_length(self):
+        """Should truncate text when length specified."""
+        footer = self.track_widget(Footer())
+        FooterStatusController(
+            footer,
+            resolver=lambda: "This is a very long status text",
+            truncate_kwargs={"length": 10, "mode": "end"},
+        )
+        # Text should be truncated
+        self.assertLessEqual(len(footer.statusText()), 15)  # length + insert
+
+    def test_truncation_with_invalid_length(self):
+        """Should not truncate when length is invalid."""
+        footer = self.track_widget(Footer())
+        FooterStatusController(
+            footer,
+            resolver=lambda: "Short",
+            truncate_kwargs={"length": -1},
+        )
+        # Text should not be modified
+        self.assertEqual(footer.statusText(), "Short")
+
+    def test_set_truncation_method(self):
+        """Should allow changing truncation settings."""
+        footer = self.track_widget(Footer())
+        controller = FooterStatusController(footer, resolver=lambda: "Long text here")
+        controller.set_truncation(length=5, mode="end")
+        controller.update()
+        # Text should be truncated
+        self.assertLessEqual(len(footer.statusText()), 10)
+
+
+class TestFooterStatusControllerDelegatesToStrUtils(QtBaseTestCase):
+    """Truncation is ``ptk.StrUtils.truncate`` -- no second, drifting copy."""
+
+    def test_path_mode_keeps_whole_components(self):
+        """``mode="path"`` is StrUtils-only: the footer once imported StrUtils
+        from a path that never resolved, so every footer silently fell back to
+        a local slicer that knew no ``path`` mode and trimmed from the start."""
+        import pythontk as ptk
+
+        path = "O:/Cloud/proj/asset01/sourceimages/tex/x_DIFF.png"
+        footer = self.track_widget(Footer())
+        FooterStatusController(
+            footer,
+            resolver=lambda: path,
+            truncate_kwargs={"length": 36, "mode": "path"},
+        )
+        self.assertEqual(footer.statusText(), ptk.StrUtils.truncate(path, 36, "path"))
+        self.assertEqual(footer.statusText(), "O:/Cloud/proj/../tex/x_DIFF.png")
+
+
+class TestFooterStatusControllerSanitize(QtBaseTestCase):
+    """Tests for FooterStatusController _sanitize_truncate_kwargs."""
+
+    def test_sanitize_returns_none_for_none(self):
+        """Should return None when input is None."""
+        result = FooterStatusController._sanitize_truncate_kwargs(None)
+        self.assertIsNone(result)
+
+    def test_sanitize_returns_none_for_invalid_length(self):
+        """Should return None when length is invalid."""
+        result = FooterStatusController._sanitize_truncate_kwargs({"length": -5})
+        self.assertIsNone(result)
+
+    def test_sanitize_returns_dict_for_valid_input(self):
+        """Should return dict when input is valid."""
+        result = FooterStatusController._sanitize_truncate_kwargs({"length": 10})
+        self.assertIsNotNone(result)
+        self.assertEqual(result["length"], 10)
+
+
+class TestFooterClass(QtBaseTestCase):
+    """Tests for Footer class property."""
+
+    def test_has_class_property(self):
+        """Should have 'class' property set to class name."""
+        footer = self.track_widget(Footer())
+        class_prop = footer.property("class")
+        self.assertEqual(class_prop, "Footer")
+
+
+class TestFooterWidgetRounding(QtBaseTestCase):
+    """Tests for the footerRounded style property on added widgets.
+
+    Feature: footer widgets get slightly rounded corners by default.
+    Added: 2026-05-16
+    """
+
+    def test_add_widget_defaults_to_rounded(self):
+        footer = self.track_widget(Footer())
+        widget = QtWidgets.QPushButton("X")
+        footer.add_widget(widget)
+        self.assertTrue(widget.property("footerRounded"))
+
+    def test_add_widget_can_opt_out_of_rounded(self):
+        footer = self.track_widget(Footer())
+        widget = QtWidgets.QPushButton("X")
+        footer.add_widget(widget, rounded=False)
+        self.assertFalse(widget.property("footerRounded"))
+
+    def test_add_action_button_defaults_to_rounded(self):
+        footer = self.track_widget(Footer())
+        btn = footer.add_action_button(text="X")
+        self.assertTrue(btn.property("footerRounded"))
+
+    def test_add_action_button_can_opt_out_of_rounded(self):
+        footer = self.track_widget(Footer())
+        btn = footer.add_action_button(text="X", rounded=False)
+        self.assertFalse(btn.property("footerRounded"))
+
+
+class TestFooterWidgetSpacing(QtBaseTestCase):
+    """Adjacent footer widgets never touch.
+
+    Bug: the footer layout had zero spacing, so two background-styled buttons
+    added side by side (reference_manager's Un-Reference All + Save To
+    Workspace) rendered edge to edge and read as one button.
+    Fixed: 2026-09-23
+    """
+
+    def _laid_out(self, *widgets, hidden=()):
+        host = self.track_widget(QtWidgets.QWidget())
+        footer = Footer(add_size_grip=True)
+        QtWidgets.QVBoxLayout(host).addWidget(footer)
+        for w in widgets:
+            footer.add_widget(w, background=True)
+        for w in hidden:
+            footer.add_widget(w, background=True)
+            w.hide()
+        host.resize(500, 40)
+        host.show()
+        QtWidgets.QApplication.processEvents()
+        return footer
+
+    def test_side_by_side_buttons_are_separated(self):
+        a, b = QtWidgets.QPushButton("Un-Reference All"), QtWidgets.QPushButton("Save")
+        self._laid_out(a, b)
+        gap = b.geometry().left() - a.geometry().right() - 1
+        self.assertEqual(gap, Footer.WIDGET_SPACING)
+        self.assertGreater(gap, 0)
+
+    def test_status_text_does_not_touch_the_first_button(self):
+        a = QtWidgets.QPushButton("A")
+        footer = self._laid_out(a)
+        gap = a.geometry().left() - footer._stacked_widget.geometry().right() - 1
+        self.assertEqual(gap, Footer.WIDGET_SPACING)
+
+    def test_gap_before_the_size_grip_is_unchanged(self):
+        """The spacing must not widen the historical 6px gap before the grip,
+        and a hidden widget there adds no gap of its own."""
+        a = QtWidgets.QPushButton("A")
+        footer = self._laid_out(a, hidden=[QtWidgets.QPushButton("hidden")])
+        gap = footer.size_grip.geometry().left() - a.geometry().right() - 1
+        self.assertEqual(gap, Footer.GRIP_GAP)
+
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

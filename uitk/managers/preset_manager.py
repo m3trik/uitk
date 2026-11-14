@@ -1257,7 +1257,7 @@ PRESETS_ROOT_ENV_VAR = ptk.UserConfig.CONFIG_ROOT_ENV_VAR
 # These were module-level functions before being encapsulated on
 # PresetManager as @staticmethods. Re-exported at module scope for external
 # callers/tests that import or reference them by module attribute
-# (e.g. test/test_preset_manager.py). NOTE: reassigning one of these module
+# (e.g. tests/test_preset_manager.py). NOTE: reassigning one of these module
 # attributes (monkeypatch) will NOT affect the migration's internal calls,
 # which resolve via their owner, ``_preset_migration._PresetRootMigration``.
 QStandardPaths_writableLocation = PresetManager.QStandardPaths_writableLocation

@@ -2,7 +2,7 @@
 [![PyPI](https://img.shields.io/pypi/v/uitk.svg)](https://pypi.org/project/uitk/)
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![Qt](https://img.shields.io/badge/Qt-PySide6%20via%20qtpy-green.svg)](https://doc.qt.io/)
-[![Tests](https://img.shields.io/badge/Tests-5899%20passed-brightgreen.svg)](test/)
+[![Tests](https://img.shields.io/badge/Tests-5899%20passed-brightgreen.svg)](tests/)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2C%20Linux-lightgrey.svg)
 
 # uitk
@@ -104,10 +104,10 @@ No `.connect()` calls. No `findChild()`. No manual state restore.
 ## Contributing
 
 ```bash
-python -m pytest test/ -v
+python -m pytest tests/ -v
 ```
 
-Bug fixes require a failing test in `test/test_*.py` before the fix (issue-driven TDD — see [AGENTS.md](../AGENTS.md) at the monorepo root).
+Bug fixes require a failing test in `tests/test_*.py` before the fix (issue-driven TDD — see [AGENTS.md](../AGENTS.md) at the monorepo root).
 
 Doc changes follow the ledgered workflow in [docs/MAINTAINING.md](docs/MAINTAINING.md); the sweep (`python ../m3trik/scripts/check_docs.py --root .`) must exit 0.
 

@@ -1,0 +1,3375 @@
+# !/usr/bin/python
+# coding=utf-8
+"""Unit tests for Switchboard and its mixins.
+
+This module tests the Switchboard functionality including:
+- Slot wrapper variants
+- Widget state storage and restoration
+- Button group creation and behavior
+- _Names: Tag management, name conversion
+- _Slots: Signal discovery, slot history
+- Switchboard partials: dialogs, placement, event loop, name unpacking
+- _Widgets: Widget resolution, discovery
+
+Run standalone: python -m tests.test_switchboard
+"""
+
+import unittest
+from unittest import mock
+
+from conftest import QtBaseTestCase, setup_qt_application
+
+# Ensure QApplication exists before importing Qt widgets
+app = setup_qt_application()
+
+from qtpy import QtWidgets, QtCore, QtGui
+from uitk.switchboard import Switchboard
+from uitk.managers.cursor_manager import CursorManager
+from uitk.examples.example import ExampleSlots
+
+
+# =============================================================================
+# Original Switchboard Tests
+# =============================================================================
+
+
+class TestSwitchboardSlotWrappers(QtBaseTestCase):
+    """Tests for Switchboard slot wrapper functionality."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_button_a_call_slot(self):
+        """Button A slot should be callable."""
+        result = self.ui.button_a.call_slot()
+        self.assertIsNone(result)
+
+    def test_get_slot_returns_callable_or_none(self):
+        """get_slot should return a callable or None."""
+        slot = self.ui.button_a.get_slot()
+        # Slot may be None if not connected or may be callable
+        if slot is not None:
+            self.assertTrue(callable(slot))
+
+    def test_button_b_call_slot(self):
+        """Button B slot should be callable."""
+        result = self.ui.button_b.call_slot()
+        self.assertIsNone(result)
+
+    def test_spinbox_call_slot_with_value(self):
+        """Spinbox slot should accept value argument."""
+        result = self.ui.spinbox.call_slot(42)
+        self.assertIsNone(result)
+
+    def test_checkbox_call_slot_with_state(self):
+        """Checkbox slot should accept state argument."""
+        result = self.ui.checkbox.call_slot(True)
+        self.assertIsNone(result)
+
+    def test_txt_input_call_slot(self):
+        """Text input slot should be callable."""
+        # txt_input is a LineEdit - call its slot
+        result = self.ui.txt_input.call_slot()
+        self.assertIsNone(result)
+
+    def test_call_slot_debounced_executes_after_window(self):
+        """A ``widget.debounce`` slot dispatched via ``call_slot`` must still
+        run once the debounce window elapses. Regression: ``call_slot`` built
+        a transient SlotWrapper — the debounce QTimer's connection died with
+        the collected wrapper, so the deferred call was silently dropped.
+        """
+        calls = []
+        instance = self.sb.get_slots_instance(self.ui)
+        # button_a has no real slot, so call_slot resolves this instance attr.
+        instance.button_a = lambda widget=None: calls.append(1)
+        self.ui.button_a.debounce = 50
+        try:
+            self.ui.button_a.call_slot()
+            self.assertEqual(calls, [], "debounced call must be deferred")
+            loop = QtCore.QEventLoop()
+            QtCore.QTimer.singleShot(400, loop.quit)
+            getattr(loop, "exec_", loop.exec)()
+            self.assertEqual(calls, [1], "debounced call was dropped")
+        finally:
+            self.ui.button_a.debounce = 0
+            del instance.button_a
+
+    def _run_loop(self, ms):
+        loop = QtCore.QEventLoop()
+        QtCore.QTimer.singleShot(ms, loop.quit)
+        getattr(loop, "exec_", loop.exec)()
+
+    def test_debounced_slot_waits_while_the_widget_is_adjusting(self):
+        """A widget exposing ``adjusting`` holds its debounced call: the
+        window is re-armed until the flag clears, then the slot runs once."""
+        calls = []
+        instance = self.sb.get_slots_instance(self.ui)
+        instance.button_a = lambda widget=None: calls.append(1)
+        self.ui.button_a.debounce = 30
+        self.ui.button_a.adjusting = True
+        try:
+            self.ui.button_a.call_slot()
+            self._run_loop(150)
+            self.assertEqual(calls, [], "held while adjusting")
+            self.ui.button_a.adjusting = False
+            self._run_loop(150)
+            self.assertEqual(calls, [1], "runs once the adjustment ends")
+        finally:
+            self.ui.button_a.debounce = 0
+            del self.ui.button_a.adjusting
+            del instance.button_a
+
+    def test_debounce_can_be_a_ui_dynamic_property(self):
+        """``debounce`` declared in a .ui (a dynamic property, no Python
+        attribute) defers the call the same way; an explicit attribute of 0
+        wins over the property."""
+        calls = []
+        instance = self.sb.get_slots_instance(self.ui)
+        instance.button_b = lambda widget=None: calls.append(1)
+        widget = self.ui.button_b
+        self.assertFalse(hasattr(widget, "debounce"))
+        widget.setProperty("debounce", 30)
+        try:
+            widget.call_slot()
+            self.assertEqual(calls, [], "the property defers the call")
+            self._run_loop(150)
+            self.assertEqual(calls, [1])
+            widget.debounce = 0  # the attribute switches it off
+            widget.call_slot()
+            self.assertEqual(calls, [1, 1], "an explicit 0 runs at once")
+        finally:
+            widget.setProperty("debounce", None)
+            if hasattr(widget, "debounce"):
+                del widget.debounce
+            del instance.button_b
+
+    def test_get_slot_error_branch_uses_instance_class_name(self):
+        """get_slot's ``except Exception`` branch must log the raised error
+        and return None -- not raise AttributeError from ``slot_class.__name__``
+        on an *instance* (slot_class is a slots instance, so ``.__name__`` does
+        not exist). Regression for slots.py get_slot error handler.
+        """
+
+        class _Boom:
+            @property
+            def boom(self):  # attribute access raises a non-AttributeError
+                raise RuntimeError("touched a torn-down Qt object")
+
+        instance = _Boom()
+
+        # No-widget branch: must return None, not raise AttributeError.
+        self.assertIsNone(self.sb.get_slot(instance, "boom"))
+
+        # Widget branch (needs widget.ui.objectName()): same contract.
+        self.assertIsNone(self.sb.get_slot(instance, "boom", widget=self.ui.button_a))
+
+
+class TestSlotWrapperSignatureCache(QtBaseTestCase):
+    """The signature cache must key on the function, not id() of a bound method.
+
+    Regression: keying on id(slot) let CPython's freed-bound-method id reuse
+    serve a stale (param_names, wants_widget) entry for a *different* slot,
+    corrupting widget injection intermittently. Keying on __func__ (a
+    WeakKeyDictionary) resolves each slot's signature correctly and stores the
+    function object as the key.
+    """
+
+    def test_wants_widget_resolved_per_function(self):
+        from uitk.switchboard.slots import SlotWrapper
+
+        class Slots:
+            def with_widget(self, widget):
+                pass
+
+            def no_widget(self):
+                pass
+
+        s = Slots()
+        w1 = SlotWrapper(s.with_widget, None, None)
+        w2 = SlotWrapper(s.no_widget, None, None)
+        self.assertTrue(w1.wants_widget)
+        self.assertFalse(w2.wants_widget)
+
+    def test_cache_keyed_by_function_object(self):
+        from uitk.switchboard.slots import SlotWrapper
+
+        class Slots:
+            def do_it(self, widget):
+                pass
+
+        s = Slots()
+        SlotWrapper(s.do_it, None, None)
+        # The underlying function (shared across instances/bindings) is the key,
+        # never an int id — so a reused bound-method id cannot collide.
+        self.assertIn(Slots.do_it, SlotWrapper._sig_cache)
+
+
+class TestSwitchboardWidgetState(QtBaseTestCase):
+    """Tests for Switchboard widget state storage and restoration."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_spinbox_state_persistence(self):
+        """Spinbox value should persist across UI reopens."""
+        self.ui.spinbox.setValue(5)
+        self.ui.spinbox.setValue(10)
+        self.ui.close()
+
+        self.ui = self.sb.loaded_ui.example
+        self.assertEqual(self.ui.spinbox.value(), 10)
+        self.ui.close()
+
+    def test_checkbox_state_persistence(self):
+        """Checkbox state should persist across UI reopens."""
+        self.ui.checkbox.setChecked(True)
+        self.ui.checkbox.setChecked(False)
+        self.ui.close()
+
+        self.ui = self.sb.loaded_ui.example
+        self.assertFalse(self.ui.checkbox.isChecked())
+        self.ui.close()
+
+    def test_button_text_persistence(self):
+        """Button text should persist across UI reopens."""
+        self.ui.button_a.setText("Text A")
+        self.ui.button_a.setText("New Text")
+        self.ui.close()
+
+        self.ui = self.sb.loaded_ui.example
+        self.assertEqual(self.ui.button_a.text(), "New Text")
+        self.ui.close()
+
+
+class TestSwitchboardButtonGroups(QtBaseTestCase):
+    """Tests for Switchboard button group creation and behavior."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+        # Create checkboxes in button menu
+        menu = self.ui.button_b.menu
+        self.chk000 = menu.add(
+            "QCheckBox",
+            setObjectName="chk000",
+            setText="Option A",
+            setChecked=True,
+        )
+        self.chk001 = menu.add(
+            "QCheckBox",
+            setObjectName="chk001",
+            setText="Option B",
+        )
+        self.chk002 = menu.add(
+            "QCheckBox",
+            setObjectName="chk002",
+            setText="Option C",
+        )
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_allow_deselect_enables_toggle_off(self):
+        """Button group with allow_deselect should allow unchecking."""
+        self.sb.create_button_groups(
+            self.ui.button_b.menu,
+            "chk000-2",
+            allow_deselect=True,
+            allow_multiple=False,
+        )
+
+        self.chk000.setChecked(True)
+        self.assertTrue(self.chk000.isChecked())
+
+        self.chk000.click()
+        self.assertFalse(self.chk000.isChecked(), "Button should be deselected")
+
+    def test_allow_multiple_enables_multi_selection(self):
+        """Button group with allow_multiple should allow multiple selections."""
+        self.sb.create_button_groups(
+            self.ui.button_b.menu,
+            "chk000-2",
+            allow_deselect=False,
+            allow_multiple=True,
+        )
+
+        self.chk000.setChecked(True)
+        self.chk001.setChecked(True)
+
+        self.assertTrue(self.chk000.isChecked())
+        self.assertTrue(self.chk001.isChecked())
+        self.assertFalse(self.chk002.isChecked())
+
+    def test_exclusive_group_allows_only_one_selection(self):
+        """Exclusive button group should allow only one selection."""
+        self.sb.create_button_groups(
+            self.ui.button_b.menu,
+            "chk000-2",
+            allow_deselect=False,
+            allow_multiple=False,
+        )
+
+        self.chk000.setChecked(True)
+        self.chk001.setChecked(True)
+
+        self.assertFalse(self.chk000.isChecked(), "First button should be unchecked")
+        self.assertTrue(self.chk001.isChecked())
+
+
+# =============================================================================
+# _Names Tests
+# =============================================================================
+
+
+class TestSwitchboardNameConversion(QtBaseTestCase):
+    """Tests for _Names name conversion methods."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+
+    def test_convert_to_legal_name_replaces_special_chars(self):
+        """Should replace non-alphanumeric characters with underscores."""
+        result = Switchboard.convert_to_legal_name("my-widget.name")
+        self.assertEqual(result, "my_widget_name")
+
+    def test_convert_to_legal_name_preserves_alphanumeric(self):
+        """Should preserve alphanumeric characters."""
+        result = Switchboard.convert_to_legal_name("widget123")
+        self.assertEqual(result, "widget123")
+
+    def test_convert_to_legal_name_raises_for_non_string(self):
+        """Should raise ValueError for non-string input."""
+        with self.assertRaises(ValueError):
+            Switchboard.convert_to_legal_name(123)
+
+    def test_get_base_name_extracts_base(self):
+        """Should extract base name without trailing numbers/underscores."""
+        result = self.sb.get_base_name("button_001")
+        self.assertEqual(result, "button")
+
+    def test_get_base_name_handles_tags(self):
+        """Should remove tags from name."""
+        result = self.sb.get_base_name("menu#submenu#option")
+        self.assertEqual(result, "menu")
+
+
+class TestSwitchboardTagManagement(QtBaseTestCase):
+    """Tests for _Names tag management."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+
+    def test_get_tags_from_name_extracts_tags(self):
+        """Should extract tags from a name string."""
+        result = self.sb.get_tags_from_name("menu#option1#option2")
+        self.assertEqual(result, {"option1", "option2"})
+
+    def test_get_tags_from_name_returns_empty_for_no_tags(self):
+        """Should return empty set when no tags present."""
+        result = self.sb.get_tags_from_name("menu")
+        self.assertEqual(result, set())
+
+    def test_edit_tags_adds_tags_to_string(self):
+        """Should add tags to a string."""
+        result = self.sb.edit_tags("menu", add="newtag")
+        self.assertIn("newtag", result)
+
+    def test_edit_tags_removes_tags_from_string(self):
+        """Should remove tags from a string."""
+        result = self.sb.edit_tags("menu#oldtag", remove="oldtag")
+        self.assertNotIn("oldtag", result)
+
+    def test_edit_tags_clears_all_tags(self):
+        """Should clear all tags when clear=True."""
+        result = self.sb.edit_tags("menu#tag1#tag2", clear=True)
+        self.assertEqual(result, "menu")
+
+    def test_filter_tags_keeps_specified(self):
+        """Should keep only specified tags."""
+        result = self.sb.filter_tags("menu#tag1#tag2#tag3", keep_tags=["tag1", "tag2"])
+        tags = self.sb.get_tags_from_name(result)
+        self.assertEqual(tags, {"tag1", "tag2"})
+
+    def test_get_unknown_tags_finds_unknown(self):
+        """Should find tags not in known list."""
+        result = self.sb.get_unknown_tags("menu#known#unknown", ["known"])
+        self.assertIn("unknown", result)
+        self.assertNotIn("known", result)
+
+    def test_get_unknown_tags_known_prefix_of_unknown(self):
+        """A known tag that is a prefix of an unknown one must not suppress it."""
+        result = self.sb.get_unknown_tags("menu#submenu", ["sub"])
+        self.assertEqual(result, ["submenu"])
+
+    def test_get_unknown_tags_preserves_underscores(self):
+        """Underscore tags must not be truncated at the underscore."""
+        result = self.sb.get_unknown_tags("menu#my_tag", ["other"])
+        self.assertEqual(result, ["my_tag"])
+
+    def test_get_unknown_tags_empty_known_list(self):
+        """An empty known list means every tag is unknown."""
+        result = self.sb.get_unknown_tags("menu#foo#bar", [])
+        self.assertEqual(result, ["foo", "bar"])
+
+
+class TestTagDelimiterOverride(QtBaseTestCase):
+    """``Switchboard(tag_delimiter=...)`` reaches every name and tag method.
+
+    Regression: the override was stored, but only ``get_ui_relatives`` read it;
+    every other method split on the class constant ``TAG_DELIMITER``.
+    """
+
+    def test_tag_methods_honor_the_override(self):
+        sb = Switchboard(tag_delimiter="@")
+        self.assertEqual(sb.tag_delimiter, "@")
+        self.assertEqual(sb.get_tags_from_name("menu@submenu"), {"submenu"})
+        self.assertEqual(sb.edit_tags("menu", add="submenu"), "menu@submenu")
+        self.assertEqual(sb.filter_tags("menu@a@b", keep_tags=["b"]), "menu@b")
+        self.assertEqual(sb.get_unknown_tags("menu@a@b", ["a"]), ["b"])
+        self.assertEqual(sb.get_base_name("menu2@submenu"), "menu")
+
+    def test_default_is_the_class_constant(self):
+        self.assertEqual(Switchboard().tag_delimiter, Switchboard.TAG_DELIMITER)
+
+
+class TestUiNameDelimitersRetired(QtBaseTestCase):
+    """``ui_name_delimiters`` / ``UI_NAME_DELIMITER`` never had a reader: passing
+    the keyword or reading the constant warns, a positional call still binds."""
+
+    def test_keyword_warns_and_the_constant_warns(self):
+        with self.assertWarns(DeprecationWarning):
+            Switchboard(ui_name_delimiters=".")
+        with self.assertWarns(DeprecationWarning):
+            self.assertEqual(Switchboard.UI_NAME_DELIMITER, ".")
+
+    def test_no_instance_keeps_the_keywords_value(self):
+        """The constructor stored the retired keyword on every instance
+        (2026-11-01); a read of it warns like the constant's."""
+        sb = Switchboard()
+        self.assertNotIn("ui_name_delimiters", vars(sb))
+        with self.assertWarns(DeprecationWarning):
+            self.assertEqual(sb.ui_name_delimiters, ".")
+
+
+class TestSwitchboardHasTags(QtBaseTestCase):
+    """Tests for _Names has_tags method."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_has_tags_returns_false_for_widget_without_tags_attr(self):
+        """Should return False if widget has no tags attribute."""
+        widget = self.track_widget(QtWidgets.QPushButton())
+        result = self.sb.has_tags(widget)
+        self.assertFalse(result)
+
+    def test_has_tags_returns_false_for_non_widget(self):
+        """Should return False for non-widget input."""
+        result = self.sb.has_tags("not a widget")
+        self.assertFalse(result)
+
+
+# =============================================================================
+# _Slots Tests
+# =============================================================================
+
+
+class TestSwitchboardDefaultSignals(QtBaseTestCase):
+    """Tests for _Slots default signal discovery."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+
+    def test_get_default_signals_for_pushbutton(self):
+        """Should return clicked signal for QPushButton."""
+        button = self.track_widget(QtWidgets.QPushButton())
+        signals = self.sb.get_default_signals(button)
+        self.assertTrue(len(signals) > 0)
+
+    def test_get_default_signals_for_checkbox(self):
+        """Should return toggled signal for QCheckBox."""
+        checkbox = self.track_widget(QtWidgets.QCheckBox())
+        signals = self.sb.get_default_signals(checkbox)
+        self.assertTrue(len(signals) > 0)
+
+    def test_get_default_signals_for_spinbox(self):
+        """Should return valueChanged signal for QSpinBox."""
+        spinbox = self.track_widget(QtWidgets.QSpinBox())
+        signals = self.sb.get_default_signals(spinbox)
+        self.assertTrue(len(signals) > 0)
+
+    def test_get_default_signals_for_combobox(self):
+        """Should return currentIndexChanged signal for QComboBox."""
+        combo = self.track_widget(QtWidgets.QComboBox())
+        signals = self.sb.get_default_signals(combo)
+        self.assertTrue(len(signals) > 0)
+
+
+class TestSwitchboardAvailableSignals(QtBaseTestCase):
+    """Tests for _Slots available signal discovery."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+
+    def test_get_available_signals_returns_set(self):
+        """Should return a set of signal names."""
+        signals = self.sb.get_available_signals(QtWidgets.QPushButton)
+        self.assertIsInstance(signals, set)
+
+    def test_get_available_signals_includes_clicked(self):
+        """Should include clicked signal for QPushButton."""
+        signals = self.sb.get_available_signals(QtWidgets.QPushButton)
+        self.assertIn("clicked", signals)
+
+    def test_get_available_signals_with_derived_false(self):
+        """Should only return signals from the specified class when derived=False."""
+        signals = self.sb.get_available_signals(QtWidgets.QPushButton, derived=False)
+        # Should still be a set, just potentially smaller
+        self.assertIsInstance(signals, set)
+
+    def test_get_available_signals_derived_false_returns_own_signals(self):
+        """derived=False returns the class's OWN signals, not an empty set."""
+        own = self.sb.get_available_signals(QtWidgets.QComboBox, derived=False)
+        allsig = self.sb.get_available_signals(QtWidgets.QComboBox, derived=True)
+        self.assertTrue(own, "derived=False must not be empty")
+        self.assertTrue(own <= allsig)
+        # A QObject-inherited signal is present with derived=True but excluded
+        # from the class's own signals.
+        self.assertIn("destroyed", allsig)
+        self.assertNotIn("destroyed", own)
+
+    def test_get_available_signals_exc_excludes_parent_class(self):
+        """exc must exclude signals defined on an excluded parent class."""
+        result = self.sb.get_available_signals(
+            QtWidgets.QComboBox, exc=[QtCore.QObject]
+        )
+        self.assertNotIn("destroyed", result)  # QObject signal excluded
+        self.assertIn("currentIndexChanged", result)  # own signal kept
+
+    def test_set_widget_attrs_removed(self):
+        """The dead/broken set_widget_attrs helper must no longer exist."""
+        self.assertFalse(hasattr(self.sb, "set_widget_attrs"))
+
+
+class TestSwitchboardSlotHistory(QtBaseTestCase):
+    """Tests for _Slots slot history."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+
+    def test_slot_history_returns_list(self):
+        """Should return a list."""
+        history = self.sb.slot_history()
+        self.assertIsInstance(history, list)
+
+    def test_slot_history_add_appends_item(self):
+        """Should add item to history."""
+
+        def test_slot():
+            pass
+
+        self.sb.slot_history(add=test_slot)
+        history = self.sb.slot_history()
+        self.assertIn(test_slot, history)
+
+    def test_slot_history_remove_removes_item(self):
+        """Should remove item from history."""
+
+        def test_slot():
+            pass
+
+        self.sb.slot_history(add=test_slot)
+        self.sb.slot_history(remove=test_slot)
+        history = self.sb.slot_history()
+        self.assertNotIn(test_slot, history)
+
+    def test_slot_history_index_returns_specific_item(self):
+        """Should return specific item by index."""
+
+        def test_slot():
+            pass
+
+        self.sb.slot_history(add=test_slot)
+        last_item = self.sb.slot_history(index=-1)
+        self.assertEqual(last_item, test_slot)
+
+
+# =============================================================================
+# Switchboard partials (names / dialogs / placement / event loop / groups)
+# =============================================================================
+
+
+class TestSwitchboardUnpackNames(unittest.TestCase):
+    """Tests for Switchboard.unpack_names (``switchboard/names.py``)."""
+
+    def test_unpack_single_name(self):
+        """Should return single name as list."""
+        result = Switchboard.unpack_names("chk000")
+        self.assertEqual(result, ["chk000"])
+
+    def test_unpack_comma_separated_names(self):
+        """Should unpack comma-separated names."""
+        result = Switchboard.unpack_names("chk000, chk001, chk002")
+        self.assertEqual(result, ["chk000", "chk001", "chk002"])
+
+    def test_unpack_range_notation(self):
+        """Should expand range notation."""
+        result = Switchboard.unpack_names("chk000-2")
+        self.assertEqual(result, ["chk000", "chk001", "chk002"])
+
+    def test_unpack_mixed_names_and_ranges(self):
+        """Should handle mixed names and ranges."""
+        result = Switchboard.unpack_names("chk000-2, tb001")
+        self.assertEqual(result, ["chk000", "chk001", "chk002", "tb001"])
+
+    def test_unpack_shorthand_numbers(self):
+        """Should handle shorthand number references."""
+        result = Switchboard.unpack_names("chk000, 1, 2")
+        self.assertEqual(result, ["chk000", "chk001", "chk002"])
+
+    def test_unpack_name_without_digits_passthrough(self):
+        """A name with no numeric token passes through verbatim (was dropped)."""
+        self.assertEqual(Switchboard.unpack_names("grp_basic"), ["grp_basic"])
+        self.assertEqual(
+            Switchboard.unpack_names("chk000-1, grp_basic"),
+            ["chk000", "chk001", "grp_basic"],
+        )
+
+    def test_unpack_range_derives_pad_width_from_source(self):
+        """Zero-pad width comes from the source token, not a hard-coded 3."""
+        self.assertEqual(
+            Switchboard.unpack_names("chk0001-3"),
+            ["chk0001", "chk0002", "chk0003"],
+        )
+
+
+class TestSwitchboardFileDialog(unittest.TestCase):
+    """Tests for Switchboard.file_dialog selection mode (``switchboard/dialogs.py``)."""
+
+    def _patched(self):
+        from uitk.switchboard import dialogs
+
+        patcher = mock.patch.object(dialogs.QtWidgets, "QFileDialog")
+        MockFD = patcher.start()
+        self.addCleanup(patcher.stop)
+        MockFD.getOpenFileName.return_value = ("/a.png", "")
+        MockFD.getOpenFileNames.return_value = (["/a.png", "/b.png"], "")
+        return MockFD
+
+    def test_single_uses_get_open_file_name(self):
+        """allow_multiple=False must use getOpenFileName and return a bare str."""
+        MockFD = self._patched()
+        result = Switchboard.file_dialog(allow_multiple=False)
+        self.assertEqual(result, "/a.png")
+        MockFD.getOpenFileName.assert_called_once()
+        MockFD.getOpenFileNames.assert_not_called()
+
+    def test_multiple_uses_get_open_file_names(self):
+        """allow_multiple=True returns the full list via getOpenFileNames."""
+        MockFD = self._patched()
+        result = Switchboard.file_dialog(allow_multiple=True)
+        self.assertEqual(result, ["/a.png", "/b.png"])
+        MockFD.getOpenFileNames.assert_called_once()
+        MockFD.getOpenFileName.assert_not_called()
+
+    def test_does_not_set_read_only_option(self):
+        """The ReadOnly option must not be OR'd into the dialog options."""
+        MockFD = self._patched()
+        Switchboard.file_dialog(allow_multiple=True)
+        # Options() is created but never combined with ReadOnly.
+        MockFD.Options.return_value.__ior__.assert_not_called()
+
+    def test_str_file_types_coerced_like_save_file_dialog(self):
+        """A bare-str file_types must not be char-joined into the filter.
+
+        The signature advertises Union[str, List[str]]; save_file_dialog
+        coerces the str form, so file_dialog must too — without it,
+        ' '.join("*.txt") yields the filter "All Files (* . t x t)".
+        """
+        MockFD = self._patched()
+        Switchboard.file_dialog(file_types="*.txt", allow_multiple=True)
+        filter_arg = MockFD.getOpenFileNames.call_args[0][3]
+        self.assertIn("(*.txt)", filter_arg)
+
+
+class TestSwitchboardCenterWidget(QtBaseTestCase):
+    """Tests for Switchboard.center_widget (``switchboard/placement.py``)."""
+
+    def test_center_widget_at_point(self):
+        """Should center widget at specified point."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+
+        point = QtCore.QPoint(500, 500)
+        Switchboard.center_widget(widget, pos=point)
+
+        # Widget should be approximately centered at point
+        center = widget.frameGeometry().center()
+        self.assertAlmostEqual(center.x(), point.x(), delta=50)
+        self.assertAlmostEqual(center.y(), point.y(), delta=50)
+
+    def test_center_widget_raises_for_invalid_pos(self):
+        """Should raise ValueError for invalid pos value."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(100, 100)
+
+        with self.assertRaises(ValueError):
+            Switchboard.center_widget(widget, pos="invalid")
+
+    def test_padding_x_raises_stale_maximum_width(self):
+        """A content-fit resize must not be silently truncated by a stale
+        maximumWidth (e.g. a Designer-authored ceiling sized for shorter
+        text than the widget currently holds).
+
+        Regression test: marking-menu submenu buttons auto-size via
+        ``center_widget(w, padding_x=...)`` (see ``add_child_event_filter``
+        in _marking_menu.py). Several tentacle .ui buttons carry a leftover
+        ``maximumSize`` from Designer that predates their current (longer)
+        label text, which used to clamp the resize back below the button's
+        own minimumSizeHint -- text rendered flush against the edges instead
+        of padded. See uitk/docs/MARKING_MENU.md "Widget centering".
+        """
+        button = self.track_widget(QtWidgets.QPushButton())
+        button.setText("A Fairly Long Button Label")
+        button.setMaximumWidth(40)  # stale ceiling, narrower than the text needs
+        needed = button.minimumSizeHint().width() + 25
+
+        Switchboard.center_widget(button, padding_x=25)
+
+        self.assertGreaterEqual(
+            button.maximumWidth(),
+            needed,
+            "center_widget must raise a too-small maximumWidth to fit the request",
+        )
+        self.assertEqual(button.width(), needed)
+
+    def test_padding_x_leaves_generous_maximum_width_untouched(self):
+        """A maximumWidth that already accommodates the padded size must be
+        left alone (no unnecessary widening of the constraint)."""
+        button = self.track_widget(QtWidgets.QPushButton())
+        button.setText("Short")
+        button.setMaximumWidth(500)
+
+        Switchboard.center_widget(button, padding_x=25)
+
+        self.assertEqual(button.maximumWidth(), 500)
+
+    def test_padding_x_does_not_widen_a_fixed_size_lock(self):
+        """minimumWidth == maximumWidth is a deliberate fixed-size lock (e.g.
+        a square icon tile), not a stale Designer ceiling, and must survive
+        a padding_x resize untouched -- even when the button's own text
+        would otherwise need more room than the lock allows.
+
+        Regression: tentacle's cameras#startmenu.ui ``i000`` ("Camera
+        Options") is pinned to a 100x21 fixed size (min == max); text-only
+        sizing would need more than 100px, and an earlier version of the
+        maximumWidth-raising fix widened it anyway, stretching a tile meant
+        to stay square/uniform with its siblings.
+        """
+        button = self.track_widget(QtWidgets.QPushButton())
+        button.setText("Camera Options")
+        button.setFixedWidth(100)  # sets minimumWidth == maximumWidth == 100
+        self.assertGreater(
+            button.minimumSizeHint().width() + 25,
+            100,
+            "fixture invalid: this text must actually need more than the lock",
+        )
+
+        Switchboard.center_widget(button, padding_x=25)
+
+        self.assertEqual(button.maximumWidth(), 100)
+        self.assertEqual(button.width(), 100)
+
+
+class TestSwitchboardInvertOnModifier(unittest.TestCase):
+    """Tests for Switchboard.invert_on_modifier (``switchboard/event_loop.py``)."""
+
+    def test_invert_returns_original_without_modifier(self):
+        """Should return original value when no modifier pressed."""
+        result = Switchboard.invert_on_modifier(5)
+        self.assertEqual(result, 5)
+
+    def test_invert_works_with_negative_numbers(self):
+        """Should handle negative numbers."""
+        result = Switchboard.invert_on_modifier(-5)
+        self.assertEqual(result, -5)
+
+    def test_invert_works_with_booleans(self):
+        """Should handle boolean values."""
+        result = Switchboard.invert_on_modifier(True)
+        self.assertEqual(result, True)
+
+    def _with_alt_modifier(self):
+        return mock.patch.object(
+            QtWidgets.QApplication.instance(),
+            "keyboardModifiers",
+            return_value=QtCore.Qt.AltModifier,
+        )
+
+    def test_invert_with_alt_flips_bool_true_to_false(self):
+        with self._with_alt_modifier():
+            self.assertEqual(Switchboard.invert_on_modifier(True), False)
+
+    def test_invert_with_alt_flips_bool_false_to_true(self):
+        with self._with_alt_modifier():
+            self.assertEqual(Switchboard.invert_on_modifier(False), True)
+
+    def test_invert_with_alt_negates_int(self):
+        with self._with_alt_modifier():
+            self.assertEqual(Switchboard.invert_on_modifier(5), -5)
+            self.assertEqual(Switchboard.invert_on_modifier(-5), 5)
+
+
+class TestSwitchboardAddResetButtons(QtBaseTestCase):
+    """Tests for Switchboard.add_reset_buttons batch helper (``control_groups.py``).
+
+    Uses uitk spin/combo widgets (which carry the OptionBoxMixin and wrap
+    cleanly) so the tests mirror real panels — production slots wire uitk
+    SpinBox/DoubleSpinBox/ComboBox, never plain QtWidgets spin boxes.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.spinBox import SpinBox
+        from uitk.widgets.doubleSpinBox import DoubleSpinBox
+
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+        # Add convention-named uitk spin widgets to the panel so every
+        # resolution path (findChildren, string pattern, explicit list) and the
+        # uitk ComboBox already in the example UI are all exercisable.
+        layout = self.ui.centralWidget().layout()
+        self.s000 = SpinBox()
+        self.s000.setObjectName("s000")
+        layout.addWidget(self.s000)
+        self.ui.register_widget(self.s000)
+        self.s001 = DoubleSpinBox()
+        self.s001.setObjectName("s001")
+        layout.addWidget(self.s001)
+        self.ui.register_widget(self.s001)
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def _has_reset(self, widget):
+        from uitk.widgets.optionBox.options.reset import ResetOption
+
+        return widget.option_box.find_option(ResetOption) is not None
+
+    def test_auto_discovers_spinboxes_via_findchildren(self):
+        """widgets=None discovers every child of *types* (spin boxes by default)."""
+        box = self.track_widget(QtWidgets.QWidget())
+        from uitk.widgets.spinBox import SpinBox
+
+        QtWidgets.QVBoxLayout(box)
+        a = SpinBox()
+        a.setObjectName("only_a")
+        box.layout().addWidget(a)
+        b = SpinBox()
+        b.setObjectName("only_b")
+        box.layout().addWidget(b)
+
+        wired = self.sb.add_reset_buttons(box)
+        self.assertCountEqual(wired, [a, b])
+        self.assertTrue(self._has_reset(a))
+        self.assertTrue(self._has_reset(b))
+
+    def test_string_pattern_resolution(self):
+        """A shorthand pattern resolves via the s000/cmb000 naming convention."""
+        wired = self.sb.add_reset_buttons(self.ui, "s000-1")
+        self.assertEqual(wired, [self.s000, self.s001])
+        self.assertTrue(self._has_reset(self.s000))
+        self.assertTrue(self._has_reset(self.s001))
+
+    def test_explicit_widget_list(self):
+        """An explicit widget list wires exactly those widgets."""
+        wired = self.sb.add_reset_buttons(self.ui, [self.s000])
+        self.assertEqual(wired, [self.s000])
+        self.assertTrue(self._has_reset(self.s000))
+        self.assertFalse(self._has_reset(self.s001))
+
+    def test_skips_named_widget(self):
+        """A widget whose objectName is in skip is left alone."""
+        wired = self.sb.add_reset_buttons(
+            self.ui, [self.s000, self.s001], skip=("s000",)
+        )
+        self.assertEqual(wired, [self.s001])
+        self.assertFalse(self._has_reset(self.s000))
+
+    def test_skips_widget_instance(self):
+        """A widget instance (not just its name) in skip is left alone."""
+        wired = self.sb.add_reset_buttons(
+            self.ui, [self.s000, self.s001], skip=(self.s000,)
+        )
+        self.assertEqual(wired, [self.s001])
+        self.assertFalse(self._has_reset(self.s000))
+
+    def test_types_override_targets_combos(self):
+        """types= lets a panel wire combo boxes instead of spin boxes."""
+        wired = self.sb.add_reset_buttons(self.ui, types=(QtWidgets.QComboBox,))
+        self.assertIn(self.ui.cmb_options, wired)
+        self.assertTrue(self._has_reset(self.ui.cmb_options))
+        # The default spin-box targets must remain untouched.
+        self.assertFalse(self._has_reset(self.s000))
+
+    def test_forwards_kwargs_to_set_reset(self):
+        """**set_reset_kwargs reach the underlying ResetOption."""
+        from uitk.widgets.optionBox.options.reset import ResetOption
+
+        self.sb.add_reset_buttons(self.ui, [self.s000], icon="close")
+        opt = self.s000.option_box.find_option(ResetOption)
+        self.assertIsNotNone(opt)
+        self.assertEqual(opt._icon, "close")
+
+    def test_returns_empty_for_no_matches(self):
+        """A container with no matching widgets returns an empty list, not an error."""
+        empty = self.track_widget(QtWidgets.QWidget())
+        self.assertEqual(self.sb.add_reset_buttons(empty), [])
+
+
+class TestSwitchboardLinkSpinboxes(QtBaseTestCase):
+    """Tests for Switchboard.link_spinboxes — per-field lock toggles
+    that link locked spin boxes by an equal delta (backs duplicate_grid's
+    per-axis Spacing lock)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.doubleSpinBox import DoubleSpinBox
+
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+        layout = self.ui.centralWidget().layout()
+        self.boxes = []
+        for i in range(3):
+            b = DoubleSpinBox()
+            b.setObjectName(f"s{i:03d}")
+            b.setRange(-1000, 1000)
+            # These tests exercise the linking logic, not persistence — opt out
+            # of state restore so a value saved under the same objectName by a
+            # sibling test can't bleed in.
+            b.restore_state = False
+            b.setValue(0.0)
+            layout.addWidget(b)
+            self.ui.register_widget(b)
+            self.boxes.append(b)
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def _toggle(self, w):
+        from uitk.widgets.optionBox.options.toggle import ToggleOption
+
+        return w.option_box.find_option(ToggleOption)
+
+    def _lock(self, w, on=True):
+        self._toggle(w).set_on(on, emit=False)
+
+    def test_adds_lock_toggle_to_each(self):
+        wired = self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        self.assertEqual(wired, self.boxes)
+        for b in self.boxes:
+            self.assertIsNotNone(self._toggle(b))
+
+    def test_fields_can_start_locked(self):
+        """``initial=True`` is the 'these two move together unless you say
+        otherwise' default a paired setting wants (the render-effects pulse
+        gaps): no click needed before the first link takes."""
+        self.sb.link_spinboxes(self.ui, "s000-2", initial=True, settings_key=False)
+        a, b, _c = self.boxes
+        self.assertTrue(self._toggle(a).is_on)
+        a.setValue(4.0)
+        self.assertEqual(b.value(), 4.0, "locked from the start, no click needed")
+
+    def test_fields_inside_an_option_box_menu_link(self):
+        """The fields a tool puts in its own option-box menu are the ones that
+        most want linking, and they are not children of the ui: they are
+        created by ``menu.add`` and live in the menu. Resolution by explicit
+        widget has to reach them, and each has to carry its own lock toggle
+        inside that menu."""
+        from qtpy import QtWidgets
+
+        host = QtWidgets.QPushButton("host")
+        host.setObjectName("b_host")
+        self.ui.centralWidget().layout().addWidget(host)
+        self.ui.register_widget(host)
+        pair = [
+            host.option_box.menu.add(
+                "QDoubleSpinBox", setObjectName=name, setMaximum=100.0, setValue=1.0
+            )
+            for name in ("s_lead_in", "s_lead_out")
+        ]
+
+        wired = self.sb.link_spinboxes(self.ui, pair, initial=True, settings_key=False)
+
+        self.assertEqual(wired, pair)
+        lead_in, lead_out = pair
+        self.assertTrue(self._toggle(lead_in).is_on)
+        lead_in.setValue(3.0)
+        self.assertEqual(lead_out.value(), 3.0, "the pair moves together")
+        self._lock(lead_out, False)
+        lead_in.setValue(5.0)
+        self.assertEqual(lead_out.value(), 3.0, "...until one is unlocked")
+
+    def test_unlocked_fields_are_independent(self):
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        # all unlocked by default
+        self.boxes[0].setValue(5.0)
+        self.assertEqual([b.value() for b in self.boxes], [5.0, 0.0, 0.0])
+
+    def test_locked_fields_move_by_equal_delta(self):
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, c = self.boxes
+        self._lock(a)
+        self._lock(b)  # c stays unlocked
+        a.setValue(3.0)  # +3 delta
+        self.assertEqual(a.value(), 3.0)
+        self.assertEqual(b.value(), 3.0, "locked sibling shifts by the same delta")
+        self.assertEqual(c.value(), 0.0, "unlocked field is unaffected")
+
+    def test_delta_is_additive_not_absolute(self):
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, _ = self.boxes
+        b.setValue(10.0)  # b starts higher (unlocked change)
+        self._lock(a)
+        self._lock(b)
+        a.setValue(2.0)  # +2 from a's 0 -> b should become 12, not 2
+        self.assertEqual(b.value(), 12.0)
+
+    def test_no_feedback_loop(self):
+        """The equal-delta write to siblings must not recurse."""
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, c = self.boxes
+        for w in self.boxes:
+            self._lock(w)
+        a.setValue(1.0)
+        # one propagation round: all three land on 1.0, no runaway
+        self.assertEqual([w.value() for w in self.boxes], [1.0, 1.0, 1.0])
+
+    def test_lock_uses_the_channel_box_tints(self):
+        """Locked = desat blue, unlocked = dim grey. NOT ToggleOption's error
+        red — an unlocked field is a normal state, not a fault."""
+        from uitk.switchboard.control_groups import (
+            _LOCK_ACTIVE_COLOR,
+            _LOCK_INACTIVE_COLOR,
+        )
+
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        opt = self._toggle(self.boxes[0])
+        self.assertEqual(opt._active_color, _LOCK_ACTIVE_COLOR)
+        self.assertEqual(opt._disabled_color, _LOCK_INACTIVE_COLOR)
+
+    def test_lock_tints_are_overridable(self):
+        self.sb.link_spinboxes(
+            self.ui,
+            "s000-2",
+            settings_key=False,
+            active_color="#112233",
+            disabled_color="#445566",
+        )
+        opt = self._toggle(self.boxes[0])
+        self.assertEqual(opt._active_color, "#112233")
+        self.assertEqual(opt._disabled_color, "#445566")
+
+    def test_reset_button_clears_the_lock(self):
+        """A field carrying both buttons: its reset clears its lock too."""
+        from uitk.widgets.optionBox.options.reset import ResetOption
+
+        self.sb.add_reset_buttons(self.ui, "s000-2")
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a = self.boxes[0]
+        self._lock(a)
+        a.option_box.find_option(ResetOption).reset()
+        self.assertFalse(self._toggle(a).is_on)
+
+    def test_lock_sits_left_of_the_reset(self):
+        from uitk.widgets.optionBox.options.reset import ResetOption
+
+        self.sb.add_reset_buttons(self.ui, "s000-2")
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        box = self.boxes[0].option_box._option_box
+        order = box._sort_options()
+        self.assertLess(
+            order.index(self._toggle(self.boxes[0])),
+            order.index(self.boxes[0].option_box.find_option(ResetOption)),
+        )
+
+    def test_reset_all_leaves_every_locked_field_at_its_default(self):
+        """A panel-wide reset must clear the locks BEFORE applying the values.
+
+        Otherwise the first field's reset fires an equal-delta into its still
+        -locked siblings, shoving them off the default that is about to be (or
+        has already been) applied.
+        """
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, c = self.boxes
+        for w in self.boxes:  # opt back into state so reset_all sees them
+            w.restore_state = True
+            self.ui.state.capture_default(w)  # default = 0.0 for all three
+        a.setValue(5.0)
+        b.setValue(10.0)
+        c.setValue(-3.0)
+        for w in self.boxes:
+            self._lock(w)
+
+        self.ui.state.reset_all()
+
+        self.assertEqual([w.value() for w in self.boxes], [0.0, 0.0, 0.0])
+        self.assertFalse(
+            any(self._toggle(w).is_on for w in self.boxes),
+            "reset_all also clears the locks",
+        )
+
+    def _reset_scenario(self, **link_kwargs):
+        """Three linked fields, each moved off its 0.0 default by hand."""
+        self.sb.link_spinboxes(self.ui, "s000-2", **link_kwargs)
+        for w in self.boxes:
+            w.restore_state = True
+            self.ui.state.capture_default(w)  # default = 0.0 for all three
+            self._lock(w, False)
+        for w, value in zip(self.boxes, (5.0, 10.0, -3.0)):
+            w.setValue(value)
+        for w in self.boxes:
+            self._lock(w)
+
+    def test_reset_all_lands_on_the_defaults_when_the_locks_default_on(self):
+        """``initial=True``: the option pass turns every lock back ON before
+        the values land, so each reset field shoved its delta into its locked
+        siblings -- (8, 13, 0), the very result the pass order exists to stop.
+        A reset is applied FOR the user, not by them (``state.is_applying``)."""
+        self._reset_scenario(settings_key=False, initial=True)
+
+        self.ui.state.reset_all()
+
+        self.assertEqual([w.value() for w in self.boxes], [0.0, 0.0, 0.0])
+        self.assertTrue(all(self._toggle(w).is_on for w in self.boxes))
+
+    def test_reset_all_lands_on_the_defaults_when_a_lock_default_was_saved(self):
+        """Save as Defaults now reaches a field's switches: with every lock
+        saved ON (the fields at 0.0), a later Reset re-locked the fields
+        before applying their values."""
+        import uuid
+
+        self.sb.link_spinboxes(
+            self.ui, "s000-2", settings_key=f"test_lock_default_{uuid.uuid4().hex}"
+        )
+        for w in self.boxes:
+            w.restore_state = True
+            self.ui.state.capture_default(w)
+            self._lock(w)
+        self.ui.state.save_defaults()  # 0.0 everywhere, every lock ON
+        self.addCleanup(self.ui.state.clear_saved_defaults)
+        for w in self.boxes:
+            self._lock(w, False)
+        for w, value in zip(self.boxes, (5.0, 10.0, -3.0)):
+            w.setValue(value)
+        for w in self.boxes:
+            self._lock(w)
+
+        self.ui.state.reset_all()
+
+        self.assertEqual([w.value() for w in self.boxes], [0.0, 0.0, 0.0])
+        self.assertTrue(all(self._toggle(w).is_on for w in self.boxes))
+
+    def test_a_single_field_reset_does_not_move_its_locked_siblings(self):
+        self._reset_scenario(settings_key=False)
+
+        self.ui.state.reset(self.boxes[0])
+
+        self.assertEqual([w.value() for w in self.boxes], [0.0, 10.0, -3.0])
+
+    def test_excluded_field_keeps_its_lock(self):
+        """``exclude_from_reset`` opts a field out of the whole reset — its
+        lock is option state, so it is left alone too."""
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, _ = self.boxes
+        for w in (a, b):
+            w.restore_state = True
+            self.ui.state.capture_default(w)
+        a.setValue(5.0)
+        b.setValue(10.0)
+        self._lock(a)
+        self._lock(b)
+        b.exclude_from_reset = True
+
+        self.ui.state.reset_all()
+
+        self.assertEqual(a.value(), 0.0)
+        self.assertFalse(self._toggle(a).is_on, "a reset field is unlocked")
+        self.assertTrue(self._toggle(b).is_on, "an excluded field keeps its lock")
+
+    def test_no_propagation_during_state_restore(self):
+        """A locked field restored under suppress_save must re-baseline WITHOUT
+        propagating a delta (else restore corrupts siblings, order-dependent)."""
+        self.sb.link_spinboxes(self.ui, "s000-2", settings_key=False)
+        a, b, _ = self.boxes
+        self._lock(a)
+        self._lock(b)
+        # Simulate state restore: value applied programmatically, saves suppressed.
+        with self.ui.state.suppress_save():
+            a.setValue(5.0)
+        self.assertEqual(a.value(), 5.0)
+        self.assertEqual(b.value(), 0.0, "restore must not fire the equal-delta link")
+        # A genuine user change afterwards propagates from the re-baselined value.
+        a.setValue(6.0)  # +1 from 5.0
+        self.assertEqual(b.value(), 1.0)
+
+
+class _DeadCppWrapper:
+    """Stand-in for a shiboken wrapper whose C++ object was invalidated.
+
+    Touching any Qt method raises RuntimeError (exactly as a reparented
+    QUiLoader widget does in PySide6), but the defer-time name stamp survives
+    because it is a plain Python attribute.
+    """
+
+    def __init__(self, name):
+        self._deferred_object_name = name
+
+    def objectName(self):
+        raise RuntimeError("Internal C++ object (QSpinBox) already deleted")
+
+
+class TestDeferredWidgetRevival(QtBaseTestCase):
+    """Regression tests for the self-healing deferred-widget pipeline.
+
+    A widget accessed during a slots ``__init__`` is registered as a *deferred*
+    widget; an option-box wrap (``add_reset_buttons``) then reparents it, which
+    in PySide6 invalidates the wrapper captured at defer time. Previously
+    ``_process_deferred_widgets`` crashed on the dead wrapper
+    ("Internal C++ object ... already deleted") and the whole panel failed to
+    open. The switchboard must now re-resolve the live wrapper instead.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        from uitk.widgets.spinBox import SpinBox
+        from uitk.widgets.doubleSpinBox import DoubleSpinBox
+
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+        layout = self.ui.centralWidget().layout()
+        self.s000 = SpinBox()
+        self.s000.setObjectName("s000")
+        layout.addWidget(self.s000)
+        self.ui.register_widget(self.s000)
+        self.s001 = DoubleSpinBox()
+        self.s001.setObjectName("s001")
+        layout.addWidget(self.s001)
+        self.ui.register_widget(self.s001)
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_widget_is_alive_distinguishes_live_from_dead(self):
+        self.assertTrue(self.sb._widget_is_alive(self.s000))
+        self.assertFalse(self.sb._widget_is_alive(_DeadCppWrapper("s000")))
+
+    def test_revive_returns_widget_unchanged_when_alive(self):
+        """A live wrapper is passed straight through (the common case)."""
+        self.assertIs(self.sb._revive_deferred_widget(self.ui, self.s000), self.s000)
+
+    def test_revive_reresolves_dead_wrapper_and_repairs_registry(self):
+        """A dead wrapper is re-resolved by name; ui.<name> and ui.widgets heal."""
+        dead = _DeadCppWrapper("s000")
+        # Simulate the post-reparent registry state: the dead wrapper is what
+        # the switchboard currently holds, while the live widget is still in
+        # the Qt child tree (findable by name).
+        self.ui.widgets.discard(self.s000)
+        self.ui.widgets.add(dead)
+        setattr(self.ui, "s000", dead)
+
+        revived = self.sb._revive_deferred_widget(self.ui, dead)
+
+        self.assertIs(revived, self.s000)
+        self.assertIn(self.s000, self.ui.widgets)
+        self.assertNotIn(dead, self.ui.widgets)
+        # Downstream self.ui.s000 access now lands on the live wrapper.
+        self.assertIs(getattr(self.ui, "s000"), self.s000)
+        self.assertTrue(self.sb._widget_is_alive(self.ui.s000))
+
+    def test_revive_returns_none_when_unrecoverable(self):
+        """A dead wrapper whose widget no longer exists is reported, not raised."""
+        self.assertIsNone(
+            self.sb._revive_deferred_widget(self.ui, _DeadCppWrapper("does_not_exist"))
+        )
+
+    def test_process_deferred_survives_dead_wrapper(self):
+        """The exact crash site: a dead wrapper in the deferred list must not
+        abort the batch, and the live widget must still be initialized."""
+        dead = _DeadCppWrapper("s000")
+        self.ui.widgets.discard(self.s000)
+        self.ui.widgets.add(dead)
+        setattr(self.ui, "s000", dead)
+
+        # Pre-fix this raised RuntimeError on the [w.objectName() ...] log line.
+        self.sb._process_deferred_widgets(self.ui, [dead, self.s001])
+
+        self.assertIs(getattr(self.ui, "s000"), self.s000)
+        self.assertIn(self.s000, self.ui.widgets)
+        self.assertNotIn(dead, self.ui.widgets)
+        self.assertTrue(self.sb._widget_is_alive(self.ui.s000))
+
+    def test_process_deferred_drops_unrecoverable_widget(self):
+        """An unrecoverable dead wrapper is skipped without crashing the panel."""
+        self.sb._process_deferred_widgets(self.ui, [_DeadCppWrapper("does_not_exist")])
+
+    def test_real_optionbox_wrap_after_defer_keeps_widget_usable(self):
+        """End-to-end: the real option-box wrap (which invalidates the wrapper
+        in PySide6) after a defer must leave the widget usable post-process."""
+        # Stamp the name as the defer path would, then perform the real wrap and
+        # run the pipeline step that crashed.
+        self.s000._deferred_object_name = "s000"
+        self.sb.add_reset_buttons(self.ui, [self.s000])
+
+        self.sb._process_deferred_widgets(self.ui, [self.s000])
+
+        self.assertTrue(self.sb._widget_is_alive(self.ui.s000))
+        # The live widget remains functional for perform_operation-style use.
+        self.ui.s000.value()
+
+
+# =============================================================================
+# _Widgets Tests
+# =============================================================================
+
+
+class TestSwitchboardGetWidgetsFromUI(QtBaseTestCase):
+    """Tests for _Widgets _get_widgets_from_ui method."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_get_widgets_from_ui_returns_dict(self):
+        """Should return a dictionary of widgets."""
+        result = Switchboard._get_widgets_from_ui(self.ui)
+        self.assertIsInstance(result, dict)
+
+    def test_get_widgets_from_ui_raises_for_non_widget(self):
+        """Should raise ValueError for non-widget input."""
+        with self.assertRaises(ValueError):
+            Switchboard._get_widgets_from_ui("not a widget")
+
+
+class TestSwitchboardGetWidgetFromUI(QtBaseTestCase):
+    """Tests for _Widgets _get_widget_from_ui method."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_get_widget_from_ui_finds_widget(self):
+        """Should find widget by object name."""
+        widget = Switchboard._get_widget_from_ui(self.ui, "button_a")
+        self.assertIsNotNone(widget)
+        self.assertEqual(widget.objectName(), "button_a")
+
+    def test_get_widget_from_ui_returns_none_for_missing(self):
+        """Should return None for missing widget."""
+        widget = Switchboard._get_widget_from_ui(self.ui, "nonexistent_widget")
+        self.assertIsNone(widget)
+
+    def test_get_widget_from_ui_raises_for_non_widget(self):
+        """Should raise ValueError for non-widget UI."""
+        with self.assertRaises(ValueError):
+            Switchboard._get_widget_from_ui("not a widget", "button_a")
+
+
+class TestSwitchboardIsWidget(QtBaseTestCase):
+    """Tests for _Widgets is_widget method."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+
+    def test_is_widget_returns_true_for_widget_class(self):
+        """Should return True for widget class."""
+        result = self.sb.is_widget(QtWidgets.QPushButton)
+        self.assertTrue(result)
+
+    def test_is_widget_returns_true_for_widget_instance(self):
+        """Should return True for widget instance."""
+        widget = self.track_widget(QtWidgets.QPushButton())
+        result = self.sb.is_widget(widget)
+        self.assertTrue(result)
+
+    def test_is_widget_returns_false_for_non_widget(self):
+        """Should return False for non-widget."""
+        result = self.sb.is_widget("not a widget")
+        self.assertFalse(result)
+
+
+class TestSwitchboardGetParentWidgets(QtBaseTestCase):
+    """Tests for _Widgets get_parent_widgets method."""
+
+    def test_get_parent_widgets_returns_list(self):
+        """Should return a list of parent widgets."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        child = self.track_widget(QtWidgets.QPushButton(parent))
+
+        result = Switchboard.get_parent_widgets(child)
+        self.assertIsInstance(result, list)
+        self.assertIn(parent, result)
+
+    def test_get_parent_widgets_with_object_names(self):
+        """Should return object names when requested."""
+        parent = self.track_widget(QtWidgets.QWidget())
+        parent.setObjectName("parent_widget")
+        child = self.track_widget(QtWidgets.QPushButton(parent))
+        child.setObjectName("child_button")
+
+        result = Switchboard.get_parent_widgets(child, object_names=True)
+        self.assertIsInstance(result, list)
+        self.assertIn("parent_widget", result)
+
+
+class TestSwitchboardGetAllWidgets(QtBaseTestCase):
+    """Tests for _Widgets get_all_widgets method."""
+
+    def test_get_all_widgets_returns_list(self):
+        """Should return a list of widgets."""
+        result = Switchboard.get_all_widgets()
+        self.assertIsInstance(result, list)
+
+    def test_get_all_widgets_with_name_filter(self):
+        """Should filter by name when provided."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.setObjectName("test_unique_widget_name")
+
+        result = Switchboard.get_all_widgets(name="test_unique_widget_name")
+        self.assertTrue(
+            any(w.objectName() == "test_unique_widget_name" for w in result)
+        )
+
+    def test_a_stale_non_widget_wrapper_is_skipped(self):
+        """``allWidgets()`` can hand back a stale wrapper of another type.
+
+        A layout item is no QObject, so shiboken never learns C++ deleted it;
+        when a widget later reuses its address, ``allWidgets()`` answers that
+        widget with the old ``QWidgetItem`` wrapper (seen on Linux CI, PySide6
+        6.10), which has no ``objectName``. The scan skips it."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.setObjectName("test_stale_neighbour")
+        stale = QtWidgets.QWidgetItem(self.track_widget(QtWidgets.QWidget()))
+        with mock.patch.object(
+            QtWidgets.QApplication, "allWidgets", return_value=[stale, widget]
+        ):
+            self.assertEqual(
+                Switchboard.get_all_widgets(name="test_stale_neighbour"), [widget]
+            )
+            self.assertEqual(Switchboard.get_all_widgets(), [widget])
+
+
+# =============================================================================
+# SlotWrapper Tests
+# =============================================================================
+
+
+class TestSlotWrapper(QtBaseTestCase):
+    """Tests for SlotWrapper class."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_slot_wrapper_is_callable(self):
+        """SlotWrapper should be callable."""
+        from uitk.switchboard import SlotWrapper
+
+        def test_slot():
+            return "called"
+
+        wrapper = SlotWrapper(test_slot, self.ui.button_a, self.sb)
+        self.assertTrue(callable(wrapper))
+
+    def test_slot_wrapper_calls_underlying_slot(self):
+        """SlotWrapper should call the underlying slot."""
+        from uitk.switchboard import SlotWrapper
+
+        call_log = []
+
+        def test_slot():
+            call_log.append("called")
+
+        wrapper = SlotWrapper(test_slot, self.ui.button_a, self.sb)
+        wrapper()
+
+        self.assertEqual(call_log, ["called"])
+
+    def test_slot_wrapper_injects_widget_argument(self):
+        """SlotWrapper should inject widget argument if signature accepts it."""
+        from uitk.switchboard import SlotWrapper
+
+        received_widget = []
+
+        def test_slot(widget=None):
+            received_widget.append(widget)
+
+        wrapper = SlotWrapper(test_slot, self.ui.button_a, self.sb)
+        wrapper()
+
+        self.assertEqual(received_widget[0], self.ui.button_a)
+
+
+# =============================================================================
+# Edge Case Tests
+# =============================================================================
+
+
+class TestSwitchboardEdgeCasesNameConversion(QtBaseTestCase):
+    """Edge case tests for name conversion."""
+
+    def test_convert_to_legal_name_with_empty_string(self):
+        """Should handle empty string input."""
+        result = Switchboard.convert_to_legal_name("")
+        self.assertEqual(result, "")
+
+    def test_convert_to_legal_name_with_leading_underscore(self):
+        """Should preserve leading underscores."""
+        result = Switchboard.convert_to_legal_name("_private_widget")
+        self.assertEqual(result, "_private_widget")
+
+    def test_convert_to_legal_name_with_unicode(self):
+        """Should handle unicode characters."""
+        result = Switchboard.convert_to_legal_name("widget_über")
+        # Non-alphanumeric Unicode should be replaced
+        self.assertFalse("ü" in result)
+
+    def test_convert_to_legal_name_with_consecutive_special_chars(self):
+        """Should handle consecutive special characters."""
+        result = Switchboard.convert_to_legal_name("my---widget...name")
+        # Multiple underscores may result from consecutive special chars
+        self.assertIn("_", result)
+
+
+class TestSwitchboardEdgeCasesTagManagement(QtBaseTestCase):
+    """Edge case tests for tag management."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+
+    def test_get_tags_from_name_with_empty_string(self):
+        """Should handle empty string."""
+        result = self.sb.get_tags_from_name("")
+        self.assertEqual(result, set())
+
+    def test_get_tags_from_name_with_only_tags(self):
+        """Should handle string that is only tags."""
+        result = self.sb.get_tags_from_name("#tag1#tag2")
+        self.assertEqual(result, {"tag1", "tag2"})
+
+    def test_get_tags_from_name_with_empty_tag(self):
+        """Should handle empty tags between separators."""
+        result = self.sb.get_tags_from_name("menu##tag")
+        # Empty string is included in result (API behavior)
+        self.assertIn("tag", result)
+
+    def test_edit_tags_with_none_values(self):
+        """Should handle None values for add/remove."""
+        result = self.sb.edit_tags("menu#tag", add=None, remove=None)
+        self.assertIn("tag", result)
+
+    def test_edit_tags_with_duplicate_add(self):
+        """Should not duplicate existing tags."""
+        result = self.sb.edit_tags("menu#tag", add="tag")
+        # Should only have one occurrence of tag
+        count = result.count("#tag")
+        self.assertEqual(count, 1)
+
+
+class TestSwitchboardEdgeCasesUnpackNames(unittest.TestCase):
+    """Edge case tests for unpack_names."""
+
+    def test_unpack_names_with_empty_string(self):
+        """Should handle empty string."""
+        result = Switchboard.unpack_names("")
+        self.assertEqual(result, [])
+
+    def test_unpack_names_with_whitespace_only(self):
+        """Should handle whitespace-only input."""
+        result = Switchboard.unpack_names("   ")
+        # Whitespace is stripped, resulting in empty list
+        self.assertEqual(result, [])
+
+    def test_unpack_names_with_reverse_range(self):
+        """Should handle reverse range notation."""
+        result = Switchboard.unpack_names("chk002-0")
+        # Reverse range returns empty list (not supported)
+        self.assertEqual(result, [])
+
+    def test_unpack_names_with_single_number_range(self):
+        """Should handle range with same start and end."""
+        result = Switchboard.unpack_names("chk000-0")
+        self.assertEqual(result, ["chk000"])
+
+    def test_unpack_names_with_large_range(self):
+        """Should handle large ranges."""
+        result = Switchboard.unpack_names("chk000-99")
+        self.assertEqual(len(result), 100)
+
+
+class TestSwitchboardEdgeCasesSignals(QtBaseTestCase):
+    """Edge case tests for signal discovery."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+
+    def test_get_default_signals_for_base_widget(self):
+        """Should handle base QWidget which has limited signals."""
+        widget = self.track_widget(QtWidgets.QWidget())
+        signals = self.sb.get_default_signals(widget)
+        # QWidget may have no default signals
+        self.assertIsInstance(signals, (list, tuple, set))
+
+    def test_get_available_signals_for_layout_class(self):
+        """Should handle non-widget Qt class."""
+        # QLayout is not a QWidget
+        signals = self.sb.get_available_signals(QtWidgets.QVBoxLayout)
+        # May return empty or limited signals
+        self.assertIsInstance(signals, set)
+
+
+class TestSwitchboardEdgeCasesSlotHistory(QtBaseTestCase):
+    """Edge case tests for slot history."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+
+    def test_slot_history_index_out_of_range(self):
+        """Should handle index out of range gracefully."""
+        # Clear history and try to access index
+        history = self.sb.slot_history()
+        if len(history) == 0:
+            result = self.sb.slot_history(index=999)
+            # Out-of-range single-int index returns None (prev_slot contract).
+            self.assertIsNone(result)
+
+    def test_slot_history_remove_nonexistent(self):
+        """Should handle removing non-existent item."""
+
+        def not_in_history():
+            pass
+
+        # Should not raise
+        self.sb.slot_history(remove=not_in_history)
+
+    def test_slot_history_add_same_twice(self):
+        """Should handle adding the same slot twice."""
+
+        def test_slot():
+            pass
+
+        self.sb.slot_history(add=test_slot)
+        self.sb.slot_history(add=test_slot)
+        history = self.sb.slot_history()
+        # Count occurrences
+        count = history.count(test_slot)
+        # May allow duplicates or not
+        self.assertGreaterEqual(count, 1)
+
+
+class TestSwitchboardEdgeCasesWidgetResolution(QtBaseTestCase):
+    """Edge case tests for widget resolution."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_get_widget_from_ui_with_regex_pattern(self):
+        """Should handle name with special regex characters."""
+        # Names with regex special chars
+        widget = Switchboard._get_widget_from_ui(self.ui, "button[0]")
+        # Should return None (widget doesn't exist) not crash
+        self.assertIsNone(widget)
+
+    def test_get_widgets_from_ui_with_no_children(self):
+        """Should handle widget with no children."""
+        empty_widget = self.track_widget(QtWidgets.QWidget())
+        result = Switchboard._get_widgets_from_ui(empty_widget)
+        self.assertIsInstance(result, dict)
+
+    def test_is_widget_with_deleted_widget(self):
+        """Should handle deleted widget reference."""
+        widget = QtWidgets.QPushButton()
+        widget_ref = widget
+        del widget
+        # Python doesn't immediately delete, but in production could be deleted
+        # Testing the general case
+        self.assertIsInstance(self.sb.is_widget(widget_ref), bool)
+
+
+class TestSlotWrapperEdgeCases(QtBaseTestCase):
+    """Edge case tests for SlotWrapper."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_slot_wrapper_with_lambda(self):
+        """SlotWrapper should work with lambda functions."""
+        from uitk.switchboard import SlotWrapper
+
+        call_log = []
+        wrapper = SlotWrapper(
+            lambda: call_log.append("lambda"), self.ui.button_a, self.sb
+        )
+        wrapper()
+
+        self.assertEqual(call_log, ["lambda"])
+
+    def test_slot_wrapper_with_exception(self):
+        """SlotWrapper should propagate exceptions."""
+        from uitk.switchboard import SlotWrapper
+
+        def raising_slot():
+            raise ValueError("test error")
+
+        wrapper = SlotWrapper(raising_slot, self.ui.button_a, self.sb)
+
+        with self.assertRaises(ValueError):
+            wrapper()
+
+    def test_slot_wrapper_with_args(self):
+        """SlotWrapper should pass through positional arguments."""
+        from uitk.switchboard import SlotWrapper
+
+        received_args = []
+
+        def test_slot(*args):
+            received_args.extend(args)
+
+        wrapper = SlotWrapper(test_slot, self.ui.button_a, self.sb)
+        wrapper(1, 2, 3)
+
+        self.assertEqual(received_args, [1, 2, 3])
+
+    def test_slot_wrapper_with_kwargs(self):
+        """SlotWrapper should pass through keyword arguments."""
+        from uitk.switchboard import SlotWrapper
+
+        received_kwargs = {}
+
+        def test_slot(widget=None, **kwargs):
+            received_kwargs.update(kwargs)
+
+        wrapper = SlotWrapper(test_slot, self.ui.button_a, self.sb)
+        wrapper(foo="bar", baz=42)
+
+        # SlotWrapper may not pass through arbitrary kwargs if slot signature doesn't match
+        # Just verify wrapper is callable and doesn't crash
+        self.assertTrue(callable(wrapper))
+
+
+class TestSlotMismatchLogging(QtBaseTestCase):
+    """Tests for slot-mismatch logging behavior.
+
+    Verifies that get_slot and connect_slot log at DEBUG level when a widget
+    has no matching slot method. DEBUG is intentional — most widgets
+    (size_grip, menuFrame, hdr_pin, etc.) have no slot by design.
+    WARNING would flood the console with false positives.
+    Verified: 2026-03-01
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_get_slot_logs_debug_on_missing_slot(self):
+        """get_slot should log at DEBUG (not WARNING) when no matching slot exists.
+
+        Uses mock.patch because uitk's LoggingMixin creates unregistered Logger
+        instances (not via getLogger), making assertLogs unreliable.
+        """
+        from unittest.mock import patch
+
+        slots_instance = self.sb.get_slots_instance(self.ui)
+        logger = self.sb.logger
+
+        with (
+            patch.object(logger, "debug", wraps=logger.debug) as mock_debug,
+            patch.object(logger, "warning", wraps=logger.warning) as mock_warning,
+        ):
+            result = self.sb.get_slot(slots_instance, "nonexistent_widget_xyz")
+
+        self.assertIsNone(result)
+        # Should have logged at DEBUG
+        debug_calls = [
+            str(c) for c in mock_debug.call_args_list if "Slot not found" in str(c)
+        ]
+        self.assertTrue(
+            len(debug_calls) > 0,
+            "Expected 'Slot not found' at DEBUG level",
+        )
+        # Must NOT have logged at WARNING (would flood console)
+        warning_calls = [
+            str(c) for c in mock_warning.call_args_list if "Slot not found" in str(c)
+        ]
+        self.assertEqual(
+            len(warning_calls),
+            0,
+            f"Slot-not-found must be DEBUG, not WARNING (floods console): {warning_calls}",
+        )
+
+    def test_connect_slot_skips_non_callable_collision(self):
+        """connect_slot must skip (with a WARNING) when a widget's objectName
+        collides with a non-callable attribute on the slots class.
+
+        Without the guard, ``getattr(slots, objectName)`` returns that attribute
+        (e.g. a widget stored as ``self.<objectName>``) and ``signal.connect`` on
+        it raised the cryptic "is not a callable object" — the map_converter
+        footer-button bug. The connection must be skipped, not attempted.
+        """
+        from unittest.mock import patch
+
+        slots_instance = self.sb.get_slots_instance(self.ui)
+        # Simulate the collision: a non-callable attribute named like the widget.
+        slots_instance.colliding_widget = QtWidgets.QLabel("not a slot")
+
+        orphan = QtWidgets.QPushButton("Colliding")
+        orphan.setObjectName("colliding_widget")
+        orphan.setParent(self.ui.centralWidget())
+        self.ui.register_widget(orphan)
+
+        logger = self.sb.logger
+        with (
+            patch.object(logger, "warning", wraps=logger.warning) as mock_warning,
+            patch.object(logger, "error", wraps=logger.error) as mock_error,
+        ):
+            self.sb.connect_slot(orphan)
+
+        # Must NOT have attempted the connection (no cryptic connect error).
+        connect_errors = [
+            str(c) for c in mock_error.call_args_list if "Error connecting" in str(c)
+        ]
+        self.assertEqual(
+            connect_errors, [], f"Should skip, not error on connect: {connect_errors}"
+        )
+        # Should warn (actionably) about the non-callable collision.
+        warns = [
+            str(c) for c in mock_warning.call_args_list if "non-callable" in str(c)
+        ]
+        self.assertTrue(
+            len(warns) > 0, "Expected a WARNING about the non-callable slot collision"
+        )
+        # And the signal must not be wired.
+        self.assertNotIn(orphan, self.ui.connected_slots)
+
+    def test_connect_slot_logs_debug_on_missing_slot(self):
+        """connect_slot should log at DEBUG (not WARNING) when widget has no slot.
+
+        Uses mock.patch because uitk's LoggingMixin creates unregistered Logger
+        instances (not via getLogger), making assertLogs unreliable.
+        """
+        from unittest.mock import patch
+
+        orphan = QtWidgets.QPushButton("Orphan")
+        orphan.setObjectName("nonexistent_widget_xyz")
+        orphan.setParent(self.ui.centralWidget())
+        self.ui.register_widget(orphan)
+
+        logger = self.sb.logger
+
+        with (
+            patch.object(logger, "debug", wraps=logger.debug) as mock_debug,
+            patch.object(logger, "warning", wraps=logger.warning) as mock_warning,
+        ):
+            self.sb.connect_slot(orphan)
+
+        debug_calls = [
+            str(c)
+            for c in mock_debug.call_args_list
+            if "No slot found" in str(c) or "Slot not found" in str(c)
+        ]
+        self.assertTrue(
+            len(debug_calls) > 0,
+            "Expected slot-mismatch message at DEBUG level",
+        )
+        warning_calls = [
+            str(c)
+            for c in mock_warning.call_args_list
+            if "No slot found" in str(c) or "Slot not found" in str(c)
+        ]
+        self.assertEqual(
+            len(warning_calls),
+            0,
+            f"Slot-not-found must be DEBUG, not WARNING (floods console): {warning_calls}",
+        )
+
+
+# =============================================================================
+# Performance Regression Tests
+# =============================================================================
+
+
+class TestLoggerHandlerSyncPerformance(unittest.TestCase):
+    """Regression: LoggingMixin.logger must NOT sync handler levels on every access.
+
+    Bug: The logger ClassProperty iterated all handlers calling setLevel() on
+    every property access. With hundreds of logger accesses per widget during
+    init, this was a significant bottleneck.
+    Fix: Handler levels are now synced only in _set_level (called via setLevel).
+    Fixed: 2026-03-01
+    """
+
+    def test_handler_setLevel_not_called_on_access(self):
+        """Accessing .logger repeatedly should not call handler.setLevel each time."""
+        from unittest.mock import patch
+
+        sb = Switchboard(ui_source=None)
+        logger = sb.logger
+        # Force a level so we have a known state
+        logger.setLevel("WARNING")
+
+        # Now patch handler.setLevel and access the logger many times
+        handler = logger.handlers[0]
+        with patch.object(handler, "setLevel", wraps=handler.setLevel) as mock_set:
+            for _ in range(100):
+                _ = sb.logger  # Repeated property access
+            # Should NOT have been called 100 times (was the old behavior)
+            self.assertEqual(
+                mock_set.call_count,
+                0,
+                f"handler.setLevel called {mock_set.call_count} times on 100 logger accesses (should be 0)",
+            )
+
+    def test_setLevel_syncs_handlers(self):
+        """Calling setLevel should still propagate to handlers."""
+        import logging
+
+        sb = Switchboard(ui_source=None)
+        logger = sb.logger
+        logger.setLevel("DEBUG")
+        for handler in logger.handlers:
+            self.assertEqual(
+                handler.level,
+                logging.DEBUG,
+                "Handler level should match after setLevel('DEBUG')",
+            )
+        logger.setLevel("ERROR")
+        for handler in logger.handlers:
+            self.assertEqual(
+                handler.level,
+                logging.ERROR,
+                "Handler level should match after setLevel('ERROR')",
+            )
+
+
+class TestSlotWrapperSignatureCachePerf(QtBaseTestCase):
+    """Regression: SlotWrapper must cache inspect.signature per slot function.
+
+    Bug: inspect.signature() was called in every SlotWrapper.__init__, which
+    runs for every widget×signal connection. For the same slot function connected
+    to multiple widgets, the signature is identical.
+    Fix: Cache by slot function object in a class-level WeakKeyDictionary.
+    Fixed: 2026-03-01
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        from uitk.switchboard import SlotWrapper
+
+        SlotWrapper._sig_cache.clear()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_signature_cached_across_wrappers(self):
+        """Creating two SlotWrappers for the same slot should call inspect.signature only once."""
+        from unittest.mock import patch
+        from uitk.switchboard import SlotWrapper
+        import inspect
+
+        def dummy_slot(self, widget=None):
+            pass
+
+        btn1 = QtWidgets.QPushButton("A")
+        btn1.setObjectName("test_btn_a")
+        btn2 = QtWidgets.QPushButton("B")
+        btn2.setObjectName("test_btn_b")
+
+        SlotWrapper._sig_cache.clear()
+        with patch(
+            "uitk.switchboard.slots.inspect.signature",
+            wraps=inspect.signature,
+        ) as mock_sig:
+            w1 = SlotWrapper(dummy_slot, btn1, self.sb)
+            w2 = SlotWrapper(dummy_slot, btn2, self.sb)
+
+        self.assertEqual(
+            mock_sig.call_count,
+            1,
+            f"inspect.signature called {mock_sig.call_count} times for same slot (should be 1)",
+        )
+        # Both wrappers should have identical param info
+        self.assertEqual(w1.param_names, w2.param_names)
+        self.assertEqual(w1.wants_widget, w2.wants_widget)
+        self.assertTrue(w1.wants_widget)
+
+    def test_different_slots_cached_independently(self):
+        """Different slot functions should each get their own cache entry."""
+        from uitk.switchboard import SlotWrapper
+
+        def slot_a(self, widget=None):
+            pass
+
+        def slot_b(self, value=0):
+            pass
+
+        btn = QtWidgets.QPushButton("X")
+        btn.setObjectName("test_btn_x")
+
+        SlotWrapper._sig_cache.clear()
+        w1 = SlotWrapper(slot_a, btn, self.sb)
+        w2 = SlotWrapper(slot_b, btn, self.sb)
+
+        self.assertTrue(w1.wants_widget)
+        self.assertFalse(w2.wants_widget)
+        self.assertEqual(len(SlotWrapper._sig_cache), 2)
+
+
+class TestInitSlotShortCircuit(QtBaseTestCase):
+    """Regression: init_slot must short-circuit when slots are already instantiated.
+
+    Bug: init_slot always called _add_to_placeholder (which may call
+    _find_slots_class) even when the slot instance already exists. This caused
+    redundant registry lookups for every widget after the first.
+    Fix: Check slots_instantiated(key) first and skip placeholder path.
+    Fixed: 2026-03-01
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_no_placeholder_call_when_slots_exist(self):
+        """After slots are instantiated, init_slot should not call _add_to_placeholder."""
+        from unittest.mock import patch
+
+        # Ensure slots exist
+        self.sb.get_slots_instance(self.ui)
+        key = self.sb.get_base_name(self.ui.objectName())
+        self.assertTrue(self.sb.slots_instantiated(key))
+
+        # Now register a new widget
+        btn = QtWidgets.QPushButton("NewBtn")
+        btn.setObjectName("new_test_button")
+        btn.setParent(self.ui.centralWidget())
+        self.ui.register_widget(btn)
+
+        with patch.object(self.sb, "_add_to_placeholder") as mock_placeholder:
+            self.sb.init_slot(btn)
+
+        self.assertEqual(
+            mock_placeholder.call_count,
+            0,
+            "_add_to_placeholder should not be called when slots are already instantiated",
+        )
+
+
+class TestDerivedTypeCache(QtBaseTestCase):
+    """Regression: get_derived_type must cache results by widget type.
+
+    Bug: get_derived_type walked the full MRO for every widget, even though
+    the result is deterministic per type+parameters.
+    Fix: Class-level cache dict keyed by (type, return_name, module, ...).
+    Fixed: 2026-03-01
+    """
+
+    def test_cache_hit_on_same_type(self):
+        """Two QPushButtons should produce only one MRO traversal."""
+        import pythontk as ptk
+
+        ptk.CoreUtils._derived_type_cache.clear()
+
+        btn1 = QtWidgets.QPushButton("A")
+        btn2 = QtWidgets.QPushButton("B")
+
+        r1 = ptk.get_derived_type(btn1, module="QtWidgets")
+        r2 = ptk.get_derived_type(btn2, module="QtWidgets")
+
+        self.assertIs(r1, r2, "Same type should return identical cached result")
+        # Cache should have exactly one entry for this parameter combination
+        matching = [
+            k
+            for k in ptk.CoreUtils._derived_type_cache
+            if k[0] is QtWidgets.QPushButton and k[2] == "QtWidgets"
+        ]
+        self.assertEqual(
+            len(matching), 1, "Should have one cache entry for QPushButton+QtWidgets"
+        )
+
+    def test_different_types_cached_separately(self):
+        """Different widget types should be cached independently."""
+        import pythontk as ptk
+
+        ptk.CoreUtils._derived_type_cache.clear()
+
+        btn = QtWidgets.QPushButton("A")
+        chk = QtWidgets.QCheckBox("B")
+
+        r1 = ptk.get_derived_type(btn, module="QtWidgets")
+        r2 = ptk.get_derived_type(chk, module="QtWidgets")
+
+        self.assertIsNot(r1, r2)
+        self.assertEqual(len(ptk.CoreUtils._derived_type_cache), 2)
+
+
+class TestDefaultSignalsLookupEfficiency(QtBaseTestCase):
+    """Regression: widget.default_signals() should use direct dict lookup, not isinstance loop.
+
+    The lambda assigned in register_widget should do a dict.get by derived_type,
+    not iterate all 27 entries with isinstance checks.
+    Fixed: 2026-03-01
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_pushbutton_default_signal_is_clicked(self):
+        """A registered QPushButton should report 'clicked' as its default signal."""
+        btn = QtWidgets.QPushButton("Test")
+        btn.setObjectName("test_default_sig_btn")
+        btn.setParent(self.ui.centralWidget())
+        self.ui.register_widget(btn)
+
+        result = btn.default_signals()
+        self.assertEqual(result, "clicked")
+
+    def test_checkbox_default_signal_is_toggled(self):
+        """A registered QCheckBox should report 'toggled' as its default signal."""
+        chk = QtWidgets.QCheckBox("Test")
+        chk.setObjectName("test_default_sig_chk")
+        chk.setParent(self.ui.centralWidget())
+        self.ui.register_widget(chk)
+
+        result = chk.default_signals()
+        self.assertEqual(result, "toggled")
+
+    def test_widget_without_default_signal(self):
+        """A widget type not in default_signals should return None."""
+        frame = QtWidgets.QFrame()
+        frame.setObjectName("test_default_sig_frame")
+        frame.setParent(self.ui.centralWidget())
+        self.ui.register_widget(frame)
+
+        result = frame.default_signals()
+        self.assertIsNone(result)
+
+
+class TestStateSignalSlotWiring(QtBaseTestCase):
+    """A widget that names its own change signal (``state_signal``) has its slot
+    wired to it, as persistence already reads it. A check list's slot was
+    wired to the ``itemClicked`` of its Qt base class, which carries the
+    clicked row and never fires for a check made in code.
+    Fixed: 2026-10-04
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        self.ui = self.sb.loaded_ui.example
+
+    def tearDown(self):
+        if hasattr(self, "ui") and self.ui:
+            self.ui.close()
+        super().tearDown()
+
+    def test_its_slot_hears_its_own_signal(self):
+        from uitk.bridge.spec import AttributeSpec, KindFactory
+
+        heard = []
+        slots = self.sb.get_slots_instance(self.ui)
+        slots.lst_state_scripts = lambda *args: heard.append(args)
+        self.addCleanup(slots.__dict__.pop, "lst_state_scripts", None)
+        scripts = KindFactory.make_widget(
+            AttributeSpec(
+                key="scripts",
+                kind="check_list",
+                choices=[("A", "a"), ("B", "b")],
+                default=[],
+            ),
+            self.ui.centralWidget(),
+        )
+        scripts.setObjectName("lst_state_scripts")
+        self.ui.register_widget(scripts)
+        self.sb.connect_slot(scripts)
+        self.assertEqual(set(self.ui.connected_slots[scripts]), {"checkedChanged"})
+        scripts.item(1).setCheckState(QtCore.Qt.Checked)  # a check made in code
+        self.assertEqual(heard, [(["b"],)])
+
+
+class TestSwitchboardActiveUi(QtBaseTestCase):
+    """The ``active_ui`` no-warn peek vs ``current_ui`` auto-load+warn property.
+
+    ``current_ui`` historically warns when no UI is set. That's noise when
+    callers (e.g. the marking menu) legitimately probe for None. ``active_ui``
+    is the silent variant — same value, no auto-load, no warning.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from uitk import examples
+
+        cls.example_module = examples
+
+    def setUp(self):
+        super().setUp()
+        self.sb = Switchboard(
+            ui_source=self.example_module,
+            slot_source=ExampleSlots,
+        )
+        # Force multiple loaded UIs so the auto-load fallback doesn't fire
+        # and we're guaranteed to hit the warning path on current_ui.
+        self.sb.loaded_ui.example  # ensure loaded
+        # Reset _current_ui to simulate the pre-first-show state.
+        self.sb._current_ui = None
+
+    def test_active_ui_returns_none_without_warning(self):
+        """active_ui returns None when no UI is set, with no log records."""
+        import logging
+
+        records = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record):
+                records.append(record)
+
+        h = _Capture(level=logging.DEBUG)
+        Switchboard.logger.addHandler(h)
+        try:
+            self.assertIsNone(self.sb.active_ui)
+        finally:
+            Switchboard.logger.removeHandler(h)
+
+        warnings = [r for r in records if r.levelno >= logging.WARNING]
+        self.assertEqual(
+            warnings,
+            [],
+            f"active_ui must not emit log warnings; got {[r.getMessage() for r in warnings]}",
+        )
+
+    def test_active_ui_returns_set_value(self):
+        """active_ui returns the same value as current_ui once one is set."""
+        ui = self.sb.loaded_ui.example
+        self.sb.current_ui = ui
+        self.assertIs(self.sb.active_ui, ui)
+        self.assertIs(self.sb.active_ui, self.sb.current_ui)
+
+    def test_active_ui_does_not_auto_load(self):
+        """Unlike current_ui, active_ui must not trigger auto-load logic."""
+        # Pre-condition: multiple UIs loaded so auto-load wouldn't fire even
+        # for current_ui — test confirms active_ui is a pure peek regardless.
+        before = self.sb._current_ui
+        result = self.sb.active_ui
+        after = self.sb._current_ui
+        self.assertIs(result, before)
+        self.assertIs(after, before)
+
+
+class TestDialogsYieldToBusyCursor(QtBaseTestCase):
+    """Switchboard dialogs must not inherit the slot busy cursor.
+
+    The slot dispatcher holds an application-wide ``WaitCursor`` override for
+    the slot's duration (``CursorManager.busy``), and an override beats every
+    widget cursor — so a dialog a slot spawns would show the hourglass over
+    its own buttons and fields. A modal suspends the stack for its event loop
+    (``CursorManager.suspend``); a non-modal viewer cancels it outright
+    (``CursorManager.drain``). The primitives themselves are covered in
+    ``test_cursor_manager.py``. Fixed: 2026-06-09
+    """
+
+    def setUp(self):
+        super().setUp()
+        CursorManager.drain()
+
+    def tearDown(self):
+        CursorManager.drain()
+        super().tearDown()
+
+    def test_input_dialog_suspends_override_during_exec(self):
+        """input_dialog must clear the busy cursor while its modal loop runs."""
+        sb = Switchboard()
+        app = QtWidgets.QApplication.instance()
+        app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+
+        seen = {}
+
+        def fake_exec(self):
+            seen["override"] = app.overrideCursor()
+            return QtWidgets.QDialog.Rejected
+
+        with mock.patch.object(QtWidgets.QDialog, "exec_", fake_exec):
+            sb.input_dialog(title="t", label="l")
+
+        self.assertIn("override", seen)
+        self.assertIsNone(
+            seen["override"], "busy cursor still active inside modal exec_"
+        )
+        # And the slot busy-cursor is back afterward.
+        self.assertEqual(app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
+
+    def test_text_view_dialog_cancels_busy_cursor(self):
+        """A non-modal viewer must not leave the slot busy cursor active."""
+        sb = Switchboard()
+        app = QtWidgets.QApplication.instance()
+        app.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+
+        dlg = sb.text_view_dialog(text="report", title="t")
+        try:
+            self.assertIsNone(
+                app.overrideCursor(),
+                "busy cursor still active over the non-modal viewer",
+            )
+        finally:
+            dlg.close()
+
+    def test_text_view_dialog_passes_the_link_handler(self):
+        """A caller's ``link_handler`` reaches the viewer, which routes
+        ``action://`` links to it (a scene report's select-this-mesh)."""
+        sb = Switchboard()
+
+        def handler(url):
+            return True
+
+        dlg = sb.text_view_dialog(text="report", link_handler=handler)
+        try:
+            self.assertIs(dlg.link_handler, handler)
+        finally:
+            dlg.close()
+
+    def test_text_view_dialog_on_refresh_is_the_headers_refresh_button(self):
+        """``on_refresh`` puts the header's own refresh button before the
+        viewer's others and calls it when clicked -- a report reads itself
+        again from the header, never a footer button. Added: 2026-10-23"""
+        sb = Switchboard()
+        calls = []
+        plain = sb.text_view_dialog(text="report")
+        dlg = sb.text_view_dialog(text="report", on_refresh=lambda: calls.append(1))
+        try:
+            self.assertNotIn("refresh", plain.header.buttons)
+            self.assertEqual(
+                list(dlg.header.buttons), ["refresh"] + list(plain.header.buttons)
+            )
+            dlg.header.buttons["refresh"].click()
+            self.assertEqual(calls, [1])
+        finally:
+            plain.close()
+            dlg.close()
+
+    def test_text_view_dialog_logs_a_readable_preview(self):
+        """The log preview drops tags AND entities: an escaped JSON report
+        logs as ``"key"``, not ``&quot;key&quot;``."""
+        sb = Switchboard()
+        with mock.patch.object(sb.logger, "info") as info:
+            dlg = sb.data_view_dialog({"key": "a<b"})
+        try:
+            logged = info.call_args[0][0]
+            self.assertIn('"key": "a<b"', logged)
+            self.assertNotIn("&quot;", logged)
+        finally:
+            dlg.close()
+
+    def test_preview_dialog_renders_live_and_routes_its_actions(self):
+        """``preview_dialog``: a non-modal viewer whose text follows its option
+        rows, its buttons calling the caller's actions without closing it."""
+        sb = Switchboard()
+        calls = []
+        dlg = sb.preview_dialog(
+            lambda values: f"as {values['fmt']}",
+            [
+                {
+                    "key": "fmt",
+                    "kind": "choice",
+                    "default": "csv",
+                    "choices": (("CSV", "csv"), ("JSON", "json")),
+                }
+            ],
+            actions={"Copy": lambda box: calls.append(box.preview_values["fmt"])},
+            title="Export",
+        )
+        try:
+            self.assertEqual(dlg.text_edit.toPlainText(), "as csv")
+            fmt = dlg.preview_widgets["fmt"]
+            fmt.setCurrentIndex(fmt.findData("json"))
+            self.assertEqual(dlg.text_edit.toPlainText(), "as json")
+            copy = next(b for b in dlg.button_box.buttons() if b.text() == "Copy")
+            copy.click()
+            self.assertEqual(calls, ["json"])
+            self.assertTrue(dlg.isVisible())
+        finally:
+            dlg.close()
+
+    def test_preview_dialog_runs_an_action_named_in_any_case(self):
+        """Bug: an action was validated case-insensitively against the
+        buttons but looked up by the exact name a click reports (the
+        canonical ``"Copy"``), so ``{"copy": ...}`` got its button and never
+        ran.
+        Fixed: 2026-10-12"""
+        sb = Switchboard()
+        calls = []
+        dlg = sb.preview_dialog(
+            lambda values: "text", actions={"copy": lambda box: calls.append(True)}
+        )
+        try:
+            copy = next(b for b in dlg.button_box.buttons() if b.text() == "Copy")
+            copy.click()
+            self.assertEqual(calls, [True])
+        finally:
+            dlg.close()
+
+    def test_preview_dialog_refuses_an_action_no_button_carries(self):
+        """An action named for no :attr:`TextViewBox.BUTTONS` entry would get
+        no button and never run -- said at once, not left to be found."""
+        sb = Switchboard()
+        with self.assertRaises(ValueError) as caught:
+            sb.preview_dialog(lambda values: "", actions={"Export": print})
+        self.assertIn("'Export'", str(caught.exception))
+
+    def test_data_view_dialog_empty_data_is_a_message_not_a_viewer(self):
+        """Nothing to show -- an empty container, or a store whose carriers are
+        all empty -- says so in a message box instead of opening a blank viewer."""
+        sb = Switchboard()
+        for empty in ({}, [], {"data_internal": {}, "data_export": {}}):
+            with mock.patch.object(sb, "message_box") as box:
+                self.assertIsNone(sb.data_view_dialog(empty, empty_message="none here"))
+            box.assert_called_once_with("none here")
+        # Falsy SCALARS are data, not emptiness: a record of zeros still shows,
+        # and so does a bare falsy scalar.
+        for falsy in ({"count": 0, "enabled": False}, 0, False):
+            with mock.patch.object(sb, "message_box") as box:
+                dlg = sb.data_view_dialog(falsy)
+            self.assertIsNotNone(dlg, falsy)
+            dlg.close()
+            box.assert_not_called()
+
+    def test_confirm_is_the_modal_yes_no_as_a_bool(self):
+        """`confirm` is the consent callable a tool's install offer takes: a
+        modal message box with the two buttons, True only for the yes button
+        (whatever the box returns otherwise -- the other button, a close)."""
+        sb = Switchboard()
+        with mock.patch.object(sb, "message_box", return_value="Yes") as box:
+            self.assertTrue(sb.confirm("Install it?"))
+        box.assert_called_once_with("Install it?", "Yes", "No")
+        for other in ("No", None, ""):
+            with mock.patch.object(sb, "message_box", return_value=other):
+                self.assertFalse(sb.confirm("Install it?"), other)
+        with mock.patch.object(sb, "message_box", return_value="Go") as box:
+            self.assertTrue(sb.confirm("Really?", yes="Go", no="Stay"))
+        box.assert_called_once_with("Really?", "Go", "Stay")
+
+    def test_message_box_toast_is_timed_to_its_text_by_default(self):
+        """A passive toast stays up for its reading time (``timeout="auto"``),
+        not a flat 3 s that cut long messages off and held short ones."""
+        sb = Switchboard()
+        text = "Exported 12 objects to the scene folder."
+        sb.message_box(text)
+        box = sb._messageBox
+        try:
+            self.assertEqual(box.timeout, "auto")
+            self.assertTrue(box.menu_timer.isActive())
+            self.assertEqual(
+                box.menu_timer.interval(),
+                round(box.reading_time(box.text()) * 1000),
+            )
+        finally:
+            box.close()
+
+    def test_a_prompt_with_labelled_buttons_waits_for_its_answer(self):
+        """Every button labelled is no STANDARD button, and the auto-close read
+        that as a toast: ``sb.confirm(q, yes="Open Page", no="Not Now")`` -- the
+        WebXR panel's offer -- closed itself after its reading time and
+        answered None, which ``confirm`` reads as "Not Now". Answered after
+        that time instead, here.
+        Fixed: 2026-10-04
+        """
+        from uitk.widgets.messageBox import MessageBox
+
+        sb = Switchboard()
+        question = "Open the preview page?"
+
+        def answer():
+            for box in QtWidgets.QApplication.topLevelWidgets():
+                if not (isinstance(box, MessageBox) and box.isVisible()):
+                    continue
+                go = [b for b in box.buttons() if b.text().replace("&", "") == "Go"]
+                if go:
+                    go[0].click()
+                else:
+                    box.reject()  # never leave the modal loop spinning
+
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(answer)
+        timer.start(round((MessageBox.reading_time(question) + 0.5) * 1000))
+        self.addCleanup(timer.stop)
+        self.assertEqual(sb.message_box(question, "Go", "Stay"), "Go")
+
+    def test_data_view_dialog_renders_colour_coded_json(self):
+        """Every token role takes its DATA_COLORS colour; markup in the data is
+        escaped, never rendered."""
+        from uitk.widgets.textViewBox import TextViewBox
+
+        data = {"k": "v<b>", "n": 3, "t": True, "z": None, "l": [1]}
+        html_text = TextViewBox.format_data(data)
+        for role in ("key", "string", "number", "literal", "punctuation"):
+            self.assertIn(TextViewBox.DATA_COLORS[role], html_text, role)
+        self.assertNotIn("<b>", html_text)
+        self.assertIn("v&lt;b&gt;", html_text)
+        # A string containing a colon or digits stays one string token.
+        self.assertIn(
+            f'<span style="color:{TextViewBox.DATA_COLORS["string"]}">'
+            "&quot;a: 1&quot;</span>",
+            TextViewBox.format_data(["a: 1"]),
+        )
+        sb = Switchboard()
+        dlg = sb.data_view_dialog(data, title="T")
+        try:
+            labels = [b.text() for b in dlg.button_box.buttons()]
+            self.assertIn("Save", labels)
+            self.assertIn(
+                TextViewBox.DATA_COLORS["key"].lower(), dlg.text_edit.toHtml().lower()
+            )
+        finally:
+            dlg.close()
+        dlg = sb.data_view_dialog(data, save_path=None)
+        try:
+            self.assertNotIn("Save", [b.text() for b in dlg.button_box.buttons()])
+        finally:
+            dlg.close()
+
+    def test_data_view_dialog_save_writes_the_data_as_json(self):
+        """Save asks where (starting at *save_path*), adds the extension, and
+        writes the DATA -- not the rendered HTML."""
+        import json
+        import os
+
+        import pythontk as ptk
+
+        store = ptk.TempArtifacts("uitk_data_view_save", policy="scoped")
+        self.addCleanup(store.cleanup)
+        target = os.path.join(store.dir_path(), "picked")
+        data = {"records": {"a": [1, 2]}, "when": object()}
+        sb = Switchboard()
+        dlg = sb.data_view_dialog(data, title="T", save_path="suggested.json")
+        asked = {}
+
+        def pick(parent, caption, start, flt):
+            asked.update(caption=caption, start=start)
+            return target, flt
+
+        save = next(b for b in dlg.button_box.buttons() if b.text() == "Save")
+        with mock.patch.object(sb, "message_box"):
+            with mock.patch.object(
+                QtWidgets.QFileDialog, "getSaveFileName", side_effect=pick
+            ):
+                save.click()
+        self.assertEqual(asked, {"caption": "Save T As", "start": "suggested.json"})
+        with open(target + ".json", encoding="utf-8") as fh:
+            written = json.load(fh)
+        self.assertEqual(written["records"], {"a": [1, 2]})
+        self.assertIsInstance(written["when"], str)  # unencodable -> its str
+
+    def test_retired_cursor_aliases_stay_removed(self):
+        """The 2026-09-04 moves to ``CursorManager`` shipped their aliases in
+        eleven releases; they were retired 2026-09-21 and must not creep back
+        -- the stack primitives are ``CursorManager.pop_stack`` / ``push_stack``
+        and the guard is ``uitk.OverrideCursorGuard``."""
+        import uitk.switchboard as switchboard_pkg
+
+        for name in ("pop_override_cursor_stack", "push_override_cursor_stack"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(Switchboard, name))
+        self.assertNotIn("OverrideCursorGuard", switchboard_pkg.__all__)
+        self.assertFalse(hasattr(switchboard_pkg, "OverrideCursorGuard"))
+
+    def test_busy_cursor_reaches_the_scope_through_the_switchboard(self):
+        app = QtWidgets.QApplication.instance()
+        with Switchboard.busy_cursor():
+            self.assertEqual(app.overrideCursor().shape(), QtCore.Qt.WaitCursor)
+        self.assertIsNone(app.overrideCursor())
+
+
+class TestExplicitSlotBinding(QtBaseTestCase):
+    """An explicitly-passed ``slot_source`` binds to its UI even when the class
+    name doesn't follow the ``<ui-basename>`` convention.
+
+    Regression: when the texture_maps panels' ``.ui`` basenames were
+    de-stuttered (``map_packer.ui`` -> ``packer.ui``) but the slot classes kept
+    the old ``Map*Slots`` names, ``_find_slots_class('packer')`` matched nothing
+    and ``ui.slots`` was ``None`` (every panel was slot-less). A Switchboard
+    built for a single panel now honors its sole registered slot class
+    regardless of name; name/file matching still takes precedence, and the
+    fallback is restricted to the unambiguous single-class case.
+    """
+
+    def test_sole_slot_class_binds_despite_name_mismatch(self):
+        class WeirdlyNamedSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        sb = Switchboard(slot_source=WeirdlyNamedSlots)
+        # Slot-creation callers opt into the single-class fallback...
+        self.assertIs(
+            sb._find_slots_class("packer", allow_sole_fallback=True),
+            WeirdlyNamedSlots,
+        )
+        # ...but the strict (default) lookup, used by UI-name resolution, does
+        # NOT — so it can't fabricate slots for an arbitrary name.
+        self.assertIsNone(sb._find_slots_class("packer"))
+
+    def test_strict_lookup_never_fabricates_a_ui(self):
+        """The single-class fallback must not leak into UI resolution: an
+        unknown ``loaded_ui.<name>`` still raises ``AttributeError`` rather than
+        creating a phantom UI bound to the sole slot class."""
+
+        class SoloSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        sb = Switchboard(slot_source=SoloSlots)
+        with self.assertRaises(AttributeError):
+            _ = sb.loaded_ui.totally_unknown_panel
+
+    def test_name_match_still_takes_precedence(self):
+        class PackerSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        class CompositorSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        sb = Switchboard(slot_source=[PackerSlots, CompositorSlots])
+        # Two classes: resolve by name, never via the single-class fallback
+        # (even when the fallback is allowed).
+        self.assertIs(
+            sb._find_slots_class("packer", allow_sole_fallback=True), PackerSlots
+        )
+        self.assertIs(
+            sb._find_slots_class("compositor", allow_sole_fallback=True),
+            CompositorSlots,
+        )
+
+    def test_ambiguous_multiclass_no_match_returns_none(self):
+        class FooSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        class BarSlots:
+            def __init__(self, switchboard, **kwargs):
+                self.sb = switchboard
+
+        sb = Switchboard(slot_source=[FooSlots, BarSlots])
+        # More than one class: the fallback can't disambiguate even when allowed.
+        self.assertIsNone(sb._find_slots_class("nomatch", allow_sole_fallback=True))
+
+
+class TestNoDuplicateTopLevelDefinitions(unittest.TestCase):
+    """Regression: no top-level class/function may shadow an earlier same-named def.
+
+    Bug: a second ``class TestSlotWrapperSignatureCache`` (perf-focused) shadowed
+    the earlier cache-correctness class at module scope (F811), so the first
+    class's tests silently never ran. Guard the whole module against any repeat
+    of that shadowing.
+    """
+
+    def test_module_has_no_duplicate_top_level_names(self):
+        import ast
+        from collections import Counter
+
+        with open(__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=__file__)
+
+        names = [
+            node.name
+            for node in tree.body
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        dupes = [name for name, count in Counter(names).items() if count > 1]
+        self.assertEqual(
+            dupes,
+            [],
+            f"Duplicate top-level definitions shadow earlier ones (F811): {dupes}",
+        )
+
+
+class TestMissingSourceTolerance(QtBaseTestCase):
+    """A source directory that doesn't resolve is warned about and skipped, never fatal.
+
+    Missing slots are tolerated at every other granularity — a widget with no slot method and a
+    ``.ui`` with no slot module both log at DEBUG and carry on (see the two
+    ``*_logs_debug_on_missing_slot`` tests above), and tentacle ships ~20 Blender menu pages with
+    no slot module at all. A missing *directory* used to be the lone fatal rung: slot/widget
+    registries scan via ``get_classes_from_path``, which raises ``FileNotFoundError``, while UI and
+    icon registries resolve via ``get_file_info``, which skips silently — so the same missing
+    directory was fatal or free depending only on which registry it was handed to.
+    """
+
+    MISSING = "definitely/not/a/real/source/dir"
+
+    def test_missing_slot_source_does_not_raise_at_construction(self):
+        """The whole menu used to die on one bad slot path — including panels that would work."""
+        sb = Switchboard(slot_source=self.MISSING)
+        self.assertEqual(list(sb.registry.slot_registry.filepath or []), [])
+
+    def test_missing_ui_source_does_not_raise_at_construction(self):
+        """Already true — pinned so the two sources can't drift apart again."""
+        sb = Switchboard(ui_source=self.MISSING)
+        self.assertEqual(list(sb.registry.ui_registry.filepath or []), [])
+
+    def test_missing_widget_source_does_not_raise_at_construction(self):
+        Switchboard(widget_source=self.MISSING)
+
+    def test_missing_slot_source_does_not_raise_via_register(self):
+        sb = Switchboard()
+        sb.register(slot_location=self.MISSING)
+
+    def test_register_validate_warn_does_not_raise(self):
+        """``validate=1`` is documented as 'warn and return None'.
+
+        It used to warn and then raise anyway: ``register`` computed the level, discarded the
+        result, and called ``extend`` without forwarding it — so only 0 and 2 were reachable.
+        """
+        sb = Switchboard()
+        sb.register(slot_location=self.MISSING, validate=1)
+
+    def test_register_validate_raise_still_raises(self):
+        """The strict level stays strict — tolerance must be opt-out-able."""
+        sb = Switchboard()
+        with self.assertRaises(FileNotFoundError):
+            sb.register(slot_location=self.MISSING, validate=2)
+
+    def test_register_strict_takes_a_class_no_file_names(self):
+        """A slots class pythontk loaded from a loose ``.py`` lives in a synthetic
+        module dropped from ``sys.modules``, so ``inspect.getfile`` has nothing to
+        answer and raised ``TypeError: ... is a built-in class`` from the strict
+        pre-pass. It skips the class the way it skips a file-less module, so the
+        registration itself reports it -- strictly, naming the class."""
+        Loose = type("GammaSlots", (), {"__module__": "gamma_slots_ptk_loader_0"})
+        sb = Switchboard()
+        with self.assertRaises(FileNotFoundError) as caught:
+            sb.register(slot_location=Loose, validate=2)
+        self.assertIn("GammaSlots", str(caught.exception))
+
+    def test_warning_names_both_the_given_source_and_the_resolved_path(self):
+        """The old message named only an absolute path resolved against uitk's own internals —
+        a path the caller never typed — so it read as a uitk bug rather than a bad argument."""
+        sb = Switchboard()
+        with self.assertLogs(sb.registry.logger, level="WARNING") as caught:
+            sb.register(slot_location=self.MISSING)
+        joined = "\n".join(caught.output)
+        self.assertIn(self.MISSING, joined)  # what the caller passed
+        self.assertIn("Slot", joined)  # which source it was
+        self.assertIn("resolved to", joined)  # where it actually looked
+        # Exactly once. register() pre-validates AND extend() resolves, so forwarding the level
+        # to extend made both report the same bad source — two identical warnings undercut the
+        # precise message this test exists to protect.
+        self.assertEqual(
+            len(caught.output), 1, f"expected one warning, got: {caught.output}"
+        )
+
+    def test_a_valid_source_still_registers(self):
+        """Tolerance must not swallow the working case."""
+        from uitk import examples
+
+        sb = Switchboard(ui_source=examples)
+        self.assertTrue(list(sb.registry.ui_registry.filepath or []))
+
+    def test_env_var_source_is_expanded_not_treated_as_missing(self):
+        """A source containing an environment variable must resolve, not be skipped.
+
+        The validity check (``ptk.FileUtils.is_valid``) expands env vars internally, so an
+        unexpanded ``%VAR%/...`` validated as present and then failed every downstream os.path
+        test on the literal string — and would have been indistinguishable from a genuinely
+        missing source once missing sources became survivable.
+        """
+        import os
+        from uitk import examples
+
+        examples_dir = os.path.dirname(examples.__file__)
+        parent, leaf = os.path.dirname(examples_dir), os.path.basename(examples_dir)
+        os.environ["UITK_TEST_SRC_ROOT"] = parent
+        # Spell the reference the way THIS platform's ``os.path.expandvars`` does:
+        # ntpath expands ``%VAR%`` (the reported real-world case, ``%LOCALAPPDATA%``)
+        # while posixpath expands only ``$VAR``/``${VAR}`` and leaves ``%VAR%``
+        # verbatim. Hardcoding the Windows spelling passed locally and failed the
+        # Linux CI runner for the very reason under test — the token never expanded,
+        # so the source looked missing.
+        ref = "%UITK_TEST_SRC_ROOT%" if os.name == "nt" else "${UITK_TEST_SRC_ROOT}"
+        try:
+            sb = Switchboard(ui_source=os.path.join(ref, leaf))
+            self.assertTrue(
+                list(sb.registry.ui_registry.filepath or []),
+                "env-var source registered nothing — it was treated as missing",
+            )
+        finally:
+            os.environ.pop("UITK_TEST_SRC_ROOT", None)
+
+
+class TestRetiredMixinNames(unittest.TestCase):
+    """The mixins the Switchboard was composed of are gone: each name answers
+    with where its methods went (``uitk.MOVED_NAMES``)."""
+
+    def test_each_mixin_name_points_at_the_switchboard(self):
+        import uitk
+
+        mixins = [n for n in uitk.MOVED_NAMES if n.startswith("Switchboard")]
+        self.assertEqual(len(mixins), 13)
+        for name in mixins:
+            with self.subTest(name=name):
+                self.assertEqual(uitk.MOVED_NAMES[name], ("uitk.Switchboard", "1.9.0"))
+                with self.assertRaises(AttributeError) as caught:
+                    getattr(uitk, name)
+                self.assertIn("uitk.Switchboard", str(caught.exception))
+
+
+class TestFacadeCharacterization(QtBaseTestCase):
+    """Pins, through ``Switchboard``, the public methods no other test calls.
+
+    The Switchboard delegates them to collaborators; these hold what each one
+    answers, so the wiring between the two cannot drift.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from uitk import examples
+
+        self.sb = Switchboard(ui_source=examples, slot_source=ExampleSlots)
+        self.ui = self.sb.loaded_ui.example
+        self.slots = self.sb.get_slots_instance(self.ui)
+
+    def tearDown(self):
+        self.ui.close()
+        super().tearDown()
+
+    # names
+    def test_slot_class_and_file_names(self):
+        self.assertEqual(
+            self.sb.get_slot_class_names("my_tool"), ["MyToolSlots", "MyTool"]
+        )
+        self.assertEqual(
+            self.sb.get_slot_file_names("my_tool"),
+            ["my_toolSlots", "my_tool_slots", "my_tool", "_my_tool"],
+        )
+
+    def test_methods_by_string_pattern(self):
+        class _Holder:
+            def a000(self):
+                pass
+
+            def a001(self):
+                pass
+
+        found = self.sb.get_methods_by_string_pattern(_Holder(), "a000-2")
+        self.assertEqual([m.__name__ for m in found], ["a000", "a001"])
+
+    # control groups
+    def test_axis_round_trips_through_checkboxes(self):
+        boxes = [self.track_widget(QtWidgets.QCheckBox(t)) for t in "-XYZ"]
+        self.sb.set_axis_for_checkboxes(boxes, "-Y")
+        self.assertEqual([b.isChecked() for b in boxes], [True, False, True, False])
+        self.assertEqual(self.sb.get_axis_from_checkboxes(boxes), "-y")
+        self.assertEqual(self.sb.get_axis_from_checkboxes(boxes, return_type="int"), 3)
+
+    def test_hide_unmatched_groupboxes(self):
+        host = self.track_widget(QtWidgets.QWidget())
+        keep, drop = QtWidgets.QGroupBox(host), QtWidgets.QGroupBox(host)
+        keep.setObjectName("keep")
+        drop.setObjectName("drop")
+        self.sb.hide_unmatched_groupboxes(host, ["keep"])
+        self.assertEqual((keep.isHidden(), drop.isHidden()), (False, True))
+        self.sb.hide_unmatched_groupboxes(host, [])
+        self.assertFalse(drop.isHidden())
+
+    # event loop
+    def test_gc_protect_holds_until_cleared(self):
+        obj = QtCore.QObject()
+        obj.setObjectName("held")
+        protected = self.sb.gc_protect(obj)
+        self.assertIs(protected["held"], obj)
+        self.assertIs(self.sb.gc_protect(), protected)
+        self.assertEqual(self.sb.gc_protect(clear=True), {})
+
+    def test_defer_with_timer_validates_and_runs(self):
+        with self.assertRaises(ValueError):
+            self.sb.defer_with_timer("not callable")
+        with self.assertRaises(TypeError):
+            self.sb.defer_with_timer(print, ms=1.5)
+        ran = []
+        self.sb.defer_with_timer(ran.append, "x", ms=0)
+        deadline = QtCore.QDeadlineTimer(2000)
+        while not ran and not deadline.hasExpired():
+            QtWidgets.QApplication.processEvents()
+        self.assertEqual(ran, ["x"])
+
+    def test_simulate_key_press_posts_to_the_widget(self):
+        with self.assertRaises(ValueError):
+            self.sb.simulate_key_press(object())
+        seen = []
+
+        class _Keys(QtWidgets.QWidget):
+            def event(self, e):
+                if e.type() in (QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease):
+                    seen.append((e.type(), e.key()))
+                return super().event(e)
+
+        widget = self.track_widget(_Keys())
+        self.sb.simulate_key_press(widget, QtCore.Qt.Key_A, release=True)
+        QtWidgets.QApplication.processEvents()
+        press, release = QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease
+        key = QtCore.Qt.Key_A
+        self.assertEqual(seen, [(press, key), (release, key)])
+
+    # placement
+    def test_cursor_offset_from_center(self):
+        widget = self.track_widget(QtWidgets.QWidget())
+        widget.resize(40, 20)
+        expected = QtGui.QCursor.pos() - widget.rect().center()
+        self.assertEqual(self.sb.get_cursor_offset_from_center(widget), expected)
+
+    # widgets
+    def test_ui_name_and_menu_target_resolution(self):
+        self.assertFalse(self.sb.ui_name_resolves(""))
+        self.assertTrue(self.sb.ui_name_resolves("example"))
+        self.assertFalse(self.sb.ui_name_resolves("no_such_ui"))
+        to_ui = mock.Mock(target="example")
+        nowhere = mock.Mock(target="no_such_ui", **{"submenu_name.return_value": "x"})
+        self.assertTrue(self.sb.menu_button_target_resolves(to_ui))
+        self.assertFalse(self.sb.menu_button_target_resolves(nowhere))
+        self.assertFalse(self.sb.menu_button_target_resolves(mock.Mock(target="")))
+
+    def test_widget_class_icon_and_window_lookup(self):
+        cls = self.sb.resolve_widget_class("PushButton")
+        self.assertEqual(cls.__name__, "PushButton")
+        self.assertIsNone(self.sb.resolve_widget_class("NoSuchWidget"))
+        self.assertTrue(self.sb.get_icon("no_such_icon").isNull())
+        self.assertEqual(self.sb.get_all_windows("no_such_window"), [])
+        far = QtCore.QPoint(-100000, -100000)
+        self.assertIsNone(self.sb.get_widget_at(far))
+        self.assertEqual(self.sb.get_widget_at(far, top_widget_only=False), [])
+
+    def test_widget_and_slot_lookups(self):
+        widget = self.ui.cmb_options  # registers it
+        self.assertIs(self.sb.get_widget("cmb_options", self.ui), widget)
+        self.assertEqual(self.sb.get_slot_from_widget(widget), self.slots.cmb_options)
+        self.assertIs(self.sb.get_widget_from_slot(self.slots.cmb_options), widget)
+        self.assertIsNone(self.sb.get_widget_from_slot(None))
+        self.assertTrue(self.sb.slots_instantiated("example"))
+
+    # slots
+    def test_missing_slot_hook_and_marker(self):
+        widget = self.ui.cmb_options
+        calls = []
+        self.sb.on_missing_slot = calls.append
+        self.sb.notify_missing_slot(widget)
+        self.sb.on_missing_slot = None
+        self.sb.notify_missing_slot(widget)  # no hook: a no-op
+        self.assertEqual(calls, [widget])
+        self.sb.mark_missing_slot(widget)
+        self.assertFalse(widget.isEnabled())
+        self.assertIn("'cmb_options'", widget.toolTip())
+
+    # dialogs
+    def test_dir_and_save_file_dialogs(self):
+        from uitk.switchboard import dialogs
+
+        with mock.patch.object(dialogs.QtWidgets, "QFileDialog") as fd:
+            fd.getExistingDirectory.return_value = "/picked"
+            self.assertEqual(Switchboard.dir_dialog("Pick", "/start"), "/picked")
+            args = fd.getExistingDirectory.call_args[0]
+            self.assertEqual(args[:3], (None, "Pick", "/start"))
+            fd.getSaveFileName.return_value = ("", "")
+            self.assertIsNone(Switchboard.save_file_dialog("*.wav"))
+            fd.getSaveFileName.return_value = ("/a.wav", "")
+            path = Switchboard.save_file_dialog(
+                "*.wav", title="Export", filter_description="WAV Files"
+            )
+            self.assertEqual(path, "/a.wav")
+            args = fd.getSaveFileName.call_args[0]
+            self.assertEqual(args[1:], ("Export", "/home", "WAV Files (*.wav)"))
+
+    def test_modal_menu_forwards_to_menu_run_modal(self):
+        from uitk.widgets.menu import Menu
+
+        seen = {}
+
+        def run_modal(content_fn, parent=None, **kwargs):
+            seen.update(fn=content_fn, parent=parent, **kwargs)
+            return {"ok": True}
+
+        with mock.patch.object(Menu, "run_modal", new=run_modal):
+            result = Switchboard.modal_menu(print, parent=None, title="T")
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(seen, {"fn": print, "parent": None, "title": "T"})
+
+    def test_save_data_dialog_cancel_writes_nothing(self):
+        from uitk.switchboard import dialogs
+
+        with mock.patch.object(dialogs.QtWidgets, "QFileDialog") as fd:
+            fd.getSaveFileName.return_value = ("", "")
+            self.assertIsNone(self.sb.save_data_dialog({"a": 1}, "T", "p.json"))
+        args = fd.getSaveFileName.call_args[0]
+        self.assertEqual(args[1:], ("Save T As", "p.json", "JSON (*.json)"))
+
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

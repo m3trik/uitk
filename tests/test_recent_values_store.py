@@ -1,0 +1,485 @@
+# !/usr/bin/python
+# coding=utf-8
+"""Unit tests for the widget-free RecentValuesStore model.
+
+RecentValuesStore is the shared source-of-truth for "recent values" history.
+It owns the list, persistence, dedup/normalize, validity filtering, display
+formatting and a change-observer hook — so an option-box popup, an
+ExpandableList sublist, or any other presenter can render the same data.
+
+These tests are Qt-light: the store only touches ``QSettings`` (QtCore) for
+persistence, never widgets, so no QApplication is required.
+
+Run standalone: python tests/test_recent_values_store.py
+"""
+
+import os
+import tempfile
+import unittest
+
+import conftest  # noqa: F401 — inserts the package root on sys.path
+
+from qtpy import QtCore
+from uitk.managers.settings_manager import SettingsManager
+from uitk.managers.recent_values_store import (
+    PinnedValueEntry,
+    RecentValuesStore,
+    RecentValueEntry,
+)
+
+normalize_value = RecentValuesStore.normalize_value
+_is_filesystem_path = RecentValuesStore._is_filesystem_path
+_build_display_map_smart_path = RecentValuesStore._build_display_map_smart_path
+
+
+def _ini_settings():
+    """Return an isolated SettingsManager backed by a temp INI file.
+
+    Keeps persistence tests off the real registry/config root.
+    """
+    tmp = tempfile.NamedTemporaryFile(suffix=".ini", delete=False)
+    tmp.close()
+    qs = QtCore.QSettings(tmp.name, QtCore.QSettings.IniFormat)
+    return SettingsManager(qsettings=qs, namespace="test_recent"), tmp.name
+
+
+class TestModelBasics(unittest.TestCase):
+    def test_record_front_inserts_and_dedups(self):
+        s = RecentValuesStore()
+        s.record("a")
+        s.record("b")
+        s.record("a")  # moves to front, no duplicate
+        self.assertEqual(s.values, ["a", "b"])
+
+    def test_record_trims_to_max_recent(self):
+        s = RecentValuesStore(max_recent=2)
+        s.record("a")
+        s.record("b")
+        s.record("c")
+        self.assertEqual(s.values, ["c", "b"])
+
+    def test_record_ignores_empty(self):
+        s = RecentValuesStore()
+        s.record("")
+        s.record("   ")
+        s.record(None)
+        self.assertEqual(s.values, [])
+
+    def test_add_seeds_without_reordering(self):
+        s = RecentValuesStore()
+        s.add("a")
+        s.add("b")
+        s.add("a")  # already present — no-op
+        self.assertEqual(s.values, ["a", "b"])
+
+    def test_remove(self):
+        s = RecentValuesStore()
+        s.record("a")
+        s.record("b")
+        s.remove("a")
+        self.assertEqual(s.values, ["b"])
+
+    def test_clear(self):
+        s = RecentValuesStore()
+        s.record("a")
+        s.clear()
+        self.assertEqual(s.values, [])
+
+    def test_add_into_full_store_drops_oldest_not_newest(self):
+        # The list is most-recent-first. Seeding an entry into a full store
+        # must drop the OLDEST (tail), never the user's most recent entries
+        # (head). Prior code sliced [-max:], discarding the most recent.
+        s = RecentValuesStore(max_recent=3)
+        s.record("a")
+        s.record("b")
+        s.record("c")  # -> ["c", "b", "a"] (c most recent)
+        self.assertEqual(s.values, ["c", "b", "a"])
+
+        s.add("seed")  # store already full; seed is a lower-priority append
+        # The most recent user entries survive; the seeded (oldest) value is
+        # dropped rather than "c".
+        self.assertEqual(s.values, ["c", "b", "a"])
+        self.assertIn("c", s.values)
+
+    def test_add_respects_max_recent_from_empty(self):
+        s = RecentValuesStore(max_recent=2)
+        s.add("a")
+        s.add("b")
+        s.add("c")  # over capacity: newest seed is trimmed (tail/oldest)
+        self.assertEqual(s.values, ["a", "b"])
+
+
+class TestNormalize(unittest.TestCase):
+    def test_path_dedup_folds_separators_and_case_only_where_the_os_does(self):
+        s = RecentValuesStore()
+        s.record("C:/Dir/Proj")
+        s.record("C:\\Dir\\Proj")  # same path, other separator
+        self.assertEqual(len(s.values), 1)
+        s.record("c:/dir/proj")  # other case: the same folder only on Windows
+        self.assertEqual(len(s.values), 1 if os.name == "nt" else 2)
+
+    def test_normalize_value_strips_and_folds_paths(self):
+        self.assertEqual(normalize_value("  C:/Dir  "), normalize_value("C:\\Dir"))
+        # A case-sensitive filesystem keeps /proj/Shot and /proj/shot apart.
+        self.assertEqual(
+            normalize_value("/proj/Shot") == normalize_value("/proj/shot"),
+            os.name == "nt",
+        )
+        # Non-path strings are only stripped, not lowercased.
+        self.assertEqual(normalize_value("  Hello "), "Hello")
+
+
+class TestRegexValues(unittest.TestCase):
+    """A naming rule is not a path: ``\\d`` and ``\\D`` are different patterns.
+
+    Bug: any string holding a ``/`` or ``\\`` was normalized as a path
+    (separators unified, case folded on Windows), so ``{scene:\\d+->}`` and
+    ``{scene:\\D+->}`` compared equal -- recording one evicted the other -- and
+    ``basename`` display split the rule at its backslash. Found 2026-10-31 on
+    the Scene Exporter's name field, whose history holds such rules.
+    """
+
+    DIGITS = r"{scene:\d+->}_v{n:03d}"
+    NON_DIGITS = r"{scene:\D+->}_v{n:03d}"
+
+    def test_rules_differing_only_by_case_stay_distinct(self):
+        s = RecentValuesStore()
+        s.record(self.DIGITS)
+        s.record(self.NON_DIGITS)
+        self.assertEqual(s.values, [self.NON_DIGITS, self.DIGITS])
+
+    def test_a_rule_is_kept_verbatim(self):
+        self.assertEqual(normalize_value(self.DIGITS), self.DIGITS)
+
+    def test_basename_leaves_a_rule_whole(self):
+        s = RecentValuesStore(display_format="basename")
+        self.assertEqual(s.display_map([self.DIGITS])[self.DIGITS], self.DIGITS)
+
+    def test_a_colon_after_one_letter_is_not_a_drive(self):
+        self.assertFalse(_is_filesystem_path("v:{n}"))
+        self.assertTrue(_is_filesystem_path("D:\\Projects"))
+        self.assertTrue(_is_filesystem_path("C:"))
+
+
+class TestPins(unittest.TestCase):
+    """Pinned values: chosen, named, kept apart from the history's churn."""
+
+    RULE = r"{scene:_bar.*->}_v{n:03d}"
+
+    def test_pin_is_newest_first_and_dedups(self):
+        s = RecentValuesStore()
+        self.assertTrue(s.pin("a"))
+        self.assertTrue(s.pin("b"))
+        self.assertFalse(s.pin(" a "), "the same value pinned twice")
+        self.assertEqual(s.pinned, ["b", "a"])
+        self.assertTrue(s.is_pinned("a"))
+
+    def test_blank_is_never_pinned(self):
+        s = RecentValuesStore()
+        self.assertFalse(s.pin("   "))
+        self.assertFalse(s.pin(None))
+        self.assertEqual(s.pinned, [])
+
+    def test_a_pinned_value_holds_no_history_slot(self):
+        s = RecentValuesStore(max_recent=2)
+        s.record("a")
+        s.pin("a")
+        s.record("b")
+        s.record("c")
+        # "a" shows in the pinned section, so the history still shows two.
+        self.assertEqual(s.values, ["c", "b", "a"])
+        s.record("d")
+        self.assertEqual(s.values, ["d", "c", "a"])
+
+    def test_unpin_falls_back_into_history(self):
+        s = RecentValuesStore()
+        s.pin(self.RULE)
+        self.assertTrue(s.unpin(self.RULE))
+        self.assertEqual(s.pinned, [])
+        self.assertEqual(s.values, [self.RULE], "an unpin is one click to undo")
+
+    def test_unpin_of_an_aged_out_value_returns_it_to_the_front(self):
+        """Bug: a pin past ``max_recent`` sat at the history's tail, so the
+        trim after unpinning dropped it -- one click lost the value."""
+        s = RecentValuesStore(max_recent=2)
+        s.record("a")
+        s.pin("a")
+        for v in ("b", "c", "d"):
+            s.record(v)
+        s.unpin("a")
+        self.assertEqual(s.values, ["a", "d"])
+
+    def test_max_pinned_zero_pins_nothing_and_says_so(self):
+        s = RecentValuesStore(max_pinned=0)
+        self.assertFalse(s.pin("z"))
+        self.assertEqual(s.pinned, [])
+
+    def test_dropping_the_oldest_pin_keeps_the_history_in_bounds(self):
+        s = RecentValuesStore(max_recent=1, max_pinned=1)
+        s.record("a")
+        s.pin("a")
+        s.record("b")
+        s.pin("c")  # drops "a" from the pins: it now counts as history
+        self.assertEqual(s.values, ["b"])
+
+    def test_unpin_without_history_drops_the_value(self):
+        s = RecentValuesStore(max_recent=0)
+        s.pin("x")
+        s.unpin("x")
+        self.assertEqual((s.pinned, s.values), ([], []))
+
+    def test_alias_names_a_pin(self):
+        s = RecentValuesStore()
+        s.pin(self.RULE)
+        self.assertTrue(s.set_alias(self.RULE, "  Strip _bar, versioned "))
+        entry = s.pinned_entry(self.RULE)
+        self.assertEqual(entry.alias, "Strip _bar, versioned")
+        self.assertEqual(entry.display_text, "Strip _bar, versioned")
+        self.assertEqual(entry.value, self.RULE, "the alias never replaces the value")
+
+    def test_a_blank_or_verbatim_alias_clears_it(self):
+        s = RecentValuesStore()
+        s.pin(self.RULE, alias="Named")
+        s.set_alias(self.RULE, "")
+        self.assertIsNone(s.pinned_entry(self.RULE).alias)
+        s.set_alias(self.RULE, self.RULE)
+        self.assertIsNone(s.pinned_entry(self.RULE).alias)
+
+    def test_alias_on_an_unpinned_value_is_refused(self):
+        s = RecentValuesStore()
+        s.record("a")
+        self.assertFalse(s.set_alias("a", "Named"))
+
+    def test_max_pinned_drops_the_oldest_pin(self):
+        s = RecentValuesStore(max_pinned=2)
+        for v in ("a", "b", "c"):
+            s.pin(v)
+        self.assertEqual(s.pinned, ["c", "b"])
+
+    def test_clear_keeps_pins(self):
+        s = RecentValuesStore()
+        s.record("a")
+        s.pin("p")
+        s.clear()
+        self.assertEqual((s.values, s.pinned), ([], ["p"]))
+        s.clear_pinned()
+        self.assertEqual(s.pinned, [])
+
+    def test_pin_ops_notify(self):
+        s = RecentValuesStore()
+        calls = []
+        s.subscribe(lambda: calls.append(1))
+        s.pin("a")
+        s.set_alias("a", "A")
+        s.unpin("a")
+        self.assertEqual(len(calls), 3)
+
+    def test_entry_equals_its_plain_value(self):
+        self.assertEqual(PinnedValueEntry("C:/Dir", alias="x"), "C:\\Dir")
+        self.assertEqual(
+            PinnedValueEntry(RecentValueEntry("data", display="shown")), "data"
+        )
+
+
+class TestPinPersistence(unittest.TestCase):
+    def test_pins_and_aliases_survive_a_new_store(self):
+        sm, path = _ini_settings()
+        try:
+            s1 = RecentValuesStore(settings=sm)
+            s1.record("a")
+            s1.pin(TestPins.RULE, alias="Strip _bar")
+            s1.pin(RecentValueEntry("C:/a/Rock_Normal.png", display="Rock"))
+            s2 = RecentValuesStore(settings=sm)
+            self.assertEqual(s2.values, ["a"])
+            self.assertEqual(len(s2.pinned), 2)
+            self.assertIsInstance(s2.pinned[0], RecentValueEntry)
+            self.assertEqual(s2.pinned_entry(TestPins.RULE).alias, "Strip _bar")
+        finally:
+            os.unlink(path)
+
+    def test_legacy_pin_records_load_as_pins(self):
+        """``PinValuesOption`` stored ``{"value", "alias"}`` dicts under
+        ``entries`` -- the key the history uses. They load as pins."""
+        sm, path = _ini_settings()
+        try:
+            sm.setValue(
+                "entries",
+                [
+                    {"value": "C:/proj/a", "alias": "A"},
+                    {"value": "C:/proj/b", "alias": None},
+                ],
+            )
+            s = RecentValuesStore(settings=sm, max_recent=0)
+            self.assertEqual(s.pinned, ["C:/proj/a", "C:/proj/b"])
+            self.assertEqual(s.pinned_entry("C:/proj/a").alias, "A")
+            self.assertEqual(s.values, [])
+            # Saved back in the current schema: still pins on the next load.
+            s.pin("C:/proj/c")
+            self.assertEqual(
+                RecentValuesStore(settings=sm, max_recent=0).pinned,
+                ["C:/proj/c", "C:/proj/a", "C:/proj/b"],
+            )
+        finally:
+            os.unlink(path)
+
+
+class TestValidator(unittest.TestCase):
+    def test_valid_values_filters(self):
+        s = RecentValuesStore(validator=lambda v: v != "bad")
+        s.record("bad")
+        s.record("good")
+        self.assertEqual(s.values, ["good", "bad"])  # raw list keeps both
+        self.assertEqual(s.valid_values(), ["good"])  # filtered view drops bad
+
+    def test_prune_invalid_removes_and_returns(self):
+        s = RecentValuesStore(validator=lambda v: v != "bad")
+        s.record("bad")
+        s.record("good")
+        removed = s.prune_invalid()
+        self.assertEqual(removed, ["bad"])
+        self.assertEqual(s.values, ["good"])
+
+    def test_no_validator_means_all_valid(self):
+        s = RecentValuesStore()
+        s.record("a")
+        self.assertEqual(s.valid_values(), ["a"])
+        self.assertEqual(s.prune_invalid(), [])
+
+
+class TestDisplayMap(unittest.TestCase):
+    def test_basename(self):
+        s = RecentValuesStore(display_format="basename")
+        dm = s.display_map(["C:/a/b/proj1", "C:/x/proj2"])
+        self.assertEqual(dm["C:/a/b/proj1"], "proj1")
+        self.assertEqual(dm["C:/x/proj2"], "proj2")
+
+    def test_callable(self):
+        s = RecentValuesStore(display_format=lambda v: f"<{v}>")
+        dm = s.display_map(["a"])
+        self.assertEqual(dm["a"], "<a>")
+
+    def test_auto_strips_common_prefix(self):
+        s = RecentValuesStore(display_format="auto")
+        vals = ["C:/proj/scenes/a", "C:/proj/scenes/b"]
+        dm = s.display_map(vals)
+        # Common prefix removed, leaf retained.
+        self.assertTrue(dm[vals[0]].endswith("a"))
+        self.assertTrue(dm[vals[1]].endswith("b"))
+        self.assertNotIn("C:/proj/scenes", dm[vals[0]])
+
+    def test_truncate_fallback_returns_strings(self):
+        s = RecentValuesStore(display_format="truncate")
+        long = "x" * 400
+        dm = s.display_map([long])
+        self.assertIsInstance(dm[long], str)
+        self.assertLess(len(dm[long]), len(long))
+
+    def test_display_map_defaults_to_current_values(self):
+        s = RecentValuesStore(display_format="basename")
+        s.record("C:/a/proj1")
+        dm = s.display_map()
+        self.assertEqual(dm["C:/a/proj1"], "proj1")
+
+
+class TestObserver(unittest.TestCase):
+    def test_subscribe_fires_on_mutation(self):
+        s = RecentValuesStore()
+        calls = []
+        s.subscribe(lambda: calls.append(1))
+        s.record("a")
+        s.record("b")
+        s.remove("a")
+        s.clear()  # "b" still present, so this is a real mutation
+        self.assertEqual(len(calls), 4)
+
+    def test_noop_mutation_does_not_notify(self):
+        s = RecentValuesStore()
+        calls = []
+        s.subscribe(lambda: calls.append(1))
+        s.remove("absent")  # nothing to remove
+        s.clear()  # already empty
+        self.assertEqual(calls, [])
+
+    def test_subscriber_exception_does_not_break_notify(self):
+        s = RecentValuesStore()
+        s.subscribe(lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+        ok = []
+        s.subscribe(lambda: ok.append(1))
+        s.record("a")  # must not raise
+        self.assertEqual(ok, [1])
+
+
+class TestPersistence(unittest.TestCase):
+    def test_values_survive_a_new_store_on_same_settings(self):
+        sm, path = _ini_settings()
+        try:
+            s1 = RecentValuesStore(settings=sm)
+            s1.record("a")
+            s1.record("b")
+            # New store on the same backing settings reloads the history.
+            s2 = RecentValuesStore(settings=sm)
+            self.assertEqual(s2.values, ["b", "a"])
+        finally:
+            os.unlink(path)
+
+    def test_no_settings_means_in_memory_only(self):
+        s = RecentValuesStore()
+        s.record("a")
+        # No persistence configured — nothing to assert beyond no crash.
+        self.assertEqual(s.values, ["a"])
+
+
+class TestRecentValueEntry(unittest.TestCase):
+    """Entries carry a separate display string while deduping by their data."""
+
+    def test_entry_dedups_against_plain_value_by_data(self):
+        s = RecentValuesStore()
+        s.record("C:/a/Rock_Normal.png")
+        s.record(RecentValueEntry("C:/a/Rock_Normal.png", display="Rock"))
+        # Same data (case/sep-insensitive) → one entry, the latest wins.
+        self.assertEqual(len(s.values), 1)
+        self.assertIsInstance(s.values[0], RecentValueEntry)
+
+    def test_record_ignores_entry_with_empty_data(self):
+        s = RecentValuesStore()
+        s.record(RecentValueEntry("   ", display="x"))
+        s.record(RecentValueEntry(None, display="y"))
+        self.assertEqual(s.values, [])
+
+    def test_display_map_prefers_entry_display(self):
+        s = RecentValuesStore(display_format="basename")
+        entry = RecentValueEntry("C:/a/b/Rock_Normal.png", display="Rock set")
+        plain = "C:/x/proj1"
+        dm = s.display_map([entry, plain])
+        self.assertEqual(dm[entry], "Rock set")  # explicit display wins
+        self.assertEqual(dm[plain], "proj1")  # plain still formatted
+
+    def test_entry_survives_persistence_round_trip(self):
+        sm, path = _ini_settings()
+        try:
+            s1 = RecentValuesStore(settings=sm)
+            s1.record(RecentValueEntry("C:/a/Rock_Normal.png", display="Rock"))
+            s2 = RecentValuesStore(settings=sm)
+            self.assertEqual(len(s2.values), 1)
+            restored = s2.values[0]
+            self.assertIsInstance(restored, RecentValueEntry)
+            self.assertEqual(restored.display, "Rock")
+            self.assertEqual(restored.data, "C:/a/Rock_Normal.png")
+        finally:
+            os.unlink(path)
+
+
+class TestHelpersStillImportable(unittest.TestCase):
+    """recent_values.py re-exports these; pin the canonical home."""
+
+    def test_is_filesystem_path(self):
+        self.assertTrue(_is_filesystem_path("C:/x"))
+        self.assertTrue(_is_filesystem_path("/home/x"))
+        self.assertFalse(_is_filesystem_path("plain"))
+
+    def test_build_display_map_smart_path_needs_two_paths(self):
+        self.assertIsNone(_build_display_map_smart_path(["only-one"]))
+
+
+if __name__ == "__main__":
+    unittest.main()
