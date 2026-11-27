@@ -19,7 +19,9 @@ it:
   logical indices, under one settings branch) and applied by :meth:`restore`;
 * optional columns, hidden until the user's own layout says otherwise
   (``hidden_by_default``), and :attr:`ColumnConfig.visibility_changed`, so a
-  host whose column is costly to fill can fill it only once it shows.
+  host whose column is costly to fill can fill it only once it shows;
+* an authored order (``default_order``) shown while the user has saved none,
+  never written as theirs.
 
 The plain menu is a ``QMenu`` of checkable actions: a flat list of toggles,
 where ``ContextMenu``'s flyouts and option boxes have nothing to add, and a
@@ -148,6 +150,10 @@ class ColumnConfig(QtCore.QObject):
         hidden_by_default: Logical columns :meth:`restore` hides while no
             layout has been saved -- optional columns a user turns on. Once one
             is saved, it decides alone.
+        default_order: The logical columns left to right as :meth:`restore`
+            shows them while no order has been saved (a column added last by
+            index, drawn where it belongs); never written as the user's layout.
+            The user's own order, once saved, decides alone.
     """
 
     #: ``(column, hidden)`` -- a column was shown or hidden through
@@ -168,11 +174,13 @@ class ColumnConfig(QtCore.QObject):
         movable: bool = True,
         reorderable: bool = False,
         hidden_by_default: Iterable[int] = (),
+        default_order: Iterable[int] = (),
     ):
         header = self.header_of(view)
         super().__init__(header)
         self.locked = set()
         self.hidden_by_default = set()
+        self.default_order = []
         self.reorderable = False
         self._settings = None
         self._moving = False
@@ -191,6 +199,7 @@ class ColumnConfig(QtCore.QObject):
             movable,
             reorderable,
             hidden_by_default,
+            default_order,
         )
         header.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         header.customContextMenuRequested.connect(self.show_menu)
@@ -208,18 +217,19 @@ class ColumnConfig(QtCore.QObject):
         movable: bool = True,
         reorderable: bool = False,
         hidden_by_default: Iterable[int] = (),
+        default_order: Iterable[int] = (),
     ) -> "ColumnConfig":
         """*view*'s column config, made on the first call and re-pointed after.
 
         Parameters are those of the class. A second call keeps the one menu
         and reconfigures it (settings, key, locked columns, movable,
-        reorderable, the columns hidden by default).
+        reorderable, the columns hidden by default, the default order).
         """
         args = (settings, settings_key, locked, app, movable, reorderable)
         config = cls.of(view)
         if config is None:
-            return cls(view, *args, hidden_by_default)
-        config.configure(view, *args, hidden_by_default)
+            return cls(view, *args, hidden_by_default, default_order)
+        config.configure(view, *args, hidden_by_default, default_order)
         return config
 
     @classmethod
@@ -243,6 +253,7 @@ class ColumnConfig(QtCore.QObject):
         movable: bool = True,
         reorderable: bool = False,
         hidden_by_default: Iterable[int] = (),
+        default_order: Iterable[int] = (),
     ) -> None:
         """Point the layout at *settings* / *settings_key*; lock *locked*."""
         key = settings_key or view.objectName() or type(view).__name__
@@ -251,6 +262,7 @@ class ColumnConfig(QtCore.QObject):
         self._settings = settings.branch(key)
         self.locked = set(locked)
         self.hidden_by_default = set(hidden_by_default)
+        self.default_order = list(default_order)
         self.reorderable = bool(reorderable)
         self.header.setSectionsMovable(movable)
 
@@ -498,7 +510,12 @@ class ColumnConfig(QtCore.QObject):
         self.save()
 
     def save(self) -> None:
-        """Write the visibility and the visual order to the settings."""
+        """Write the visibility and the visual order to the settings.
+
+        The order is written once it is the user's: while it is still the
+        :attr:`default_order` and none has been saved, it is left unwritten,
+        so a show or hide never saves the default as their layout.
+        """
         s = self._settings
         if s is None:
             return
@@ -507,7 +524,9 @@ class ColumnConfig(QtCore.QObject):
         s.setValue(
             "hidden_columns", [c for c in range(count) if header.isSectionHidden(c)]
         )
-        s.setValue("column_order", self.order())
+        order = self.order()
+        if order != self.default_order or s.value("column_order", None) is not None:
+            s.setValue("column_order", order)
         s.sync()
 
     def restore(self) -> None:
@@ -516,7 +535,9 @@ class ColumnConfig(QtCore.QObject):
         An order saved for another number of columns is ignored, and a locked
         column shows whatever was saved. With no layout saved yet, the
         :attr:`hidden_by_default` columns are hidden; once one is saved -- even
-        one hiding nothing -- it alone decides.
+        one hiding nothing -- it alone decides. With no order saved for these
+        columns, the :attr:`default_order` is shown (when it names every
+        column once); it is not saved, and the user's own order outranks it.
         """
         s = self._settings
         if s is None:
@@ -541,4 +562,8 @@ class ColumnConfig(QtCore.QObject):
         order = s.value("column_order", [])
         if order and len(order) == count:
             self._move_to(order)
+        elif sorted(self.default_order) == list(range(count)):
+            # No order of the user's for these columns: the authored one, moved
+            # as a restore moves (never saved: it is not their layout).
+            self._move_to(list(self.default_order))
         self._settle_fill()

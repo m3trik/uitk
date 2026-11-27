@@ -81,22 +81,6 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
     #: its submenus: no footer, never a panel, outside window bookkeeping.
     #: The marking menu's Qt-free resolver keeps an equal copy (a test holds it).
     STACKED_TAGS = ("startmenu", "submenu")
-    _UI_NAME_DELIMITER = "."
-    #: Never read: nothing splits a UI name on it. Reading it warns.
-    UI_NAME_DELIMITER = ptk.Deprecation.class_attribute(
-        _UI_NAME_DELIMITER,
-        "nothing -- no UI name is split on it",
-        remove_in="1.10.0",
-        since="2026-10-28",
-    )
-    #: The retired ``ui_name_delimiters`` keyword's value, which nothing read:
-    #: a read warns until the keyword goes.
-    ui_name_delimiters = ptk.Deprecation.class_attribute(
-        _UI_NAME_DELIMITER,
-        "nothing -- no UI name is split on it",
-        remove_in="1.10.0",
-        since="2026-10-28",
-    )
     SLOT_SUFFIX = "Slots"
     INIT_SUFFIX = "_init"
     STATE_PREFIX = "on_"
@@ -139,9 +123,6 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
     # a single row instead of rebuilding the handler's full entry list.
     on_handler_entry_changed = QtCore.Signal(str, str)
 
-    @ptk.Deprecation.parameter(
-        "ui_name_delimiters", drop=True, remove_in="1.10.0", since="2026-10-28"
-    )
     def __init__(
         self,
         parent=None,
@@ -151,7 +132,6 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
         icon_source=None,
         handlers: dict = None,
         tag_delimiter: str = None,
-        ui_name_delimiters: str = None,
         log_level: str = "warning",
         base_dir=None,
         loader="runtime",
@@ -176,8 +156,6 @@ class Switchboard(QtCore.QObject, ptk.HelpMixin, ptk.LoggingMixin):
                 the UI Browser).
             tag_delimiter (str): Override for the name tag delimiter
                 (defaults to ``TAG_DELIMITER``, ``'#'``).
-            ui_name_delimiters (str): Deprecated, removed in 1.10.0: nothing
-                reads it. Passing it by keyword warns and is ignored.
             log_level (str): Logging level for this instance. Default ``"warning"``.
             base_dir: Base directory for resolving relative source paths. When
                 ``None``, resolves relative to the caller's module.

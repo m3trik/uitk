@@ -502,25 +502,6 @@ class TestTagDelimiterOverride(QtBaseTestCase):
         self.assertEqual(Switchboard().tag_delimiter, Switchboard.TAG_DELIMITER)
 
 
-class TestUiNameDelimitersRetired(QtBaseTestCase):
-    """``ui_name_delimiters`` / ``UI_NAME_DELIMITER`` never had a reader: passing
-    the keyword or reading the constant warns, a positional call still binds."""
-
-    def test_keyword_warns_and_the_constant_warns(self):
-        with self.assertWarns(DeprecationWarning):
-            Switchboard(ui_name_delimiters=".")
-        with self.assertWarns(DeprecationWarning):
-            self.assertEqual(Switchboard.UI_NAME_DELIMITER, ".")
-
-    def test_no_instance_keeps_the_keywords_value(self):
-        """The constructor stored the retired keyword on every instance
-        (2026-11-01); a read of it warns like the constant's."""
-        sb = Switchboard()
-        self.assertNotIn("ui_name_delimiters", vars(sb))
-        with self.assertWarns(DeprecationWarning):
-            self.assertEqual(sb.ui_name_delimiters, ".")
-
-
 class TestSwitchboardHasTags(QtBaseTestCase):
     """Tests for _Names has_tags method."""
 

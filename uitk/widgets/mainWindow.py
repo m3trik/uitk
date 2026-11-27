@@ -162,6 +162,11 @@ class MainWindow(
         # Install event filter before setting central widget
         self.installEventFilter(self)
 
+        # WA_AlwaysShowToolTips: Qt shows a tooltip only under the active
+        # window (or one parented to it), so a panel beside the window last
+        # clicked showed none until it was clicked. Read from the top-level
+        # window alone, once per tooltip. A caller's own value for it wins.
+        kwargs.setdefault("WA_AlwaysShowToolTips", True)
         self.set_attributes(WA_NoChildEventsForParent=True, **kwargs)
         self.setFocusPolicy(QtCore.Qt.ClickFocus)
 

@@ -417,6 +417,69 @@ class TestPresenter(unittest.TestCase):
         self.assertEqual(calls[-1][3], view.visualRect(view.model().index(0, 3)))
         self.assertIsInstance(calls[-1][3], QtCore.QRect)
 
+    def test_a_tip_a_view_composes_stays_up_across_its_run_too(self):
+        """The cells of a row share the tip that is SHOWN, which a view may
+        compose at hover time (``item_tooltip``: a ``TreeWidget`` row's
+        status), not their ``ToolTipRole``. Read from the role, a row status
+        had a run of one cell: it went as the pointer crossed into the next
+        column and came back only once the pointer rested. A cell adding its
+        own text still ends the run."""
+        tree, row, cell = self._status_row_tree()
+        row.setToolTip(3, "its own")
+        calls = self._capture_show_text()
+        self._hover(tree.viewport(), cell(1).center())
+        self.assertEqual(calls[-1][1], "Missing: lid")
+        self.assertEqual(calls[-1][3], cell(0).united(cell(2)))
+        self._hover(tree.viewport(), cell(3).center())
+        self.assertEqual(calls[-1][1], "Missing: lid\n\nits own")
+        self.assertEqual(calls[-1][3], cell(3))
+
+    def test_a_hidden_column_does_not_end_a_tips_run(self):
+        """A hidden cell shows nothing, so the run passes over it whatever tip
+        it would have shown: a ``TreeWidget`` with ``elided_tooltips`` reads a
+        hidden cell as cut short, and a table's may carry another tip."""
+        tree, row, cell = self._status_row_tree()
+        tree.elided_tooltips = True
+        tree.setColumnHidden(1, True)
+        self.app.processEvents()
+        calls = self._capture_show_text()
+        self._hover(tree.viewport(), cell(0).center())
+        self.assertEqual(calls[-1][1], "Missing: lid")
+        self.assertEqual(calls[-1][3], cell(0).united(cell(2)).united(cell(3)))
+
+        view = self._show(QtWidgets.QTableWidget(1, 3))
+        for col, tip in enumerate((self.LONG, "hidden, its own", self.LONG)):
+            item = QtWidgets.QTableWidgetItem("x")
+            item.setToolTip(tip)
+            view.setItem(0, col, item)
+        view.setColumnHidden(1, True)
+        self.app.processEvents()
+        from uitk.widgets.mixins.tooltip_mixin import TooltipPresenter
+
+        TooltipPresenter.manage(view)
+        first, last = (view.visualRect(view.model().index(0, c)) for c in (0, 2))
+        self._hover(view.viewport(), first.center())
+        self.assertEqual(calls[-1][3], first.united(last))
+
+    def _status_row_tree(self):
+        """A shown four-column ``TreeWidget`` whose one row has a row tooltip
+        (which manages the tree): ``(tree, row, cell)``, ``cell(col)`` the
+        cell's rect in the viewport."""
+        from uitk.widgets.treeWidget import TreeWidget
+
+        tree = self._show(TreeWidget())
+        tree.setColumnCount(4)
+        tree.resize(480, 120)
+        row = QtWidgets.QTreeWidgetItem(["A01", "Open", "40", "x"])
+        tree.addTopLevelItem(row)
+        tree.set_row_tooltip(row, "Missing: lid")
+        self.app.processEvents()
+
+        def cell(col):
+            return tree.visualRect(tree.indexFromItem(row, col))
+
+        return tree, row, cell
+
     def test_a_window_panels_own_content_is_managed_once_shown(self):
         """``MainWindow`` registers every widget of a ``.ui``; a ``WindowPanel``
         subclass builds its body itself (the UI Browser's table), so its

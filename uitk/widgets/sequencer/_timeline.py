@@ -556,6 +556,9 @@ class TimelineView(QtWidgets.QGraphicsView):
         #: The active editor took the current press (``SequencerEditor``): its
         #: moves and its release go to the editor too.
         self._editor_grab = False
+        #: ``(viewport pos, buttons)`` of the live drag's last move, for
+        #: :meth:`_replay_drag_move`; ``None`` until the drag has moved.
+        self._drag_move = None
         # Now that the scene/view wiring is complete, sync deferred items
         self._scene.playhead.sync()
         # Keep ruler pinned to the viewport top during vertical scroll
@@ -582,6 +585,41 @@ class TimelineView(QtWidgets.QGraphicsView):
         sq = self.parent_sequencer
         mods = sq.modifiers_held
         sq.set_modifiers_held(mods | bit if held else mods & ~bit)
+        if self._drag_move is not None and not event.isAutoRepeat():
+            self._replay_drag_move()
+
+    def _replay_drag_move(self) -> None:
+        """Re-run the live drag's last move under the chord now held.
+
+        A modifier pressed or let go mid-drag changes what the drag does (a
+        host's Ctrl trims, Shift retimes; Alt works about the centre), and
+        without a move to carry it the drag would show the old mode until
+        the pointer next moved.  Every move derives from the drag's origin,
+        so a replay at the same position changes nothing else.  The chord is
+        the tracked one (:attr:`SequencerWidget.modifiers_held`): Qt's report
+        during a modifier's own key event is the one it is unreliable about.
+
+        Only a grab reads the chord mid-drag: the ruler's scrub, the pan and
+        the marquee (which keeps its press's) have no mode to switch.
+        """
+        grabbed = (
+            self._editor_grab
+            or self._layer_grab is not None
+            or self._scene.mouseGrabberItem() is not None
+        )
+        if not grabbed:
+            return
+        pos, buttons = self._drag_move
+        held = self.parent_sequencer.modifiers_held
+        ev = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseMove,
+            pos,
+            QtCore.QPointF(self.viewport().mapToGlobal(pos.toPoint())),
+            QtCore.Qt.NoButton,
+            buttons,
+            QtCore.Qt.KeyboardModifier(held),
+        )
+        QtWidgets.QApplication.sendEvent(self.viewport(), ev)
 
     def keyPressEvent(self, event):
         self._sync_modifier(event, True)
@@ -828,6 +866,7 @@ class TimelineView(QtWidgets.QGraphicsView):
             # still set lost its release (a popup took it).
             self._editor_grab = False
             self._layer_grab = None
+            self._drag_move = None
         if self.hit_zone(event.pos().y()) == "tracks" and editor.mouse_press(event):
             self._editor_grab = True
             event.accept()
@@ -930,6 +969,12 @@ class TimelineView(QtWidgets.QGraphicsView):
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if event.buttons():
+            # A drag is under the chord held NOW: a modifier pressed or let go
+            # mid-drag switches its mode without a regrab.  Banked before the
+            # move reaches its item, so the item's label reads the new mode.
+            self.parent_sequencer._follow_drag_modifiers(event.modifiers())
+            self._drag_move = (QtCore.QPointF(event.pos()), event.buttons())
         if self._editor_grab:
             if event.buttons():
                 self.parent_sequencer.active_editor.mouse_move(event)
@@ -1025,6 +1070,11 @@ class TimelineView(QtWidgets.QGraphicsView):
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        # The drag commits under the chord it ENDS with (its consumers read
+        # it on the release), whether or not a move followed the last change.
+        self.parent_sequencer._follow_drag_modifiers(event.modifiers())
+        if not event.buttons():
+            self._drag_move = None
         if self._editor_grab:
             if not event.buttons():
                 self._editor_grab = False

@@ -1155,6 +1155,7 @@ class TableWidget(QtWidgets.QTableWidget, MenuMixin, AttributesMixin, ItemFormat
         locked=(),
         reorderable=False,
         hidden_by_default=(),
+        default_order=(),
     ):
         """Enable header right-click menu for column visibility and drag reorder.
 
@@ -1176,6 +1177,8 @@ class TableWidget(QtWidgets.QTableWidget, MenuMixin, AttributesMixin, ItemFormat
                 column order (see ``ColumnConfig``).
             hidden_by_default: Logical columns hidden until the user's own
                 layout is saved -- optional columns they turn on from the menu.
+            default_order: The logical columns left to right until the user's
+                own order is saved (see ``ColumnConfig``).
         """
         ColumnConfig.attach(
             self,
@@ -1185,6 +1188,7 @@ class TableWidget(QtWidgets.QTableWidget, MenuMixin, AttributesMixin, ItemFormat
             app="TableWidget",
             reorderable=reorderable,
             hidden_by_default=hidden_by_default,
+            default_order=default_order,
         )
 
     def restore_column_state(self):

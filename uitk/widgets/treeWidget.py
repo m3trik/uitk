@@ -20,37 +20,45 @@ from uitk.widgets.column_config import ColumnConfig
 
 
 class HierarchyIconMixin:
-    """Mixin to handle custom hierarchy icons in tree widgets using CSS branch styling."""
+    """The tree's hierarchy, drawn by the tree itself (``TreeWidget.drawBranches``):
+    guide lines that hang each row from its parent's expander, so every level
+    reads as one line down from its parent, and the expander -- a thin-walled
+    box with a plus or a minus filling the indentation cell, as Maya's
+    outliner draws it, or a chevron (:meth:`set_icon_style`). The colours are
+    the tree's text colour at :attr:`BRANCH_ALPHA`'s strengths, so they follow
+    the theme; the expander under the pointer is drawn at full strength.
+    Off (:meth:`enable_hierarchy_icons`): the style's own branches.
+
+    Weighed: the sheet's ``::branch`` rules with an SVG per branch state, the
+    route this replaced. An image fills one branch cell, so a child's line
+    could not run from its parent's box, and a file has one colour, so the
+    guides could not follow the theme (``#555`` on ``#393939``).
+
+    The tree's own sheet (:meth:`_apply_hierarchy_stylesheet`) sets its
+    ground, its text and its rows' height (:meth:`set_row_height`).
+    """
 
     _HIER_START = "/* __HIERARCHY_START__ */"
     _HIER_END = "/* __HIERARCHY_END__ */"
 
+    #: How much of the text colour each part shows: the guide lines, the
+    #: expander's box and its sign (a hovered expander: all of it).
+    BRANCH_ALPHA = {"line": 0.3, "box": 0.55, "sign": 0.85}
+    #: The expander's styles: a box with a plus or minus, or a chevron.
+    ICON_STYLES = ("plus_minus", "arrows")
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._hierarchy_icons_enabled = True
-        self._icon_style = "plus_minus"  # Default style
-        self._setup_hierarchy_icons()
-
-    def _setup_hierarchy_icons(self):
-        """Setup custom hierarchy icons via CSS stylesheet."""
+        self._icon_style = "plus_minus"
+        self._row_height = 16
+        self._last_shown = {}  # each parent's last row shown, since the last layout
+        self._hot_branch = None  # the expander under the pointer (_set_hot_branch)
         self._apply_hierarchy_stylesheet()
 
     def _apply_hierarchy_stylesheet(self):
-        """Apply custom stylesheet for hierarchy indicators using SVG images."""
-        # Get the icons directory path - use absolute path for CSS
-        from pathlib import Path
-
-        icons_dir = Path(__file__).parent.parent / "icons"
-
-        # Use absolute paths for CSS - Qt expects normal file paths
-        expand_branch_path = str(icons_dir / "expand_branch.svg").replace("\\", "/")
-        expand_end_path = str(icons_dir / "expand_end.svg").replace("\\", "/")
-        collapse_branch_path = str(icons_dir / "collapse_branch.svg").replace("\\", "/")
-        collapse_end_path = str(icons_dir / "collapse_end.svg").replace("\\", "/")
-        tree_branch_path = str(icons_dir / "tree_branch.svg").replace("\\", "/")
-        tree_vertical_path = str(icons_dir / "tree_vertical.svg").replace("\\", "/")
-        tree_end_path = str(icons_dir / "tree_end.svg").replace("\\", "/")
-
+        """The tree's own sheet: its ground and text, and its rows' height."""
+        height = self._row_height
         style = f"""
             QTreeWidget {{
                 outline: none;
@@ -61,90 +69,27 @@ class HierarchyIconMixin:
                 font-size: 12px;
                 gridline-color: transparent;
             }}
-            
-            QTreeWidget::branch {{
-                background: transparent;
-                border: none;
-                width: 16px;
-                height: 16px;
-                margin: 0px;
-                padding: 0px;
-                spacing: 0px;
-            }}
-            
-            /* Vertical continuation lines (items that have siblings below them) */
-            QTreeWidget::branch:has-siblings:!adjoins-item {{
-                background: transparent;
-                border-image: none;
-                image: url({tree_vertical_path});
-            }}
-            
-            /* T-junction: item with siblings that also has children (branch through) */
-            QTreeWidget::branch:has-siblings:adjoins-item {{
-                background: transparent;
-                border-image: none;
-                image: url({tree_branch_path});
-            }}
-            
-            /* L-junction: last item in a group (leaf node) */
-            QTreeWidget::branch:!has-children:!has-siblings:adjoins-item {{
-                background: transparent;
-                border-image: none;
-                image: url({tree_end_path});
-            }}
-            
-            /* L-junction: last item in a group that has children but is closed */
-            QTreeWidget::branch:has-children:!has-siblings:closed {{
-                background: transparent;
-                border-image: none;
-                image: url({expand_end_path});
-            }}
-            
-            /* L-junction: last item in a group that has children and is open */
-            QTreeWidget::branch:has-children:!has-siblings:open {{
-                background: transparent;
-                border-image: none;
-                image: url({collapse_end_path});
-            }}
-            
-            /* T-junction: item with siblings that has children (closed) */
-            QTreeWidget::branch:closed:has-children:has-siblings {{
-                background: transparent;
-                border-image: none;
-                image: url({expand_branch_path});
-            }}
-            
-            /* T-junction: item with siblings that has children (open) */
-            QTreeWidget::branch:open:has-children:has-siblings {{
-                background: transparent;
-                border-image: none;
-                image: url({collapse_branch_path});
-            }}
-            
+
+            /* No colour here: the widget rule above gives the text its colour.
+               A colour on ::item would beat every cell's own foreground brush. */
             QTreeWidget::item {{
                 padding: 0px 2px;
                 border: none;
-                min-height: 16px;
-                max-height: 16px;
-                color: #cccccc;
+                min-height: {height}px;
+                max-height: {height}px;
                 background: transparent;
                 spacing: 0px;
                 margin: 0px;
             }}
-            
+
             QTreeWidget::item:selected {{
                 background-color: rgba(90, 140, 190, 0.08);
                 color: #ffffff;
                 border: none;
             }}
-            
+
             QTreeWidget::item:hover:!selected {{
                 background-color: rgba(255, 255, 255, 0.1);
-            }}
-            
-            /* Maya-style indentation and spacing */
-            QTreeWidget::item:has-children {{
-                font-weight: normal;
             }}
         """
 
@@ -155,25 +100,39 @@ class HierarchyIconMixin:
         if start != -1 and end != -1:
             current = current[:start] + current[end + len(self._HIER_END) :]
         # Pinned first: a sheet of its own would otherwise measure and draw
-        # what it leaves undefined -- the indent, branch and sort arrows --
-        # in the host's style.
+        # what it leaves undefined -- the indent and the sort arrows -- in the
+        # host's style.
         StyleSheet.pin_base_style(self)
         self.setStyleSheet(current + tagged)
 
-    def set_icon_style(self, style: str):
-        """Set the icon style for hierarchy indicators.
-
-        Available styles:
-        - 'plus_minus': Plus and minus signs (default)
-        - 'arrows': Triangle arrows pointing right/down
-        - 'modern': Clean modern style with subtle indicators
-        """
-        self._icon_style = style
+    def set_row_height(self, height: int) -> None:
+        """Give every row *height* px (16 by default): a cell widget taller
+        than it makes its row taller, so a tree whose cells hold widgets sets
+        at least their height to keep its rows even. Setting the height it
+        has changes nothing (a new sheet re-polishes the whole tree)."""
+        if int(height) == self._row_height:
+            return
+        self._row_height = int(height)
         if self._hierarchy_icons_enabled:
             self._apply_hierarchy_stylesheet()
 
+    def set_icon_style(self, style: str):
+        """Set the expander's style (:attr:`ICON_STYLES`): ``"plus_minus"``, a
+        thin-walled box with a plus or a minus (the default), or ``"arrows"``,
+        a chevron pointing right or down. ``"modern"`` reads as ``"arrows"``.
+
+        Raises:
+            ValueError: *style* is none of them; the current one stays.
+        """
+        style = "arrows" if style == "modern" else style
+        if style not in self.ICON_STYLES:
+            raise ValueError(f"Unknown icon style {style!r}: one of {self.ICON_STYLES}")
+        self._icon_style = style
+        self.viewport().update()
+
     def enable_hierarchy_icons(self, enabled=True):
-        """Enable or disable custom hierarchy icons."""
+        """Draw the hierarchy as this tree does (guides and expanders), or
+        leave it to Qt and its style (``False``), with no sheet of the tree's own."""
         self._hierarchy_icons_enabled = enabled
         if enabled:
             self._apply_hierarchy_stylesheet()
@@ -185,14 +144,173 @@ class HierarchyIconMixin:
                 self.setStyleSheet(
                     current[:start] + current[end + len(self._HIER_END) :]
                 )
+        self.viewport().update()
 
     def get_available_icon_styles(self) -> list:
-        """Get list of available icon styles."""
-        return ["plus_minus", "arrows", "modern"]
+        """The expander's styles (:attr:`ICON_STYLES`)."""
+        return list(self.ICON_STYLES)
 
     def get_current_icon_style(self) -> str:
-        """Get the currently active icon style."""
+        """The expander's current style."""
         return self._icon_style
+
+    # -- painting ------------------------------------------------------------
+
+    def _branch_pen(self, part: str, full: bool = False) -> QtGui.QPen:
+        """A 1 px pen in the text colour at *part*'s strength (all of it where *full*)."""
+        color = QtGui.QColor(self.palette().color(QtGui.QPalette.Text))
+        color.setAlphaF(1.0 if full else self.BRANCH_ALPHA[part])
+        pen = QtGui.QPen(color, 1)
+        pen.setCapStyle(QtCore.Qt.FlatCap)
+        return pen
+
+    def _has_later_shown_sibling(self, index) -> bool:
+        """Whether a row after *index* under its parent is shown (not hidden)."""
+        parent = index.parent()
+        key = (parent.row(), parent.internalId()) if parent.isValid() else None
+        last = self._last_shown.get(key)
+        if last is None:
+            last = -1
+            for row in range(self.model().rowCount(parent) - 1, -1, -1):
+                if not self.isRowHidden(row, parent):
+                    last = row
+                    break
+            self._last_shown[key] = last
+        return index.row() < last
+
+    def _paint_branches(self, painter, rect, index) -> None:
+        """Paint *index*'s row's guides and its expander in *rect*, its
+        indentation: a cell per level, the row's own last.
+
+        Each row hangs from its parent's expander: an elbow in the parent's
+        cell runs down from the row above and across to the row, continuing
+        down while a later sibling is shown; each ancestor further left
+        continues its own line through the row while one of its children
+        below is shown. A row with children has its expander in its own cell,
+        a line running on down from it while it is open."""
+        indent = self.indentation()
+        if indent <= 0 or rect.width() < indent:
+            return
+        levels = rect.width() // indent
+        left, top, height = rect.left(), rect.top(), rect.height()
+        side = min(indent, height) - 5  # 11 px in a 16 px cell: room around it
+        side -= 1 - side % 2  # odd: the sign sits on a pixel
+        box_x = (indent - side) // 2  # in its cell
+        box_y = top + (height - side) // 2
+        mid_x = box_x + side // 2 + 0.5  # in a cell: where its line runs
+        mid_y = box_y + side // 2 + 0.5
+
+        def x_of(cell: int) -> float:
+            return left + cell * indent + mid_x
+
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        painter.setPen(self._branch_pen("line"))
+        own = levels - 1
+        model = self.model()
+        has_children = model.hasChildren(index)
+        expanded = has_children and self.isExpanded(index)
+
+        # The elbow in the parent's cell, then each ancestor's line further left.
+        node, cell = index, own - 1
+        if cell >= 0 and index.parent().isValid():
+            x = x_of(cell)
+            bottom = top + height if self._has_later_shown_sibling(index) else mid_y
+            painter.drawLine(QtCore.QPointF(x, top), QtCore.QPointF(x, bottom))
+            end = left + own * indent + (box_x if has_children else indent - 2)
+            painter.drawLine(QtCore.QPointF(x, mid_y), QtCore.QPointF(end, mid_y))
+            node, cell = index.parent(), cell - 1
+            while cell >= 0 and node.parent().isValid():
+                if self._has_later_shown_sibling(node):
+                    x = x_of(cell)
+                    painter.drawLine(
+                        QtCore.QPointF(x, top), QtCore.QPointF(x, top + height)
+                    )
+                node, cell = node.parent(), cell - 1
+
+        if has_children:
+            cell_left = left + own * indent
+            box = QtCore.QRectF(
+                cell_left + box_x + 0.5, box_y + 0.5, side - 1, side - 1
+            )
+            if expanded and model.rowCount(index):
+                x = x_of(own)
+                painter.drawLine(
+                    QtCore.QPointF(x, box.bottom() + 1), QtCore.QPointF(x, top + height)
+                )
+            hot = (
+                self._hot_branch is not None
+                and self._hot_branch == index.siblingAtColumn(0)
+            )
+            self._paint_expander(painter, box, expanded, hot)
+        painter.restore()
+
+    def _expander_at(self, pos) -> QtCore.QModelIndex:
+        """The row (column 0) whose expander cell holds viewport point *pos*;
+        an invalid index where none does."""
+        index = self.indexAt(pos)
+        if not index.isValid():
+            return QtCore.QModelIndex()
+        cell = index.siblingAtColumn(self.treePosition())
+        if not self.model().hasChildren(cell):
+            return QtCore.QModelIndex()
+        right = self.visualRect(cell).left()
+        if right - self.indentation() <= pos.x() < right:
+            return cell.siblingAtColumn(0)
+        return QtCore.QModelIndex()
+
+    def _set_hot_branch(self, index) -> None:
+        """Make *index*'s expander the one drawn hot (an invalid index: none),
+        repainting the row it leaves and the row it reaches. Qt repaints a
+        hovered row's cells, never its indentation: an expander that judged
+        the pointer while painted stayed lit after it left."""
+        new = QtCore.QPersistentModelIndex(index) if index.isValid() else None
+        old = self._hot_branch
+        if (old is None) == (new is None) and (old is None or old == new):
+            return
+        self._hot_branch = new
+        viewport = self.viewport()
+        for each in (old, new):
+            if each is not None and each.isValid():
+                rect = self.visualRect(self.model().index(each.row(), 0, each.parent()))
+                viewport.update(
+                    QtCore.QRect(0, rect.top(), viewport.width(), rect.height())
+                )
+
+    def _paint_expander(
+        self, painter, box: QtCore.QRectF, expanded: bool, hot: bool
+    ) -> None:
+        """The expander in *box*: a thin-walled square with a minus while
+        open, a plus while closed -- or a chevron (``"arrows"``)."""
+        cx, cy = box.center().x(), box.center().y()
+        arm = (box.width() - 5) / 2  # the sign's half length, 3 px inside the wall
+        if self._icon_style == "arrows":
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            pen = self._branch_pen("sign", hot)
+            pen.setWidthF(1.5)
+            painter.setPen(pen)
+            a = arm * 0.8
+            if expanded:
+                points = [(cx - a, cy - a / 2), (cx, cy + a / 2), (cx + a, cy - a / 2)]
+            else:
+                points = [(cx - a / 2, cy - a), (cx + a / 2, cy), (cx - a / 2, cy + a)]
+            painter.drawPolyline(
+                QtGui.QPolygonF([QtCore.QPointF(x, y) for x, y in points])
+            )
+            return
+        if hot:
+            ground = QtGui.QColor(self.palette().color(QtGui.QPalette.Text))
+            ground.setAlphaF(0.12)
+            painter.fillRect(box, ground)
+        painter.setPen(self._branch_pen("box", hot))
+        painter.drawRect(box)
+        # The sign as whole pixels: 2 px clear of the walls, on the centre pixel.
+        sign = self._branch_pen("sign", hot).color()
+        px, py = int(cx), int(cy)
+        reach = (int(box.width()) - 5) // 2
+        painter.fillRect(QtCore.QRect(px - reach, py, 2 * reach + 1, 1), sign)
+        if not expanded:
+            painter.fillRect(QtCore.QRect(px, py - reach, 1, 2 * reach + 1), sign)
 
 
 class TreeFormatMixin(ItemFormatMixin):
@@ -350,12 +468,17 @@ class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
     Compositing order (each layer alpha-blends onto the previous):
 
       1. Base        — widget viewport background (``#393939``)
-      2. Column tint — ``tree._column_tints[col]``
-      3. Row tint    — ``tree._parent_row_color`` or ``tree._child_row_color``
-      4. Item bg     — per-item ``BackgroundRole`` (assessment / status colors)
-      5. Selection   — translucent overlay when ``selection_style == "tint"``
+      2. Alternate   — ``tree.alternateRowColor`` on every other row shown
+                       while ``alternatingRowColors`` is on, unless the row has
+                       a row tint (layer 4): that tint is its ground
+      3. Column tint — ``tree._column_tints[col]``
+      4. Row tint    — ``tree._parent_row_color`` or ``tree._child_row_color``
+      5. Item bg     — per-item ``BackgroundRole`` (assessment / status colors)
+      6. Selection   — translucent overlay when ``selection_style == "tint"``
 
-    The result is an opaque color painted via ``fillRect`` **and** injected into
+    Layers 1-5 are the tree's (``TreeWidget._ground``), which paints them under
+    a row's indentation too (``TreeWidget.drawRow``). The result is an opaque
+    color painted via ``fillRect`` **and** injected into
     ``option.backgroundBrush`` so that ``super().paint()`` cannot override it
     with a QSS-resolved background.
     """
@@ -382,41 +505,97 @@ class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
         if isinstance(fg, QtGui.QBrush) and fg.color().isValid():
             option.palette.setColor(QtGui.QPalette.Text, fg.color())
 
+    #: How much of the cell's text colour a tail's lead shows (``set_cell_tail``).
+    LEAD_ALPHA = 0.55
+
+    @staticmethod
+    def _tail_layout(text: str, start: int, width: int, metrics, bold_metrics) -> tuple:
+        """``(lead, tail)`` as shown for *text* split at *start* in *width* px:
+        the tail whole and the lead cut from its left to fit beside it ("…"
+        first); a tail wider than *width* alone, cut at its end."""
+        lead, tail = text[:start], text[start:]
+        room = width - bold_metrics.horizontalAdvance(tail)
+        if room <= 0:
+            return "", bold_metrics.elidedText(tail, QtCore.Qt.ElideRight, width)
+        return metrics.elidedText(lead, QtCore.Qt.ElideLeft, room), tail
+
+    def _paint_tail(self, painter, option, index, start: int, ground) -> None:
+        """The cell with its text as a muted lead and a semi-bold tail
+        (``TreeWidget.set_cell_tail``), every part drawn by the style, so the
+        text takes the colour the sheet gives the cell's state
+        (``::item:selected``, ``::item:hover``): the style resolves it only
+        while it draws the cell (``CE_ItemViewItem``), never for
+        ``drawItemText`` or the palette. The cell's panel is drawn once:
+        the tail's columns get the style's cell shifted to write the tail
+        after the lead, the rest the cell without text, and the lead -- the
+        style's cell on the opaque *ground*, offscreen -- lies over it at
+        :attr:`LEAD_ALPHA`, which over an opaque layer is the lead's text
+        alone, faded.
+
+        Weighed: the styled delegate's own paint writes one string in one
+        font; text drawn with the palette's colours loses the sheet's
+        selected and hovered colours that a plain cell beside it shows.
+        """
+        opt = QtWidgets.QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        widget = opt.widget
+        style = widget.style() if widget is not None else QtWidgets.QApplication.style()
+        area = style.subElementRect(QtWidgets.QStyle.SE_ItemViewItemText, opt, widget)
+        margin = (
+            style.pixelMetric(QtWidgets.QStyle.PM_FocusFrameHMargin, None, widget) + 1
+        )
+        area = area.adjusted(margin, 0, -margin, 0)
+        bold = QtGui.QFont(opt.font)
+        bold.setWeight(QtGui.QFont.DemiBold)
+        metrics = QtGui.QFontMetrics(opt.font)
+        lead, tail = self._tail_layout(
+            opt.text, start, area.width(), metrics, QtGui.QFontMetrics(bold)
+        )
+        cell = opt.rect
+        x = area.left() + metrics.horizontalAdvance(lead)  # where the tail starts
+        tail_columns = QtCore.QRect(x, cell.top(), area.right() - x + 1, cell.height())
+
+        def draw(target, text, font, clip, shift=0):
+            part = QtWidgets.QStyleOptionViewItem(opt)
+            part.text, part.font, part.rect = text, font, cell.translated(shift, 0)
+            target.save()
+            target.setClipRegion(clip, QtCore.Qt.IntersectClip)
+            style.drawControl(QtWidgets.QStyle.CE_ItemViewItem, part, target, widget)
+            target.restore()
+
+        draw(
+            painter,
+            "",
+            opt.font,
+            QtGui.QRegion(cell).subtracted(QtGui.QRegion(tail_columns)),
+        )
+        draw(painter, tail, bold, QtGui.QRegion(tail_columns), shift=x - area.left())
+        if lead:
+            ratio = painter.device().devicePixelRatioF()
+            layer = QtGui.QImage(
+                cell.size() * ratio, QtGui.QImage.Format_ARGB32_Premultiplied
+            )
+            layer.setDevicePixelRatio(ratio)
+            layer.fill(ground)
+            offscreen = QtGui.QPainter(layer)
+            offscreen.translate(-cell.topLeft())
+            draw(offscreen, lead, opt.font, QtGui.QRegion(cell))
+            offscreen.end()
+            painter.save()
+            painter.setClipRect(
+                QtCore.QRect(cell.left(), cell.top(), x - cell.left(), cell.height()),
+                QtCore.Qt.IntersectClip,
+            )
+            painter.setOpacity(self.LEAD_ALPHA)
+            painter.drawImage(cell.topLeft(), layer)
+            painter.restore()
+
     def paint(self, painter, option, index):
         tree = self.parent()
-        item = tree.itemFromIndex(index) if tree else None
-        col = index.column()
+        alternate = bool(option.features & QtWidgets.QStyleOptionViewItem.Alternate)
+        bg = tree._ground(index, alternate)
 
-        # Resolve the viewport base color (opaque starting point)
-        base = tree.palette().color(QtGui.QPalette.Base)
-        if not base.isValid() or base.alpha() == 0:
-            base = QtGui.QColor(57, 57, 57)  # #393939 fallback
-        bg = QtGui.QColor(base.red(), base.green(), base.blue())
-
-        # Layer 1 — column tint
-        tint = tree._column_tints.get(col)
-        if tint and tint.isValid() and tint.alpha() > 0:
-            bg = _RowTintDelegate._alpha_over(bg, tint)
-
-        # Layer 2 — row tint (parent vs child)
-        if item is not None:
-            if item.parent() is not None:
-                row_color = tree._child_row_color
-            else:
-                row_color = tree._parent_row_color
-            if row_color and row_color.isValid() and row_color.alpha() > 0:
-                bg = _RowTintDelegate._alpha_over(bg, row_color)
-
-        # Layer 3 — per-item background (assessment / status)
-        item_bg = index.data(QtCore.Qt.BackgroundRole)
-        if isinstance(item_bg, QtGui.QBrush) and item_bg.color().isValid():
-            c = item_bg.color()
-            if c.alpha() == 255:
-                bg = QtGui.QColor(c)
-            elif c.alpha() > 0:
-                bg = _RowTintDelegate._alpha_over(bg, c)
-
-        # Layer 4 — selection tint (only when selection_style == "tint")
+        # Layer 6 — selection tint (only when selection_style == "tint")
         use_tint = getattr(tree, "_selection_style", "border") == "tint"
         selected = bool(option.state & QtWidgets.QStyle.State_Selected)
         if use_tint and selected:
@@ -429,7 +608,11 @@ class _RowTintDelegate(QtWidgets.QStyledItemDelegate):
         painter.fillRect(option.rect, bg)
         option.backgroundBrush = QtGui.QBrush(bg)
 
-        super().paint(painter, option, index)
+        start = index.data(TreeWidget.TAIL_ROLE)
+        if isinstance(start, int) and index.data(QtCore.Qt.DisplayRole):
+            self._paint_tail(painter, option, index, start, bg)
+        else:
+            super().paint(painter, option, index)
 
 
 class _HeaderActionBar(QtWidgets.QWidget):
@@ -580,6 +763,8 @@ class TreeWidget(
 
     #: The item role (on column 0) holding a row's tooltip (:meth:`set_row_tooltip`).
     ROW_TOOLTIP_ROLE = QtCore.Qt.UserRole + 101
+    #: The item role (per column) holding where a cell's tail starts (:meth:`set_cell_tail`).
+    TAIL_ROLE = QtCore.Qt.UserRole + 102
 
     def __init__(
         self,
@@ -608,6 +793,7 @@ class TreeWidget(
         """
         super().__init__(parent)
         self._selection_style = selection_style
+        self._shown_rows = {}  # the rows' numbers since the last layout (_shown_row)
         TreeFormatMixin.__init__(self)
         HierarchyIconMixin.__init__(self)
         # Arrows at the top/bottom edge while rows are scrolled out of view.
@@ -644,14 +830,24 @@ class TreeWidget(
         # Header action bar (lazy — created on first access)
         self._header_actions = None
 
-        # Row and column tinting (composited by _RowTintDelegate)
-        self._child_row_color = QtGui.QColor()
+        # Row and column tinting (composited by _RowTintDelegate). A sheet's
+        # qproperty is set again at every polish, over the colour a panel set,
+        # so the theme sets none of these: the child rows' default is set
+        # here, and the alternate ground's is a property of its own
+        # (defaultAlternateRowColor) under the panel's (alternateRowColor).
+        self._child_row_color = QtGui.QColor(255, 255, 255, 10)
         self._parent_row_color = QtGui.QColor()
+        self._alternate_row_color = QtGui.QColor()  # none: the default's
+        self._default_alternate_row_color = QtGui.QColor(255, 255, 255, 8)
         self._column_tints = {}  # {col_index: QColor}
         self.setItemDelegate(_RowTintDelegate(self))
 
         # Connect signals
         self.itemSelectionChanged.connect(self._on_selection_changed)
+        # An animated expand or collapse lays the rows out with no
+        # updateGeometries until the animation ends.
+        self.expanded.connect(self._forget_rows_shown)
+        self.collapsed.connect(self._forget_rows_shown)
 
         self.set_attributes(**kwargs)
 
@@ -751,6 +947,23 @@ class TreeWidget(
         item.setData(0, self.ROW_TOOLTIP_ROLE, text or None)
         TooltipPresenter.manage(self)
 
+    def set_cell_tail(self, item, column: int, start: Optional[int]) -> None:
+        """Draw *item*'s cell in *column* as a lead and a tail from *start*,
+        so a long name reads by its end: the lead (a path's parents) in the
+        cell's colour, faded, and cut from its left when the column is
+        narrow, so the tail (the leaf, ``len(path) - len(leaf)`` on) always
+        shows whole, in the cell's colour, semi-bold. Start 0: all of it is
+        tail. ``None``: plain text again. Qt's own
+        ``setTextElideMode(Qt.ElideLeft)`` cuts from the left too, but in one
+        font and one colour, so the leaf would read no apart from its parents.
+
+        Parameters:
+            item: The row's ``QTreeWidgetItem``.
+            column: The cell's column.
+            start: Where the tail begins in the cell's text, or ``None``.
+        """
+        item.setData(column, self.TAIL_ROLE, None if start is None else int(start))
+
     def row_tooltip(self, item) -> Optional[str]:
         """*item*'s row tooltip (:meth:`set_row_tooltip`).
 
@@ -824,6 +1037,40 @@ class TreeWidget(
         QtGui.QColor, _get_parent_row_color, setParentRowColor
     )
 
+    # -- alternate-row ground (the theme's qproperty-defaultAlternateRowColor) --
+
+    def _get_alternate_row_color(self):
+        own = self._alternate_row_color
+        return own if own.isValid() else self._default_alternate_row_color
+
+    def setAlternateRowColor(self, color) -> None:
+        """Set the ground every other row is laid over while
+        ``alternatingRowColors`` is on (Qt-property setter); an invalid
+        ``QColor()`` returns to :attr:`defaultAlternateRowColor`. Qt's own
+        alternate ground, the palette's, is transparent on this tree -- Qt
+        paints it into a row's indentation, twice, over the row's tint."""
+        self._alternate_row_color = QtGui.QColor(color)
+        self.viewport().update()
+
+    alternateRowColor = QtCore.Property(
+        QtGui.QColor, _get_alternate_row_color, setAlternateRowColor
+    )
+
+    def _get_default_alternate_row_color(self):
+        return self._default_alternate_row_color
+
+    def setDefaultAlternateRowColor(self, color) -> None:
+        """Set the alternate ground shown while none is set
+        (:attr:`alternateRowColor`): the theme's ``ALTERNATE_BACKGROUND``,
+        set again at every polish -- a property of its own, so a repolish
+        never resets the colour a panel set (Qt-property setter)."""
+        self._default_alternate_row_color = QtGui.QColor(color)
+        self.viewport().update()
+
+    defaultAlternateRowColor = QtCore.Property(
+        QtGui.QColor, _get_default_alternate_row_color, setDefaultAlternateRowColor
+    )
+
     # -- construction options, restated as Designer-editable properties ----
 
     def getSelectionStyle(self) -> str:
@@ -868,6 +1115,120 @@ class TreeWidget(
         """Remove all column tint overlays."""
         self._column_tints.clear()
         self.viewport().update()
+
+    # -- row grounds (layers 1-5 of _RowTintDelegate) ------------------------
+
+    def _ground(self, index, alternate: bool = False) -> QtGui.QColor:
+        """The opaque ground of the cell at *index*: the view's base, the
+        alternate ground where *alternate* and the row has no row tint of its
+        own, the column's tint, the row's tint, then the cell's own
+        ``BackgroundRole``."""
+        over = _RowTintDelegate._alpha_over
+        base = self.palette().color(QtGui.QPalette.Base)
+        if not base.isValid() or base.alpha() == 0:
+            base = QtGui.QColor(57, 57, 57)  # #393939 fallback
+        bg = QtGui.QColor(base.red(), base.green(), base.blue())
+
+        item = self.itemFromIndex(index)
+        row = None
+        if item is not None:
+            row = (
+                self._child_row_color
+                if item.parent() is not None
+                else self._parent_row_color
+            )
+            if not (row.isValid() and row.alpha() > 0):
+                row = None
+        if alternate and row is None:
+            bg = over(bg, self._get_alternate_row_color())
+        tint = self._column_tints.get(index.column())
+        if tint is not None and tint.isValid() and tint.alpha() > 0:
+            bg = over(bg, tint)
+        if row is not None:
+            bg = over(bg, row)
+        cell = index.data(QtCore.Qt.BackgroundRole)
+        if isinstance(cell, QtGui.QBrush) and cell.color().isValid():
+            color = cell.color()
+            if color.alpha() == 255:
+                bg = QtGui.QColor(color)
+            elif color.alpha() > 0:
+                bg = over(bg, color)
+        return bg
+
+    def _shown_row(self, index) -> int:
+        """*index*'s number among the rows shown, the top one 0: the number Qt
+        alternates rows by. Counted up through ``indexAbove`` to a row
+        numbered since Qt last laid the rows out (``_forget_rows_shown``), so
+        each row is counted once per layout, never once per paint."""
+        index = index.siblingAtColumn(0)
+        known = self._shown_rows
+        chain = []
+        while index.isValid():
+            key = (index.row(), index.internalId())
+            if key in known:
+                break
+            chain.append(key)
+            index = self.indexAbove(index)
+        number = known[key] if index.isValid() else -1
+        for key in reversed(chain):
+            number += 1
+            known[key] = number
+        return number
+
+    def _forget_rows_shown(self, *_) -> None:
+        """Drop the rows' numbering (``_shown_row``) and each parent's last
+        row shown (``_has_later_shown_sibling``): the rows shown changed."""
+        self._shown_rows.clear()
+        self._last_shown.clear()
+
+    def updateGeometries(self) -> None:  # noqa: N802 -- Qt's name
+        """Every layout of the rows ends here -- a hide (``item.setHidden``
+        too, which reaches no override of the non-virtual ``setRowHidden``),
+        an expand, an insert, a removal, a sort -- and no scroll or repaint
+        does, so the rows shown are counted again from here
+        (``_forget_rows_shown``; an animated expand's layout reaches here
+        only at its end, hence ``expanded`` / ``collapsed`` too)."""
+        self._forget_rows_shown()
+        super().updateGeometries()
+
+    def viewportEvent(self, event) -> bool:  # noqa: N802 -- Qt's name
+        """Follow the pointer for the hot expander (``_set_hot_branch``)."""
+        kind = event.type()
+        if kind in (
+            QtCore.QEvent.HoverEnter,
+            QtCore.QEvent.HoverMove,
+            QtCore.QEvent.MouseMove,
+        ):
+            self._set_hot_branch(self._expander_at(event.position().toPoint()))
+        elif kind in (QtCore.QEvent.HoverLeave, QtCore.QEvent.Leave):
+            self._set_hot_branch(QtCore.QModelIndex())
+        return super().viewportEvent(event)
+
+    def drawBranches(self, painter, rect, index) -> None:  # noqa: N802 -- Qt's name
+        """The row's guides and expander, drawn by the tree
+        (``HierarchyIconMixin``); Qt's own while hierarchy icons are off.
+        Here, not on the mixin: ``QTreeWidget`` precedes it in the MRO."""
+        if self._hierarchy_icons_enabled:
+            self._paint_branches(painter, rect, index)
+        else:
+            super().drawBranches(painter, rect, index)
+
+    def drawRow(self, painter, option, index) -> None:  # noqa: N802 -- Qt's name
+        """Lay the row's ground under its indentation too, as its first
+        column's cell has it (the delegate paints the cells): a row's tint,
+        its alternate ground and that column's tint run the whole row. Qt then
+        draws the branches, the selection and the hover on it."""
+        column = self.treePosition()
+        cell = index.siblingAtColumn(column)
+        left = self.header().sectionViewportPosition(column)
+        right = self.visualRect(cell).left()
+        if right > left:
+            alternate = self.alternatingRowColors() and self._shown_row(index) % 2 == 1
+            rect = QtCore.QRect(
+                left, option.rect.top(), right - left, option.rect.height()
+            )
+            painter.fillRect(rect, self._ground(cell, alternate))
+        super().drawRow(painter, option, index)
 
     def _set_selection_mode(self, mode_str):
         """Set the selection mode from a string."""
@@ -1173,6 +1534,7 @@ class TreeWidget(
         locked=(),
         reorderable=False,
         hidden_by_default=(),
+        default_order=(),
     ):
         """Enable header right-click menu for column visibility and drag reorder.
 
@@ -1192,6 +1554,8 @@ class TreeWidget(
                 column order (see ``ColumnConfig``).
             hidden_by_default: Logical columns hidden until the user's own
                 layout is saved -- optional columns they turn on from the menu.
+            default_order: The logical columns left to right until the user's
+                own order is saved (see ``ColumnConfig``).
         """
         ColumnConfig.attach(
             self,
@@ -1201,6 +1565,7 @@ class TreeWidget(
             app="TreeWidget",
             reorderable=reorderable,
             hidden_by_default=hidden_by_default,
+            default_order=default_order,
         )
 
     @property

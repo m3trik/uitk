@@ -41,6 +41,7 @@ if not os.environ.get("INTERACTIVE_TESTS"):
 from uitk.testing import TestSandbox  # noqa: E402
 
 QSETTINGS_SANDBOX_DIR, PRESETS_SANDBOX_DIR = TestSandbox.activate()
+TestSandbox.sweep_scratch(os.path.dirname(os.path.abspath(__file__)))  # its scratch folder ages out
 
 
 def setup_qt_application():

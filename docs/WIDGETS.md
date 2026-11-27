@@ -132,6 +132,8 @@ Every registered widget shows its tooltip through `TooltipPresenter` ([`mixins/t
 - **Width.** Qt never wraps a *plain* tooltip until it is wider than the screen, so a three-sentence `.ui` tooltip shows as one line 1300+ px wide. It squeezes a short *rich* one to a narrow column. `TooltipFormat.wrap` breaks both at `WRAP_WIDTH` (60) characters. A line may run up to `WRAP_SLACK` (15) characters longer, but only to finish its sentence. Authored line breaks, paragraphs, list items and `<pre>` are kept. Plain text stays plain.
 - **Display time.** Qt shows a tooltip for 10 s plus 40 ms per character past 100. `TooltipFormat.display_ms` gives 10 s plus 400 ms per visible word, and never less than Qt's time. Set `TooltipPresenter.DYNAMIC_DURATION = False` to go back to Qt's timer. A widget's own `setToolTipDuration()` always wins.
 
+**Inactive windows.** Qt shows a tooltip only under the active window (or a window parented to it), so a tool panel beside the window last clicked shows none until it is clicked. A window uitk makes shows its tooltips either way: `MainWindow`, `WindowPanel` and every promoted popup (`Menu`, `ExpandableList` flyouts) set Qt's `WA_AlwaysShowToolTips` on themselves. Qt reads that attribute from the top-level window alone, so a top-level window built without those primitives sets it itself; never set it on a host application's window. One window opts out with `MainWindow(..., WA_AlwaysShowToolTips=False)` or `ui.set_attributes(WA_AlwaysShowToolTips=False)`. There is no switch to turn tooltips off: only a tooltip handed to the presenter could be withheld, and a widget a slot builds in code (a cell's label, a `QMenu`) shows its own.
+
 Text that has to be computed at hover time is a **bound provider**, which the presenter calls first. Don't use a separate filter that rewrites the tooltip on `QEvent.ToolTip`: Qt runs filters newest-first, so the presenter shows the text and consumes the event before an older filter ever sees it.
 
 ```python
@@ -360,6 +362,25 @@ def tree_nodes(self, item, column):
 
 Methods: `add`, `create_item`, `set_item_type_icon`, `set_item_data`, `set_action_color`, `expand_all_items`, `collapse_all_items`, `set_selection_mode`, `enable_column_config` / `restore_column_state` (see [column config](#column-config)), `enable_row_tags` (see [row tags](#row-tags)).
 
+Row grounds are the tree's own, immune to a host's sheet: each cell is laid on the view's base, then `alternateRowColor` on every other row while `alternatingRowColors` is on (until a panel sets one, the theme's `ALTERNATE_BACKGROUND`, which it sets as `defaultAlternateRowColor`; a colour a panel set survives a repolish), `set_column_tint(column, color)`, the row's `childRowColor` / `parentRowColor` and the item's own background. A row with a row colour doesn't alternate, because that colour is its ground. A row's ground also runs under its indentation, so a tinted row reads as one band.
+
+```python
+tree.setAlternatingRowColors(True)               # the top rows alternate
+tree.setChildRowColor(QtGui.QColor(0, 0, 0, 56))  # each parent's children: one darker band
+tree.set_column_tint(0, QtGui.QColor(0, 0, 0, 36))
+```
+
+The tree draws its own hierarchy. Each row hangs from its parent's expander by a guide line, so every level reads as one line down from its parent. The expander is an 11 px thin-walled box with a plus or a minus (`set_icon_style("arrows")`: a chevron; an unknown style raises `ValueError`). Both are drawn in the tree's text colour, so they follow the theme, and the expander under the pointer lights up. `enable_hierarchy_icons(False)` hands the branches back to Qt's style (the theme styles no `::branch`, so the style draws its own expanders, as it does in every other tree). `set_row_height(px)` gives every row one height (16 by default); a tree whose cells hold widgets sets at least their height to keep its rows even.
+
+A long name reads by its end with `set_cell_tail(item, column, start)`. The text before `start` (a path's parents) is faded and cut from its left when the column is narrow, and the rest (the leaf) shows whole, semi-bold. `None` makes it plain text again.
+
+```python
+tree.set_row_height(20)
+path = "PUMP|HOUSING|ACCESS_PANEL"
+item = tree.create_item([path])
+tree.set_cell_tail(item, 0, path.rindex("|") + 1)  # "PUMP|HOUSING|" faded, "ACCESS_PANEL" whole
+```
+
 ## TableWidget
 
 ```python
@@ -389,7 +410,7 @@ widget.edit_cell_as(row, 1, os.path.basename(path), lambda name: self._rename(pa
 
 ### Column config
 
-`TreeWidget` and `TableWidget` share one header option, `enable_column_config(settings=None, settings_key=None, locked=(), reorderable=False, hidden_by_default=())` + `restore_column_state()`: right-click the header for a checkable row per column, in the order the view shows them (ticked while shown); the last visible column and any `locked` ones can't be hidden; sections drag to reorder; the layout is saved on every change (`hidden_columns`, `column_order` under the `settings_key` branch) and applied by `restore_column_state()` once the headers are set. The option is `ColumnConfig` ([column_config.py](../uitk/widgets/column_config.py)), which attaches the same way to any plain `QTableWidget` / `QTreeWidget` (labels come from the model's header data):
+`TreeWidget` and `TableWidget` share one header option, `enable_column_config(settings=None, settings_key=None, locked=(), reorderable=False, hidden_by_default=(), default_order=())` + `restore_column_state()`: right-click the header for a checkable row per column, in the order the view shows them (ticked while shown); the last visible column and any `locked` ones can't be hidden; sections drag to reorder; the layout is saved on every change (`hidden_columns`, `column_order` under the `settings_key` branch) and applied by `restore_column_state()` once the headers are set. The option is `ColumnConfig` ([column_config.py](../uitk/widgets/column_config.py)), which attaches the same way to any plain `QTableWidget` / `QTreeWidget` (labels come from the model's header data):
 
 ```python
 ColumnConfig.attach(table, settings=settings, settings_key="columns", locked=[0]).restore()
@@ -397,7 +418,7 @@ ColumnConfig.of(table).set_hidden(3)        # refused (False) for a locked or la
 ColumnConfig.of(table).set_order([2, 0, 1, 3])  # logical columns, left to right
 ```
 
-`hidden_by_default` names optional columns, hidden until the user's own layout is saved; from then on the saved layout alone decides. `ColumnConfig.visibility_changed(column, hidden)` fires when a column is shown or hidden (through `set_hidden` or the menu), so a host fills a costly column only once it shows:
+`hidden_by_default` names optional columns, hidden until the user's own layout is saved; from then on the saved layout alone decides. `default_order` lists the logical columns left to right while the user has saved no order (a column added last by index, drawn where it belongs); it is never saved as theirs, and their own drag outranks it. `ColumnConfig.visibility_changed(column, hidden)` fires when a column is shown or hidden (through `set_hidden` or the menu), so a host fills a costly column only once it shows:
 
 ```python
 table.enable_column_config(settings_key="files", hidden_by_default=[4])

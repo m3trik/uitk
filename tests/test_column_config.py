@@ -259,6 +259,84 @@ class ColumnConfigTest(_ColumnCase):
         ColumnConfig.of(again).restore()
         self.assertEqual(self.hidden(again), [], "the user's choice outranks it")
 
+    def test_a_default_order_stands_until_the_user_drags_and_is_never_saved_for_them(
+        self,
+    ):
+        """``default_order``: a column added last by index is drawn where it
+        belongs on a view with no saved order, without that placement being
+        written as the user's layout; the user's own drag outranks it from
+        then on. (A panel that moved the section itself on each redraw saved
+        its own move over the user's order.) Added: 2026-11-22
+        """
+        view = self.make(QtWidgets.QTableWidget)
+        config = ColumnConfig.attach(
+            view, settings=self.settings, default_order=[0, 3, 1, 2]
+        )
+        config.restore()
+        header = self.header(view)
+        self.assertEqual([header.logicalIndex(v) for v in range(4)], [0, 3, 1, 2])
+        self.assertEqual(
+            config.settings.value("column_order", []),
+            [],
+            "a default, not the user's layout",
+        )
+        config.restore()
+        self.assertEqual(
+            [header.logicalIndex(v) for v in range(4)], [0, 3, 1, 2], "again: unchanged"
+        )
+
+        header.moveSection(1, 3)  # the user drags Notes to the end
+        again = self.make(QtWidgets.QTableWidget)
+        ColumnConfig.attach(
+            again, settings=self.settings, default_order=[0, 3, 1, 2]
+        ).restore()
+        header = self.header(again)
+        self.assertEqual(
+            [header.logicalIndex(v) for v in range(4)],
+            [0, 1, 2, 3],
+            "the user's order outranks it",
+        )
+
+        other = self.make(QtWidgets.QTableWidget, name="other")
+        ColumnConfig.attach(
+            other, settings=self.settings, default_order=[0, 1]
+        ).restore()
+        header = self.header(other)
+        self.assertEqual(
+            [header.logicalIndex(v) for v in range(4)],
+            [0, 1, 2, 3],
+            "an order for other columns: ignored",
+        )
+
+    def test_a_show_or_hide_does_not_save_the_default_order_as_the_users(self):
+        """Hiding a column saves the layout, and the order it saves is only the
+        user's: the default order still showing is left unwritten, so a later
+        ``default_order`` still applies. A user who has dragged keeps their
+        order through a hide. (``save`` wrote ``column_order`` on every change,
+        freezing the default as theirs on the first show or hide.)
+        Fixed: 2026-11-23
+        """
+        view = self.make(QtWidgets.QTableWidget)
+        config = ColumnConfig.attach(
+            view, settings=self.settings, default_order=[0, 3, 1, 2]
+        )
+        config.restore()
+        self.assertTrue(config.set_hidden(2))
+        self.assertEqual(
+            config.settings.value("hidden_columns", None), [2], "the hide is saved"
+        )
+        self.assertEqual(
+            config.settings.value("column_order", []), [], "the default is not theirs"
+        )
+
+        self.header(view).moveSection(1, 3)  # the user drags Notes to the end
+        self.assertTrue(config.set_hidden(2, False))
+        self.assertEqual(
+            config.settings.value("column_order", []),
+            [0, 1, 2, 3],
+            "their drag is kept",
+        )
+
     def test_showing_or_hiding_a_column_is_announced(self):
         """A host whose column is costly to fill fills it only once it shows:
         ``visibility_changed(column, hidden)`` says when. Added: 2026-10-04"""

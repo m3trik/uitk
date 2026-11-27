@@ -168,6 +168,118 @@ class TestMainWindowCreation(QtBaseTestCase):
         self.assertFalse(window.is_initialized)
 
 
+class TestMainWindowTooltipsWhileInactive(QtBaseTestCase):
+    """Qt shows a tooltip only under the active window (or a window parented
+    to it): a tool panel beside the window last clicked showed none until it
+    was clicked. A MainWindow sets ``WA_AlwaysShowToolTips``, which Qt reads
+    from the top-level window alone."""
+
+    def setUp(self):
+        super().setUp()
+        self.sb = MockSwitchboard()
+
+    def test_the_attribute_is_set_and_a_callers_own_wins(self):
+        from uitk.widgets.mainWindow import MainWindow
+
+        always = QtCore.Qt.WA_AlwaysShowToolTips
+        window = self.track_widget(MainWindow("TestWindow", self.sb))
+        self.assertTrue(window.testAttribute(always))
+        quiet = self.track_widget(
+            MainWindow("Quiet", self.sb, WA_AlwaysShowToolTips=False)
+        )
+        self.assertFalse(quiet.testAttribute(always))
+
+    def test_an_inactive_window_shows_a_tooltip_on_a_real_hover(self):
+        """The whole route: a real pointer move, Qt's own wake-up and its
+        gate, the presenter. A plain window beside it is the control."""
+        from qtpy import QtTest
+
+        from uitk.widgets.mainWindow import MainWindow
+
+        # Side by side and clear of other tests' windows: the offscreen
+        # platform delivers a move to a window the target overlaps.
+        other = self.track_widget(QtWidgets.QWidget())
+        other.setGeometry(1500, 900, 300, 120)
+        plain = self.track_widget(QtWidgets.QWidget())
+        plain.setGeometry(900, 600, 300, 120)
+        central = QtWidgets.QWidget()
+        window = self.track_widget(
+            MainWindow(
+                "TestWindow",
+                self.sb,
+                central_widget=central,
+                restore_window_size=False,
+                ensure_on_screen=False,
+                fit_to_content_on_show=False,
+            )
+        )
+        window.setGeometry(900, 900, 300, 120)
+        style = self._quick_tips()
+        buttons = []
+        for parent in (plain, central):
+            button = QtWidgets.QPushButton("x", parent)
+            button.setObjectName("b000")
+            button.setToolTip("tip")
+            button.setGeometry(10, 10, 80, 30)
+            button.setStyle(style)
+            buttons.append(button)
+        for w in (other, plain, window):
+            w.show()
+        other.activateWindow()
+        QtTest.QTest.qWait(50)
+        if QtWidgets.QApplication.activeWindow() is not other:
+            self.skipTest("this platform did not activate the other window")
+        self.assertFalse(window.geometry().intersects(plain.geometry()))
+        self._restore_pointer_after()
+
+        self.assertFalse(self._hover_shows_a_tip(buttons[0]), "Qt's own rule")
+        self.assertTrue(self._hover_shows_a_tip(buttons[1]))
+        self.assertEqual(QtWidgets.QToolTip.text(), "tip")
+
+    def _quick_tips(self):
+        """A style whose tooltips wake at once: Qt asks the hovered widget's
+        style for the delay (700 ms), which the test would otherwise wait."""
+
+        class QuickTips(QtWidgets.QProxyStyle):
+            def styleHint(self, hint, option=None, widget=None, returnData=None):
+                if hint == QtWidgets.QStyle.SH_ToolTip_WakeUpDelay:
+                    return 20
+                return super().styleHint(hint, option, widget, returnData)
+
+        style = QuickTips()
+        self.addCleanup(style.deleteLater)
+        return style
+
+    def _restore_pointer_after(self):
+        """Put the offscreen pointer back where it was once the test ends.
+
+        A synthesized MOVE leaves it where it went for the rest of the process
+        (a click does not move it), and a later test that reads
+        ``QCursor.pos()`` -- a popup's outside-press check -- then sees a
+        pointer nowhere near its own window. Offscreen only: elsewhere
+        ``setPos`` would move the person's real pointer.
+        """
+        from qtpy import QtGui
+
+        if QtGui.QGuiApplication.platformName() == "offscreen":
+            self.addCleanup(QtGui.QCursor.setPos, QtGui.QCursor.pos())
+
+    def _hover_shows_a_tip(self, widget) -> bool:
+        """Move the pointer onto *widget* and wait out Qt's wake-up delay."""
+        from qtpy import QtTest
+
+        QtWidgets.QToolTip.hideText()
+        self.addCleanup(QtWidgets.QToolTip.hideText)
+        wake = widget.style().styleHint(
+            QtWidgets.QStyle.SH_ToolTip_WakeUpDelay, None, widget
+        )
+        centre = widget.rect().center()
+        QtTest.QTest.mouseMove(widget, centre - QtCore.QPoint(3, 0))
+        QtTest.QTest.mouseMove(widget, centre)
+        QtTest.QTest.qWait(wake + 150)
+        return QtWidgets.QToolTip.isVisible()
+
+
 class TestMainWindowSignals(QtBaseTestCase):
     """Tests for MainWindow signal emissions."""
 

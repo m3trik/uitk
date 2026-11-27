@@ -32,10 +32,15 @@ QWidget::item:selected {
 QWidget::item:selected:hover {
     background-color: {BUTTON_HOVER_TINT};
 }
+/* A tooltip is a top-level popup, as a menu is: its ground is the menu's,
+   opaque (PANEL_BACKGROUND's alpha composited over nothing and read as a
+   washed-out grey under light text), and dark in every theme, which the
+   rich tooltips' colours are drawn for (pythontk's TooltipFormat). */
 QToolTip {
-    background-color: {PANEL_BACKGROUND};
+    background-color: {MENU_BACKGROUND};
     color: {TEXT_COLOR};
     border: {BORDER_W} solid {BORDER_COLOR};
+    padding: 4px 6px;
 }
 QWidget.centralWidget {
     background-color: {WINDOW_FILL};
@@ -940,43 +945,6 @@ QTableWidget::item:selected:hover {
     border: {BORDER_W} solid {BUTTON_HOVER_TINT};
 }
 
-QTreeView::branch {
-    background-color: transparent;
-    border: none;
-    margin: 2px;
-}
-QTreeView::branch:has-siblings:!adjoins-item {
-    background-color: transparent;
-}
-QTreeView::branch:has-siblings:adjoins-item {
-    background-color: transparent;
-}
-QTreeView::branch:!has-children:!has-siblings:adjoins-item {
-    background-color: transparent;
-}
-QTreeView::branch:has-children:closed {
-    background-color: {WIDGET_BACKGROUND};
-    border: {BORDER_W} solid {BORDER_COLOR};
-    border-radius: 2px;
-    width: 14px;
-    height: 14px;
-    margin: 1px;
-}
-QTreeView::branch:has-children:closed:hover {
-    background-color: {BUTTON_HOVER};
-}
-QTreeView::branch:has-children:open {
-    background-color: {WIDGET_BACKGROUND};
-    border: {BORDER_W} solid {BORDER_COLOR};
-    border-radius: 2px;
-    width: 14px;
-    height: 14px;
-    margin: 1px;
-}
-QTreeView::branch:has-children:open:hover {
-    background-color: {BUTTON_HOVER};
-}
-
 /* -- Frames -- */
 QFrame {
     border-radius: {RADIUS};
@@ -1454,6 +1422,10 @@ Footer > QLabel:hover {
 }
 
 /* -- TreeWidget Specific Styling -- */
+/* No ::branch rule: a sheet's branch rule replaces the style's expander, and
+   one drawing nothing left a tree with none. TreeWidget draws its own
+   (drawBranches); every other tree, and a TreeWidget with its own off, the
+   style's. */
 QTreeWidget {
     outline: none;
     background-color: {WIDGET_BACKGROUND};
@@ -1464,95 +1436,12 @@ QTreeWidget {
     alternate-background-color: {ALTERNATE_BACKGROUND};
 }
 
-QTreeWidget::branch {
-    background: transparent;
-    border: none;
-    width: 16px;
-    height: 16px;
-    margin: 0px;
-    padding: 0px;
-}
-
-/* Vertical continuation lines (items that have siblings below them) */
-QTreeWidget::branch:has-siblings:!adjoins-item {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
-/* T-junction: item with siblings that also has children (branch through) */
-QTreeWidget::branch:has-siblings:adjoins-item {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
-/* L-junction: last item in a group that has no children (end node) */
-QTreeWidget::branch:!has-children:!has-siblings:adjoins-item {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
-/* Expandable nodes - closed */
-QTreeWidget::branch:has-children:closed {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
-QTreeWidget::branch:has-children:closed:hover {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
-/* Expandable nodes - open */
-QTreeWidget::branch:has-children:open {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
-QTreeWidget::branch:has-children:open:hover {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
-/* T-junction: item with siblings that has children (closed) */
-QTreeWidget::branch:closed:has-children:has-siblings {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
-/* T-junction: item with siblings that has children (open) */
-QTreeWidget::branch:open:has-children:has-siblings {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
-/* L-junction: last item in a group that has children but is closed */
-QTreeWidget::branch:has-children:!has-siblings:closed {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
-/* L-junction: last item in a group that has children and is open */
-QTreeWidget::branch:has-children:!has-siblings:open {
-    background: transparent;
-    border-image: none;
-    /* Icon path set dynamically by TreeWidget */
-}
-
+/* No colour here: QAbstractItemView gives the text its colour. A colour on
+   ::item would beat every cell's own foreground brush. */
 QTreeWidget::item {
     padding: 2px 4px;
     border: none;
     min-height: 18px;
-    color: {TEXT_COLOR};
     background: transparent;
 }
 
@@ -1577,7 +1466,11 @@ QTreeWidget::item:alternate {
     background-color: {TREE_ALTERNATE_BG};
 }
 
-/* Custom TreeWidget class support */
+/* Custom TreeWidget class support. Its delegate lays every row's ground,
+   the alternate one too (qproperty-defaultAlternateRowColor: a panel's
+   alternateRowColor outranks it through a repolish); Qt's own alternate
+   ground is transparent here: Qt paints it into a row's indentation, over
+   the row's ground. */
 TreeWidget {
     outline: none;
     background-color: {WIDGET_BACKGROUND};
@@ -1585,7 +1478,8 @@ TreeWidget {
     selection-background-color: {BUTTON_HOVER};
     show-decoration-selected: 1;
     gridline-color: transparent;
-    qproperty-childRowColor: rgba(255, 255, 255, 0.04);
+    alternate-background-color: transparent;
+    qproperty-defaultAlternateRowColor: {ALTERNATE_BACKGROUND};
 }
 
 TreeWidget::item:selected {

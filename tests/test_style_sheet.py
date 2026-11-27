@@ -258,7 +258,7 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
                 f"{selector} must paint with {{CHROME_BACKGROUND}}",
             )
 
-        for selector in ("QToolBox", "QStackedWidget", "QToolTip"):
+        for selector in ("QToolBox", "QStackedWidget"):
             m = re.search(rf"(?:^|\n){re.escape(selector)}\s*\{{([^}}]*)\}}", qss)
             self.assertIsNotNone(m, f"{selector} rule must exist")
             self.assertNotIn(
@@ -266,6 +266,26 @@ class TestStyleSheetTemplateEngine(QtBaseTestCase):
                 m.group(1),
                 f"{selector} must keep {{PANEL_BACKGROUND}}, not the chrome token",
             )
+
+    def test_a_tooltip_is_grounded_like_a_menu(self):
+        """A tooltip is a top-level popup: PANEL_BACKGROUND's alpha read as a
+        washed-out grey under light text. It takes the menu's opaque ground,
+        dark in every theme. Fixed: 2026-11-25"""
+        import re
+
+        parts = StyleSheet._get_template()
+        for theme in StyleSheet.themes:
+            theme_vars = {**StyleSheet.themes[theme], "MENU_BACKGROUND": "rgb(7,8,9)"}
+            StyleSheet._derive_internal_vars(theme_vars)
+            qss = StyleSheet._apply_template(parts, theme_vars)
+            m = re.search(r"(?:^|\n)QToolTip\s*\{([^}]*)\}", qss)
+            self.assertIsNotNone(m, "the QToolTip rule")
+            self.assertIn("background-color: rgb(7,8,9)", m.group(1), theme)
+            ground = StyleSheet._parse_color(
+                StyleSheet.themes[theme]["MENU_BACKGROUND"]
+            )
+            self.assertEqual(StyleSheet._alpha(ground), 255.0, f"{theme}: opaque")
+            self.assertLess(max(ground[:3]), 100, f"{theme}: dark")
 
     def test_chrome_background_is_translucent_except_high_contrast(self):
         """The shipped chrome is semi-transparent in the standard themes;
@@ -391,7 +411,12 @@ class TestActionTokensReadThePalette(unittest.TestCase):
     def test_every_theme_reads_its_palette_tiers(self):
         import pythontk as ptk
 
-        tiers = {"VALID": "success", "INVALID": "error", "WARNING": "warn", "INFO": "info"}
+        tiers = {
+            "VALID": "success",
+            "INVALID": "error",
+            "WARNING": "warn",
+            "INFO": "info",
+        }
         for theme in ("light", "dark", "high-contrast"):
             status = ptk.Palette.status(theme)
             tokens = StyleSheet.themes[theme]
