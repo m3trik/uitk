@@ -4,9 +4,9 @@
 
 Pins the 2026 icon-set regularization: every icon is a 16x16 SVG drawn in a
 single visual grammar (stroke #888888 / width 1.5 for themeable glyphs) so
-IconManager's colorize pipeline can retint the whole set. The QSS-only tree
-family (consumed by file path in treeWidget.py, never colorized) keeps its
-hardcoded dark-theme palette and full-bleed guides.
+IconManager's colorize pipeline can retint the whole set. ``tree_horizontal``,
+the last of the old tree-guide family (``Separator``'s Designer icon, never
+colorized), keeps its hardcoded dark-theme palette and full-bleed guide.
 
 Run standalone: python -m tests.test_icons
 """
@@ -25,18 +25,10 @@ from uitk.managers.icon_manager import IconManager  # noqa: E402
 
 ICON_DIR = Path(__file__).resolve().parent.parent / "uitk" / "icons"
 
-# Consumed via file paths in treeWidget.py QSS (never colorized); drawn
-# edge-to-edge by design and allowed a hardcoded dark-theme palette.
-TREE_FAMILY = {
-    "tree_vertical",
-    "tree_horizontal",
-    "tree_branch",
-    "tree_end",
-    "expand_end",
-    "expand_branch",
-    "collapse_end",
-    "collapse_branch",
-}
+# The last of the tree-guide family (the tree paints its own guides now):
+# ``Separator``'s Designer icon, drawn edge-to-edge by design and allowed a
+# hardcoded dark-theme palette.
+TREE_FAMILY = {"tree_horizontal"}
 
 PLACEHOLDER = "#888888"
 

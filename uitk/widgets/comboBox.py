@@ -790,6 +790,7 @@ class ComboBox(
         value = value or ""
         if value != self._current_text_suffix:
             self._current_text_suffix = value
+            self.updateGeometry()  # its width is in the size hints
             self.update()
 
     @property
@@ -809,11 +810,31 @@ class ComboBox(
         value = value or ""
         if value != self._current_text_prefix:
             self._current_text_prefix = value
+            self.updateGeometry()  # its width is in the size hints
             self.update()
 
     def setCurrentTextPrefix(self, value: str) -> None:
         """Qt-property setter for :attr:`current_text_prefix`."""
         self.current_text_prefix = value
+
+    def _with_affixes(self, hint: QtCore.QSize) -> QtCore.QSize:
+        """*hint* widened by the display affixes' text."""
+        affixes = self._current_text_prefix + self._current_text_suffix
+        if not affixes:
+            return hint
+        return QtCore.QSize(
+            hint.width() + self.fontMetrics().horizontalAdvance(affixes), hint.height()
+        )
+
+    def sizeHint(self) -> QtCore.QSize:  # noqa: N802 -- Qt's name
+        """Qt's, widened by the display affixes: Qt measures the items
+        alone, so a prefix (``"Edits:  "``) was painted past the box's width
+        and the item cut short."""
+        return self._with_affixes(super().sizeHint())
+
+    def minimumSizeHint(self) -> QtCore.QSize:  # noqa: N802 -- Qt's name
+        """Qt's, widened by the display affixes (see :meth:`sizeHint`)."""
+        return self._with_affixes(super().minimumSizeHint())
 
     def setCurrentTextSuffix(self, value: str) -> None:
         """Qt-property setter for :attr:`current_text_suffix`."""

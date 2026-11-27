@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from qtpy import QtWidgets, QtGui, QtCore
+import pythontk as ptk
 from uitk.themes.style_sheet import StyleSheet
 
 from uitk.widgets.editors.color_mapping_editor import (
@@ -558,7 +559,10 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # -- state ----------------------------------------------------------
         self._attribute_colors: Dict[str, str] = dict(DISPLAY_COLORS)
         self._bulk_depth: int = 0  # >0 inside bulk_updates() — defer scene-rect
-        self._shift_at_press: bool = False  # Shift held when last drag started
+        # The chord of the live drag (or of the last one, as it ended): see
+        # :attr:`shift_held_in_drag`.
+        self._shift_in_drag: bool = False
+        self._ctrl_in_drag: bool = False
         self._mark_flat_spans: bool = True  # see mark_flat_spans
         # The chord held over the timeline, as a plain int: the Shift scale
         # box and the legend's "On Modifier" mode are both answers to it
@@ -633,7 +637,6 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         # -- keyboard shortcuts via ShortcutManager -------------------------
         self._key_routing.install_shortcuts()
         self._apply_legend()
-        self._ctrl_at_press = False
         # Keep the ShortcutOverride sequences in sync with the manager
         self._shortcut_mgr.on_change(self._sync_shortcut_sequences)
         self._sync_shortcut_sequences()
@@ -1413,36 +1416,82 @@ class SequencerWidget(QtWidgets.QSplitter, AttributesMixin):
         self._zone_menu_enabled = bool(value)
 
     @property
-    def shift_held_at_press(self) -> bool:
-        """Whether Shift was held when the last drag interaction started."""
-        return self._shift_at_press
+    def shift_held_in_drag(self) -> bool:
+        """Whether Shift is held in the live drag (or was as the last one ended).
 
-    @shift_held_at_press.setter
-    def shift_held_at_press(self, value: bool) -> None:
-        self._shift_at_press = value
+        The consumers' "retime" gate.  Banked at the press
+        (:meth:`record_press_modifiers`) and then followed for the rest of
+        the drag -- every move and the release -- so a modifier pressed or
+        let go mid-drag switches what the drag does without a regrab, as
+        Alt already did: a drag label reads it on each move, a consumer on
+        the release.
+        """
+        return self._shift_in_drag
+
+    @shift_held_in_drag.setter
+    def shift_held_in_drag(self, value: bool) -> None:
+        self._shift_in_drag = bool(value)
 
     @property
-    def ctrl_held_at_press(self) -> bool:
-        """Whether Ctrl was held when the last drag interaction started.
+    def ctrl_held_in_drag(self) -> bool:
+        """Whether Ctrl is held in the live drag (:attr:`shift_held_in_drag`).
 
-        The consumers' "bound only" gate: a range's bound handle grabbed
+        The consumers' "bound only" gate: a range's bound handle dragged
         with Ctrl moves the bound and leaves the keys where they are.
         """
-        return self._ctrl_at_press
+        return self._ctrl_in_drag
+
+    @ctrl_held_in_drag.setter
+    def ctrl_held_in_drag(self, value: bool) -> None:
+        self._ctrl_in_drag = bool(value)
+
+    # Read once at the press, before a drag followed its chord.
+    @property
+    @ptk.Deprecation.symbol(
+        "SequencerWidget.shift_held_in_drag", remove_in="1.13.0", since="2026-11-24"
+    )
+    def shift_held_at_press(self) -> bool:
+        return self._shift_in_drag
+
+    @shift_held_at_press.setter
+    @ptk.Deprecation.symbol(
+        "SequencerWidget.shift_held_in_drag", remove_in="1.13.0", since="2026-11-24"
+    )
+    def shift_held_at_press(self, value: bool) -> None:
+        self._shift_in_drag = bool(value)
+
+    @property
+    @ptk.Deprecation.symbol(
+        "SequencerWidget.ctrl_held_in_drag", remove_in="1.13.0", since="2026-11-24"
+    )
+    def ctrl_held_at_press(self) -> bool:
+        return self._ctrl_in_drag
 
     @ctrl_held_at_press.setter
+    @ptk.Deprecation.symbol(
+        "SequencerWidget.ctrl_held_in_drag", remove_in="1.13.0", since="2026-11-24"
+    )
     def ctrl_held_at_press(self, value: bool) -> None:
-        self._ctrl_at_press = bool(value)
+        self._ctrl_in_drag = bool(value)
 
     def record_press_modifiers(self, modifiers) -> None:
-        """Bank the modifiers a press carried, for the consumers' gates.
+        """Bank the chord a press carried: the drag it starts begins under it.
 
         Every press site calls this -- clips, keys, the range highlight, a
         layer's items and lanes -- so a gesture never inherits what the LAST
-        one left behind.
+        one left behind.  The timeline then follows the chord through the
+        drag's moves and its release (:meth:`_follow_drag_modifiers`).
         """
-        self._shift_at_press = bool(modifiers & QtCore.Qt.ShiftModifier)
-        self._ctrl_at_press = bool(modifiers & QtCore.Qt.ControlModifier)
+        self._follow_drag_modifiers(modifiers)
+
+    def _follow_drag_modifiers(self, modifiers) -> None:
+        """Bank the chord a mouse event of the drag carries.
+
+        Read off the mouse event, not the key events: it holds the chord
+        whichever window has the keyboard, and a press already does.
+        """
+        self._shift_in_drag = bool(modifiers & QtCore.Qt.ShiftModifier)
+        self._ctrl_in_drag = bool(modifiers & QtCore.Qt.ControlModifier)
 
     # -- shortcut overlay ---------------------------------------------------
 

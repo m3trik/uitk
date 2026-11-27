@@ -7192,18 +7192,18 @@ class TestKeyDragShiftFlag(BaseTestCase):
     def test_plain_key_press_clears_a_stale_shift_flag(self):
         from qtpy import QtCore
 
-        self.w.shift_held_at_press = True  # left behind by a prior gesture
+        self.w.shift_held_in_drag = True  # left behind by a prior gesture
         ki = self.item._keyframe_items[0]
         self._press(ki, QtCore.Qt.NoModifier)
-        self.assertFalse(self.w.shift_held_at_press)
+        self.assertFalse(self.w.shift_held_in_drag)
 
     def test_shift_key_press_sets_the_flag(self):
         from qtpy import QtCore
 
-        self.w.shift_held_at_press = False
+        self.w.shift_held_in_drag = False
         ki = self.item._keyframe_items[0]
         self._press(ki, QtCore.Qt.ShiftModifier)
-        self.assertTrue(self.w.shift_held_at_press)
+        self.assertTrue(self.w.shift_held_in_drag)
 
     def test_unselected_grabbed_key_joins_its_own_drag(self):
         """Ctrl-click defers selection to release — the grabbed key must
@@ -8748,16 +8748,16 @@ class TestBoundHandleGrammar(BaseTestCase):
         start, end = self.emitted[0]
         self.assertAlmostEqual(start, 40.0, "the other bound stays")
         self.assertGreater(end, 120.0)
-        self.assertFalse(self.w.ctrl_held_at_press)
-        self.assertFalse(self.w.shift_held_at_press)
+        self.assertFalse(self.w.ctrl_held_in_drag)
+        self.assertFalse(self.w.shift_held_in_drag)
 
     def test_a_ctrl_edge_grab_moves_only_that_bound(self):
         from qtpy import QtCore
 
         item, pt = self._grab_right_edge(QtCore.Qt.ControlModifier)
         self.assertEqual(item._drag_mode, "right")
-        self.assertTrue(self.w.ctrl_held_at_press)
-        self.assertFalse(self.w.shift_held_at_press)
+        self.assertTrue(self.w.ctrl_held_in_drag)
+        self.assertFalse(self.w.shift_held_in_drag)
         self._drag_to(item, pt, 4 * self.w._timeline._pixels_per_unit)
         start, end = self.emitted[0]
         self.assertAlmostEqual(start, 40.0)
@@ -8768,8 +8768,8 @@ class TestBoundHandleGrammar(BaseTestCase):
 
         item, _pt = self._grab_right_edge(QtCore.Qt.ShiftModifier)
         self.assertEqual(item._drag_mode, "right")
-        self.assertTrue(self.w.shift_held_at_press)
-        self.assertFalse(self.w.ctrl_held_at_press)
+        self.assertTrue(self.w.shift_held_in_drag)
+        self.assertFalse(self.w.ctrl_held_in_drag)
 
     def test_the_drag_label_names_the_gesture(self):
         from qtpy import QtCore
@@ -8786,11 +8786,152 @@ class TestBoundHandleGrammar(BaseTestCase):
     def test_a_plain_press_clears_stale_modifier_flags(self):
         from qtpy import QtCore
 
-        self.w.shift_held_at_press = True
-        self.w.ctrl_held_at_press = True
+        self.w.shift_held_in_drag = True
+        self.w.ctrl_held_in_drag = True
         self._grab_right_edge(QtCore.Qt.NoModifier)
-        self.assertFalse(self.w.shift_held_at_press)
-        self.assertFalse(self.w.ctrl_held_at_press)
+        self.assertFalse(self.w.shift_held_in_drag)
+        self.assertFalse(self.w.ctrl_held_in_drag)
+
+    # -- the chord followed through the drag (through the real viewport) --
+
+    def _send_mouse(self, kind, dx, buttons, modifiers):
+        """A mouse event *dx* viewport pixels right of the right bound."""
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        view = self.w._timeline
+        r = self.w._range_highlight._rect()
+        pt = view.mapFromScene(QtCore.QPointF(r.right() - 1, r.center().y()))
+        pos = QtCore.QPointF(pt.x() + dx, pt.y())
+        vp = view.viewport()
+        button = QtCore.Qt.NoButton if kind == "move" else QtCore.Qt.LeftButton
+        event_type = {
+            "press": QtCore.QEvent.MouseButtonPress,
+            "move": QtCore.QEvent.MouseMove,
+            "release": QtCore.QEvent.MouseButtonRelease,
+        }[kind]
+        QtWidgets.QApplication.sendEvent(
+            vp,
+            QtGui.QMouseEvent(
+                event_type,
+                pos,
+                QtCore.QPointF(vp.mapToGlobal(pos.toPoint())),
+                button,
+                buttons,
+                modifiers,
+            ),
+        )
+
+    def _commits(self):
+        """What each commit hands its consumer: the bounds, and the Ctrl and
+        Shift it reads while the signal fires (the mode it applies)."""
+        commits = []
+        self.w.range_highlight_changed.connect(
+            lambda a, b: commits.append(
+                (a, b, self.w.ctrl_held_in_drag, self.w.shift_held_in_drag)
+            )
+        )
+        return commits
+
+    def _key(self, kind, key, modifiers):
+        from qtpy import QtGui, QtWidgets
+
+        QtWidgets.QApplication.sendEvent(
+            self.w._timeline, QtGui.QKeyEvent(kind, key, modifiers)
+        )
+
+    def test_a_modifier_changed_mid_drag_switches_the_mode_without_a_regrab(self):
+        from qtpy import QtCore
+
+        left, none = QtCore.Qt.LeftButton, QtCore.Qt.NoModifier
+        item = self.w._range_highlight
+        commits = self._commits()
+        self._send_mouse("press", 0, left, none)
+        self.assertEqual(item._drag_mode, "right", "the viewport press grabbed")
+        self._send_mouse("move", 20, left, QtCore.Qt.ControlModifier)
+        self.assertTrue(self.w.ctrl_held_in_drag)
+        self.assertTrue(item._range_drag_label().startswith("Trim"))
+        self._send_mouse("move", 30, left, QtCore.Qt.ShiftModifier)
+        self.assertTrue(item._range_drag_label().startswith("Retime"))
+        self.assertFalse(self.w.ctrl_held_in_drag, "Ctrl let go")
+        shown = item._end
+        self.assertGreater(shown, 120.0)
+        # Let go of Shift on the release itself: the drag commits plain, at
+        # the bound it showed (this bound alone; the mode is the consumer's).
+        self._send_mouse("release", 30, QtCore.Qt.NoButton, none)
+        self.assertEqual(commits, [(40.0, shown, False, False)])
+
+    def test_a_modifier_key_mid_drag_relabels_the_drag_without_a_move(self):
+        from qtpy import QtCore
+
+        left, none = QtCore.Qt.LeftButton, QtCore.Qt.NoModifier
+        item = self.w._range_highlight
+        commits = self._commits()
+        self._send_mouse("press", 0, left, none)
+        self._send_mouse("move", 20, left, none)
+        self.assertEqual(item._drag_tooltip._item.text()[:6], "Resize")
+        shown = item._end
+        self._key(QtCore.QEvent.KeyPress, QtCore.Qt.Key_Shift, QtCore.Qt.ShiftModifier)
+        self.assertTrue(self.w.shift_held_in_drag)
+        self.assertEqual(item._drag_tooltip._item.text()[:6], "Retime")
+        self.assertEqual(item._end, shown, "the replay moved nothing")
+        self._send_mouse("release", 20, QtCore.Qt.NoButton, QtCore.Qt.ShiftModifier)
+        self.assertEqual(commits, [(40.0, shown, False, True)], "a retime")
+
+    def test_alt_pressed_mid_drag_commits_the_resize_about_the_centre(self):
+        """The one mode the bounds themselves carry: the other bound moves as
+        far the other way, from the key alone, and back when it is let go."""
+        from qtpy import QtCore
+
+        left, none, alt = (
+            QtCore.Qt.LeftButton,
+            QtCore.Qt.NoModifier,
+            QtCore.Qt.AltModifier,
+        )
+        item = self.w._range_highlight
+        commits = self._commits()
+        self._send_mouse("press", 0, left, none)
+        self._send_mouse("move", 20, left, none)
+        grown = item._end - 120.0
+        self.assertGreater(grown, 0)
+        self.assertEqual(item._start, 40.0)
+        self._key(QtCore.QEvent.KeyPress, QtCore.Qt.Key_Alt, alt)
+        self.assertEqual((item._start, item._end), (40.0 - grown, 120.0 + grown))
+        self.assertEqual(item._drag_verb(), "Resize about centre")
+        self._key(QtCore.QEvent.KeyRelease, QtCore.Qt.Key_Alt, none)
+        self.assertEqual((item._start, item._end), (40.0, 120.0 + grown), "plain again")
+        self._key(QtCore.QEvent.KeyPress, QtCore.Qt.Key_Alt, alt)
+        self._send_mouse("release", 20, QtCore.Qt.NoButton, alt)
+        self.assertEqual(commits, [(40.0 - grown, 120.0 + grown, False, False)])
+
+    def test_a_modifier_key_before_any_move_replays_nothing(self):
+        from qtpy import QtCore, QtGui, QtWidgets
+
+        self._send_mouse("press", 0, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier)
+        undo_depth = len(self.w._undo_stack)
+        QtWidgets.QApplication.sendEvent(
+            self.w._timeline,
+            QtGui.QKeyEvent(
+                QtCore.QEvent.KeyPress, QtCore.Qt.Key_Shift, QtCore.Qt.ShiftModifier
+            ),
+        )
+        self.assertEqual(
+            len(self.w._undo_stack), undo_depth, "a still press captured no undo"
+        )
+        self._send_mouse("release", 0, QtCore.Qt.NoButton, QtCore.Qt.NoModifier)
+        self.assertEqual(self.emitted, [])
+
+    def test_the_press_time_names_warn_and_read_the_drag(self):
+        import warnings
+
+        self.w.shift_held_in_drag = True
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.assertTrue(self.w.shift_held_at_press)
+            self.w.ctrl_held_at_press = True
+        self.assertTrue(self.w.ctrl_held_in_drag)
+        self.assertEqual(
+            [issubclass(w.category, DeprecationWarning) for w in caught], [True, True]
+        )
 
 
 class TestShortcutOverlay(BaseTestCase):
@@ -11358,6 +11499,74 @@ class TestLayerSeam(BaseTestCase):
         self._mouse(self.C.QEvent.MouseMove, 50.0, y, self.C.Qt.NoButton)
         self.assertIsNone(self.tl._layer_grab, "a buttonless move is a hover")
         self.assertEqual(layer.calls, ["press", "hover"])
+
+    def test_a_modifier_key_mid_grab_replays_the_move_to_whoever_took_it(self):
+        """A layer's grab and the active editor's hear the drag's last move
+        again, at the same place under the chord now held, when a modifier
+        goes down or up (``TimelineView._replay_drag_move``): their mode
+        switches without the pointer moving."""
+        from uitk.widgets.sequencer._editor import SequencerEditor
+
+        C = self.C
+        moves = []
+
+        def record(event):
+            moves.append((event.position().x(), event.buttons(), event.modifiers()))
+
+        class _Grabber(_FakeLayer):
+            def mouse_move(self, event):
+                record(event)
+                return super().mouse_move(event)
+
+        class _Taker(SequencerEditor):
+            name = "taker"
+
+            def mouse_press(self, event):
+                return True
+
+            def mouse_move(self, event):
+                record(event)
+                return True
+
+        def grab_by_layer():
+            layer = _Grabber(take=True)
+            layer.view = self.tl
+            self.w.add_layer(layer)
+
+        def grab_by_editor():
+            self.w.register_editor("taker", _Taker)
+            self.w.set_editor("taker")
+
+        left, shift = C.Qt.LeftButton, C.Qt.ShiftModifier
+        for name, take, attr in (
+            ("a layer", grab_by_layer, "_layer_grab"),
+            ("the editor", grab_by_editor, "_editor_grab"),
+        ):
+            with self.subTest(name):
+                take()
+                y = int(self.w._content_top) + 200
+                self._mouse(C.QEvent.MouseButtonPress, 40.0, y)
+                self.assertTrue(getattr(self.tl, attr), f"{name} took the press")
+                self._mouse(C.QEvent.MouseMove, 60.0, y, C.Qt.NoButton, left)
+                x = self._vx(60.0)
+                moves.clear()
+                for kind, held in (
+                    (C.QEvent.KeyPress, shift),
+                    (C.QEvent.KeyRelease, C.Qt.NoModifier),
+                ):
+                    self._key(kind, C.Qt.Key_Shift, held)
+                self.assertEqual(
+                    moves, [(x, left, shift), (x, left, C.Qt.NoModifier)], name
+                )
+                self._mouse(C.QEvent.MouseButtonRelease, 60.0, y, left, C.Qt.NoButton)
+                self.w.set_editor("tracks")
+
+    def _key(self, kind, key, modifiers):
+        from qtpy import QtWidgets
+
+        QtWidgets.QApplication.sendEvent(
+            self.tl, self.G.QKeyEvent(kind, key, modifiers)
+        )
 
     def test_a_layer_names_the_legend_group_under_the_pointer(self):
         self._layer()

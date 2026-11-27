@@ -1030,6 +1030,21 @@ class CurrentTextPrefixSuffix(QtBaseTestCase):
         self.assertEqual(combo.itemText(0), "Polygons")
         self.assertEqual(combo.itemData(0), "polygons")
 
+    def test_the_affixes_widen_the_combo(self):
+        """Qt measured the items alone: the Shot Manifest's "Edits:  " prefix
+        was painted past the box and its item cut ("Keep All Ec"). Fixed:
+        2026-11-25 -- the size hints add the affixes' text."""
+        from uitk.widgets.comboBox import ComboBox
+
+        combo = self.track_widget(ComboBox())
+        combo.addItem("Keep All Edits")
+        bare, bare_min = combo.sizeHint().width(), combo.minimumSizeHint().width()
+        combo.current_text_prefix = "Edits:  "
+        combo.current_text_suffix = " *"
+        extra = combo.fontMetrics().horizontalAdvance("Edits:   *")
+        self.assertEqual(combo.sizeHint().width(), bare + extra)
+        self.assertEqual(combo.minimumSizeHint().width(), bare_min + extra)
+
     def test_no_adornments_returns_text_unchanged(self):
         from uitk.widgets.comboBox import ComboBox
 

@@ -86,6 +86,9 @@ class PopupWindow:
             # re-read at each show so a theme change reaches it.
             Bootstrap.set_blur(widget, StyleSheet.window_blur)
         widget.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
+        # Never activated, so Qt would show its tooltips only while its owner
+        # is the active window.
+        widget.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
         StyleSheet.cast_shadow(widget)
         return parent
 

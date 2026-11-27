@@ -526,6 +526,14 @@ class TestPopupWindowUnits(QtBaseTestCase):
         self.assertFalse(w.testAttribute(QtCore.Qt.WA_TranslucentBackground))
         self.assertTrue(w.testAttribute(QtCore.Qt.WA_ShowWithoutActivating))
 
+    def test_a_popup_shows_its_tooltips_under_an_inactive_owner(self):
+        """A popup never activates, so Qt showed its tooltips only while its
+        owner was the active window."""
+        host = self.track_widget(QtWidgets.QWidget())
+        w = QtWidgets.QWidget(host)
+        PopupWindow.promote(w, self.FLAGS)
+        self.assertTrue(w.testAttribute(QtCore.Qt.WA_AlwaysShowToolTips))
+
     def test_a_popup_casts_the_theme_shadow_instead_of_the_native_one(self):
         from uitk._window_shadow import _ShadowKeeper
 

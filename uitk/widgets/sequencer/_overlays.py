@@ -273,7 +273,7 @@ class RangeHighlightItem(
 
         The same state ``mousePressEvent`` sets, so every later step --
         move, release, cancel, undo capture -- is the one code path.  The
-        caller has recorded the press modifiers (``record_press_modifiers``).
+        caller has recorded the press's chord (``record_press_modifiers``).
         """
         self._grab_zone = edge
         self._drag_mode = edge
@@ -285,16 +285,16 @@ class RangeHighlightItem(
         self._show_range_drag_tooltip(QtCore.QPointF(scene_x, self._rect().top()))
 
     def _drag_verb(self) -> str:
-        """What this drag does, as a host applies the modifiers recorded at
-        press: a plain bound drag resizes, Ctrl trims the bound alone, Shift
-        retimes.  A body drag (a lane's band) moves the range."""
+        """What this drag does, as a host applies the chord held in it: a
+        plain bound drag resizes, Ctrl trims the bound alone, Shift retimes.
+        A body drag (a lane's band) moves the range."""
         sq = self._timeline.parent_sequencer
         if self._drag_mode == "move":
             return "Move"
-        if sq.shift_held_at_press:
+        if sq.shift_held_in_drag:
             verb = "Retime"
         else:
-            verb = "Trim" if sq.ctrl_held_at_press else "Resize"
+            verb = "Trim" if sq.ctrl_held_in_drag else "Resize"
         return f"{verb} about centre" if self._about_centre else verb
 
     #: Alt held on the last move of a bound drag (:meth:`_drag_bound`).

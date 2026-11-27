@@ -171,23 +171,43 @@ class TooltipPresenter:
         return fn
 
     @staticmethod
-    def _shared_rect(view, index) -> "QtCore.QRect":
-        """The run of cells around *index*, in its row, that carry its tip.
+    def _item_text(view, index):
+        """The tooltip *view* shows for the cell at *index*, or ``None``.
+
+        Its ``ToolTipRole`` text, as the view composes it at hover time
+        (TreeWidget's row status and elided-cell text):
+        ``item_tooltip(index, text) -> text``.
+        """
+        if not index.isValid():
+            return None
+        text = index.data(QtCore.Qt.ToolTipRole)
+        refine = getattr(view, "item_tooltip", None)
+        return refine(index, text) if callable(refine) else text
+
+    @classmethod
+    def _shared_rect(cls, view, index, tip) -> "QtCore.QRect":
+        """The run of cells around *index*, in its row, that show *tip* too.
 
         Qt hides an item's tip 300 ms after the pointer leaves the rect it was
         shown for -- one cell, so a tip describing the whole row went as the
-        pointer drifted into the next column.
+        pointer drifted into the next column. The run is of the text SHOWN
+        (:meth:`_item_text`): a tip the view composes is no cell's role.
         """
         rect = view.visualRect(index)
-        tip = index.data(QtCore.Qt.ToolTipRole) if index.isValid() else None
         if not tip:  # nothing shown: no run to walk
             return rect
         for step in (-1, 1):
             # Walked to the first invalid sibling: a list model's columnCount
             # is private in PySide, and a raise here faults the event filter.
             sibling = index.siblingAtColumn(index.column() + step)
-            while sibling.isValid() and sibling.data(QtCore.Qt.ToolTipRole) == tip:
-                rect = rect.united(view.visualRect(sibling))
+            while sibling.isValid():
+                cell = view.visualRect(sibling)
+                # A hidden column's cell takes no space and shows nothing: it
+                # neither joins the run nor ends it.
+                if not cell.isEmpty():
+                    if cls._item_text(view, sibling) != tip:
+                        break
+                    rect = rect.united(cell)
                 sibling = sibling.siblingAtColumn(sibling.column() + step)
         return rect
 
@@ -199,13 +219,8 @@ class TooltipPresenter:
         view, rect = obj.parentWidget(), None
         if isinstance(view, QtWidgets.QAbstractItemView) and view.viewport() is obj:
             index = view.indexAt(event.pos())
-            text = index.data(QtCore.Qt.ToolTipRole) if index.isValid() else None
-            # A view may compose an item's tooltip at hover time (TreeWidget's
-            # elided-cell text): ``item_tooltip(index, text) -> text``.
-            refine = getattr(view, "item_tooltip", None)
-            if index.isValid() and callable(refine):
-                text = refine(index, text)
-            rect = cls._shared_rect(view, index)
+            text = cls._item_text(view, index)
+            rect = cls._shared_rect(view, index, text)
         elif isinstance(view, QtWidgets.QGraphicsView) and view.viewport() is obj:
             # The topmost item under the pointer that has one, as the scene picks.
             tips = (item.toolTip() for item in view.items(event.pos()))

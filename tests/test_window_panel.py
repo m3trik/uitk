@@ -47,6 +47,16 @@ class WindowPanelTestCase(QtBaseTestCase):
         return _LayoutItems.widgets(item.layout())
 
 
+class TestTooltipsWhileInactive(WindowPanelTestCase):
+    def test_a_panel_shows_its_tooltips_while_it_is_not_the_active_window(self):
+        """As a MainWindow does: Qt reads the attribute from the top-level
+        window, and shows a tooltip only under the active one without it."""
+        from qtpy import QtCore
+
+        panel = self.track_widget(WindowPanel(title="Probe"))
+        self.assertTrue(panel.testAttribute(QtCore.Qt.WA_AlwaysShowToolTips))
+
+
 class TestResolution(WindowPanelTestCase):
     """What ``add`` accepts, and what a string turns into."""
 

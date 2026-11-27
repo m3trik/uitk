@@ -133,6 +133,8 @@ class WindowPanel(QtWidgets.QWidget, AttributesMixin):
             anchor = parent.window() or parent
             self.setParent(anchor, _panel_flags)
             Bootstrap.set_translucent(self)
+        # Tooltips whether or not this is the active window (as MainWindow).
+        self.setAttribute(QtCore.Qt.WA_AlwaysShowToolTips, True)
 
         # Inner frame paints the semi-transparent background.
         self._frame = QtWidgets.QFrame(self)

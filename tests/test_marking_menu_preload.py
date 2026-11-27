@@ -271,6 +271,40 @@ class TestScopedPreload(_PreloadCase):
             timeout_ms=5000,
         )
 
+    def test_the_warm_up_waits_while_a_popup_is_open(self):
+        """A warm presents the overlay, and presenting a top-level window
+        closes the open popup (measured, native Windows Qt: a combo's list
+        shut with no ``hidePopup`` call), so a warm landing while the pointer
+        rested on an open list closed it (live: the Scene Exporter's Settings
+        list "times out and closes"). It waits until the popup is gone.
+        Added: 2026-11-25"""
+        mm = self._make_mm("t_preload_popup")
+        hud = self._add_page(mm, "hud#startmenu")
+        combo = QtWidgets.QComboBox()
+        combo.addItems(["a", "b"])
+        self.track_widget(combo)
+        combo.show()
+        combo.showPopup()
+        QtWait.until(
+            lambda: QtWidgets.QApplication.activePopupWidget() is not None,
+            "the combo's list never opened",
+        )
+
+        mm.preload_menus()
+        for _ in range(5):
+            self._drain_qt_events()
+        self.assertFalse(hud.is_initialized, "a page was warmed under an open popup")
+        self.assertIsNotNone(mm._preload_queue, "the warm-up must wait, not end")
+        self.assertIsNotNone(
+            QtWidgets.QApplication.activePopupWidget(), "the open list was closed"
+        )
+        combo.hidePopup()
+        QtWait.until(
+            lambda: hud.is_initialized,
+            "the warm-up never resumed once the popup closed",
+            timeout_ms=5000,
+        )
+
     def test_a_key_press_handled_inside_a_warm_up_still_shows_the_menu(self):
         """A page whose init pumps the event loop can hand a pending key_show
         press to the activation mid-warm, while the overlay is presented

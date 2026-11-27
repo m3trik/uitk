@@ -347,7 +347,8 @@ class _HostingMixin:
         Idempotent — initialized pages are skipped — so it's safe to re-run
         after a bindings change to warm only the new targets. The deferred run
         yields to the user: it waits out a live gesture (which owns the
-        overlay) and a moving pointer, since each warm blocks the host.
+        overlay), a moving pointer, since each warm blocks the host, and an
+        open popup, which presenting the overlay would close.
         """
         if self._retired:
             return
@@ -404,10 +405,17 @@ class _HostingMixin:
         if cursor != self._preload_cursor:
             busy = True
         self._preload_cursor = cursor
+        if QtWidgets.QApplication.activePopupWidget() is not None:
+            # A popup is open (a combo's list, a context menu): a warm
+            # presents the overlay, and presenting a top-level window closes
+            # it (measured, native Windows Qt) -- so a resting pointer on an
+            # open list saw it close by itself.
+            busy = True
         if busy:
-            # Mid-gesture (the overlay is the user's), mid-script, or the
-            # pointer moving -- a warm blocks the host for up to seconds, which
-            # would land under the user's hand: retry once it's idle.
+            # Mid-gesture (the overlay is the user's), mid-script, the pointer
+            # moving or a popup open -- a warm blocks the host for up to
+            # seconds, which would land under the user's hand: retry once
+            # it's idle.
             QtCore.QTimer.singleShot(1000, self._preload_next)
             return
         try:
